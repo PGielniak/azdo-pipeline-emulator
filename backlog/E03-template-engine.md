@@ -1,7 +1,7 @@
 # E03 — Template engine & oracle parity
 
 Phase: P1 · Depends on: E01, E02 · Design: docs/02 §2–§5, §7–§8
-Primary grounding set: learn.microsoft.com/azure/devops/pipelines/process/templates · …/process/template-parameters · …/process/runtime-parameters · agent repo `src/Sdk` object-templating/pipeline-yaml code (locate the `ObjectTemplating`/pipeline template evaluation folder in `microsoft/azure-pipelines-agent`; pin) · **oracle preview API for every ambiguous rule**.
+Primary grounding set: learn.microsoft.com/azure/devops/pipelines/process/templates · …/process/template-parameters · …/process/runtime-parameters · **actions/runner** `src/Sdk/DTObjectTemplating` + `DTPipelines` (open fork of the object-templating/pipeline-yaml engine — corrected 2026-07-30, C-E00-012/013: these folders do not exist in `microsoft/azure-pipelines-agent`; pin actions/runner permalinks per claim) · **oracle preview API for every ambiguous rule** (outranks the fork on divergence).
 
 ## E03-S01 — As a pipeline developer, `${{ if/elseif/else }}`, `${{ each }}` and `${{ insert }}` expand exactly like the service, so template-heavy pipelines convert byte-equivalently.
 Acceptance: directive semantics proven by oracle fixture pairs, not by reading alone.

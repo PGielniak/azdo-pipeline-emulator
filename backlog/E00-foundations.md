@@ -26,7 +26,7 @@ Acceptance: schema snapshot vendored with provenance; refresh script re-pins.
   **Do:** script `scripts/refresh-schema.ts` downloading the pipeline schema from `microsoft/azure-pipelines-vscode` (locate `service-schema.json` in the repo; pin commit) into `packages/engine/vendor/schema/` with a `PROVENANCE.json` (URL, commit, date, sha256).
   **Ground:** github.com/microsoft/azure-pipelines-vscode — confirm the schema file's current path/name from the repo tree; learn.microsoft.com/azure/devops/pipelines/yaml-schema/ as the human-readable counterpart. Record both in `research/E00-foundations.md`.
   **Done:** vendored schema + provenance committed; refresh script idempotent; schema loads and compiles with the chosen JSON-schema validator.
-- [ ] **E00-S02-T02 — Seed and maintain `research/REFERENCES.md`**
+- [x] **E00-S02-T02 — Seed and maintain `research/REFERENCES.md`**
   **Do:** verify every URL in the seeded file resolves (curl status + title); replace `VERIFY` markers with pinned links; add missing per-keyword yaml-schema pages index.
   **Ground:** the seeded `research/REFERENCES.md` itself lists the candidates; each must be confirmed live and corrected if moved.
   **Done:** zero unverified entries; file states last-checked date per link.

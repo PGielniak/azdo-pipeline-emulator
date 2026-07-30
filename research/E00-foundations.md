@@ -85,6 +85,38 @@ schema-vendor test.
   — https://github.com/microsoft/azure-pipelines-vscode/blob/2f4500cfdcb1449a588e08286d0bbbb5f62d2d83/service-schema.json (checked 2026-07-30)
   — ajv error: `SyntaxError: Invalid regular expression: /^[^\/~\^\: \[\]\\]+(\/[^\/~\^\: \[\]\\]+)*$/u: Invalid escape`
 
+## E00-S02-T02 — REFERENCES.md verification pass (2026-07-30)
+
+Method: curl status+title for all 34 doc URLs (33× HTTP 200; 1× 404 → relocated, below); 73
+yaml-schema per-keyword subpage URLs all 200; GitHub rows pinned to same-day HEAD commits with
+named paths confirmed via the contents/trees API. Results live in REFERENCES.md per-row.
+
+[C-E00-011] Azure DevOps' Entra resource identifier is `499b84ac-1321-427f-aa17-267ca6975798`
+(resource URI `https://app.vssps.visualstudio.com`; request tokens with the `.default` scope);
+the old `…/integrate/get-started/authentication/` landing 404s — auth docs now live at
+`authentication-guidance` and sibling pages, and ADO's own OAuth is deprecated in favor of Entra.
+  — https://learn.microsoft.com/en-us/azure/devops/integrate/get-started/authentication/entra-oauth?view=azure-devops (checked 2026-07-30)
+  — "Azure DevOps' resource identifier: `499b84ac-1321-427f-aa17-267ca6975798`" · "Azure DevOps'
+    resource URI: `https://app.vssps.visualstudio.com`" · "Use the `.default` scope when
+    requesting a token with all scopes that the app is permissioned for."
+
+[C-E00-012] The azure-pipelines-agent repo contains **no expressions or object-templating engine
+sources**: the worker evaluates runtime conditions in `src/Agent.Worker/ExpressionManager.cs`
+against the closed-distribution `Microsoft.TeamFoundation.DistributedTask.Expressions` NuGet
+(repo tree at the pin has zero `Expressions/`/`ObjectTemplating` folders; `src/Sdk` does not
+exist — `src/Agent.Sdk` is the agent client SDK holding `SecretMasking/`).
+  — https://github.com/microsoft/azure-pipelines-agent/blob/c59f46aa13885f4ab59563248dfbdb3de899a068/src/Agent.Worker/ExpressionManager.cs (checked 2026-07-30)
+  — "using Microsoft.TeamFoundation.DistributedTask.Expressions;" (file exposes
+    `Parse(context, condition)` / `Evaluate(...)` for step/job conditions)
+
+[C-E00-013] The open-source behavioral reference for the DistributedTask expressions and
+object-templating engine is the **actions/runner** fork: `src/Sdk/DTExpressions2/`,
+`src/Sdk/DTObjectTemplating/`, `src/Sdk/DTPipelines/` (forked from Azure DevOps when Actions
+split; divergence from today's ADO service is possible, so the oracle (PLAN D6) outranks it per
+the source hierarchy).
+  — https://github.com/actions/runner/tree/34ef7f24f8875a3da11ae40ffd9668f0b4ca8440/src/Sdk (checked 2026-07-30)
+  — directory listing: "DTExpressions2, DTGenerated, DTLogging, DTObjectTemplating, DTPipelines, …"
+
 ### GitHub Actions pins (latest releases checked 2026-07-30 via api.github.com)
 
 `actions/checkout` v7.0.1 · `actions/setup-node` v7.0.0 · `actions/upload-artifact` v7.0.1 ·

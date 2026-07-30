@@ -166,7 +166,7 @@ Sizes: S ≈ 1–2 weeks, M ≈ 3–4, L ≈ 5–8 (single developer). Details &
 The parsing engine and runtime are built **from the official references**, per area:
 
 - YAML schema: learn.microsoft.com/azure/devops/pipelines/yaml-schema/ + machine-readable schema from the `microsoft/azure-pipelines-vscode` repo and per-org `GET {org}/_apis/distributedtask/yamlschema` (includes installed marketplace task input schemas).
-- Expressions & conditions: learn.microsoft.com/azure/devops/pipelines/process/expressions (+ the C# Expressions SDK inside `microsoft/azure-pipelines-agent` as behavioral reference).
+- Expressions & conditions: learn.microsoft.com/azure/devops/pipelines/process/expressions. Behavioral source code reference: the agent repo only *consumes* the closed expressions NuGet (`src/Agent.Worker/ExpressionManager.cs` for runtime conditions); the open engine implementation is the `actions/runner` fork `src/Sdk/DTExpressions2` + `DTObjectTemplating` (corrected 2026-07-30, C-E00-012/013 — oracle D6 outranks it on divergence).
 - Templates: …/process/templates; runtime parameters: …/process/runtime-parameters.
 - Variables & predefined variables: …/process/variables, …/build/variables.
 - Logging commands (`##vso`): …/scripts/logging-commands.
