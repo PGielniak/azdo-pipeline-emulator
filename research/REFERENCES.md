@@ -86,7 +86,7 @@ All rows: **verified + pinned 2026-07-30** (HEAD of that day; paths confirmed vi
 | microsoft/azure-pipelines-vscode @ `2f4500cf` | Official machine-readable YAML schema: `service-schema.json` at repo root (C-E00-006..008, C-E00-010); vendored in `packages/engine/vendor/schema/` |
 | actions/runner-images @ `4055b521` | Hosted image contents: `images/ubuntu/` (`Ubuntu2204/2404/2604[-Arm64]-Readme.md`, `toolsets/`) for doctor/E2E/sandbox-image design |
 | bats-core/bats-core @ `ae4b94d7` | Runtime test framework (invocation/report claims C-E00-003..005) + https://bats-core.readthedocs.io/en/stable/usage.html |
-| eemeli/yaml @ `bf03c0cb` (npm `yaml`) | CST/source-position APIs; docs https://eemeli.org/yaml/ (200) |
+| eemeli/yaml — npm **2.9.0** = tag v2.9.0 = `ddb21b04` (pinned 2026-07-30, E01-S01-T01; earlier HEAD check `bf03c0cb`) | CST/source-position APIs verified in `docs/` at the pin: `range=[start,value-end,node-end]`, `lineCounter.linePos` 1-indexed, `keepSourceTokens`→`srcToken`, Scalar.type styles (C-E01-001..006); rendered docs https://eemeli.org/yaml/ (200) |
 | qetza/replacetokens-task @ `3b06eec6` | Marketplace task ground truth (repo name resolved 2026-07-30) |
 | git-scm.com/docs · gnu.org/software/bash/manual/bash.html | git flag + shell semantics citations (both 200) |
 

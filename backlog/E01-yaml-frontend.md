@@ -6,7 +6,7 @@ Primary grounding set: learn.microsoft.com/azure/devops/pipelines/yaml-schema/ (
 ## E01-S01 — As an engine developer, YAML parses into a DOM with exact source positions and server-matching strictness, so every later error message can point at file:line and we fail where the service fails.
 Acceptance: parse produces DOM+positions; server-divergent YAML features rejected with the same intent as the service, each proven by oracle experiment.
 
-- [ ] **E01-S01-T01 — CST-backed parse with provenance**
+- [x] **E01-S01-T01 — CST-backed parse with provenance**
   **Do:** `packages/engine/src/frontend/parse.ts` using the `yaml` package with CST; DOM nodes carry `{file, range:{line,col,endLine,endCol}}`; expressions remain inert strings.
   **Ground:** `yaml` package docs (eemeli.org/yaml) for CST/position APIs — pin version; docs/01 §1 for requirements.
   **Done:** unit tests assert positions for nested mappings/sequences/scalars incl. block scalars; round-trip of node → source snippet.

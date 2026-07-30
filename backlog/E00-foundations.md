@@ -42,7 +42,7 @@ Acceptance: a scripted call returns the service's final YAML for an arbitrary YA
   **Do:** `research/oracle-setup.md`: create test org+project, one dummy pipeline definition (required to address the preview endpoint), PAT scopes needed, CI secret wiring; include cleanup/rotation notes.
   **Ground:** learn.microsoft.com/rest/api/azure/devops/pipelines/preview/preview (confirm exact route, api-version, request/response shape — pin the page); PAT scopes page (learn.microsoft.com/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate).
   **Done:** runbook followed once end-to-end by hand; org exists; secrets stored.
-- [ ] **E00-S03-T02 — Oracle spike: fetch `finalYaml`**
+- [!] **E00-S03-T02 — Oracle spike: fetch `finalYaml`** *(blocked 2026-07-30: needs the test org from T01 — `AZDO_*` env vars absent. Unblocks the moment the T01 runbook (`research/oracle-setup.md`) has been followed.)*
   **Do:** minimal script (`packages/fetch/src/oracle.ts`) POSTing `{previewRun: true, yamlOverride}` to the preview endpoint; save request+response samples (secrets redacted) under `research/experiments/oracle-spike/`.
   **Ground:** same preview REST page; the saved live response **is** the grounding artifact proving endpoint, api-version, and `finalYaml` field name.
   **Done:** committed sample pair for a 5-line pipeline; documented failure modes (bad YAML → error shape).
