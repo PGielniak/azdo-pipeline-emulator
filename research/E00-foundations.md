@@ -147,6 +147,56 @@ e.g. BashV3 is at 3.274.1 inside v277).
 Observed `execution` handlers at v277 (for E09 later, not encoded now): CmdLineV2/PowerShellV2
 list `PowerShell3` + Node10/16/20_1/24; BashV3/CopyFilesV2 are Node-only (Node10/16/20_1/24).
 
+## E00-S03-T01 — Test-org runbook (2026-07-30)
+
+[C-E00-017] The Pipelines Preview operation is
+`POST https://dev.azure.com/{organization}/{project}/_apis/pipelines/{pipelineId}/preview?api-version=7.1`
+— `pipelineId` is a **required** int32 path parameter (a pipeline definition must exist to
+address the endpoint), `pipelineVersion` is an optional query parameter, and `api-version=7.1`
+is the canonical moniker (7.2 exists as "other supported version").
+  — https://learn.microsoft.com/en-us/rest/api/azure/devops/pipelines/preview/preview?view=azure-devops-rest-7.1 (checked 2026-07-30)
+  — "POST https://dev.azure.com/{organization}/{project}/_apis/pipelines/{pipelineId}/preview?api-version=7.1" · "Queues a dry run of the pipeline and returns an object containing the final yaml."
+
+[C-E00-018] The preview request body is `RunPipelineParameters` — `previewRun: boolean` and
+`yamlOverride: string` are the two fields the oracle uses (plus optional `resources`,
+`stagesToSkip`, `templateParameters`, `variables`); the 200 response is a `PreviewRun` object
+whose **only** field is `finalYaml: string`.
+  — https://learn.microsoft.com/en-us/rest/api/azure/devops/pipelines/preview/preview?view=azure-devops-rest-7.1 (checked 2026-07-30)
+  — previewRun: "If true, don't actually create a new run. Instead, return the final YAML
+    document after parsing templates." · yamlOverride: "This allows you to preview the final
+    YAML document without committing a changed file."
+
+[C-E00-019] The documented OAuth scope for the Preview operation is `vso.build`, whose display
+name is **"Build (read)"** — the read-only, non-high-privilege scope; `vso.build_execute`
+("Build (read and execute)", high privilege) is only needed to queue real builds. E00-S03-T02
+verifies live that a Build(read) PAT suffices; if the service disagrees, the experiment result
+supersedes this claim per the source hierarchy.
+  — https://learn.microsoft.com/en-us/rest/api/azure/devops/pipelines/preview/preview?view=azure-devops-rest-7.1 (Security→Scopes: "vso.build"; checked 2026-07-30)
+  — https://learn.microsoft.com/en-us/azure/devops/integrate/get-started/authentication/oauth?view=azure-devops (scopes table: "vso.build · Build (read)"; checked 2026-07-30)
+
+[C-E00-020] A PAT authenticates REST calls as HTTP Basic with an **empty username**
+(`curl -u :{PAT} …`, i.e. `Authorization: Basic base64(":"+PAT)`); PATs are created under
+User settings → Personal access tokens, are org-scoped with per-scope selection and an
+expiration date, and the token value is displayed exactly once.
+  — https://learn.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops (checked 2026-07-30)
+  — "curl -u :{PAT} https://dev.azure.com/{organization}/_apis/build-release/builds" · "When
+    you're finished, copy the token and store it in a secure location. For your security, it
+    doesn't display again."
+
+[C-E00-021] Azure DevOps PATs are 84 characters long with a fixed `AZDO` signature at
+positions 76–80 — usable by our redaction/leak-scan tooling (CLAUDE.md secret-hygiene rule)
+to detect PATs in transcripts before committing.
+  — https://learn.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops#pat-format (checked 2026-07-30)
+  — "Tokens are *84* characters long, with 52 characters being randomized data" · "Tokens
+    issued by Azure DevOps include a fixed `AZDO` signature at positions 76-80."
+
+Runbook-supporting facts (same PAT page, not separate claims): rotation guidance = 90 days
+for personal PATs (30 for high-scope), regenerate ≥ 7 days before expiry; Entra-backed orgs
+deactivate a PAT if not signed in with for 90 days; PATs leaked to public GitHub repos are
+auto-revoked unless the tenant policy disables it. Supplementary how-to links verified 200 on
+2026-07-30: organizations/accounts/create-organization ("Create an organization"),
+pipelines/create-first-pipeline ("Create your first pipeline").
+
 ### GitHub Actions pins (latest releases checked 2026-07-30 via api.github.com)
 
 `actions/checkout` v7.0.1 · `actions/setup-node` v7.0.0 · `actions/upload-artifact` v7.0.1 ·

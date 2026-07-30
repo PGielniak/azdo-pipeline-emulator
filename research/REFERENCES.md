@@ -36,11 +36,12 @@ All rows below: **verified 2026-07-30** (HTTP 200; learn.microsoft.com redirects
 | Tasks reference (landing) | https://learn.microsoft.com/azure/devops/pipelines/tasks/reference/ |
 | Service connections | https://learn.microsoft.com/azure/devops/pipelines/library/service-endpoints |
 | Hosted agents / vmImage labels | https://learn.microsoft.com/azure/devops/pipelines/agents/hosted |
-| PATs | https://learn.microsoft.com/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate |
+| PATs — **deep-verified 2026-07-30** (E00-S03-T01): Basic auth w/ empty username, org-scoped creation UI, 84-char format w/ `AZDO` at 76–80, rotation/revocation guidance (C-E00-020/021) | https://learn.microsoft.com/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate |
+| OAuth scopes table (display names ↔ `vso.*`; `vso.build` = "Build (read)", C-E00-019). Page also documents ADO-OAuth deprecation | https://learn.microsoft.com/azure/devops/integrate/get-started/authentication/oauth |
 | Auth methods overview (old `…/authentication/` landing **404s**; moved) | https://learn.microsoft.com/azure/devops/integrate/get-started/authentication/authentication-guidance |
 | Entra OAuth for ADO — **confirms resource GUID `499b84ac-1321-427f-aa17-267ca6975798`** + resource URI + `.default` scope (C-E00-011). Note: ADO's own OAuth is deprecated (no new registrations since 2025-04; full deprecation announced for 2026) → E08 uses Entra/MSAL | https://learn.microsoft.com/azure/devops/integrate/get-started/authentication/entra-oauth |
 | REST API landing + versioning | https://learn.microsoft.com/rest/api/azure/devops/ |
-| REST: Pipelines Preview | https://learn.microsoft.com/rest/api/azure/devops/pipelines/preview/preview |
+| REST: Pipelines Preview — **deep-verified 2026-07-30** (E00-S03-T01): route/api-version 7.1, body `previewRun`+`yamlOverride`, response `PreviewRun.finalYaml`, scope `vso.build` (C-E00-017..019) | https://learn.microsoft.com/rest/api/azure/devops/pipelines/preview/preview |
 | REST: Pipelines Runs / Artifacts | https://learn.microsoft.com/rest/api/azure/devops/pipelines/ |
 | REST: Git Items / Refs | https://learn.microsoft.com/rest/api/azure/devops/git/ |
 | REST: Build (definitions, artifacts) | https://learn.microsoft.com/rest/api/azure/devops/build/ |
