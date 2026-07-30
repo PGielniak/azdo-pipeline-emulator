@@ -6,7 +6,7 @@ Status legend: `VERIFY` = written from knowledge, must be confirmed live and pin
 
 | Area | URL | Status |
 |---|---|---|
-| YAML schema reference (landing; per-keyword subpages) | https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/ | VERIFY |
+| YAML schema reference (landing; per-keyword subpages) | https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/ | verified 2026-07-30 (C-E00-009; canonical `?view=azure-pipelines`; subpage-per-keyword confirmed) |
 | Expressions | https://learn.microsoft.com/azure/devops/pipelines/process/expressions | VERIFY |
 | Conditions | https://learn.microsoft.com/azure/devops/pipelines/process/conditions | VERIFY |
 | Templates | https://learn.microsoft.com/azure/devops/pipelines/process/templates | VERIFY |
@@ -48,7 +48,7 @@ Status legend: `VERIFY` = written from knowledge, must be confirmed live and pin
 | microsoft/azure-pipelines-agent | Worker step lifecycle (`src/Agent.Worker`, StepsRunner), logging-command handling, secret masker, expressions SDK (`src/Sdk` — locate expressions + object-templating folders), container ops, pipeline-cache plugin, Node handler | VERIFY paths |
 | microsoft/azure-pipelines-tasks | Every task's `Tasks/<Name>V<n>/task.json` + implementation; `Tasks/Common` shared modules (Azure auth, npm auth) | VERIFY layout |
 | microsoft/azure-pipelines-task-lib | `node/task.ts` (INPUT_/env encodings, getBoolInput, findMatch + MatchOptions), `node/taskcommand.ts` / `internal.ts` (`##vso` emission) | VERIFY paths |
-| microsoft/azure-pipelines-vscode | Official machine-readable YAML schema (`service-schema.json` — confirm path) | VERIFY |
+| microsoft/azure-pipelines-vscode | Official machine-readable YAML schema: `service-schema.json` at repo root | verified 2026-07-30 — pinned `2f4500cf` (C-E00-006..008, C-E00-010); vendored in packages/engine/vendor/schema/ |
 | actions/runner-images | Hosted image contents (ubuntu manifests) for doctor/E2E image design | VERIFY |
 | bats-core/bats-core | Runtime test framework docs (invocation/report claims C-E00-003..005) | verified 2026-07-30 — pinned `ae4b94d7` (release v1.14.0; npm `bats` 1.13.0) + https://bats-core.readthedocs.io/en/stable/usage.html |
 | eemeli/yaml (npm `yaml`) | CST/source-position APIs | VERIFY |

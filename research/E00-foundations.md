@@ -53,6 +53,38 @@ CI step) flagging `VERIFY:` markers left in code paths (`packages/`, `scripts/`,
 `VERIFY` remains legitimate in `research/`, `docs/`, `backlog/` (it marks pending source pins by
 design).
 
+## E00-S02-T01 — Vendor the official YAML JSON schema
+
+[C-E00-006] The machine-readable Azure Pipelines YAML schema lives at the repo root of
+microsoft/azure-pipelines-vscode as `service-schema.json` (1,640,523 bytes at the pin; sha256
+`f00a9630f6550204148634d9a13f634b5750a225559886effe09a751482f0459`).
+  — https://github.com/microsoft/azure-pipelines-vscode/blob/2f4500cfdcb1449a588e08286d0bbbb5f62d2d83/service-schema.json (checked 2026-07-30)
+  — repo tree at the pinned commit lists `service-schema.json` at the root (only other `*schema*.json` files are test fixtures under `src/test/`).
+
+[C-E00-007] The schema declares JSON Schema **draft-07** with top-level `oneOf` + `definitions`.
+  — same pinned file (checked 2026-07-30)
+  — `"$schema": "http://json-schema.org/draft-07/schema#"`
+
+[C-E00-008] The schema uses five non-standard (VS Code-extension) keywords the validator must
+tolerate — and E01 must honor semantically where they change acceptance: `ignoreCase` (3770×),
+`aliases` (552×), `doNotSuggest` (541×), `firstProperty` (294×), `deprecationMessage` (157×).
+Counts from a keyword scan of the pinned file (schema-node positions only).
+  — same pinned file (checked 2026-07-30)
+
+[C-E00-009] The human-readable counterpart is the YAML schema reference landing page with
+per-keyword subpages (pipeline, stages, jobs, steps.*, resources.*, …); canonical URL confirmed.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/yaml-schema/?view=azure-pipelines (checked 2026-07-30)
+  — "The YAML schema reference for Azure Pipelines is a detailed reference for YAML pipelines that
+    lists all supported YAML syntax and their available options."
+
+[C-E00-010] The schema's `pattern` regexes use escapes that are **invalid under JavaScript
+unicode regex mode** (e.g. `^[^\/~\^\: \[\]\\]+(\/[^\/~\^\: \[\]\\]+)*$` — `\:` is an invalid
+escape with `/u`), so ajv must be configured with `unicodeRegExp: false` (ajv compiles patterns
+with the `u` flag by default). Discovered by compiling the pinned schema; encoded in the
+schema-vendor test.
+  — https://github.com/microsoft/azure-pipelines-vscode/blob/2f4500cfdcb1449a588e08286d0bbbb5f62d2d83/service-schema.json (checked 2026-07-30)
+  — ajv error: `SyntaxError: Invalid regular expression: /^[^\/~\^\: \[\]\\]+(\/[^\/~\^\: \[\]\\]+)*$/u: Invalid escape`
+
 ### GitHub Actions pins (latest releases checked 2026-07-30 via api.github.com)
 
 `actions/checkout` v7.0.1 · `actions/setup-node` v7.0.0 · `actions/upload-artifact` v7.0.1 ·

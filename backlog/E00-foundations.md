@@ -22,7 +22,7 @@ Acceptance: fresh clone → `pnpm i && pnpm test && pnpm lint` green; CI enforce
 ## E00-S02 — As an engine developer, official schema and reference material are pinned in-repo, so parsing work never depends on live network or memory.
 Acceptance: schema snapshot vendored with provenance; refresh script re-pins.
 
-- [ ] **E00-S02-T01 — Vendor the official YAML JSON schema**
+- [x] **E00-S02-T01 — Vendor the official YAML JSON schema**
   **Do:** script `scripts/refresh-schema.ts` downloading the pipeline schema from `microsoft/azure-pipelines-vscode` (locate `service-schema.json` in the repo; pin commit) into `packages/engine/vendor/schema/` with a `PROVENANCE.json` (URL, commit, date, sha256).
   **Ground:** github.com/microsoft/azure-pipelines-vscode — confirm the schema file's current path/name from the repo tree; learn.microsoft.com/azure/devops/pipelines/yaml-schema/ as the human-readable counterpart. Record both in `research/E00-foundations.md`.
   **Done:** vendored schema + provenance committed; refresh script idempotent; schema loads and compiles with the chosen JSON-schema validator.

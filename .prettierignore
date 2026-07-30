@@ -3,6 +3,8 @@ node_modules/
 dist/
 coverage/
 pnpm-lock.yaml
+# Vendored upstream snapshots (byte-exact, provenance-hashed)
+packages/*/vendor/
 # Shell sources are shellcheck's domain, prose docs are hand-maintained
 *.bats
 *.sh
