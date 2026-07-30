@@ -1,0 +1,17 @@
+{
+  "name": "@azdo-emu/runtime",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Bash runtime library sourced by emitted pipeline scripts (bash >= 4)",
+  "files": [
+    "lib"
+  ],
+  "scripts": {
+    "test": "bats test",
+    "lint": "shellcheck lib/*.sh"
+  },
+  "devDependencies": {
+    "bats": "^1.13.0",
+    "shellcheck": "^4.1.0"
+  }
+}

@@ -6,7 +6,7 @@ Primary grounding set: `research/REFERENCES.md` (seeded), microsoft/azure-pipeli
 ## E00-S01 — As a contributor, I have a repo where quality gates and conventions are automatic, so every later epic starts on rails.
 Acceptance: fresh clone → `pnpm i && pnpm test && pnpm lint` green; CI enforces the same.
 
-- [ ] **E00-S01-T01 — Monorepo scaffold**
+- [x] **E00-S01-T01 — Monorepo scaffold**
   **Do:** pnpm workspace with `packages/cli`, `packages/engine`, `packages/fetch`, `packages/emit`, `packages/runtime` (bash sources + bats), `fixtures/`, `research/`; TypeScript strict, Node ≥ 22, vitest, eslint+prettier; `packages/*` build via tsup.
   **Ground:** PLAN.md D1 rationale; verify Node LTS support statement on nodejs.org release schedule (pin in research note).
   **Done:** all packages build empty entry points; vitest sample test runs; layout documented in root README dev section.

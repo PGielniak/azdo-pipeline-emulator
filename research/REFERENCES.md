@@ -55,6 +55,12 @@ Status legend: `VERIFY` = written from knowledge, must be confirmed live and pin
 | qetza replacetokens (locate current repo name) | Marketplace task ground truth | VERIFY |
 | git-scm.com docs / GNU bash manual | git flag + shell semantics citations for runtime/emitter | VERIFY |
 
+## Tooling (converter runtime & test frameworks)
+
+| Area | URL | Status |
+|---|---|---|
+| Node.js release schedule (LTS windows for engines floor) | https://nodejs.org/en/about/previous-releases · pinned JSON: https://github.com/nodejs/Release/blob/e4bf922d83b877a116763e2f83d2d9b6701871f9/schedule.json | verified 2026-07-30 (claims C-E00-001/002) |
+
 ## Experiment archives (grow under `research/experiments/`)
 
 - `oracle-spike/` — first preview-API request/response (E00-S03-T02)
