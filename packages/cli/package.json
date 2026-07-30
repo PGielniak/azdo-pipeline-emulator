@@ -2,6 +2,9 @@
   "name": "@azdo-emu/cli",
   "version": "0.0.0",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "exports": {
     ".": {

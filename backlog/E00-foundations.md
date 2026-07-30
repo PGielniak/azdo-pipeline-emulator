@@ -10,7 +10,7 @@ Acceptance: fresh clone → `pnpm i && pnpm test && pnpm lint` green; CI enforce
   **Do:** pnpm workspace with `packages/cli`, `packages/engine`, `packages/fetch`, `packages/emit`, `packages/runtime` (bash sources + bats), `fixtures/`, `research/`; TypeScript strict, Node ≥ 22, vitest, eslint+prettier; `packages/*` build via tsup.
   **Ground:** PLAN.md D1 rationale; verify Node LTS support statement on nodejs.org release schedule (pin in research note).
   **Done:** all packages build empty entry points; vitest sample test runs; layout documented in root README dev section.
-- [ ] **E00-S01-T02 — CI workflow**
+- [x] **E00-S01-T02 — CI workflow**
   **Do:** GitHub Actions: lint + typecheck + unit (ubuntu, macos) + bats for `packages/runtime`; artifact upload of test reports; job for nightly oracle run (created disabled; enabled in E12-S03).
   **Ground:** bats-core official docs (github.com/bats-core/bats-core) for invocation; record versions in `research/E00-foundations.md`.
   **Done:** CI green on a PR touching each package.

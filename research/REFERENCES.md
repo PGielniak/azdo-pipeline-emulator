@@ -50,7 +50,7 @@ Status legend: `VERIFY` = written from knowledge, must be confirmed live and pin
 | microsoft/azure-pipelines-task-lib | `node/task.ts` (INPUT_/env encodings, getBoolInput, findMatch + MatchOptions), `node/taskcommand.ts` / `internal.ts` (`##vso` emission) | VERIFY paths |
 | microsoft/azure-pipelines-vscode | Official machine-readable YAML schema (`service-schema.json` — confirm path) | VERIFY |
 | actions/runner-images | Hosted image contents (ubuntu manifests) for doctor/E2E image design | VERIFY |
-| bats-core/bats-core | Runtime test framework docs | VERIFY |
+| bats-core/bats-core | Runtime test framework docs (invocation/report claims C-E00-003..005) | verified 2026-07-30 — pinned `ae4b94d7` (release v1.14.0; npm `bats` 1.13.0) + https://bats-core.readthedocs.io/en/stable/usage.html |
 | eemeli/yaml (npm `yaml`) | CST/source-position APIs | VERIFY |
 | qetza replacetokens (locate current repo name) | Marketplace task ground truth | VERIFY |
 | git-scm.com docs / GNU bash manual | git flag + shell semantics citations for runtime/emitter | VERIFY |

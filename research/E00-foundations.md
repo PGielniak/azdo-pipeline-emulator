@@ -21,6 +21,36 @@ and 24, and the engines floor must not be raised above 22 without a decision-rec
   — https://github.com/nodejs/Release/blob/e4bf922d83b877a116763e2f83d2d9b6701871f9/schedule.json (checked 2026-07-30)
   — `"v24": {"start": "2025-05-06", "lts": "2025-10-28", "maintenance": "2026-10-20", "end": "2028-04-30", "codename": "Krypton"}` · `"v20": {…, "end": "2026-04-30"}`
 
+## E00-S01-T02 — CI workflow (bats invocation, action pins)
+
+[C-E00-003] bats is invoked with paths to `.bats` files or directories containing them; directories
+are not recursed unless `-r` is given — so `bats test` runs all `.bats` files directly under
+`packages/runtime/test/`.
+  — https://bats-core.readthedocs.io/en/stable/usage.html (checked 2026-07-30)
+  — "To run your tests, invoke the `bats` interpreter with one or more paths to test files ending
+    with the `.bats` extension, or paths to directories containing test files." · "it will not
+    recurse unless you specify the `-r` flag"
+
+[C-E00-004] bats writes machine-readable test reports via `--report-formatter junit` (same options
+as `--formatter`: pretty, tap, tap13, junit) into the directory given by `-o/--output` — CI uses
+this for the uploaded test-report artifact.
+  — https://bats-core.readthedocs.io/en/stable/usage.html (checked 2026-07-30)
+  — "`--report-formatter` … accepts the same options as `--formatter`." · "it may be placed
+    elsewhere by specifying the `--output` flag"
+
+[C-E00-005] bats itself supports Bash 3.2+ — so the bats harness runs on macOS runners' system
+bash; this does *not* relax our runtime-library floor of bash ≥ 4 (emitted scripts + lib target
+bash ≥ 4 per PLAN D2; E06 tests must ensure a bash ≥ 4 interpreter on macOS CI).
+  — https://github.com/bats-core/bats-core/blob/ae4b94d7cc35f62468297791aa4ab8c3af7377ba/README.md (checked 2026-07-30)
+  — "Bats is a TAP-compliant testing framework for Bash 3.2 or above."
+
+### GitHub Actions pins (latest releases checked 2026-07-30 via api.github.com)
+
+`actions/checkout` v7.0.1 · `actions/setup-node` v7.0.0 · `actions/upload-artifact` v7.0.1 ·
+`pnpm/action-setup` v6.0.9 (reads the pnpm version from root `packageManager`). Workflows pin the
+major (`@v7`/`@v6`). bats-core latest release v1.14.0 (repo pinned at `ae4b94d`, 2026-07-26); npm
+`bats` devDependency tracks it via `^1.13.0`.
+
 ### Toolchain versions pinned at scaffold time (2026-07-30)
 
 - Local Node: v22.23.1 (maintenance-LTS line — satisfies engines `>=22`).
