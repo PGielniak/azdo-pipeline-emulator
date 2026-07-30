@@ -31,13 +31,14 @@ The generated project:
 5. Emit a debuggable project: per-step scripts with provenance comments (original file:line), `pipeline.expanded.yml` (the fully resolved YAML), a manifest of the stage/job graph, a README listing every warning and unsupported construct, and `.env.example`.
 6. Same-behavior local execution: dependency ordering, conditions evaluated at run time against actual job/step results, output variables across jobs and stages, `continueOnError`, `failOnStderr`, timeouts, matrix expansion, artifact publish/download flow.
 7. **A coverage report per conversion**: every generated project states what % of the original pipeline it reproduces (weighted by fidelity tier), with a ranked gap list and remediation hints (docs/04 §13).
+8. **Isolated local execution**: by default the generated project runs inside a sandbox container when a container runtime is available, so debugging never pollutes the host and the environment approximates the hosted agent (D11; host mode remains a first-class fallback).
 
 ## 3. Non-goals
 
 - Triggers, schedules, PR policies, approvals/checks/gates, environment protection — parsed, recorded in the manifest, **not executed** (ManualValidation becomes an interactive prompt).
 - Extracting secrets from Azure DevOps (not possible via API by design) — they go to `.env`.
 - Pipeline decorators, classic (designer) pipelines, billing/parallelism semantics.
-- Perfect replication of Microsoft-hosted images — instead: a `doctor` command checks required tools, and an optional container mode runs jobs in Docker.
+- Perfect replication of Microsoft-hosted images — instead: a `doctor` command checks required tools (on the host or inside the sandbox image), the default sandbox image *approximates* hosted tooling (D11), and declared container jobs run their own images. Byte-level hosted-image parity stays a non-goal.
 - Being an agent that reports back to Azure DevOps. This is strictly local.
 - Azure DevOps Server (on-prem): **out of scope** (decision 2026-07-30). Nothing in the architecture blocks it — PAT auth + adjusted URL shapes would be the entry point if that ever changes.
 - Windows **host** execution for now — deferred, not dropped (decision 2026-07-30): the emitter keeps a per-job target-OS backend seam so a native pwsh emission set bolts on later (roadmap "Future"). `PowerShell`/`AzurePowerShell` steps already run on Linux/macOS via `pwsh` from P2/P4.
@@ -117,6 +118,9 @@ Each job gets its own `Pipeline.Workspace` (fresh `s/`, `a/`, `b/` folders, own 
 **D10 — Every conversion is measured: the coverage report.**
 `convert` always emits `coverage.md` + `coverage.json` quantifying how much of the original pipeline the generated project reproduces: % of steps weighted by fidelity tier (§6), per-stage/job breakdown, ranked gap list with concrete remediation hints. `--min-coverage N` turns it into a gate. Spec: docs/04 §13.
 
+**D11 — Isolated execution: the run is sandboxed in a container by default (decision 2026-07-30).**
+Local debugging must not depend on — or pollute — the developer's host. When a container runtime (docker/podman) is present and the job targets Linux, `run.sh` and every job/step entry point re-execute themselves inside **one long-lived sandbox container per run** (`--host` opts out; `--sandbox` forces and errors without a runtime; macOS/Windows-targeted jobs fall back to host with a warning). The project directory is bind-mounted at the identical absolute path and the tool cache is a named volume, so **the same dependency-free scripts run unchanged in both environments** (D2 intact) and state/logs/artifacts land in the same files either way; iteration flags (`--only-step`, `--resume`, `--shell-at`) re-enter the same container. The sandbox image approximates the job's `vmImage` (default mapping, overridable via config or an emitted `environment/Dockerfile`; image+digest pinned in the lockfile; `doctor --sandbox` checks the image, not the host). Pipelines that themselves need docker get opt-in socket passthrough with a documented isolation tradeoff. Note the distinction: ADO `container:` **jobs** are a faithful pipeline feature (docs/04 §9, E14-S02); the sandbox is *our* host-side isolation layer, orthogonal to what the YAML declares. Spec: docs/04 §9; tasks: E14-S04.
+
 ## 6. Fidelity tiers (used everywhere; basis of the coverage metric)
 
 | Tier | Coverage weight | Meaning | Example |
@@ -137,11 +141,11 @@ Sizes: S ≈ 1–2 weeks, M ≈ 3–4, L ≈ 5–8 (single developer). Details &
 |---|---|---|
 | P0 Foundations | S | CLI skeleton, YAML front end with source maps + schema validation, `pipeline.expanded.yml` dump for template-free files, preview-oracle harness |
 | P1 Core engine | L | Expression evaluator, template expansion (local files), typed parameters, variables model, matrix, dependency graph — oracle-green on corpus |
-| P2 Script emission (MVP) | L | Emitter + bash runtime lib, core steps (script/bash/pwsh/powershell, checkout self, publish/download, file ops), deployment jobs (`runOnce`), predefined vars, `.env.example`, manifest, **coverage report**, README — a real single-repo Linux pipeline runs locally |
+| P2 Script emission (MVP) | L | Emitter + bash runtime lib, core steps (script/bash/pwsh/powershell, checkout self, publish/download, file ops), deployment jobs (`runOnce`), predefined vars, `.env.example`, manifest, **coverage report**, README, **sandbox execution wrapper (D11)** — a real single-repo Linux pipeline runs locally, host or sandboxed |
 | P3 Fetchers & auth | M | ADO device-code + `az`/PAT, GitHub, cross-repo templates, multi-repo checkout, variable groups → `.env`, artifact download, lockfile |
 | P4 **Priority deployment tasks** | L | The decided priority set: `AzurePowerShell`, `AzureCLI`, Docker build/push, Helm installer+deploy, kubectl/`KubernetesManifest`, ARM/Bicep resource-group deployment, `AzureKeyVault`, `AzureFileCopy`/storage ops; service-connection `.env` contract; `rolling`/`canary` strategies; `doctor`; unknown-task stubs + user handlers |
 | P5 Task breadth | M | Toolchains (`UseDotNet`/`DotNetCoreCLI`, Node/`Npm`, Python, Maven/Gradle), feed auth, test/coverage publishing, `Cache@2`, `replacetokens`, stub set |
-| P6 Fidelity & DX | M | Real-task execution mode (D3), container jobs & service sidecars via Docker, parallel jobs & slicing, `--shell-at` debug shell, secret masking polish |
+| P6 Fidelity & DX | M | Real-task execution mode (D3), container jobs & service sidecars via Docker, sandbox × container-job composition (D11 socket policy), parallel jobs & slicing, `--shell-at` debug shell, secret masking polish |
 | Future — Windows host | M | Native pwsh emission set for Windows-targeted jobs on a Windows host, cmd semantics (deferred by decision 2026-07-30; emitter backend seam reserved) |
 
 ## 8. Risks & mitigations
@@ -153,7 +157,7 @@ Sizes: S ≈ 1–2 weeks, M ≈ 3–4, L ≈ 5–8 (single developer). Details &
 | Secrets & service connections fundamentally unobtainable | `.env` contract (D8) with per-entry provenance and instructions; ambient-CLI auth mode for `az`/`docker`/`kubectl` |
 | Windows-targeted pipelines on a Linux host | `--target-os` awareness, pwsh where possible, explicit `degraded` warnings, container mode |
 | Marketplace long tail | Stub + inputs dump + user handler drop-in (D7); org-level `task.json` fetch for input defaults |
-| Hosted images have tools preinstalled that the laptop lacks | `doctor` checks per generated project; optional Docker job mode |
+| Hosted images have tools preinstalled that the laptop lacks | `doctor` checks per generated project; default sandbox image approximates hosted tooling (D11); declared container jobs run their own images |
 | Scope explosion toward "reimplement the whole agent" | Fidelity tiers make partial support explicit; non-goals list; phased roadmap |
 | Licensing | Everything we depend on (agent, tasks, task-lib, schema) is MIT; we do not redistribute marketplace binaries, we fetch them per-org with the user's own auth |
 

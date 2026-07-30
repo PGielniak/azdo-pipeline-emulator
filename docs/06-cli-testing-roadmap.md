@@ -11,13 +11,15 @@ azdo-emu convert <pipeline.yml> -o <dir>
     [--parameter key=value]...            # runtime parameters (repeatable); complex via @file.json
     [--target-os linux|windows|macos]     # override pool inference
     [--checkout-mode clone|copy|worktree]
+    [--exec-env auto|sandbox|host]        # D11: default execution environment baked into the project (docs/04 §9)
+    [--sandbox-image IMG]                 # override the default vmImage→image mapping
     [--group-names | --no-group-names]    # list variable-group names in .env.example when signed in (values never fetched)
     [--min-coverage <pct>]                # exit 3 if the coverage report (docs/04 §13) is below threshold
     [--frozen | --update [what]]          # lockfile behavior (docs/05 §4)
     [--offline]
     [--only-stage NAME]...                # partial conversion for huge pipelines
 
-azdo-emu doctor <outdir>                  # verify tool prereqs from manifest.json (versions, PATH)
+azdo-emu doctor <outdir> [--sandbox]      # verify tool prereqs from manifest.json — on the host, or inside the sandbox image (D11)
 azdo-emu fetch-artifacts <outdir> [--refresh|--latest]
 azdo-emu preview-diff <pipeline.yml>      # dev/CI parity check vs the real service (docs/02 §8)
 azdo-emu run <outdir> [...]               # thin convenience proxy to <outdir>/run.sh (optional sugar)
@@ -44,6 +46,10 @@ output:
   targetOs: linux
   checkoutMode: clone
   sharedWorkspace: false
+  execution:                                      # D11 sandbox (docs/04 §9)
+    environment: auto                             #   auto|sandbox|host — auto = sandbox when docker/podman present
+    image: null                                   #   override the default vmImage→image mapping
+    dockerSocket: auto                            #   auto|share|none — host-socket passthrough for docker-using pipelines
 ```
 
 ## 3. Testing strategy
@@ -65,11 +71,11 @@ Corpus: ≥30 pipelines patterned after real-world shapes — nested cross-repo 
 |---|---|---|---|
 | **P0 Foundations** | S | TS monorepo scaffold, CLI skeleton, YAML front end (source maps, schema validation), model dump, preview-oracle harness plumbing | `convert --dry-run` prints validated model of a template-free pipeline; `preview-diff` works against test org for a trivial file |
 | **P1 Core engine** | L | Expression evaluator (both backends' AST; eval backend first), template expansion (local files incl. `extends`, all directives, typed params), variables model, matrix, dependency graph | Oracle-green on the no-remote-resources corpus subset; L1/L2 suites in CI |
-| **P2 Emission MVP** | L | Emitter + `runtime.sh` + compiled conditions, groups A/B tasks, checkout self, deployment jobs (`runOnce` + artifact auto-download), predefined vars, `.env.example`, manifest, **coverage report** (docs/04 §13), generated README, `--only-step`/`--resume` | **Dogfood**: a real single-repo Linux pipeline converts and runs to green locally with an accurate `coverage.md`; L4 suite in CI |
+| **P2 Emission MVP** | L | Emitter + `runtime.sh` + compiled conditions, groups A/B tasks, checkout self, deployment jobs (`runOnce` + artifact auto-download), predefined vars, `.env.example`, manifest, **coverage report** (docs/04 §13), generated README, `--only-step`/`--resume`, **sandbox execution wrapper** (D11, E14-S04-T01/T02) | **Dogfood**: a real single-repo Linux pipeline converts and runs to green locally with an accurate `coverage.md`; same pipeline green under `--sandbox` on a docker host; L4 suite in CI |
 | **P3 Fetchers & auth** | M | ADO interactive/az/PAT, GitHub, cross-repo templates, multi-checkout, `resources.pipelines` artifacts, variable groups → `.env.example` (names when signed in), lockfile/`--frozen`, `fetch-artifacts.sh` | Corpus pipelines with remote templates + artifacts convert offline-reproducibly after first fetch |
 | **P4 Priority deployment tasks** | L | Handler registry as stable API + the priority set (docs/03 group D): `AzurePowerShell@5`, `AzureCLI@2`, `Docker@2` build/push, `HelmInstaller@1`+`HelmDeploy@0`, `KubectlInstaller@0`+`Kubernetes@1`+`KubernetesManifest@1`, `AzureResourceManagerTemplateDeployment@3` (+`AzureResourceGroupDeployment@2`), `AzureKeyVault@2`, `AzureFileCopy@6`; service-connection `.env` contract + `azdo_sc_login`; `rolling`/`canary` strategies; `doctor`; unknown-task stubs + user handlers | A real build → docker push → helm-deploy pipeline runs locally end-to-end; Key Vault ambient mode verified against a live vault |
 | **P5 Task breadth** | M | Groups C/E/F/G: toolchains (dotnet/node/python/maven/gradle), feed auth, test/coverage publishing, `Cache@2`, `replacetokens`, stub set | Coverage % ≥ agreed target across corpus; unknown-task flow polished |
-| **P6 Fidelity & DX** | M | Real-task execution mode, container jobs + services, `step.target`, `--parallel` + slicing, `--shell-at`, masking/UX polish | Opt-in real-task mode runs `Npm@1`/`replacetokens` byte-faithfully; container-job pipeline runs via Docker |
+| **P6 Fidelity & DX** | M | Real-task execution mode, container jobs + services, `step.target`, sandbox × container-job composition (D11 socket policy, E14-S04-T03), `--parallel` + slicing, `--shell-at`, masking/UX polish | Opt-in real-task mode runs `Npm@1`/`replacetokens` byte-faithfully; container-job pipeline runs via Docker, including from inside the sandbox |
 | **Future — Windows host** | M | Native pwsh emission set (`run-job.ps1`, `steps/*.ps1`) for Windows-targeted jobs, cmd step semantics, Windows runner testing | Windows-targeted corpus pipeline runs on a Windows host (deferred by decision 2026-07-30; emitter backend seam reserved from P2) |
 
 Suggested converter repo layout (monorepo, pnpm):
@@ -87,6 +93,7 @@ Decided 2026-07-30 (with the user):
 3. **Windows host: skipped for now, must remain addable** — emitter keeps a per-job target-OS backend seam; scheduled as the "Future" phase.
 4. **Variable groups → `.env.example` only**, filled by the user (names listed when signed in; values never fetched).
 5. **Every conversion emits a coverage report** (docs/04 §13) with the `--min-coverage` gate.
+6. **Isolated execution by default (D11)** — decided 2026-07-30 (user requirement: local debugging must run in a container-isolated environment): the generated project executes inside one long-lived sandbox container per run when a container runtime is available (`auto`; `--host` opts out), project bind-mounted at the identical absolute path so the same scripts run unchanged in both environments (D2 intact); docker-socket passthrough is opt-in for docker-using pipelines. Distinct from ADO `container:` jobs (E14-S02). Added: PLAN §5 D11, docs/04 §9, config `output.execution.*`, story E14-S04 (T01/T02 scheduled at P2 tail).
 
 Still open:
 1. Distribution: npm global install acceptable, or single static binary required?
