@@ -27,6 +27,8 @@ jobs:
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm lint
+      - name: Grounding guard (no unresolved research markers in code paths)
+        run: bash scripts/check-verify-markers.sh --all
       - name: Unit tests (vitest, junit report)
         run: |
           mkdir -p reports

@@ -44,6 +44,15 @@ bash ≥ 4 per PLAN D2; E06 tests must ensure a bash ≥ 4 interpreter on macOS 
   — https://github.com/bats-core/bats-core/blob/ae4b94d7cc35f62468297791aa4ab8c3af7377ba/README.md (checked 2026-07-30)
   — "Bats is a TAP-compliant testing framework for Bash 3.2 or above."
 
+## E00-S01-T03 — Grounding Protocol enforcement artifacts
+
+Ground: **N/A by explicit task definition** — the source is BACKLOG.md §3 itself (meta-task; the
+only allowed N/A in the backlog). No external claims; artifacts: PR template checklist,
+`research/README.md` (claim format), `scripts/check-verify-markers.sh` (+ `.githooks/pre-commit`,
+CI step) flagging `VERIFY:` markers left in code paths (`packages/`, `scripts/`, `fixtures/`).
+`VERIFY` remains legitimate in `research/`, `docs/`, `backlog/` (it marks pending source pins by
+design).
+
 ### GitHub Actions pins (latest releases checked 2026-07-30 via api.github.com)
 
 `actions/checkout` v7.0.1 · `actions/setup-node` v7.0.0 · `actions/upload-artifact` v7.0.1 ·

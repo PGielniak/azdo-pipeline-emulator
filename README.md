@@ -39,6 +39,7 @@ TypeScript packages are strict-mode, built with tsup (`dist/`, ESM + d.ts), test
 
 ```
 pnpm install     # bootstrap workspace (downloads shellcheck binary on first install)
+git config core.hooksPath .githooks   # once per clone: pre-commit grounding guard
 pnpm build       # tsup build of all TS packages
 pnpm test        # vitest unit tests + bats runtime tests
 pnpm lint        # eslint + prettier --check + shellcheck (runtime bash)

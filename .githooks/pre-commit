@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Repo-managed pre-commit hook. Activate once per clone:
+#   git config core.hooksPath .githooks
+set -euo pipefail
+"$(git rev-parse --show-toplevel)/scripts/check-verify-markers.sh" --staged

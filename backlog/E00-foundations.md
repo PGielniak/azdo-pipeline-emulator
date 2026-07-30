@@ -14,7 +14,7 @@ Acceptance: fresh clone → `pnpm i && pnpm test && pnpm lint` green; CI enforce
   **Do:** GitHub Actions: lint + typecheck + unit (ubuntu, macos) + bats for `packages/runtime`; artifact upload of test reports; job for nightly oracle run (created disabled; enabled in E12-S03).
   **Ground:** bats-core official docs (github.com/bats-core/bats-core) for invocation; record versions in `research/E00-foundations.md`.
   **Done:** CI green on a PR touching each package.
-- [ ] **E00-S01-T03 — Grounding Protocol enforcement artifacts**
+- [!] **E00-S01-T03 — Grounding Protocol enforcement artifacts** *(implemented + guard tested 2026-07-30; remaining Done item: observe the PR template rendering on the first PR opened after PR #1 merges — templates only apply from the default branch. Flip to `[x]` when the next PR shows it.)*
   **Do:** `.github/pull_request_template.md` with the §3 BACKLOG checklist (sources linked, permalinks pinned, claim IDs added, VERIFY items resolved); `research/` README describing claim entry format; pre-commit check (lint rule or script) that flags `VERIFY:` markers left in changed code.
   **Ground:** BACKLOG.md §3 itself (meta); no external source needed — mark N/A explicitly (the only allowed N/A in the backlog).
   **Done:** template renders on PRs; a dummy claim entry exists demonstrating format.
