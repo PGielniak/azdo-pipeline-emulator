@@ -51,6 +51,27 @@ traversal.
     undefined" · "import { isAlias, isCollection, isDocument, isMap, isNode, isPair, isScalar,
     isSeq } from 'yaml'"
 
+## E01-S01-T03 — Diagnostics reporter (2026-07-30)
+
+[C-E01-007] The DistributedTask templating engine prefixes template/YAML errors as
+`<file> (Line: <line>, Col: <col>): <message>` — the location format string is
+`"(Line: {0}, Col: {1})"` (`TemplateStrings.LineColumn`), assembled by
+`TemplateContext.GetErrorPrefix` as `$"{fileName} {LineColumn(line, column)}:"` and prepended
+to the message as `$"{prefix} {message}"`.
+  — https://github.com/actions/runner/blob/34ef7f24f8875a3da11ae40ffd9668f0b4ca8440/src/Sdk/Resources/TemplateStrings.g.cs#L61-L65 (checked 2026-07-30)
+  — 'const string Format = @"(Line: {0}, Col: {1})";'
+  — https://github.com/actions/runner/blob/34ef7f24f8875a3da11ae40ffd9668f0b4ca8440/src/Sdk/DTObjectTemplating/ObjectTemplating/TemplateContext.cs (GetErrorPrefix at ~L203 / Error at ~L154; checked 2026-07-30 — a parallel copy exists at `src/Sdk/WorkflowParser/ObjectTemplating/TemplateContext.cs`)
+  — 'return $"{fileName} {TemplateStrings.LineColumn(line, column)}:";' · 'message = $"{prefix} {message}";'
+
+[C-E01-008] Real rendered sample as users see it (public paste, Microsoft Q&A, asked
+2024-10-17): `/azure-pipelines.yml (Line: 7, Col: 1): While parsing a block mapping, did not
+find expected key.` — file paths are repo-root-relative **with a leading slash**; `az
+pipelines`/the web UI surface these service messages verbatim, so our reporter's location
+prefix mirrors this exact style.
+  — https://learn.microsoft.com/en-us/answers/questions/2105104/azure-devops-yaml-syntax-issues (checked 2026-07-30)
+  — "/azure-pipelines.yml (Line: 7, Col: 1): While parsing a block mapping, did not find
+    expected key."
+
 Structural notes (not server-behavior claims): parse.ts emits its own `ALIAS_UNSUPPORTED` /
 `NON_SCALAR_KEY` errors because the DOM cannot represent aliases or non-string keys (the
 vendored draft-07 JSON schema world is string-keyed, C-E00-006). Whether the *service* accepts

@@ -10,11 +10,11 @@ Acceptance: parse produces DOM+positions; server-divergent YAML features rejecte
   **Do:** `packages/engine/src/frontend/parse.ts` using the `yaml` package with CST; DOM nodes carry `{file, range:{line,col,endLine,endCol}}`; expressions remain inert strings.
   **Ground:** `yaml` package docs (eemeli.org/yaml) for CST/position APIs — pin version; docs/01 §1 for requirements.
   **Done:** unit tests assert positions for nested mappings/sequences/scalars incl. block scalars; round-trip of node → source snippet.
-- [ ] **E01-S01-T02 — Server-quirk conformance (anchors, dup keys, multi-doc)**
+- [!] **E01-S01-T02 — Server-quirk conformance (anchors, dup keys, multi-doc)** *(blocked 2026-07-30: Ground requires one oracle experiment per quirk via the preview API — test org absent (`AZDO_*` unset). Unblocks when `research/oracle-setup.md` has been followed; T01 left the yaml-lib defaults + structural errors in place, and `ParseResult.doc` exposes the CST for these checks.)*
   **Do:** explicit checks producing our errors for: YAML anchors/aliases, duplicate mapping keys, multi-document files. Behavior (reject vs accept) must mirror the **current** service.
   **Ground:** run oracle experiments: submit tiny pipelines using each feature via preview API; record the service's acceptance/error text under `research/experiments/E01-quirks/`; implement to match. Also check the yaml-schema landing page for any documented statement on anchors.
   **Done:** one experiment transcript per quirk; conformance tests reference the transcripts' claim IDs; behavior toggles isolated in one module for easy re-verification.
-- [ ] **E01-S01-T03 — Diagnostics reporter**
+- [x] **E01-S01-T03 — Diagnostics reporter**
   **Do:** diagnostic type `{severity, code, message, file, range, jsonPath, hint}`; renderer for terminal (colored, code-frame excerpt) and `--json`.
   **Ground:** docs/01 §1 requirement; sample real `az pipelines` error output for message-style reference (record one screenshot/paste in research note).
   **Done:** snapshot tests of rendered diagnostics; all subsequent epics use this type.
