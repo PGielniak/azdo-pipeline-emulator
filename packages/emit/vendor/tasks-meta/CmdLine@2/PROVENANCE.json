@@ -1,0 +1,17 @@
+{
+  "source": {
+    "repo": "microsoft/azure-pipelines-tasks",
+    "path": "Tasks/CmdLineV2/task.json",
+    "tag": "v277",
+    "commit": "8ba25cfb5c7736ba98a37488c0323f7320cb5b3e",
+    "rawUrl": "https://raw.githubusercontent.com/microsoft/azure-pipelines-tasks/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/CmdLineV2/task.json",
+    "permalink": "https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/CmdLineV2/task.json"
+  },
+  "task": {
+    "name": "CmdLine",
+    "version": "2.276.0"
+  },
+  "fetchedAt": "2026-07-30T09:21:16.002Z",
+  "sha256": "5b780887ac76456e6c0709b3f51d86aae7cbee580d1ee126c0dea9b4eedc8523",
+  "bytes": 2603
+}

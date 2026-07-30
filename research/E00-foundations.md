@@ -117,6 +117,36 @@ the source hierarchy).
   — https://github.com/actions/runner/tree/34ef7f24f8875a3da11ae40ffd9668f0b4ca8440/src/Sdk (checked 2026-07-30)
   — directory listing: "DTExpressions2, DTGenerated, DTLogging, DTObjectTemplating, DTPipelines, …"
 
+## E00-S02-T03 — task.json snapshot tooling (2026-07-30)
+
+[C-E00-014] In-box pipeline tasks live at `Tasks/<Name>V<major>/task.json` in
+microsoft/azure-pipelines-tasks, where the directory's `V<n>` suffix equals `version.Major`
+inside task.json and `name` is the YAML-referenceable task name — confirmed at tag v277 for
+all four E00 targets: CmdLineV2 (name=CmdLine, 2.276.0), BashV3 (name=Bash, 3.274.1),
+PowerShellV2 (name=PowerShell, 2.276.1), CopyFilesV2 (name=CopyFiles, 2.276.0).
+  — https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/CmdLineV2/task.json (checked 2026-07-30; raw fetches 200 for all four paths)
+  — `"name": "CmdLine"` · `"version": { "Major": 2, "Minor": 276, "Patch": 0 }`
+
+[C-E00-015] The tasks repo ships sprint-cadence release tags `v<sprint>`; the latest
+non-prerelease at check time is **v277** (published 2026-07-20), and the tag resolves to
+commit `8ba25cfb5c7736ba98a37488c0323f7320cb5b3e` — this is the snapshot pin for
+`packages/emit/vendor/tasks-meta/`.
+  — https://github.com/microsoft/azure-pipelines-tasks/releases/tag/v277 (checked 2026-07-30 via api.github.com `/releases` + `/git/ref/tags/v277`)
+  — releases list: "v277 · 2026-07-20T12:05:37Z · prerelease: False"
+
+[C-E00-016] Task versions are bumped per Azure DevOps sprint: `Minor` is set to the current
+sprint number (patch reset to 0), `Patch` increments within a sprint, and `Major` changes only
+for "large behavioral changes or changes without backward support" — so tasks inside one
+release tag carry different minor versions (a task's version moves only when the task changes;
+e.g. BashV3 is at 3.274.1 inside v277).
+  — https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/docs/taskversionbumping.md (checked 2026-07-30)
+  — "If sprint number differs from current minor number - set it to current sprint number, set
+    patch to 0." · "For major changes (large behavioral changes or changes without backward
+    support) increase major number."
+
+Observed `execution` handlers at v277 (for E09 later, not encoded now): CmdLineV2/PowerShellV2
+list `PowerShell3` + Node10/16/20_1/24; BashV3/CopyFilesV2 are Node-only (Node10/16/20_1/24).
+
 ### GitHub Actions pins (latest releases checked 2026-07-30 via api.github.com)
 
 `actions/checkout` v7.0.1 · `actions/setup-node` v7.0.0 · `actions/upload-artifact` v7.0.1 ·

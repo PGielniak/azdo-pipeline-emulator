@@ -30,7 +30,7 @@ Acceptance: schema snapshot vendored with provenance; refresh script re-pins.
   **Do:** verify every URL in the seeded file resolves (curl status + title); replace `VERIFY` markers with pinned links; add missing per-keyword yaml-schema pages index.
   **Ground:** the seeded `research/REFERENCES.md` itself lists the candidates; each must be confirmed live and corrected if moved.
   **Done:** zero unverified entries; file states last-checked date per link.
-- [ ] **E00-S02-T03 — task.json snapshot tooling**
+- [x] **E00-S02-T03 — task.json snapshot tooling**
   **Do:** script pulling `task.json` files for a configured task list from `microsoft/azure-pipelines-tasks` at a pinned release tag into `packages/emit/vendor/tasks-meta/<Name>@<major>/task.json` (+ PROVENANCE). Consumed by E09-S01.
   **Ground:** github.com/microsoft/azure-pipelines-tasks — confirm `Tasks/<Name>V<n>/task.json` layout and pick the pin tag from that repo's releases; note the repo's `README`/docs on task versioning.
   **Done:** snapshots for `CmdLineV2`, `BashV3`, `PowerShellV2`, `CopyFilesV2` committed with provenance; adding a task = one list entry.

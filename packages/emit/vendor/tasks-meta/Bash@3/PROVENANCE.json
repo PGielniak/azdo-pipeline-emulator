@@ -1,0 +1,17 @@
+{
+  "source": {
+    "repo": "microsoft/azure-pipelines-tasks",
+    "path": "Tasks/BashV3/task.json",
+    "tag": "v277",
+    "commit": "8ba25cfb5c7736ba98a37488c0323f7320cb5b3e",
+    "rawUrl": "https://raw.githubusercontent.com/microsoft/azure-pipelines-tasks/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/BashV3/task.json",
+    "permalink": "https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/BashV3/task.json"
+  },
+  "task": {
+    "name": "Bash",
+    "version": "3.274.1"
+  },
+  "fetchedAt": "2026-07-30T09:21:16.323Z",
+  "sha256": "612f1d177d6dd6b8be458373b183881fc5e992c355fb81a9e7006a34eaaa8292",
+  "bytes": 4694
+}
