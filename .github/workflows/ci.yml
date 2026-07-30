@@ -24,6 +24,10 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: System ShellCheck (the npm wrapper's anonymous GitHub download gets rate-limited on shared runners)
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then brew install shellcheck; fi
+          echo "SHELLCHECK=$(command -v shellcheck)" >> "$GITHUB_ENV"
       - run: pnpm build
       - run: pnpm typecheck
       - run: pnpm lint
