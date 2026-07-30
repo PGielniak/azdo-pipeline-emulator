@@ -22,7 +22,7 @@ Acceptance: parse produces DOM+positions; server-divergent YAML features rejecte
 ## E01-S02 — As a pipeline developer, invalid YAML is rejected with readable schema errors before any expansion, so I find typos instantly.
 Acceptance: root-file loose validation + expanded-DOM strict validation, readable messages from the official schema.
 
-- [ ] **E01-S02-T01 — Validator over the vendored schema**
+- [x] **E01-S02-T01 — Validator over the vendored schema**
   **Do:** compile the vendored JSON schema (ajv or equivalent) with a post-processing layer that converts raw `oneOf` explosion into targeted messages (nearest-branch heuristic by discriminating keys like `task`/`script`/`bash`).
   **Ground:** vendored schema + its PROVENANCE (E00-S02-T01); cross-check 5 keyword pages (e.g. `steps-script`, `jobs-job`, `pool`) on learn.microsoft.com yaml-schema reference against schema content and record any doc/schema mismatch found.
   **Done:** fixture set of 15 broken pipelines → snapshot-tested readable errors incl. file:line.

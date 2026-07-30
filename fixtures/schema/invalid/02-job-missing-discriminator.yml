@@ -1,0 +1,4 @@
+jobs:
+- displayName: Build the thing
+  steps:
+  - script: make

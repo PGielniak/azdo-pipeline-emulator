@@ -1,0 +1,7 @@
+# YAML booleans/numbers/empty values are strings in the pipeline model (C-E01-015).
+steps:
+- script: make
+  continueOnError: true
+  timeoutInMinutes: 5
+  env:
+    EMPTY:

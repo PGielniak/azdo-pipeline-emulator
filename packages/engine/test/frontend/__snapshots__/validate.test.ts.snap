@@ -1,0 +1,158 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`schema validation (E01-S02-T01) > broken pipelines render readable diagnostics > 01-step-unknown-form.yml 1`] = `
+"error SCHEMA_NO_MATCHING_FORM: 01-step-unknown-form.yml (Line: 2, Col: 3): unexpected property "scripts": this block must start with one of: task, script, powershell, pwsh, bash, checkout, download, downloadBuild, getPackage, upload, publish, template, reviewApp
+  at $.steps[0].scripts
+    1 | steps:
+  > 2 | - scripts: echo "hello"
+      |   ^^^^^^^
+    3 |   displayName: Say hello
+    4 | 
+  hint: did you mean "script"?"
+`;
+
+exports[`schema validation (E01-S02-T01) > broken pipelines render readable diagnostics > 02-job-missing-discriminator.yml 1`] = `
+"error SCHEMA_NO_MATCHING_FORM: 02-job-missing-discriminator.yml (Line: 2, Col: 3): unexpected property "displayName": this block must start with one of: job, deployment, template
+  at $.jobs[0].displayName
+    1 | jobs:
+  > 2 | - displayName: Build the thing
+      |   ^^^^^^^^^^^
+    3 |   steps:
+    4 |   - script: make"
+`;
+
+exports[`schema validation (E01-S02-T01) > broken pipelines render readable diagnostics > 03-steps-not-a-sequence.yml 1`] = `
+"error SCHEMA_TYPE: 03-steps-not-a-sequence.yml (Line: 1, Col: 8): incorrect type: expected a sequence, found a string
+  at $.steps
+  > 1 | steps: echo "hello"
+      |        ^^^^^^^^^^^^
+    2 | "
+`;
+
+exports[`schema validation (E01-S02-T01) > broken pipelines render readable diagnostics > 04-unknown-step-property.yml 1`] = `
+"error SCHEMA_UNKNOWN_KEY: 04-unknown-step-property.yml (Line: 3, Col: 3): unexpected property "workingDirectry"
+  at $.steps[0].workingDirectry
+    1 | steps:
+    2 | - script: make
+  > 3 |   workingDirectry: src
+      |   ^^^^^^^^^^^^^^^
+    4 | 
+  hint: did you mean "workingDirectory"?"
+`;
+
+exports[`schema validation (E01-S02-T01) > broken pipelines render readable diagnostics > 05-unknown-top-level-key.yml 1`] = `
+"error SCHEMA_UNKNOWN_KEY: 05-unknown-top-level-key.yml (Line: 1, Col: 1): unexpected property "varibles"
+  at $.varibles
+  > 1 | varibles:
+      | ^^^^^^^^
+    2 |   BUILD_CONFIG: Release
+    3 | steps:
+  hint: did you mean "variables"?"
+`;
+
+exports[`schema validation (E01-S02-T01) > broken pipelines render readable diagnostics > 06-stage-wrong-nesting.yml 1`] = `
+"error SCHEMA_NO_MATCHING_FORM: 06-stage-wrong-nesting.yml (Line: 4, Col: 5): unexpected property "script": this block must start with one of: job, deployment, template
+  at $.stages[0].jobs[0].script
+    2 | - stage: Build
+    3 |   jobs:
+  > 4 |   - script: make
+      |     ^^^^^^
+    5 | "
+`;
+
+exports[`schema validation (E01-S02-T01) > broken pipelines render readable diagnostics > 07-unknown-task.yml 1`] = `
+"warning SCHEMA_UNKNOWN_TASK: 07-unknown-task.yml (Line: 2, Col: 9): unknown task "TotallyMadeUpTask@3"
+  at $.steps[0].task
+    1 | steps:
+  > 2 | - task: TotallyMadeUpTask@3
+      |         ^^^^^^^^^^^^^^^^^^^
+    3 |   inputs:
+    4 |     thing: value
+  hint: not in the vendored in-box task catalog — expected for marketplace or custom tasks; their inputs are validated only against an org schema"
+`;
+
+exports[`schema validation (E01-S02-T01) > broken pipelines render readable diagnostics > 08-task-unknown-input.yml 1`] = `
+"warning SCHEMA_UNKNOWN_TASK_INPUT: 08-task-unknown-input.yml (Line: 4, Col: 5): unknown input "scritp" for this task
+  at $.steps[0].inputs.scritp
+    2 | - task: CmdLine@2
+    3 |   inputs:
+  > 4 |     scritp: echo "hello"
+      |     ^^^^^^
+    5 | 
+  hint: did you mean "script"? (input names come from the vendored task snapshot; a newer task version may add inputs)"
+`;
+
+exports[`schema validation (E01-S02-T01) > broken pipelines render readable diagnostics > 09-task-bad-enum-input.yml 1`] = `
+"error SCHEMA_VALUE: 09-task-bad-enum-input.yml (Line: 4, Col: 17): value "nline" is not accepted; valid values: filePath, inline
+  at $.steps[0].inputs.targetType
+    2 | - task: PowerShell@2
+    3 |   inputs:
+  > 4 |     targetType: nline
+      |                 ^^^^^
+    5 |     script: Write-Host hi
+    6 | 
+  hint: did you mean "inline"?"
+`;
+
+exports[`schema validation (E01-S02-T01) > broken pipelines render readable diagnostics > 10-pool-wrong-type.yml 1`] = `
+"error SCHEMA_TYPE: 10-pool-wrong-type.yml (Line: 2, Col: 1): incorrect type: expected a string or a mapping, found a sequence
+  at $.pool
+    1 | pool:
+  > 2 | - ubuntu-latest
+      | ^^^^^^^^^^^^^^^
+    3 | steps:
+    4 | - script: make"
+`;
+
+exports[`schema validation (E01-S02-T01) > broken pipelines render readable diagnostics > 11-variable-missing-form.yml 1`] = `
+"error SCHEMA_NO_MATCHING_FORM: 11-variable-missing-form.yml (Line: 2, Col: 3): unexpected property "value": this block must start with one of: name, group, template
+  at $.variables[0].value
+    1 | variables:
+  > 2 | - value: Release
+      |   ^^^^^
+    3 | steps:
+    4 | - script: make"
+`;
+
+exports[`schema validation (E01-S02-T01) > broken pipelines render readable diagnostics > 12-script-wrong-type.yml 1`] = `
+"error SCHEMA_TYPE: 12-script-wrong-type.yml (Line: 3, Col: 3): incorrect type: expected a string, found a sequence
+  at $.steps[0].script
+    1 | steps:
+    2 | - script:
+  > 3 |   - make
+      |   ^^^^^^
+    4 |   - make test
+    5 | "
+`;
+
+exports[`schema validation (E01-S02-T01) > broken pipelines render readable diagnostics > 13-step-name-invalid.yml 1`] = `
+"error SCHEMA_VALUE: 13-step-name-invalid.yml (Line: 3, Col: 9): value "build step" does not match the required pattern ^[-_A-Za-z0-9]*$
+  at $.steps[0].name
+    1 | steps:
+    2 | - script: make
+  > 3 |   name: build step
+      |         ^^^^^^^^^^
+    4 | "
+`;
+
+exports[`schema validation (E01-S02-T01) > broken pipelines render readable diagnostics > 14-checkout-unknown-property.yml 1`] = `
+"error SCHEMA_UNKNOWN_KEY: 14-checkout-unknown-property.yml (Line: 3, Col: 3): unexpected property "fetchDept"
+  at $.steps[0].fetchDept
+    1 | steps:
+    2 | - checkout: self
+  > 3 |   fetchDept: 1
+      |   ^^^^^^^^^
+    4 | 
+  hint: did you mean "fetchDepth"?"
+`;
+
+exports[`schema validation (E01-S02-T01) > broken pipelines render readable diagnostics > 15-matrix-empty.yml 1`] = `
+"error SCHEMA_TOO_FEW_PROPERTIES: 15-matrix-empty.yml (Line: 4, Col: 13): expected at least 1 property, found 0
+  at $.jobs[0].strategy.matrix
+    2 | - job: Build
+    3 |   strategy:
+  > 4 |     matrix: {}
+      |             ^^
+    5 |   steps:
+    6 |   - script: make"
+`;

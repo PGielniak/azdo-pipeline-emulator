@@ -8,7 +8,9 @@ must become commit-pinned permalinks when cited in claims.
 ## Official docs (learn.microsoft.com)
 
 All rows below: **verified 2026-07-30** (HTTP 200; learn.microsoft.com redirects to `/en-us/` +
-`?view=azure-pipelines` moniker — links kept moniker-free on purpose).
+`?view=azure-pipelines` moniker — links kept moniker-free on purpose). The yaml-schema pages
+carry their source commit in page metadata (`git_commit_id`); quotes taken 2026-07-30 are from
+MicrosoftDocs/azure-devops-yaml-schema-pr @ `d089fd2d` — cite that pin alongside the URL.
 
 | Area | URL |
 |---|---|
@@ -84,6 +86,7 @@ All rows: **verified + pinned 2026-07-30** (HEAD of that day; paths confirmed vi
 | microsoft/azure-pipelines-tasks @ `0e983fe4` (HEAD) · snapshot pin tag **v277** = `8ba25cfb` (2026-07-30) | Per-task `Tasks/<Name>V<n>/task.json` + implementation (confirmed: `Tasks/CmdLineV2/task.json`); shared modules `Tasks/Common/` (Deployment, Sanitizer, TlsHelpers, …). Sprint-cadence release tags `v<sprint>`; versioning rules `docs/taskversionbumping.md` (C-E00-014..016). tasks-meta snapshots vendor from the tag pin via `scripts/refresh-tasks-meta.ts` |
 | microsoft/azure-pipelines-task-lib @ `b5ef8ae9` | `node/task.ts` (INPUT_/env encodings, getBoolInput, findMatch), `node/taskcommand.ts` + `node/internal.ts` (`##vso` emission), `node/toolrunner.ts` — all confirmed present |
 | microsoft/azure-pipelines-vscode @ `2f4500cf` | Official machine-readable YAML schema: `service-schema.json` at repo root (C-E00-006..008, C-E00-010); vendored in `packages/engine/vendor/schema/` |
+| **microsoft/azure-pipelines-language-server @ `543ceeec`** (added 2026-07-30, E01-S02-T01) | Reference semantics for the schema's non-standard keywords and for pipeline-value typing — `language-service/src/parser/jsonParser.ts`: `firstProperty` branch selection + message (C-E01-009/018), `ignoreCase`/`aliases` (C-E01-017), boolean/number/null→string and `${{ }}`/`$( )`/`$[ ]` exemptions (C-E01-015/016). This is the validator the VS Code extension actually runs over the vendored schema |
 | actions/runner-images @ `4055b521` | Hosted image contents: `images/ubuntu/` (`Ubuntu2204/2404/2604[-Arm64]-Readme.md`, `toolsets/`) for doctor/E2E/sandbox-image design |
 | bats-core/bats-core @ `ae4b94d7` | Runtime test framework (invocation/report claims C-E00-003..005) + https://bats-core.readthedocs.io/en/stable/usage.html |
 | eemeli/yaml — npm **2.9.0** = tag v2.9.0 = `ddb21b04` (pinned 2026-07-30, E01-S01-T01; earlier HEAD check `bf03c0cb`) | CST/source-position APIs verified in `docs/` at the pin: `range=[start,value-end,node-end]`, `lineCounter.linePos` 1-indexed, `keepSourceTokens`→`srcToken`, Scalar.type styles (C-E01-001..006); rendered docs https://eemeli.org/yaml/ (200) |

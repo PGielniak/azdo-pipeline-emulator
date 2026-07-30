@@ -1,0 +1,4 @@
+steps:
+- task: TotallyMadeUpTask@3
+  inputs:
+    thing: value

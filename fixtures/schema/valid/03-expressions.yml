@@ -1,0 +1,14 @@
+# `${{ }}` / `$( )` / `$[ ]` values are exempt from type checks (C-E01-016).
+parameters:
+- name: timeout
+  type: number
+  default: 10
+pool:
+  vmImage: ${{ parameters.image }}
+steps:
+- task: PowerShell@2
+  timeoutInMinutes: ${{ parameters.timeout }}
+  condition: $[ eq(variables['Build.Reason'], 'PullRequest') ]
+  inputs:
+    targetType: inline
+    script: Write-Host $(Build.BuildId)

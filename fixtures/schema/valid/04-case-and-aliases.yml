@@ -1,0 +1,8 @@
+# Task names match case-insensitively and inputs accept their task.json aliases (C-E01-017).
+steps:
+- task: azurepowershell@5
+  inputs:
+    ConnectedServiceNameARM: my-service-connection
+    ScriptType: InlineScript
+    Inline: Write-Host hi
+    azurePowerShellVersion: LatestVersion

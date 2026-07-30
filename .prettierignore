@@ -5,6 +5,9 @@ coverage/
 pnpm-lock.yaml
 # Vendored upstream snapshots (byte-exact, provenance-hashed)
 packages/*/vendor/
+# Pipeline fixtures are test *input*: reformatting them would move the line/col
+# positions that diagnostics snapshots assert (and some are deliberately malformed)
+fixtures/
 # Shell sources are shellcheck's domain, prose docs are hand-maintained
 *.bats
 *.sh

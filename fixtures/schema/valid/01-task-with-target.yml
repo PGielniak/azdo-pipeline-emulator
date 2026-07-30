@@ -1,0 +1,7 @@
+# `target` is documented for task steps (C-E01-011) though the vendored schema omits it.
+steps:
+- task: PowerShell@2
+  target: host
+  inputs:
+    targetType: inline
+    script: Write-Host hi

@@ -1,0 +1,3 @@
+steps:
+- scripts: echo "hello"
+  displayName: Say hello

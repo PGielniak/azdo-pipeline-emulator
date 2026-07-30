@@ -1,0 +1,3 @@
+steps:
+- script: make
+  name: build step

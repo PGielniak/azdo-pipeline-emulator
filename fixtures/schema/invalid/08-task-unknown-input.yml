@@ -1,0 +1,4 @@
+steps:
+- task: CmdLine@2
+  inputs:
+    scritp: echo "hello"

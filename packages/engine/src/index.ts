@@ -2,3 +2,5 @@ export const PACKAGE_NAME = '@azdo-emu/engine';
 
 export * from './frontend/parse.js';
 export * from './frontend/diagnostics.js';
+export * from './frontend/schema.js';
+export * from './frontend/validate.js';
