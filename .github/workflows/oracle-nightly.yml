@@ -1,0 +1,21 @@
+# E00-S01-T02 — nightly oracle parity run, created DISABLED.
+# E12-S03 enables it by: (1) uncommenting the schedule trigger, (2) setting the repo
+# variable ORACLE_ENABLED=true, (3) adding secrets AZDO_ORG_URL / AZDO_PROJECT /
+# AZDO_ORACLE_PIPELINE_ID / AZDO_PAT, (4) replacing the placeholder step with
+# preview-diff over the fixture corpus (PLAN D6, docs/06 §3 L3).
+name: Oracle nightly
+
+on:
+  workflow_dispatch:
+  # schedule:
+  #   - cron: '30 2 * * *'
+
+jobs:
+  preview-parity:
+    if: vars.ORACLE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Placeholder — harness lands in E12-S03
+        run: |
+          echo "::error::Oracle nightly is enabled but the preview-diff harness is not wired yet (E12-S03)."
+          exit 1

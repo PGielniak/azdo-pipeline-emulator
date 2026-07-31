@@ -51,7 +51,7 @@ Purpose: **prove the implementation is grounded in real Azure DevOps documentati
 | [E11](backlog/E11-task-breadth.md) | Task breadth (groups C/E/F/G) | P5 | E09 | docs/03 C/E/F/G |
 | [E12](backlog/E12-testing-parity.md) | Testing & parity program | cross-cutting (starts P0) | E00 | docs/06 §3 |
 | [E13](backlog/E13-cli-config-doctor.md) | CLI, config & doctor | P0–P4 | E00 | docs/06 §1–§2 |
-| [E14](backlog/E14-fidelity-dx.md) | Fidelity & DX (real-task mode, containers, parallel) | P6 | E09, E06 | docs/03 §6, docs/04 §9 |
+| [E14](backlog/E14-fidelity-dx.md) | Fidelity & DX (real-task mode, sandbox & containers, parallel) | P6 · sandbox S04-T01/T02: P2 | E09, E06 (S04: E05+E06 only) | docs/03 §6, docs/04 §9 |
 | [E15](backlog/E15-windows-readiness.md) | Windows host readiness (seam now, impl future) | seam: P2 / impl: Future | E05 | docs/04 §9, PLAN roadmap |
 
 Docs → epic completeness map: docs/01 → E01+E04 · docs/02 → E02+E03 · docs/03 → E09+E10+E11+E14 · docs/04 → E05+E06+E07+E14+E15 · docs/05 → E08 · docs/06 → E12+E13.
@@ -60,7 +60,7 @@ Docs → epic completeness map: docs/01 → E01+E04 · docs/02 → E02+E03 · do
 
 - **P0:** E00 (all) → E01-S01/S02 → E13-S01 (CLI skeleton) → E12-S01 (harness bootstrap) → E03-S05-T01 (oracle spike lives in E00-S03 — do with it).
 - **P1:** E02 → E03 → E04 (E12-S02/S03 grow alongside; every E03 story lands with oracle fixtures).
-- **P2:** E06 → E09 → E05 → E04-S03 (deployment runOnce) → E07 → E15-S01 (seam guard) → E13-S02.
+- **P2:** E06 → E09 → E05 → E04-S03 (deployment runOnce) → E07 → E14-S04-T01/T02 (sandbox wrapper, D11) → E15-S01 (seam guard) → E13-S02.
 - **P3:** E08 (then wire into E03 remote templates + E06 checkout/artifacts) → E13-S03.
 - **P4:** E10 → E13-S04 (doctor).
 - **P5:** E11.

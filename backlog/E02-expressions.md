@@ -1,7 +1,7 @@
 # E02 — Expression language: evaluator + shell compiler
 
 Phase: P1 (evaluator) / P2 (shell backend) · Depends on: E00 · Design: docs/02 §1, §6
-Primary grounding set: learn.microsoft.com/azure/devops/pipelines/process/expressions · …/process/conditions · agent repo `microsoft/azure-pipelines-agent` `src/Sdk` expressions implementation (locate the DistributedTask expressions folder — historically `DTExpressions`/`Expressions2`; pin exact current path) · oracle (compile-time cases).
+Primary grounding set: learn.microsoft.com/azure/devops/pipelines/process/expressions · …/process/conditions · **actions/runner** `src/Sdk/DTExpressions2` (open fork of the DistributedTask expressions engine — corrected 2026-07-30, C-E00-012/013: the agent repo has no engine sources, only `src/Agent.Worker/ExpressionManager.cs` consuming the closed NuGet; pin actions/runner permalinks per claim) · oracle (compile-time cases; outranks the fork on divergence).
 
 ## E02-S01 — As an engine developer, the documented expression grammar parses into one AST used by both backends, so evaluation and compilation can never diverge structurally.
 Acceptance: parser covers the full documented syntax; parse errors match server style.

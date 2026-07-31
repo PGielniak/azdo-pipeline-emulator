@@ -1,6 +1,6 @@
-# E14 — Fidelity & DX: real-task mode, container jobs, parallelism, debug shell
+# E14 — Fidelity & DX: real-task mode, sandbox, container jobs, parallelism, debug shell
 
-Phase: P6 · Depends on: E09 (registry), E06 (runtime), E08 (task download) · Design: docs/03 §6, docs/04 §2 & §9
+Phase: P6, except E14-S04-T01/T02 (sandbox wrapper) which run at P2 tail per BACKLOG §5 · Depends on: E09 (registry), E06 (runtime), E08 (task download); E14-S04-T01/T02 need only E05+E06 · Design: docs/03 §6, docs/04 §2 & §9, PLAN D11
 Primary grounding set: `microsoft/azure-pipelines-task-lib` `node/` (the host protocol we must emulate — env contract, command protocol, tool cache) · `microsoft/azure-pipelines-agent` handlers (`src/Agent.Worker/Handlers` — NodeHandler; pin) · container-jobs doc (…/process/container-phases) · service-containers doc (…/process/service-containers).
 
 ## E14-S01 — As a pipeline developer, I can opt a task into running its *real* implementation locally, so complex tasks behave byte-faithfully.
@@ -42,3 +42,19 @@ Acceptance: Node task host per docs/03 §6, opt-in per task via config.
   **Do:** masker perf on large logs, multi-secret overlap ordering, `##[group]` folding renderer, `--verbose`/`System.Debug` polish.
   **Ground:** agent SecretMasker behaviors already claimed in E06-S06-T01 (extend claims for overlap ordering from its source; pin).
   **Done:** perf budget test (≥ 50MB log < 10s overhead); overlap tests.
+
+## E14-S04 — As a pipeline developer, my whole local run executes inside an isolated sandbox container by default, so debugging never pollutes my host and the environment approximates the hosted agent. (D11, decided 2026-07-30. T01/T02 run at P2 tail — they need only E05+E06; T03 lands with E14-S02 at P6.)
+Acceptance: dogfood pipeline green under `--sandbox` with state/logs/artifacts identical to a `--host` run; nothing installed on or exported to the host; `--host` remains first-class.
+
+- [ ] **E14-S04-T01 — Whole-run sandbox wrapper (`lib/sandbox.sh`)**
+  **Do:** all entry points accept `--sandbox|--host` (default `auto`: sandbox when docker/podman detected and job target-OS is linux; fallback to host with a one-line notice). Wrapper creates/starts **one long-lived container per run**, bind-mounts the project root at the identical absolute path, mounts a named volume over the tool cache (`Agent.ToolsDirectory`), preserves TTY, then re-execs the same entry point inside; `--only-step`/`--resume`/`--shell-at` `exec` into the same container; `.env` sourced only inside. Plain bash, no converter dependency (D2).
+  **Ground:** docker engine CLI reference (`container create/start/exec`, bind mounts) + podman equivalents — pin doc pages in `research/E14-fidelity-dx.md`; internal: PLAN D11 + docs/04 §9 (no ADO behavior is emulated here — record that explicitly as the scope note).
+  **Done:** bats+docker: fixture project runs green with `--sandbox` and its `.work/` state, logs and artifacts are equivalent to a `--host` run (diff test); auto-fallback notice asserted; `--sandbox` without a runtime = clear error; shellcheck-clean.
+- [ ] **E14-S04-T02 — Sandbox image selection, `environment/Dockerfile`, `doctor --sandbox`**
+  **Do:** default `vmImage`→image mapping (ubuntu-latest first) with config `output.execution.image` / `--sandbox-image` override; optional emitted `environment/Dockerfile` seeded from manifest `tools` entries; chosen image+digest recorded in `manifest.json` + lockfile; `doctor --sandbox` runs its checks inside the image.
+  **Ground:** `actions/runner-images` ubuntu manifest (what hosted images actually preinstall — pin commit); evaluate nektos/act's hosted-approximation images as default candidates (pin repo + image list; record the decision with rationale as claims); hosted-agents doc page (REFERENCES).
+  **Done:** default-image decision recorded as claims; converted fixture pins image+digest in manifest+lockfile; doctor-in-sandbox bats test; generated README documents image provenance and override path.
+- [ ] **E14-S04-T03 — Docker-using pipelines inside the sandbox (socket policy; composition with container jobs)**
+  **Do:** `output.execution.dockerSocket: auto|share|none` — `share` mounts the host socket so `Docker@2`/container jobs become sibling containers (path-correct via the host-backed project mount); `auto` shares only when the manifest says the pipeline needs docker, emitting a README + coverage warning stating the isolation tradeoff; `none` degrades docker-dependent steps with remediation notes. Verify the E14-S02 container-job lifecycle works from inside the sandbox.
+  **Ground:** cite E14-S02-T01 mount/exec claims (same machinery); docker docs on socket mounting (pin); DinD alternative explicitly evaluated with the accept/reject rationale recorded (VERIFY → experiment if pursued).
+  **Done:** fixture with a `Docker@2` build green in sandbox under `share`; `none` produces documented degraded steps; warnings present in README + coverage report; sibling path-correctness bats test.

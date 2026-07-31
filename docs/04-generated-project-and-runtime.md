@@ -20,7 +20,9 @@ out/
 ├── fetch-artifacts.sh            # optional refresh of downloaded artifacts
 ├── lib/
 │   ├── runtime.sh                # step runner, var store, ##vso parser, artifacts, checkout
-│   └── expr.sh                   # compiled expression helpers actually used
+│   ├── expr.sh                   # compiled expression helpers actually used
+│   └── sandbox.sh                # sandbox-mode wrapper: whole-run container lifecycle (§9, D11)
+├── environment/                  # sandbox image: pinned default image ref + optional Dockerfile (§9, D11)
 ├── handlers/                     # user drop-in task handlers (docs/03 §4)
 ├── stages/
 │   └── 010-Build/
@@ -48,7 +50,7 @@ Numbering (`010-`) leaves gaps for hand-inserted debugging steps. Names are slug
 ## 2. Entry points & debugging UX
 
 ```
-./run.sh [--env-file f] [--parallel] [--keep-going] [--list]
+./run.sh [--sandbox|--host] [--env-file f] [--parallel] [--keep-going] [--list]
 ./stages/010-Build/run-stage.sh
 ./stages/010-Build/jobs/010-BuildJob/run-job.sh
     [--from-step 030] [--to-step 050] [--only-step 030]
@@ -63,6 +65,7 @@ Key debugging affordances (the point of the tool):
 - Every step file is standalone-readable: header comments carry displayName, source provenance, condition source text, fidelity tier, and warnings.
 - `run.sh --list` prints the tree with ids, conditions, and fidelity — a table of contents for the pipeline.
 - End-of-run summary table (step, result, duration, log path), mirroring the ADO UI's job view.
+- **Sandboxed by default (D11)**: every entry point accepts `--sandbox|--host` (default `auto`: sandbox when docker/podman is present and the job targets Linux). The script re-executes itself inside the run's sandbox container; `--only-step`, `--resume` and `--shell-at` re-enter the *same* container, so iteration speed and state survive isolation. Spec: §9.
 
 ## 3. Job execution model
 
@@ -137,10 +140,14 @@ run_step --id 030 --file steps/030-build-solution.sh --cond cond_step_030
 
 `Build.SourceBranch`/`SourceVersion`/`Repository.Name` seeded from the resolved repo state; overridable via `.env` to simulate other branches/PRs.
 
-## 9. OS targets, container jobs, services (containers: P6; Windows host: future)
+## 9. Execution environments & OS targets: sandbox, container jobs, services (sandbox: P2; container jobs: P6; Windows host: future)
 
+- **Sandbox execution environment (D11)** — isolation for the *whole run*, independent of any `container:` in the YAML. Default `auto`: when a container runtime (docker/podman, auto-detected in that order) is present and the job targets Linux, every entry point re-executes itself inside **one long-lived sandbox container per run** (`create`/`start` once; `--only-step`/`--resume`/`--shell-at` `exec` back into it, TTY preserved). Mounts: project root bind-mounted at the **identical absolute path** (same invariant as container jobs — scripts, state store, logs and artifacts are the same files in both environments, so `--sandbox` and `--host` runs are interchangeable) plus a named volume over the tool cache (`Agent.ToolsDirectory`, D9). `.env` is sourced only inside the sandbox; nothing is installed on or exported to the host. `--host` opts out; `--sandbox` errors if no runtime is found.
+  - **Image resolution**: config `output.execution.image` / emitted `environment/Dockerfile` → default per-`vmImage` mapping to a hosted-approximation image (exact default image: VERIFY at E14-S04-T02 against `actions/runner-images` manifests; act-style approximation images evaluated there). Chosen image+digest recorded in `manifest.json` and the lockfile; `doctor --sandbox` runs its checks *inside the image* instead of against the host.
+  - **Docker-using pipelines** (`Docker@2`, container jobs, `docker` in scripts): `output.execution.dockerSocket: auto|share|none`. `share` mounts the host socket — job/tool containers become *siblings* of the sandbox (path-correct, because the project mount is host-backed at the same absolute path) at a documented isolation cost (README + coverage warning). `auto` shares only when the manifest says the pipeline needs docker. `none` degrades docker-dependent steps with remediation notes. Docker-in-Docker is deliberately not the default (evaluated in E14-S04-T03).
+  - macOS- and Windows-targeted jobs cannot be sandboxed on a Linux engine → host mode + warning (target-OS rules below unchanged).
 - Per-job **target OS** from `pool` (`vmImage: windows-*` etc.) or `--target-os`. Linux/macOS jobs → bash emission. Windows-targeted jobs today: bash emission whose PowerShell steps run via `pwsh` on the Linux host (`degraded`; cmd-specific steps flagged). A native Windows-host script set (`run-job.ps1`, `steps/*.ps1`) is the deferred "Future — Windows host" phase (decision 2026-07-30); the emitter's per-target-OS backend seam exists from day one so it bolts on without rework.
-- **Container jobs**: `docker run -d` the job container with the workspace bind-mounted at the *same absolute path* (scripts unchanged inside/outside), steps executed via `docker exec` with the step env file; `services:` started on a shared network with alias names; `resources.containers` registry auth via `.env`.
+- **Container jobs**: `docker run -d` the job container with the workspace bind-mounted at the *same absolute path* (scripts unchanged inside/outside), steps executed via `docker exec` with the step env file; `services:` started on a shared network with alias names; `resources.containers` registry auth via `.env`. From inside the sandbox, container jobs run as siblings via socket passthrough (E14-S04-T03).
 - `step.target: <container|host>` honored per step.
 
 ## 10. `.env.example` synthesis

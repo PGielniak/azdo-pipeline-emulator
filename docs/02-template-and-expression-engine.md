@@ -1,6 +1,6 @@
 # 02 — Template & expression engine
 
-The hard core of the project: reimplementing what the Azure DevOps service does between "YAML files in repos" and "final expanded pipeline". References: templates doc (…/process/templates), expressions doc (…/process/expressions), runtime-parameters doc, and the C# Expressions SDK in `microsoft/azure-pipelines-agent` as the behavioral reference implementation. Parity is verified against the real service via the preview endpoint (§8).
+The hard core of the project: reimplementing what the Azure DevOps service does between "YAML files in repos" and "final expanded pipeline". References: templates doc (…/process/templates), expressions doc (…/process/expressions), runtime-parameters doc, and — corrected 2026-07-30 (C-E00-012/013) — the C# engine sources in the `actions/runner` fork (`src/Sdk/DTExpressions2`, `DTObjectTemplating`, `DTPipelines`) as the open behavioral reference; `microsoft/azure-pipelines-agent` itself has no engine sources (it consumes the closed expressions NuGet; runtime conditions evaluated in `src/Agent.Worker/ExpressionManager.cs`). Parity is verified against the real service via the preview endpoint (§8), which outranks the fork on any divergence.
 
 ## 1. When things evaluate (the phase model)
 
