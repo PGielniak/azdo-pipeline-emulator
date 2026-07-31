@@ -15,6 +15,7 @@
     "test:bats": "pnpm --filter @azdo-emu/runtime run test",
     "typecheck": "tsc --noEmit -p scripts && pnpm -r run typecheck",
     "refresh-schema": "node scripts/refresh-schema.ts",
+    "oracle-probe": "node scripts/oracle-probe.ts",
     "lint": "pnpm run lint:es && pnpm run lint:format && pnpm run lint:shell",
     "lint:es": "eslint .",
     "lint:format": "prettier --check .",

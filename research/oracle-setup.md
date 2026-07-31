@@ -106,8 +106,18 @@ Grounding: C-E00-019/020. UI path per the PAT doc (verified 2026-07-30):
    ```
 
    **Expected:** HTTP 200 with a JSON body whose `finalYaml` string contains the expanded
-   pipeline (`steps` wrapped into a job). A 401/403 means PAT value or scope; a 404 means
-   org/project/pipelineId; a signin HTML page means the org URL.
+   pipeline (`steps` wrapped into a job).
+
+   Diagnosing failures — **corrected 2026-07-31 against the live service** (E00-S03-T02); the
+   original guidance here predicted 401/403 and 404 and was wrong on both counts:
+
+   | Symptom | Means |
+   |---|---|
+   | **302** redirect to `…/_signin?realm=dev.azure.com` (HTML) | bad or expired PAT — *not* 401/403 (C-E00-025). With `curl -L` this looks like a successful 200 full of HTML |
+   | **500** + `typeKey: PipelineNotFoundException` | wrong `AZDO_ORACLE_PIPELINE_ID` — *not* 404 (C-E00-026) |
+   | **404** | wrong org or project in the URL |
+   | **400** + `typeKey: PipelineValidationException` | the endpoint works; your probe YAML is invalid (this is the oracle answering, not a setup fault) |
+   | **200** whose `finalYaml` is the anchor's `echo oracle anchor` | your `yamlOverride` arrived empty; the service silently falls back to the committed YAML (C-E00-024) |
 3. Record the run in the completion record at the bottom of this file.
 
 ## Step 6 — CI secret wiring (GitHub)

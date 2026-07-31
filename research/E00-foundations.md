@@ -227,6 +227,55 @@ auto-revoked unless the tenant policy disables it. Supplementary how-to links ve
 2026-07-30: organizations/accounts/create-organization ("Create an organization"),
 pipelines/create-first-pipeline ("Create your first pipeline").
 
+## E00-S03-T02 — Oracle spike: fetch `finalYaml` (2026-07-31)
+
+Grounding instrument: the live preview endpoint. Transcripts (redacted) in
+`research/experiments/oracle-spike/`; regenerate with `pnpm oracle-probe`. Each claim below is
+reproducible by the named probe.
+
+[C-E00-022] The 200 response body of the preview operation contains **exactly one** field,
+`finalYaml` (string) — confirming C-E00-018's `PreviewRun` shape against the live service.
+A bare `steps:` document expands to `stages: - stage: __default` → `jobs: - job: Job`, `script:`
+becomes `task: CmdLine@2` with `inputs.script`, and `trigger: none` becomes
+`trigger: {enabled: false}`.
+  — `research/experiments/oracle-spike/five-line.md` (probe `five-line`, 2026-07-31)
+  — `Object.keys(response)` → `[ 'finalYaml' ]`
+
+[C-E00-023] Rejections are HTTP **400** with a uniform error envelope
+`{$id, innerException, message, typeName, typeKey, errorCode, eventId}`; for YAML, schema and
+expression faults `typeKey` is `PipelineValidationException` and `typeName` is
+`Microsoft.Azure.Pipelines.WebApi.PipelineValidationException`. Position-bearing messages use
+the prefix `<file> (Line: N, Col: M): ` — the same format E01-S01-T03 renders (C-E01-007/008),
+now confirmed live. **Not all rejections are positional:** a missing template reports only a
+file, and an unresolvable task reports job/step and no source position at all.
+  — `oracle-spike/{malformed-yaml,unknown-root-key,bad-expression,missing-template,unknown-task}.md` (2026-07-31)
+  — "/azure-pipelines.yml (Line: 1, Col: 1): Unexpected value 'stepz'" ·
+    "A task is missing. … (Task version 9, job 'Job', step ''.)"
+
+[C-E00-024] An **empty or omitted `yamlOverride` is not an error**: the service returns HTTP 200
+carrying the expansion of the pipeline's *committed* YAML. Probing with `""` against the anchor
+returned the anchor's own `script: echo oracle anchor`. A bug that empties the override thus
+yields a plausible expansion of the wrong pipeline; `preview()` rejects it client-side.
+  — live probe, 2026-07-31 (documented in `oracle-spike/README.md`; not a stored transcript
+    because the client now refuses to send it)
+
+[C-E00-025] An **invalid PAT produces HTTP 302**, not 401/403 — a redirect towards
+`…vssps.visualstudio.com/_signin?realm=dev.azure.com&…` with `content-type: text/html`. A
+redirect-following HTTP client therefore reports 200 with an HTML login form. Clients must use
+`redirect: 'manual'` and treat 3xx as an authentication failure.
+  — live probe with a deliberately wrong PAT, 2026-07-31 (`oracle-spike/README.md`)
+
+[C-E00-026] A **nonexistent `pipelineId` produces HTTP 500**, not 404, with
+`typeKey: "PipelineNotFoundException"` and message `The pipeline '999999' does not exist`.
+5xx from this endpoint is consequently not reliably transient and must not be blindly retried.
+  — live probe against pipelineId 999999, 2026-07-31 (`oracle-spike/README.md`)
+
+[C-E00-027] Service error messages can embed the **organization URL verbatim**: an unresolvable
+template reports `File /x.yml not found in repository https://dev.azure.com/{org}/{project}/_git/{repo}
+branch refs/heads/main version <sha>`. Redaction of transcripts must therefore substitute the
+org name, not only the PAT (CLAUDE.md rule 4).
+  — `research/experiments/oracle-spike/missing-template.md` (2026-07-31)
+
 ### GitHub Actions pins (latest releases checked 2026-07-30 via api.github.com)
 
 `actions/checkout` v7.0.1 · `actions/setup-node` v7.0.0 · `actions/upload-artifact` v7.0.1 ·
