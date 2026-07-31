@@ -141,9 +141,26 @@ Grounding: C-E00-019/020. UI path per the PAT doc (verified 2026-07-30):
 
 | Item | Value / date |
 |---|---|
-| Org created (name **redacted**; note only that it exists) | _pending_ |
-| Project + pipeline created, `definitionId` noted | _pending_ |
-| PAT created (scope, expiry date) | _pending_ |
-| Step-5 preview curl returned 200 + `finalYaml` | _pending_ |
-| `.env.oracle` written locally (gitignore verified) | _pending_ |
-| GitHub repo secrets stored | _pending_ |
+| Org created (name **redacted**; note only that it exists) | 2026-07-31 — existing personal org reused (see deviation below), not a throwaway |
+| Project + pipeline created, `definitionId` noted | 2026-07-31 — project `oracle` (private, Basic process) + pipeline `oracle-anchor` `definitionId=19`; anchor `azure-pipelines.yml` pushed to `refs/heads/main` |
+| PAT created (scope, expiry date) | 2026-07-31 — user-supplied, 84 chars (matches C-E00-021 format); scope broader than Build (read) — org-wide project list succeeded. **Rotation pending**, see below |
+| Step-5 preview curl returned 200 + `finalYaml` | 2026-07-31 — HTTP 200; `steps:`-only probe expanded to `stages: __default` → `job: Job` → `task: CmdLine@2`, confirming C-E00-017/018 (route, api-version, body) and the `finalYaml` field name live |
+| `.env.oracle` written locally (gitignore verified) | 2026-07-31 — `git check-ignore -v` → `.gitignore:7:.env.*`, confirmed before the token was written |
+| GitHub repo secrets stored | _deferred_ — see rotation note; only needed by E12-S03 (workflow no-ops until `ORACLE_ENABLED`) |
+
+### Deviations from this runbook (recorded 2026-07-31)
+
+1. **Step 1 not followed — no throwaway org.** The oracle runs in the owner's existing personal
+   organization. Consequences, accepted knowingly: the org name is identifying, so the
+   redaction rule below is load-bearing rather than belt-and-braces; end-of-project cleanup is
+   deleting the `oracle` **project**, not the org; and a leaked PAT here reaches 10 real
+   projects, not an empty sandbox. Isolation is at the project level instead: `oracle` is a
+   dedicated private project holding nothing but the anchor.
+2. **PAT scope is wider than documented.** C-E00-019 says Build (read) suffices, and the preview
+   call proves it works — but this token also lists every project in the org, so it is not
+   minimally scoped. The narrowing happens at rotation.
+3. **PAT rotation outstanding.** The current token was transmitted in cleartext through a chat
+   transcript and must be treated as compromised: revoke it, issue a replacement scoped
+   **Build (read) on this org only**, write it straight into `.env.oracle` (never into a
+   transcript), re-run the Step-5 curl, and only then store the four GitHub repo secrets.
+   Until that is done, item 6 above stays `_deferred_` and CI has no oracle credentials.
