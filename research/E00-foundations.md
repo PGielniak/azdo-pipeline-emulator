@@ -53,6 +53,36 @@ CI step) flagging `VERIFY:` markers left in code paths (`packages/`, `scripts/`,
 `VERIFY` remains legitimate in `research/`, `docs/`, `backlog/` (it marks pending source pins by
 design).
 
+### Resolution of the deferred Done criterion (2026-07-31)
+
+The task sat `[!]` because "template renders on PRs" cannot be observed until the template is on
+the **default branch** — and `origin/main` still held only the planning commit while 13 commits
+of work sat unpushed locally. Resolved by merging PR #1 (7 commits, incl. `a4b7767` which adds
+the template), then opening PR #2 for the remaining 6.
+
+Evidence that the template is *registered*, not merely present as a file:
+
+```
+$ gh api graphql -f query='{ repository(owner:"PGielniak", name:"azdo-pipeline-emulator")
+    { pullRequestTemplates { filename body } } }'
+filename: pull_request_template.md
+body length: 1530
+first lines: <!-- Title: E##-S##-T## <task title> … -->  ## What  ## Grounding checklist (BACKLOG.md §3 …)
+```
+
+`repository.pullRequestTemplates` is GitHub reporting which templates *it* recognizes for the
+repo; it returns the empty array while no template exists on the default branch. That is the
+same mechanism that pre-fills the web "Open a pull request" form, so it is the machine-checkable
+form of the criterion.
+
+**Recorded limitation — the auto-fill itself was not observed end-to-end by this session.** Two
+things prevent it: (1) PRs created through the REST API never receive the template (auto-fill is
+a web-form behaviour, so PR #2's body was hand-authored — stated in the PR body itself), and
+(2) an unauthenticated fetch of `compare/main...<branch>?expand=1` returns the diff view without
+the PR form (verified: HTTP 200, 317 KB, no `<textarea name="body">`, zero occurrences of
+`Grounding checklist`). Confirming the pre-fill visually requires a signed-in browser and is a
+ten-second check for the repo owner on the next PR opened via the UI.
+
 ## E00-S02-T01 — Vendor the official YAML JSON schema
 
 [C-E00-006] The machine-readable Azure Pipelines YAML schema lives at the repo root of
