@@ -1,0 +1,6 @@
+jobs:
+- job: Build
+  strategy:
+    matrix: {}
+  steps:
+  - script: make

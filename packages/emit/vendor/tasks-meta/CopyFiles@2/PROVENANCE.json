@@ -1,0 +1,17 @@
+{
+  "source": {
+    "repo": "microsoft/azure-pipelines-tasks",
+    "path": "Tasks/CopyFilesV2/task.json",
+    "tag": "v277",
+    "commit": "8ba25cfb5c7736ba98a37488c0323f7320cb5b3e",
+    "rawUrl": "https://raw.githubusercontent.com/microsoft/azure-pipelines-tasks/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/CopyFilesV2/task.json",
+    "permalink": "https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/CopyFilesV2/task.json"
+  },
+  "task": {
+    "name": "CopyFiles",
+    "version": "2.276.0"
+  },
+  "fetchedAt": "2026-07-30T09:21:16.941Z",
+  "sha256": "35714b5b2670d2fbb666bb6c0ecf4d5fba9b6f0b6b7614b636aef2e9a966d627",
+  "bytes": 5033
+}

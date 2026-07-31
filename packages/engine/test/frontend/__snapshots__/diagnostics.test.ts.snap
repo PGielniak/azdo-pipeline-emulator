@@ -1,0 +1,96 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`diagnostics reporter (E01-S01-T03) > caret spans the range width on a single line 1`] = `
+"error X: f.yml (Line: 4, Col: 7): bad value
+    2 | - week1
+    3 | 
+  > 4 | pool: Azure Pipelines
+      |       ^^^^^^^^^^^^^^^
+    5 | 
+    6 | "
+`;
+
+exports[`diagnostics reporter (E01-S01-T03) > clamps the frame at file boundaries (line 1 and EOF) 1`] = `
+"error X: f.yml (Line: 1, Col: 1): at the top
+  > 1 | trigger:
+      | ^^^^^^^
+    2 | - week1
+    3 | "
+`;
+
+exports[`diagnostics reporter (E01-S01-T03) > colored output wraps severity, gutter and caret in ANSI codes 1`] = `
+"[31m[1merror[0m [1mPARSE_BLOCK_MAPPING[0m: /azure-pipelines.yml (Line: 7, Col: 1): While parsing a block mapping, did not find expected key.
+  [2mat $[0m
+    [2m5[0m | 
+    [2m6[0m | 
+  [31m[1m>[0m [2m7[0m | - task: AzureCLI@2
+      | [31m[1m^[0m
+    [2m8[0m |   displayName: run
+    [2m9[0m | 
+  hint: steps must live under a \`steps:\` block"
+`;
+
+exports[`diagnostics reporter (E01-S01-T03) > json rendering is stable and round-trips 1`] = `
+"{
+  "diagnostics": [
+    {
+      "severity": "error",
+      "code": "PARSE_BLOCK_MAPPING",
+      "message": "While parsing a block mapping, did not find expected key.",
+      "file": "/azure-pipelines.yml",
+      "range": {
+        "line": 7,
+        "col": 1,
+        "endLine": 7,
+        "endCol": 2
+      },
+      "jsonPath": "$",
+      "hint": "steps must live under a \`steps:\` block"
+    }
+  ]
+}
+"
+`;
+
+exports[`diagnostics reporter (E01-S01-T03) > parse errors flow into the diagnostic type and render with a frame 1`] = `
+"error MULTIPLE_DOCS: /azure-pipelines.yml (Line: 2, Col: 1): Source contains multiple documents; please use YAML.parseAllDocuments()
+    1 | a: 1
+  > 2 | ---
+      | ^^^
+    3 | b: 2
+    4 | "
+`;
+
+exports[`diagnostics reporter (E01-S01-T03) > renders a full diagnostic with code frame, jsonPath and hint (plain) 1`] = `
+"error PARSE_BLOCK_MAPPING: /azure-pipelines.yml (Line: 7, Col: 1): While parsing a block mapping, did not find expected key.
+  at $
+    5 | 
+    6 | 
+  > 7 | - task: AzureCLI@2
+      | ^
+    8 |   displayName: run
+    9 | 
+  hint: steps must live under a \`steps:\` block"
+`;
+
+exports[`diagnostics reporter (E01-S01-T03) > renders multiple diagnostics separated by blank lines 1`] = `
+"error PARSE_BLOCK_MAPPING: /azure-pipelines.yml (Line: 7, Col: 1): While parsing a block mapping, did not find expected key.
+  at $
+    5 | 
+    6 | 
+  > 7 | - task: AzureCLI@2
+      | ^
+    8 |   displayName: run
+    9 | 
+  hint: steps must live under a \`steps:\` block
+
+info TEMPLATE_HOLE: /azure-pipelines.yml (Line: 2, Col: 3): value supplied by template parameter
+  at $.trigger[0]
+    1 | trigger:
+  > 2 | - week1
+      |   ^^^^^
+    3 | 
+    4 | pool: Azure Pipelines"
+`;
+
+exports[`diagnostics reporter (E01-S01-T03) > renders without a code frame when no source is given 1`] = `"warning UNKNOWN_KEY: templates/build.yml (Line: 12, Col: 5): unknown key 'continueOnErro'"`;

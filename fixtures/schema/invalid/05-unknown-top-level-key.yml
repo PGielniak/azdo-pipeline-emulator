@@ -1,0 +1,4 @@
+varibles:
+  BUILD_CONFIG: Release
+steps:
+- script: make

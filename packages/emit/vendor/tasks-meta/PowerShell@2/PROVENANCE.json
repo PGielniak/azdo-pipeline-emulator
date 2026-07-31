@@ -1,0 +1,17 @@
+{
+  "source": {
+    "repo": "microsoft/azure-pipelines-tasks",
+    "path": "Tasks/PowerShellV2/task.json",
+    "tag": "v277",
+    "commit": "8ba25cfb5c7736ba98a37488c0323f7320cb5b3e",
+    "rawUrl": "https://raw.githubusercontent.com/microsoft/azure-pipelines-tasks/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/PowerShellV2/task.json",
+    "permalink": "https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/PowerShellV2/task.json"
+  },
+  "task": {
+    "name": "PowerShell",
+    "version": "2.276.1"
+  },
+  "fetchedAt": "2026-07-30T09:21:16.628Z",
+  "sha256": "cf661bfb5d8f0b3da8a1a91a7bd65b0e4053dd16033a6fff68c402d50a1cf7ea",
+  "bytes": 9465
+}

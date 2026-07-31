@@ -14,7 +14,7 @@ Acceptance: fresh clone → `pnpm i && pnpm test && pnpm lint` green; CI enforce
   **Do:** GitHub Actions: lint + typecheck + unit (ubuntu, macos) + bats for `packages/runtime`; artifact upload of test reports; job for nightly oracle run (created disabled; enabled in E12-S03).
   **Ground:** bats-core official docs (github.com/bats-core/bats-core) for invocation; record versions in `research/E00-foundations.md`.
   **Done:** CI green on a PR touching each package.
-- [!] **E00-S01-T03 — Grounding Protocol enforcement artifacts** *(implemented + guard tested 2026-07-30; remaining Done item: observe the PR template rendering on the first PR opened after PR #1 merges — templates only apply from the default branch. Flip to `[x]` when the next PR shows it.)*
+- [x] **E00-S01-T03 — Grounding Protocol enforcement artifacts** *(closed 2026-07-31. The blocker was that `origin/main` held only the planning commit, so the template was never on the default branch. Merged PR #1 (7 commits incl. `a4b7767`, which adds the template); GitHub's `repository.pullRequestTemplates` now returns `pull_request_template.md` (1530 chars) — i.e. GitHub itself recognizes it, which is the mechanism that pre-fills the PR form. Dummy claim entry demonstrating the format: `research/README.md:17` (`[C-E06-007]`). Guard `scripts/check-verify-markers.sh --all` exits 0. **Caveat, recorded in `research/E00-foundations.md`:** the visual auto-fill was not observed end-to-end — API-created PRs never receive the template, and anonymous fetches of the compare page omit the PR form. A signed-in UI check on the next PR would close that gap.)*
   **Do:** `.github/pull_request_template.md` with the §3 BACKLOG checklist (sources linked, permalinks pinned, claim IDs added, VERIFY items resolved); `research/` README describing claim entry format; pre-commit check (lint rule or script) that flags `VERIFY:` markers left in changed code.
   **Ground:** BACKLOG.md §3 itself (meta); no external source needed — mark N/A explicitly (the only allowed N/A in the backlog).
   **Done:** template renders on PRs; a dummy claim entry exists demonstrating format.
@@ -30,7 +30,7 @@ Acceptance: schema snapshot vendored with provenance; refresh script re-pins.
   **Do:** verify every URL in the seeded file resolves (curl status + title); replace `VERIFY` markers with pinned links; add missing per-keyword yaml-schema pages index.
   **Ground:** the seeded `research/REFERENCES.md` itself lists the candidates; each must be confirmed live and corrected if moved.
   **Done:** zero unverified entries; file states last-checked date per link.
-- [ ] **E00-S02-T03 — task.json snapshot tooling**
+- [x] **E00-S02-T03 — task.json snapshot tooling**
   **Do:** script pulling `task.json` files for a configured task list from `microsoft/azure-pipelines-tasks` at a pinned release tag into `packages/emit/vendor/tasks-meta/<Name>@<major>/task.json` (+ PROVENANCE). Consumed by E09-S01.
   **Ground:** github.com/microsoft/azure-pipelines-tasks — confirm `Tasks/<Name>V<n>/task.json` layout and pick the pin tag from that repo's releases; note the repo's `README`/docs on task versioning.
   **Done:** snapshots for `CmdLineV2`, `BashV3`, `PowerShellV2`, `CopyFilesV2` committed with provenance; adding a task = one list entry.
@@ -38,11 +38,11 @@ Acceptance: schema snapshot vendored with provenance; refresh script re-pins.
 ## E00-S03 — As the project owner, the parity oracle against the real service exists from day one, so every engine decision can be verified, not guessed.
 Acceptance: a scripted call returns the service's final YAML for an arbitrary YAML payload.
 
-- [ ] **E00-S03-T01 — Test-org runbook**
+- [!] **E00-S03-T01 — Test-org runbook** *(2026-07-31: **the oracle is live and usable — downstream oracle tasks are unblocked.** Runbook followed end-to-end via REST: project `oracle` + pipeline `oracle-anchor` `definitionId=19` created, anchor YAML pushed, Step-5 preview curl returned HTTP 200 + `finalYaml` (confirms C-E00-017/018 live). `.env.oracle` written, gitignore verified first. Completion record + 3 deviations recorded in `research/oracle-setup.md`. **Remaining Done item:** "secrets stored" is only half met — GitHub repo secrets deferred until the exposed PAT is rotated (token was sent in cleartext chat; replacement must be scoped Build (read) and written straight to `.env.oracle`). Flip to `[x]` after rotation + secret storage. CI is unaffected meanwhile: the nightly workflow no-ops without `ORACLE_ENABLED`.)*
   **Do:** `research/oracle-setup.md`: create test org+project, one dummy pipeline definition (required to address the preview endpoint), PAT scopes needed, CI secret wiring; include cleanup/rotation notes.
   **Ground:** learn.microsoft.com/rest/api/azure/devops/pipelines/preview/preview (confirm exact route, api-version, request/response shape — pin the page); PAT scopes page (learn.microsoft.com/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate).
   **Done:** runbook followed once end-to-end by hand; org exists; secrets stored.
-- [ ] **E00-S03-T02 — Oracle spike: fetch `finalYaml`**
+- [!] **E00-S03-T02 — Oracle spike: fetch `finalYaml`** *(blocked 2026-07-30: needs the test org from T01 — `AZDO_*` env vars absent. Unblocks the moment the T01 runbook (`research/oracle-setup.md`) has been followed.)*
   **Do:** minimal script (`packages/fetch/src/oracle.ts`) POSTing `{previewRun: true, yamlOverride}` to the preview endpoint; save request+response samples (secrets redacted) under `research/experiments/oracle-spike/`.
   **Ground:** same preview REST page; the saved live response **is** the grounding artifact proving endpoint, api-version, and `finalYaml` field name.
   **Done:** committed sample pair for a 5-line pipeline; documented failure modes (bad YAML → error shape).

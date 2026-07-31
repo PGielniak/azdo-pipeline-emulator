@@ -1,0 +1,4 @@
+variables:
+- value: Release
+steps:
+- script: make
