@@ -1,0 +1,9 @@
+{
+  // E12-S01-T01 — typechecks the repo-level files no package tsconfig owns:
+  // the vitest configuration and the meta-tests under test/.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["vitest.config.ts", "test/**/*.ts"]
+}

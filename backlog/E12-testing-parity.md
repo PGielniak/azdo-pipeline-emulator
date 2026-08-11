@@ -4,7 +4,7 @@ Phase: cross-cutting (starts P0) · Depends on: E00 · Design: docs/06 §3
 Primary grounding set: the oracle (preview API) and real runs in the test org are themselves the grounding instruments; this epic builds and operates them. Layer numbering = docs/06 §3.
 
 ## E12-S01 — As a contributor, test infrastructure exists from day one, so every epic lands with its tests.
-- [ ] **E12-S01-T01 — Test layout & runners**
+- [x] **E12-S01-T01 — Test layout & runners** *(done 2026-08-11. Root `vitest.config.ts`: five named projects — `cli`/`engine`/`emit`/`fetch` over the pre-existing `packages/*/test/**/*.test.ts` layout, plus `repo` for `test/test-layout.test.ts` — and v8 coverage with per-package glob thresholds seeded from measured coverage (ratchet, table in `research/E12-testing-parity.md`). bats harness: `packages/runtime/test/helpers/fixture-store.bash` (repo/runtime/fixture paths, `BATS_TEST_TMPDIR`-scoped scratch dirs, copy-on-use fixtures from `fixtures/runtime/`, runtime loader), 9 cases exercising every helper. `pnpm test` = vitest **with coverage** + bats; CI runs the same and uploads coverage alongside the junit reports; `lint:shell` extended to the helpers. **Measured, not assumed** (C-E12-005/008): a threshold glob that matches nothing passes silently with exit 0 — so the meta-test asserts every glob still matches source, and it was mutation-tested.)*
   **Do:** vitest projects per package; bats harness for `packages/runtime` with fixture-store helpers; `pnpm test` orchestrates all; coverage thresholds per package.
   **Ground:** bats-core docs (pin) for helper patterns; internal spec docs/06 §3.
   **Done:** skeleton suites run in CI (E00-S01-T02).

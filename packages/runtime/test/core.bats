@@ -1,13 +1,13 @@
 #!/usr/bin/env bats
 
+bats_require_minimum_version 1.5.0
+
 setup() {
-  RUNTIME_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
-  # shellcheck source=/dev/null
-  source "$RUNTIME_DIR/lib/core.sh"
+  load helpers/fixture-store.bash
+  azdo_emu_load_runtime
 }
 
 @test "core.sh exposes the runtime version" {
-  run azdo_emu_runtime_version
-  [ "$status" -eq 0 ]
+  run -0 azdo_emu_runtime_version
   [ "$output" = "0.0.0" ]
 }

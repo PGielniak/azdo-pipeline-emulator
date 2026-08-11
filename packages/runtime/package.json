@@ -11,7 +11,7 @@
   ],
   "scripts": {
     "test": "bats test",
-    "lint": "\"${SHELLCHECK:-shellcheck}\" lib/*.sh"
+    "lint": "\"${SHELLCHECK:-shellcheck}\" lib/*.sh test/helpers/*.bash"
   },
   "devDependencies": {
     "bats": "^1.13.0",

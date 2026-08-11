@@ -105,10 +105,13 @@ All rows: **verified + pinned 2026-07-30** (HEAD of that day; paths confirmed vi
 | Area | URL | Status |
 |---|---|---|
 | Node.js release schedule (LTS windows for engines floor) | https://nodejs.org/en/about/previous-releases · pinned JSON: https://github.com/nodejs/Release/blob/e4bf922d83b877a116763e2f83d2d9b6701871f9/schedule.json | verified 2026-07-30 (claims C-E00-001/002) |
+| bats test-authoring semantics (helper loading, scratch dirs, `run` flags) — the L4 harness | https://github.com/bats-core/bats-core/blob/ae4b94d7cc35f62468297791aa4ab8c3af7377ba/docs/source/writing-tests.md · `docs/source/warnings/BW02.rst` · `docs/CHANGELOG.md` (same pin) | verified 2026-08-11 (claims C-E12-001..004) |
+| vitest 4.1.10 projects + v8 coverage thresholds — the L1/L2 runner | installed copy: `node_modules/vitest/dist/chunks/reporters.d.DtoKVV2s.d.ts` (option types), `node_modules/vitest/dist/chunks/coverage.DM_a_rWm.js` (`resolveThresholds`/`checkThresholds`) · https://registry.npmjs.org/@vitest/coverage-v8 (exact peer pin) | verified 2026-08-11 (claims C-E12-005..010); behaviour the sources don't state is measured in `research/experiments/E12-test-harness/` |
 
 ## Experiment archives (grow under `research/experiments/`)
 
 - `oracle-spike/` — first preview-API request/response (E00-S03-T02)
+- `E12-test-harness/` — vitest project/threshold and bats tmpdir probes (E12-S01-T01)
 - `E01-quirks/` — anchors/dup-keys/multi-doc service behavior
 - `E02-coercion/`, `E02-errors/` — expression edge cases & error shapes
 - `E03-visibility/` — compile-time variable visibility matrix
