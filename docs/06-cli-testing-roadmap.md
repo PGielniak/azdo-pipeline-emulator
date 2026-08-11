@@ -54,6 +54,8 @@ output:
     dockerSocket: auto                            #   auto|share|none — host-socket passthrough for docker-using pipelines
 ```
 
+Implemented in `packages/cli/src/config/` (E13-S01-T02): discovery is **beside the pipeline file** (there is no `--config` flag in §1); parsing uses plain `yaml`, *not* the engine's pipeline parser, so the service quirks (anchors rejected, case-folded duplicate keys, single document — C-E01-021..028) deliberately do **not** apply to our own file format. Two rules §2 leaves open are settled in `research/E13-cli-config-doctor.md`: **map-valued keys merge per key** (`parameters`, `repositories`, `tasks.overrides`) while scalars and lists replace wholesale (C-E13-012), and **paths typed on the command line resolve from the working directory while paths written in the config resolve from the config file's own directory** (C-E13-013). The machine-readable schema is committed at `schema/azdo-emu.schema.json` (draft-07) for editor support via `# yaml-language-server: $schema=…`; a test pins it to the loader so the two cannot drift.
+
 ## 3. Testing strategy
 
 | Layer | What | How |

@@ -41,6 +41,13 @@ importers:
       commander:
         specifier: 15.0.0
         version: 15.0.0
+      yaml:
+        specifier: 2.9.0
+        version: 2.9.0
+    devDependencies:
+      ajv:
+        specifier: ^8.20.0
+        version: 8.20.0
 
   packages/emit: {}
 

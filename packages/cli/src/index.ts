@@ -3,3 +3,4 @@ export const PACKAGE_NAME = '@azdo-emu/cli';
 
 export * from './exit.js';
 export * from './program.js';
+export * from './config/index.js';

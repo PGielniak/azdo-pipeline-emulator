@@ -189,6 +189,46 @@ describe('CLI scaffold (E13-S01-T01)', () => {
     });
   });
 
+  describe('--parameter wiring (E13-S01-T02)', () => {
+    /** Parse a convert invocation and read what `--parameter` collected, ignoring the
+     *  not-implemented action that follows. */
+    function collected(...argv: string[]): unknown {
+      const program = createProgram({ out: () => {}, err: () => {} });
+      const convert = program.commands.find((command) => command.name() === 'convert')!;
+      try {
+        program.parse(['convert', 'azure-pipelines.yml', '-o', 'out', ...argv], { from: 'user' });
+      } catch {
+        // NotImplementedError — the flag has already been parsed by then.
+      }
+      return convert.opts()['parameter'];
+    }
+
+    it('is repeatable, collecting one entry per occurrence', () => {
+      expect(collected('--parameter', 'deployEnv=dev', '--parameter', 'region=weu')).toEqual({
+        deployEnv: 'dev',
+        region: 'weu',
+      });
+    });
+
+    it('is absent when never passed, so the config layer shows through', () => {
+      expect(collected()).toBeUndefined();
+    });
+
+    it('a malformed value fails with exit 1 before any work starts', () => {
+      const { code, err } = cli(
+        'convert',
+        'azure-pipelines.yml',
+        '-o',
+        'out',
+        '--parameter',
+        'oops',
+      );
+      expect(code).toBe(EXIT.error);
+      expect(err).toContain('needs `name=value`');
+      expect(err).not.toContain('not implemented yet');
+    });
+  });
+
   describe('global options', () => {
     it('--json is accepted before the command and defaults to false', () => {
       const program = createProgram({ out: () => {}, err: () => {} });

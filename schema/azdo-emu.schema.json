@@ -1,0 +1,151 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/PGielniak/azdo-pipeline-emulator/blob/main/schema/azdo-emu.schema.json",
+  "title": "azdo-emu.yaml",
+  "description": "Configuration for azdo-emu, placed next to the pipeline file. All keys are optional; command-line flags override these values, which override the defaults shown as `default` below.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "organization": {
+      "type": "string",
+      "description": "Azure DevOps organization URL, used as context for @alias resolution, variable groups and the org schema.",
+      "examples": ["https://dev.azure.com/contoso"]
+    },
+    "project": {
+      "type": "string",
+      "description": "Azure DevOps project name.",
+      "examples": ["Platform"]
+    },
+    "auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "How to authenticate to each service.",
+      "properties": {
+        "azdo": {
+          "enum": ["interactive", "az", "pat"],
+          "default": "interactive",
+          "description": "Azure DevOps sign-in mode."
+        },
+        "github": {
+          "enum": ["gh", "pat"],
+          "default": "gh",
+          "description": "GitHub sign-in mode."
+        }
+      }
+    },
+    "parameters": {
+      "type": "object",
+      "description": "Default values for the pipeline's runtime parameters. Overridden per key by --parameter; values are bound and type-checked against the pipeline's declared parameter types at convert time.",
+      "additionalProperties": true
+    },
+    "repositories": {
+      "type": "object",
+      "description": "Repository alias overrides: point an alias at a local working copy instead of fetching it. Relative paths resolve from this file's directory.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Local path to use for this alias.",
+            "examples": ["../pipeline-templates"]
+          }
+        }
+      }
+    },
+    "variableGroups": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "listNames": {
+          "type": "boolean",
+          "default": true,
+          "description": "List variable-group *names* in .env.example when signed in. Values are never fetched."
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "min": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 0,
+          "description": "Fail conversion (exit 3) when the coverage report is below this percentage. 0 = report only."
+        }
+      }
+    },
+    "tasks": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "unknown": {
+          "enum": ["stub", "fail", "prompt"],
+          "default": "stub",
+          "description": "What to do with a task that has no handler."
+        },
+        "overrides": {
+          "type": "object",
+          "description": "Per-task handling, keyed by `Name@major`.",
+          "additionalProperties": {
+            "enum": ["skip", "stub", "fail"]
+          },
+          "examples": [{ "SonarQubePrepare@5": "skip" }]
+        },
+        "execute": {
+          "type": "array",
+          "description": "Tasks to run in high-fidelity real-task mode.",
+          "items": { "type": "string" },
+          "default": [],
+          "examples": [["Npm@1"]]
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "targetOs": {
+          "enum": ["linux", "windows", "macos"],
+          "default": "linux",
+          "description": "Target OS for the generated scripts, overriding pool inference."
+        },
+        "checkoutMode": {
+          "enum": ["clone", "copy", "worktree"],
+          "default": "clone",
+          "description": "How repositories are materialized into the workspace."
+        },
+        "sharedWorkspace": {
+          "type": "boolean",
+          "default": false,
+          "description": "Share one workspace across jobs instead of isolating each job."
+        },
+        "execution": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Where the generated project executes (sandbox isolation).",
+          "properties": {
+            "environment": {
+              "enum": ["auto", "sandbox", "host"],
+              "default": "auto",
+              "description": "auto = sandbox when docker/podman is present, otherwise host."
+            },
+            "image": {
+              "type": ["string", "null"],
+              "default": null,
+              "description": "Override the default vmImage-to-container-image mapping."
+            },
+            "dockerSocket": {
+              "enum": ["auto", "share", "none"],
+              "default": "auto",
+              "description": "Host docker-socket passthrough for pipelines that use docker."
+            }
+          }
+        }
+      }
+    }
+  }
+}
