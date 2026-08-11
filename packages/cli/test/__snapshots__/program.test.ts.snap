@@ -1,0 +1,139 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`CLI scaffold (E13-S01-T01) > help > \`azdo-emu --help\` output is stable 1`] = `
+"Usage: azdo-emu [options] [command]
+
+Convert an Azure DevOps YAML pipeline into a self-contained local project of
+bash scripts.
+
+Options:
+  -V, --version                       print the version and exit
+  --json                              machine-readable output for tooling
+                                      (default: false)
+  -h, --help                          display help for command
+
+Commands:
+  auth                                sign in to Azure DevOps or GitHub, and
+                                      inspect the current session
+  convert [options] <pipeline.yml>    convert a pipeline into a local project of
+                                      bash scripts
+  doctor [options] <outdir>           verify the generated project's tool
+                                      prerequisites from its manifest
+  fetch-artifacts [options] <outdir>  download the pipeline artifacts a
+                                      generated project depends on
+  preview-diff <pipeline.yml>         compare our expansion against the real
+                                      service's final YAML
+  run <outdir> [args...]              convenience proxy to <outdir>/run.sh
+  help [command]                      display help for command
+"
+`;
+
+exports[`CLI scaffold (E13-S01-T01) > help > \`azdo-emu auth --help\` output is stable 1`] = `
+"Usage: azdo-emu auth [options] [command]
+
+sign in to Azure DevOps or GitHub, and inspect the current session
+
+Options:
+  -h, --help       display help for command
+
+Commands:
+  login [options]  sign in and cache a refresh token
+  status           show who you are signed in as, and for which organization
+  help [command]   display help for command
+"
+`;
+
+exports[`CLI scaffold (E13-S01-T01) > help > \`azdo-emu auth login --help\` output is stable 1`] = `
+"Usage: azdo-emu auth login [options]
+
+sign in and cache a refresh token
+
+Options:
+  --github       sign in to GitHub instead of Azure DevOps (default: false)
+  --org <url>    organization URL, e.g. https://dev.azure.com/contoso
+  --mode <mode>  authentication mode (choices: "interactive", "az", "pat")
+  -h, --help     display help for command
+"
+`;
+
+exports[`CLI scaffold (E13-S01-T01) > help > \`azdo-emu auth status --help\` output is stable 1`] = `
+"Usage: azdo-emu auth status [options]
+
+show who you are signed in as, and for which organization
+
+Options:
+  -h, --help  display help for command
+"
+`;
+
+exports[`CLI scaffold (E13-S01-T01) > help > \`azdo-emu convert --help\` output is stable 1`] = `
+"Usage: azdo-emu convert [options] <pipeline.yml>
+
+convert a pipeline into a local project of bash scripts
+
+Arguments:
+  pipeline.yml     the pipeline to convert
+
+Options:
+  -o, --out <dir>  output directory for the generated project
+  -h, --help       display help for command
+"
+`;
+
+exports[`CLI scaffold (E13-S01-T01) > help > \`azdo-emu doctor --help\` output is stable 1`] = `
+"Usage: azdo-emu doctor [options] <outdir>
+
+verify the generated project's tool prerequisites from its manifest
+
+Arguments:
+  outdir      a generated project directory
+
+Options:
+  --sandbox   check inside the sandbox image instead of on the host (default:
+              false)
+  -h, --help  display help for command
+"
+`;
+
+exports[`CLI scaffold (E13-S01-T01) > help > \`azdo-emu fetch-artifacts --help\` output is stable 1`] = `
+"Usage: azdo-emu fetch-artifacts [options] <outdir>
+
+download the pipeline artifacts a generated project depends on
+
+Arguments:
+  outdir      a generated project directory
+
+Options:
+  --refresh   re-download even when the cache is warm (default: false)
+  --latest    resolve each artifact to the latest run instead of the pinned one
+              (default: false)
+  -h, --help  display help for command
+"
+`;
+
+exports[`CLI scaffold (E13-S01-T01) > help > \`azdo-emu preview-diff --help\` output is stable 1`] = `
+"Usage: azdo-emu preview-diff [options] <pipeline.yml>
+
+compare our expansion against the real service's final YAML
+
+Arguments:
+  pipeline.yml  the pipeline to expand on both sides
+
+Options:
+  -h, --help    display help for command
+"
+`;
+
+exports[`CLI scaffold (E13-S01-T01) > help > \`azdo-emu run --help\` output is stable 1`] = `
+"Usage: azdo-emu run [options] <outdir> [args...]
+
+convenience proxy to <outdir>/run.sh
+
+Arguments:
+  outdir      a generated project directory
+  args        arguments forwarded verbatim to run.sh
+
+Options:
+  -h, --help  display help for command
+"
+`;
