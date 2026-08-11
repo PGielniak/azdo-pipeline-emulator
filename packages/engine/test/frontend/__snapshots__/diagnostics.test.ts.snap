@@ -53,7 +53,7 @@ exports[`diagnostics reporter (E01-S01-T03) > json rendering is stable and round
 `;
 
 exports[`diagnostics reporter (E01-S01-T03) > parse errors flow into the diagnostic type and render with a frame 1`] = `
-"error MULTIPLE_DOCS: /azure-pipelines.yml (Line: 2, Col: 1): Source contains multiple documents; please use YAML.parseAllDocuments()
+"error MULTIPLE_DOCUMENTS: /azure-pipelines.yml (Line: 2, Col: 1): a pipeline file must contain exactly one YAML document; remove the second document (the service reports 'Expected stream end parse event')
     1 | a: 1
   > 2 | ---
       | ^^^

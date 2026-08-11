@@ -223,3 +223,78 @@ the vendored snapshot's input set.
 - **Q2 — does the service reject unknown task inputs?** We warn (C-E01-020). An oracle run with a
   deliberately misspelled input on `CmdLine@2` would settle whether the service errors at queue
   time, warns, or ignores it.
+
+## E01-S01-T02 — server-quirk conformance (2026-08-11)
+
+Experiment transcripts: `research/experiments/E01-quirks/` (11 probes, live preview endpoint,
+captured 2026-08-11). Each quirk probe is paired with a control that differs only by the quirk,
+so every 400 below is attributable to the quirk itself: `control-variables` (200) covers the
+anchor and duplicate-key probes, `control-single-doc` (200) covers the document-marker probes.
+
+[C-E01-021] The YAML schema reference states that Azure Pipelines does not implement the whole
+YAML language, and names **anchors**, complex keys and sets as unsupported — but says nothing
+about duplicate mapping keys or multi-document files, which is why those two are settled by
+experiment below rather than by citation.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/yaml-schema/?view=azure-pipelines
+    ("See also", checked 2026-08-11; the section is present in the rendered HTML)
+  — "Azure Pipelines doesn't support all YAML features. Unsupported features include anchors,
+    complex keys, and sets."
+  — https://github.com/MicrosoftDocs/azure-devops-yaml-schema/blob/d089fd2dbb54483ec611eeb478e3eff14be74393/content/index.md#L714-L716
+
+[C-E01-022] **Anchors are rejected outright, and the rejection fires on the anchor *definition*,
+not on its use.** `&shared` alone (never aliased) is rejected exactly like `&shared` + `*shared`
+and like the merge key `<<: *shared`; all three return HTTP 400
+`PipelineValidationException` with the identical message. The message is **file-scoped — it
+carries no `(Line: N, Col: M)`** and ends with a server-side null-reference artifact.
+  — research/experiments/E01-quirks/anchor-only.md · anchor-alias.md · merge-key.md (2026-08-11)
+  — "/azure-pipelines.yml: Anchors are not currently supported. Remove the anchor 'shared'\n
+    Object reference not set to an instance of an object."
+
+[C-E01-023] **Duplicate mapping keys are rejected**, with a positional message naming the key and
+pointing at its **second** occurrence — confirmed at three nesting levels: document root
+(`variables:` twice → `Line: 3, Col: 1`), inside a mapping (`a:` twice → `Line: 3, Col: 3`) and
+inside a step mapping (`displayName:` twice → `Line: 4, Col: 3`).
+  — research/experiments/E01-quirks/dup-key-root.md · dup-key-mapping.md · dup-key-step.md (2026-08-11)
+  — "/azure-pipelines.yml (Line: 3, Col: 3): 'a' is already defined"
+
+[C-E01-028] **The duplicate-key check folds case, and it does so at the mapping layer rather than
+for schema keywords only.** `displayName:` + `displayname:` in a step collide, and so do `a:` +
+`A:` under `variables:` — user-chosen names the schema knows nothing about. The message quotes the
+*second* key with its own spelling. Our check therefore compares lower-cased keys in `quirks.ts`,
+which is schema-unaware by construction.
+  — research/experiments/E01-quirks/dup-key-case.md · dup-key-case-user-data.md (2026-08-11)
+  — "/azure-pipelines.yml (Line: 4, Col: 3): 'displayname' is already defined"
+  — "/azure-pipelines.yml (Line: 3, Col: 3): 'A' is already defined"
+
+[C-E01-024] **A pipeline file may contain only one YAML document**: two documents separated by
+`---` are rejected with a file-scoped (non-positional) parse-stream error.
+  — research/experiments/E01-quirks/multi-doc.md (2026-08-11)
+  — "/azure-pipelines.yml: Expected stream end parse event"
+
+[C-E01-025] **Document *markers* are not document *separators*: a single document is accepted with
+a leading `---` and with a trailing `...`.** Both expand normally (HTTP 200, canonical
+`stages: __default` → `job: Job` → `CmdLine@2` form). docs/01 §1 said "`---` separators rejected",
+which read literally would have made us reject the very common `---`-prefixed pipeline file; the
+doc was corrected (CLAUDE.md rule 5, docs/06 §5 decision 9).
+  — research/experiments/E01-quirks/leading-doc-start.md · trailing-doc-end.md (2026-08-11)
+
+[C-E01-026] The service's own YAML front end therefore rejects on: anchors (any), duplicate keys
+(any level), more than one document. Only the duplicate-key rejection is positional; the other two
+name the file alone, so a diagnostic built from the service's text cannot always be anchored to a
+source range — our own checks do carry ranges, which is a deliberate superset (docs/01 §1 requires
+`file:line:col` on every diagnostic).
+  — research/experiments/E01-quirks/README.md (2026-08-11)
+
+[C-E01-027] In the `yaml` package a node's `range` starts **after** its anchor, so an anchor's own
+position is only available from the CST, where `&name` is a `SourceToken` of `type: 'anchor'`
+carrying `offset`/`source` and living in the documented `start`/`sep` token arrays of collection
+items. Our anchor diagnostic therefore detects on the AST (`node.anchor`, which also covers an
+anchor on the document root, where no content-token exists) and positions from the CST.
+  — https://github.com/eemeli/yaml/blob/ddb21b04cb889722cec8f89dc1b67f19d62d7f7d/docs/07_parsing_yaml.md#L78-L90 (checked 2026-08-11)
+  — "| `&` | anchor |" (token identified by its first character)
+  — https://github.com/eemeli/yaml/blob/ddb21b04cb889722cec8f89dc1b67f19d62d7f7d/docs/07_parsing_yaml.md#L186
+  — "`start`, `sep`, `end` · `SourceToken[]` · Content before, within, and after "actual" values.
+    Includes item and collection indicators, anchors, tags, comments, as well as other things."
+  — verified locally against yaml@2.9.0: `a: &shared first` → anchor token at offset 5, while the
+    scalar node's range starts at `first`; `--- &root` leaves no anchor token under
+    `doc.contents.srcToken` but does set `doc.contents.anchor`.

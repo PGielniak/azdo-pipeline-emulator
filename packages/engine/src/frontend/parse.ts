@@ -4,13 +4,13 @@
 // stays reachable on the underlying document (C-E01-005). Template expressions
 // `${{ … }}` are never interpreted here — they stay plain scalar strings/keys.
 //
-// Server-quirk conformance (anchors/aliases, duplicate keys, multi-doc) is E01-S01-T02:
-// this module only passes through the yaml package's own defaults (duplicate-key and
-// multiple-document errors) and adds two *structural* errors (ALIAS_UNSUPPORTED,
-// NON_SCALAR_KEY) for constructs the string-keyed DOM cannot represent.
+// Server-quirk conformance (anchors/aliases, duplicate keys, multi-doc) lives in ./quirks.ts
+// (E01-S01-T02) and is applied here; this module adds one *structural* error (NON_SCALAR_KEY)
+// for the one construct the string-keyed DOM cannot represent at all.
 import type { Document } from 'yaml';
 import { isAlias, isMap, isNode, isScalar, isSeq, LineCounter, parseDocument } from 'yaml';
 import type { Node as YamlNode, Pair, Range as YamlRange, Scalar } from 'yaml';
+import { serverQuirkErrors, YAML_MULTIPLE_DOCS } from './quirks.js';
 
 /** 1-indexed source range; `endLine`/`endCol` point at the first position past the node. */
 export interface SourceRange {
@@ -59,14 +59,13 @@ export interface SequenceNode {
 export type PipelineNode = ScalarNode | MappingNode | SequenceNode;
 
 export interface ParseError {
-  /** yaml package error codes pass through (e.g. DUPLICATE_KEY); ours are listed below. */
+  /** yaml package error codes pass through (e.g. BAD_INDENT); ours are listed here + quirks.ts. */
   code: string;
   message: string;
   pos: Provenance;
 }
 
-/** Structural errors emitted by this module (server conformance wording lands in T02). */
-export const ALIAS_UNSUPPORTED = 'ALIAS_UNSUPPORTED';
+/** The only structural error owned by this module; conformance codes live in ./quirks.ts. */
 export const NON_SCALAR_KEY = 'NON_SCALAR_KEY';
 
 export interface ParseResult {
@@ -97,22 +96,29 @@ const STYLE_BY_TYPE: Record<string, ScalarStyle> = {
 export function parsePipelineYaml(source: string, file: string): ParseResult {
   const lineCounter = new LineCounter();
   // prettyErrors off: T03's reporter renders its own code frames; we only need offsets.
+  // uniqueKeys off: duplicate keys are a *server-quirk* decision (C-E01-023) — both pairs must
+  // survive so quirks.ts can report the second occurrence the way the service does.
   const doc = parseDocument(source, {
     lineCounter,
     keepSourceTokens: true,
     prettyErrors: false,
+    uniqueKeys: false,
   });
 
   const errors: ParseError[] = [];
   const ctx = { file, lineCounter, errors };
 
   for (const err of doc.errors) {
+    // Superseded by quirks.ts's MULTIPLE_DOCUMENTS, which words it as the service does.
+    if (err.code === YAML_MULTIPLE_DOCS) continue;
     errors.push({
       code: err.code,
       message: err.message,
       pos: provenanceOf(ctx, [err.pos[0], err.pos[1], err.pos[1]]),
     });
   }
+
+  errors.push(...serverQuirkErrors({ doc, posOf: (range) => provenanceOf(ctx, [...range]) }));
 
   const root = doc.contents === null ? undefined : convertNode(ctx, doc.contents);
   return { file, source, root, errors, doc };
@@ -168,15 +174,10 @@ function convertNode(ctx: Ctx, node: YamlNode): PipelineNode | undefined {
     }
     return { kind: 'sequence', items, pos };
   }
-  if (isAlias(node)) {
-    ctx.errors.push({
-      code: ALIAS_UNSUPPORTED,
-      message:
-        'YAML aliases are not representable in the pipeline DOM (anchors/aliases conformance: E01-S01-T02)',
-      pos: nodeProvenance(ctx, node),
-    });
-    return undefined;
-  }
+  // An alias is unreachable in an accepted document: it implies an anchor, and quirks.ts has
+  // already rejected the file for the anchor itself (C-E01-022). It is dropped from the DOM
+  // rather than resolved, so no aliased value can leak into a pipeline we refuse to convert.
+  if (isAlias(node)) return undefined;
   return undefined;
 }
 

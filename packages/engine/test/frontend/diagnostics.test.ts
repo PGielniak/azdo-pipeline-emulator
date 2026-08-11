@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MULTIPLE_DOCUMENTS,
   formatLocation,
   parseErrorToDiagnostic,
   parsePipelineYaml,
@@ -95,8 +96,8 @@ describe('diagnostics reporter (E01-S01-T03)', () => {
   it('parse errors flow into the diagnostic type and render with a frame', () => {
     const bad = 'a: 1\n---\nb: 2\n';
     const parsed = parsePipelineYaml(bad, '/azure-pipelines.yml');
-    const multiDoc = parsed.errors.find((e) => e.code === 'MULTIPLE_DOCS');
-    if (!multiDoc) throw new Error('expected MULTIPLE_DOCS parse error');
+    const multiDoc = parsed.errors.find((e) => e.code === MULTIPLE_DOCUMENTS);
+    if (!multiDoc) throw new Error('expected MULTIPLE_DOCUMENTS parse error');
     const diagnostic = parseErrorToDiagnostic(multiDoc);
     expect(diagnostic.severity).toBe('error');
     expect(diagnostic.file).toBe('/azure-pipelines.yml');

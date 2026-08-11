@@ -10,7 +10,11 @@ must become commit-pinned permalinks when cited in claims.
 All rows below: **verified 2026-07-30** (HTTP 200; learn.microsoft.com redirects to `/en-us/` +
 `?view=azure-pipelines` moniker — links kept moniker-free on purpose). The yaml-schema pages
 carry their source commit in page metadata (`git_commit_id`); quotes taken 2026-07-30 are from
-MicrosoftDocs/azure-devops-yaml-schema-pr @ `d089fd2d` — cite that pin alongside the URL.
+MicrosoftDocs/azure-devops-yaml-schema-pr @ `d089fd2d` — cite that pin alongside the URL. The
+public mirror **MicrosoftDocs/azure-devops-yaml-schema** carries the same `content/*.md` sources
+and is the permalink target when a rendered section must be quoted exactly (verified 2026-08-11:
+`content/index.md` @ `d089fd2d` — the "See also" statement on unsupported YAML features, C-E01-021,
+which is present in the rendered HTML but dropped by markdown converters).
 
 | Area | URL |
 |---|---|
@@ -89,7 +93,7 @@ All rows: **verified + pinned 2026-07-30** (HEAD of that day; paths confirmed vi
 | **microsoft/azure-pipelines-language-server @ `543ceeec`** (added 2026-07-30, E01-S02-T01) | Reference semantics for the schema's non-standard keywords and for pipeline-value typing — `language-service/src/parser/jsonParser.ts`: `firstProperty` branch selection + message (C-E01-009/018), `ignoreCase`/`aliases` (C-E01-017), boolean/number/null→string and `${{ }}`/`$( )`/`$[ ]` exemptions (C-E01-015/016). This is the validator the VS Code extension actually runs over the vendored schema |
 | actions/runner-images @ `4055b521` | Hosted image contents: `images/ubuntu/` (`Ubuntu2204/2404/2604[-Arm64]-Readme.md`, `toolsets/`) for doctor/E2E/sandbox-image design |
 | bats-core/bats-core @ `ae4b94d7` | Runtime test framework (invocation/report claims C-E00-003..005) + https://bats-core.readthedocs.io/en/stable/usage.html |
-| eemeli/yaml — npm **2.9.0** = tag v2.9.0 = `ddb21b04` (pinned 2026-07-30, E01-S01-T01; earlier HEAD check `bf03c0cb`) | CST/source-position APIs verified in `docs/` at the pin: `range=[start,value-end,node-end]`, `lineCounter.linePos` 1-indexed, `keepSourceTokens`→`srcToken`, Scalar.type styles (C-E01-001..006); rendered docs https://eemeli.org/yaml/ (200) |
+| eemeli/yaml — npm **2.9.0** = tag v2.9.0 = `ddb21b04` (pinned 2026-07-30, E01-S01-T01; earlier HEAD check `bf03c0cb`) | CST/source-position APIs verified in `docs/` at the pin: `range=[start,value-end,node-end]`, `lineCounter.linePos` 1-indexed, `keepSourceTokens`→`srcToken`, Scalar.type styles (C-E01-001..006); `docs/07_parsing_yaml.md` CST token table — `&`→`anchor` SourceToken with `offset`/`source`, carried in the `start`/`sep`/`end` arrays (C-E01-027, verified 2026-08-11); rendered docs https://eemeli.org/yaml/ (200) |
 | qetza/replacetokens-task @ `3b06eec6` | Marketplace task ground truth (repo name resolved 2026-07-30) |
 | git-scm.com/docs · gnu.org/software/bash/manual/bash.html | git flag + shell semantics citations (both 200) |
 

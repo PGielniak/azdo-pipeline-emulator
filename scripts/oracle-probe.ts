@@ -10,24 +10,10 @@
 //
 // Requires .env.oracle at the repo root (see research/oracle-setup.md). previewRun is always
 // true, so nothing is ever queued and the org needs no agents or parallelism.
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import {
-  configFromEnv,
-  preview,
-  redact,
-  type OracleConfig,
-  type PreviewOutcome,
-} from '../packages/fetch/src/oracle.ts';
+import { runProbes, type Probe } from './oracle-transcript.ts';
 
 const OUT_DIR = path.join('research', 'experiments', 'oracle-spike');
-
-interface Probe {
-  readonly name: string;
-  /** What this probe establishes — copied into the transcript header. */
-  readonly asserts: string;
-  readonly yaml: string;
-}
 
 const PROBES: readonly Probe[] = [
   {
@@ -73,82 +59,4 @@ const PROBES: readonly Probe[] = [
   },
 ];
 
-async function loadEnvFile(file: string): Promise<Record<string, string | undefined>> {
-  const merged: Record<string, string | undefined> = { ...process.env };
-  let raw: string;
-  try {
-    raw = await readFile(file, 'utf8');
-  } catch {
-    return merged; // fall back to the ambient environment (CI supplies real secrets)
-  }
-  for (const line of raw.split('\n')) {
-    const trimmed = line.trim();
-    if (trimmed.length === 0 || trimmed.startsWith('#')) continue;
-    const eq = trimmed.indexOf('=');
-    if (eq === -1) continue;
-    merged[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
-  }
-  return merged;
-}
-
-function describe(outcome: PreviewOutcome): string {
-  switch (outcome.kind) {
-    case 'expanded':
-      return `HTTP ${outcome.status} · expanded`;
-    case 'rejected':
-      return `HTTP ${outcome.status} · rejected · typeKey=${outcome.typeKey ?? '(none)'}`;
-    case 'unauthenticated':
-      return `HTTP ${outcome.status} · unauthenticated (redirect to sign-in)`;
-    case 'transport':
-      return `HTTP ${outcome.status} · unparseable body`;
-  }
-}
-
-function transcript(probe: Probe, config: OracleConfig, outcome: PreviewOutcome): string {
-  const payload =
-    outcome.kind === 'expanded'
-      ? `### Response — finalYaml\n\n\`\`\`yaml\n${outcome.finalYaml}\`\`\`\n`
-      : outcome.kind === 'rejected'
-        ? `### Response — error body\n\n\`\`\`json\n${JSON.stringify(outcome.body, null, 2)}\n\`\`\`\n`
-        : `### Response\n\n\`\`\`\n${JSON.stringify(outcome, null, 2)}\n\`\`\`\n`;
-
-  const body = [
-    `# oracle probe — ${probe.name}`,
-    '',
-    probe.asserts,
-    '',
-    `- Endpoint: \`POST {org}/{project}/_apis/pipelines/{pipelineId}/preview?api-version=${config.apiVersion}\``,
-    `- Request body: \`{"previewRun": true, "yamlOverride": <below>}\``,
-    `- Outcome: **${describe(outcome)}**`,
-    '',
-    '### Request — yamlOverride',
-    '',
-    '```yaml',
-    probe.yaml.replace(/\n$/, ''),
-    '```',
-    '',
-    payload,
-  ].join('\n');
-
-  return redact(body, config);
-}
-
-async function main(): Promise<void> {
-  const env = await loadEnvFile('.env.oracle');
-  const config = configFromEnv(env);
-  const only = process.argv[2];
-  const selected = only === undefined ? PROBES : PROBES.filter((p) => p.name === only);
-  if (selected.length === 0) {
-    throw new Error(`no probe named ${only}; known: ${PROBES.map((p) => p.name).join(', ')}`);
-  }
-
-  await mkdir(OUT_DIR, { recursive: true });
-  for (const probe of selected) {
-    const outcome = await preview(config, { yamlOverride: probe.yaml });
-    const file = path.join(OUT_DIR, `${probe.name}.md`);
-    await writeFile(file, transcript(probe, config, outcome), 'utf8');
-    console.log(`${probe.name.padEnd(18)} ${describe(outcome)}  -> ${file}`);
-  }
-}
-
-await main();
+await runProbes(PROBES, OUT_DIR);

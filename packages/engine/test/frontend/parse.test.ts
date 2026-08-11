@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ALIAS_UNSUPPORTED,
+  ANCHOR_UNSUPPORTED,
+  DUPLICATE_KEY,
+  MULTIPLE_DOCUMENTS,
   NON_SCALAR_KEY,
   parsePipelineYaml,
   snippetOf,
@@ -175,11 +177,9 @@ describe('parse edge cases (E01-S01-T01)', () => {
     expect(err.pos.range.col).toBeGreaterThanOrEqual(1);
   });
 
-  it('aliases produce the structural ALIAS_UNSUPPORTED error (semantics: T02)', () => {
+  it('aliases are dropped from the DOM; the anchor is what gets reported (quirks.ts, C-E01-022)', () => {
     const r = parsePipelineYaml('a: &x 1\nb: *x\n', FILE);
-    const alias = r.errors.find((e) => e.code === ALIAS_UNSUPPORTED);
-    expect(alias).toBeDefined();
-    expect(alias?.pos.range).toMatchObject({ line: 2, col: 4 });
+    expect(r.errors.some((e) => e.code === ANCHOR_UNSUPPORTED)).toBe(true);
     // the representable part of the DOM is still built
     expect(asScalar(entry(asMap(r.root), 'a').value).value).toBe(1);
   });
@@ -189,13 +189,13 @@ describe('parse edge cases (E01-S01-T01)', () => {
     expect(r.errors.some((e) => e.code === NON_SCALAR_KEY)).toBe(true);
   });
 
-  it('duplicate keys and multi-doc pass through as yaml-package errors (C-E01-002; server conformance: T02)', () => {
-    expect(
-      parsePipelineYaml('a: 1\na: 2\n', FILE).errors.some((e) => e.code === 'DUPLICATE_KEY'),
-    ).toBe(true);
-    expect(
-      parsePipelineYaml('a: 1\n---\nb: 2\n', FILE).errors.some((e) => e.code === 'MULTIPLE_DOCS'),
-    ).toBe(true);
+  it('duplicate keys and multi-doc are reported by quirks.ts, not by the yaml package (C-E01-023/024)', () => {
+    expect(parsePipelineYaml('a: 1\na: 2\n', FILE).errors.map((e) => e.code)).toEqual([
+      DUPLICATE_KEY,
+    ]);
+    expect(parsePipelineYaml('a: 1\n---\nb: 2\n', FILE).errors.map((e) => e.code)).toEqual([
+      MULTIPLE_DOCUMENTS,
+    ]);
   });
 
   function asMap(n: PipelineNode | undefined): MappingNode {
