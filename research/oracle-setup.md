@@ -168,10 +168,10 @@ Grounding: C-E00-019/020. UI path per the PAT doc (verified 2026-07-30):
 |---|---|
 | Org created (name **redacted**; note only that it exists) | 2026-07-31 — existing personal org reused (see deviation below), not a throwaway |
 | Project + pipeline created, `definitionId` noted | 2026-07-31 — project `oracle` (private, Basic process) + pipeline `oracle-anchor` `definitionId=19`; anchor `azure-pipelines.yml` pushed to `refs/heads/main` |
-| PAT created (scope, expiry date) | 2026-07-31 — user-supplied, 84 chars (matches C-E00-021 format); scope broader than Build (read) — org-wide project list succeeded. **Rotation pending**, see below |
+| PAT created (scope, expiry date) | 2026-07-31 — user-supplied, 84 chars (matches C-E00-021 format); scope broader than Build (read). **Rotated 2026-08-11** (deviation 3 closed): replacement issued by the owner and written straight into `.env.oracle` — never through chat this time — old token revoked. Verified live: the full corpus (10 previews + repo tree reads) ran green against it and reproduced byte-identical goldens |
 | Step-5 preview curl returned 200 + `finalYaml` | 2026-07-31 — HTTP 200; `steps:`-only probe expanded to `stages: __default` → `job: Job` → `task: CmdLine@2`, confirming C-E00-017/018 (route, api-version, body) and the `finalYaml` field name live |
 | `.env.oracle` written locally (gitignore verified) | 2026-07-31 — `git check-ignore -v` → `.gitignore:7:.env.*`, confirmed before the token was written |
-| GitHub repo secrets stored | _deferred_ — see rotation note; only needed by E12-S03 (workflow no-ops until `ORACLE_ENABLED`) |
+| GitHub repo secrets stored | 2026-08-11 — all four (`AZDO_ORG_URL`, `AZDO_PROJECT`, `AZDO_ORACLE_PIPELINE_ID`, `AZDO_PAT`) stored as **secrets** by the owner, so the org name stays out of public logs. Repo variable `ORACLE_ENABLED` deliberately still unset — E12-S03 sets it when the preview-diff harness exists |
 
 ### Deviations from this runbook (recorded 2026-07-31)
 
@@ -184,8 +184,11 @@ Grounding: C-E00-019/020. UI path per the PAT doc (verified 2026-07-30):
 2. **PAT scope is wider than documented.** C-E00-019 says Build (read) suffices, and the preview
    call proves it works — but this token also lists every project in the org, so it is not
    minimally scoped. The narrowing happens at rotation.
-3. **PAT rotation outstanding.** The current token was transmitted in cleartext through a chat
-   transcript and must be treated as compromised: revoke it, issue a replacement scoped
-   **Build (read) on this org only**, write it straight into `.env.oracle` (never into a
-   transcript), re-run the Step-5 curl, and only then store the four GitHub repo secrets.
-   Until that is done, item 6 above stays `_deferred_` and CI has no oracle credentials.
+3. **PAT rotation — closed 2026-08-11.** The original token had been transmitted in cleartext
+   through a chat transcript and was treated as compromised. The owner issued a replacement,
+   wrote it directly into `.env.oracle` (no chat round-trip), stored the four GitHub repo
+   secrets, and revoked the old token; a full `pnpm corpus-oracle` run against the new token
+   returned all ten expansions byte-identical, which exercises Build (read) and Code (read).
+   **Code (write) is not yet exercised** by that check — nothing had changed, so no push was
+   attempted; the first corpus fixture edit will prove it, and a 403 there means re-issuing with
+   Code (read & write). Scope minimality (deviation 2) was not re-audited at rotation.
