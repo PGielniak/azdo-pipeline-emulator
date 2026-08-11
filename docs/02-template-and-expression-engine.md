@@ -125,7 +125,9 @@ Expansion maintains an origin map: every output DOM node → stack of `(file, li
 
 ## 8. Oracle verification (the parity contract)
 
-`POST {org}/{project}/_apis/pipelines/{pipelineId}/preview` with `{"previewRun": true, "yamlOverride": "<candidate yaml>", "templateParameters": {…}}` returns the service's `finalYaml` **without running anything**. (api-version verified at impl time; requires a real pipeline definition to hang the preview on — the harness maintains one dummy definition in the test org.)
+`POST {org}/{project}/_apis/pipelines/{pipelineId}/preview?api-version=7.1` with `{"previewRun": true, "yamlOverride": "<candidate yaml>", "templateParameters": {…}}` returns the service's `finalYaml` **without running anything**. (api-version 7.1 and the single-field `{finalYaml}` response confirmed live in E00-S03-T02, C-E00-022; requires a real pipeline definition to hang the preview on — the harness maintains one dummy definition in the test org.) Client: `packages/fetch/src/oracle.ts`.
+
+Three live-verified traps the harness must respect (C-E00-024/025/026, transcripts in `research/experiments/oracle-spike/`): an **empty `yamlOverride` returns 200** carrying the *committed* YAML rather than erroring, so a fixture generated from an empty override is silently wrong; an **invalid PAT returns 302** to a sign-in page, not 401, so the HTTP client must not follow redirects; and a **missing `pipelineId` returns 500**, not 404, so 5xx here must not be blindly retried as transient.
 
 - `azdo-emu preview-diff <yaml>`: expands locally, fetches `finalYaml`, normalizes both (key order, insignificant whitespace, server-injected defaults), semantic-diffs, exits non-zero on drift.
 - CI: nightly corpus run (docs/06 §3). Every ambiguity we resolve empirically becomes a permanent fixture pair so regressions in *our* engine — or behavior changes in *their* service — surface immediately.
