@@ -21,6 +21,7 @@
     "oracle-provision": "node scripts/oracle-provision.ts",
     "corpus-probe": "node scripts/corpus-probe.ts",
     "corpus-oracle": "node scripts/corpus-oracle.ts",
+    "normalizer-survey": "node scripts/normalizer-survey.ts",
     "lint": "pnpm run lint:es && pnpm run lint:format && pnpm run lint:shell",
     "lint:es": "eslint .",
     "lint:format": "prettier --check .",
@@ -37,6 +38,7 @@
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.65.0",
-    "vitest": "4.1.10"
+    "vitest": "4.1.10",
+    "yaml": "2.9.0"
   }
 }

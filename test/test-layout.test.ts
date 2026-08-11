@@ -127,3 +127,26 @@ describe('coverage thresholds', () => {
     }
   });
 });
+
+describe('dependency pins', () => {
+  // `yaml` is declared in three package.json files — the two packages that parse pipelines and
+  // the repo root (for scripts/normalizer-survey.ts). An exact pin per file only helps while the
+  // three agree: a survey parsing with a different yaml than the engine would produce evidence
+  // about a parser the product does not use. This repo already treats pin drift as a test
+  // concern (C-E12-010).
+  const manifests = ['package.json', 'packages/engine/package.json', 'packages/cli/package.json'];
+
+  it('pins yaml to the same exact version everywhere it is declared', () => {
+    const versions = manifests.map((file) => {
+      const json = JSON.parse(readFileSync(join(repoRoot, file), 'utf8')) as {
+        dependencies?: Record<string, string>;
+        devDependencies?: Record<string, string>;
+      };
+      const pin = json.dependencies?.yaml ?? json.devDependencies?.yaml;
+      expect(pin, `${file} no longer declares yaml`).toBeDefined();
+      expect(pin, `${file} must pin yaml exactly`).toMatch(/^\d+\.\d+\.\d+$/);
+      return pin;
+    });
+    expect(new Set(versions).size, `yaml pins diverged: ${versions.join(', ')}`).toBe(1);
+  });
+});
