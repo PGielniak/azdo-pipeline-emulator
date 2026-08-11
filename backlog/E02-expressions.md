@@ -6,10 +6,14 @@ Primary grounding set: learn.microsoft.com/azure/devops/pipelines/process/expres
 ## E02-S01 — As an engine developer, the documented expression grammar parses into one AST used by both backends, so evaluation and compilation can never diverge structurally.
 Acceptance: parser covers the full documented syntax; parse errors match server style.
 
-- [ ] **E02-S01-T01 — Tokenizer + parser**
+- [x] **E02-S01-T01 — Tokenizer + parser**
   **Do:** `packages/engine/src/expr/{lexer,parser}.ts`: single-quoted strings (with `''` escape), numbers, booleans, null, identifiers, property access `a.b`, index access `a['b']`/`a[0]`, function calls, nesting. AST nodes carry source spans.
   **Ground:** expressions doc syntax sections (pin per-claim); cross-read the tokenizer in the agent repo's expressions SDK to confirm literal rules (esp. string escaping, number formats) — pin permalinks to the relevant methods. Claims `[C-E02-…]` per rule.
   **Done:** parser test table ≥ 60 cases incl. error cases; spans verified.
+  *Done 2026-08-11:* `packages/engine/src/expr/{lexer,parser}.ts`; 68-row table + span-slice and print
+  round-trip invariants (`packages/engine/test/expr/parser.test.ts`, 85 tests). Grammar decided by 74
+  live probes (`research/experiments/E02-grammar/survey.md`) because the fork named above is the
+  **Actions** dialect: Azure Pipelines has no operators at all (C-E02-001).
 - [ ] **E02-S01-T02 — Server-style parse errors**
   **Do:** error messages carry the offending expression with a caret position, mirroring service phrasing where documented.
   **Ground:** collect 5 real service error strings by submitting invalid expressions via oracle preview; store transcripts `research/experiments/E02-errors/`.
@@ -22,6 +26,9 @@ Acceptance: the documented conversion table implemented and cross-verified.
   **Do:** `ExprValue` = Null | Boolean | Number(double) | String | Version | Object | Array with kind tags; Version parsing (2–4 numeric parts).
   **Ground:** expressions doc "Types"/conversion sections; agent expressions SDK value kinds (pin). Record claim per type rule.
   **Done:** unit tests for construction/round-trip incl. Version edge cases (`1.2`, `1.2.3.4`, invalid).
+  *Note (E02-S01-T01, C-E02-005):* "Version 2–4 parts" above is wrong — a Version has **3 or 4**
+  segments; `1.2` is a Number, settled live by `gt(1.10, 1.9)` → False. The lexer already classifies
+  both, so this task inherits the split rather than re-deciding it.
 - [ ] **E02-S02-T02 — Coercion & equality table**
   **Do:** implement conversion matrix + `eq/ne/lt/le/gt/ge` semantics: ordinal-ignore-case string compare, Boolean→String `'True'/'False'`, String→Number invariant parse (failure semantics per doc), Null interactions, Version comparisons.
   **Ground:** the doc's conversion table verbatim (quote each cell you encode as a claim); ambiguous cells (`'' vs null`, objects in `eq`, number formatting of `0.5`) → oracle experiments with `${{ }}` probes; transcripts in `research/experiments/E02-coercion/`.

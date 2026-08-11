@@ -22,6 +22,7 @@
     "corpus-probe": "node scripts/corpus-probe.ts",
     "corpus-oracle": "node scripts/corpus-oracle.ts",
     "normalizer-survey": "node scripts/normalizer-survey.ts",
+    "expr-grammar-survey": "node scripts/expr-grammar-survey.ts",
     "lint": "pnpm run lint:es && pnpm run lint:format && pnpm run lint:shell",
     "lint:es": "eslint .",
     "lint:format": "prettier --check .",
