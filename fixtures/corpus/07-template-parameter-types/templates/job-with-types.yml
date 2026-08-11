@@ -1,0 +1,48 @@
+parameters:
+- name: jobSuffix
+  type: string
+  default: default
+- name: imageName
+  type: string
+- name: retries
+  type: number
+- name: verbose
+  type: boolean
+- name: settings
+  type: object
+- name: customStep
+  type: step
+- name: extraSteps
+  type: stepList
+
+jobs:
+- job: typed_${{ parameters.jobSuffix }}
+  displayName: Typed parameters (${{ parameters.jobSuffix }})
+  pool:
+    vmImage: ${{ parameters.imageName }}
+  variables:
+    timeoutSetting: ${{ parameters.settings.timeout }}
+    nestedSetting: ${{ parameters.settings.nested.key }}
+  steps:
+  - script: echo "retries=${{ parameters.retries }} verbose=${{ parameters.verbose }}"
+    displayName: Scalars survive their types
+    retryCountOnTaskFailure: ${{ parameters.retries }}
+
+  - ${{ if parameters.verbose }}:
+    - script: echo "verbose mode on"
+      displayName: Truthiness of a boolean parameter
+
+  - script: echo "timeout=$(timeoutSetting) nested=$(nestedSetting)"
+    displayName: Object parameter indexed by path
+
+  - ${{ each tag in parameters.settings.tags }}:
+    - script: echo "tag ${{ tag }}"
+      displayName: Tag ${{ tag }}
+
+  - ${{ parameters.customStep }}
+
+  - ${{ each step in parameters.extraSteps }}:
+    - ${{ step }}
+
+  - script: echo "count=${{ length(parameters.extraSteps) }} joined=${{ join(',', parameters.settings.tags) }}"
+    displayName: Functions over parameter collections

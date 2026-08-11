@@ -1,0 +1,82 @@
+trigger: none
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  releaseName: corpus-app
+
+stages:
+- stage: build
+  jobs:
+  - job: package
+    steps:
+    - script: |
+        mkdir -p $(Build.ArtifactStagingDirectory)/drop
+        echo "app" > $(Build.ArtifactStagingDirectory)/drop/app.txt
+      displayName: Package
+    - publish: $(Build.ArtifactStagingDirectory)/drop
+      artifact: drop
+
+- stage: deploy_staging
+  displayName: Deploy to staging
+  dependsOn: build
+  jobs:
+  - deployment: staging
+    displayName: Staging (runOnce)
+    environment: corpus-staging
+    variables:
+      slot: staging
+    strategy:
+      runOnce:
+        preDeploy:
+          steps:
+          - download: current
+            artifact: drop
+          - script: echo "preDeploy for $(releaseName) into $(slot)"
+        deploy:
+          steps:
+          - template: /corpus/08-deployment-runonce/templates/deploy-steps.yml
+            parameters:
+              slot: staging
+        routeTraffic:
+          steps:
+          - script: echo "routing traffic"
+        postRouteTraffic:
+          steps:
+          - script: echo "smoke test"
+        on:
+          failure:
+            steps:
+            - script: echo "rolling back"
+              displayName: Rollback
+          success:
+            steps:
+            - script: echo "deployment succeeded"
+
+- stage: deploy_production
+  displayName: Deploy to production
+  dependsOn: deploy_staging
+  condition: succeeded()
+  jobs:
+  - deployment: production
+    environment: corpus-production
+    strategy:
+      rolling:
+        maxParallel: 2
+        preDeploy:
+          steps:
+          - script: echo "preparing $(Agent.Name)"
+        deploy:
+          steps:
+          - script: echo "rolling deploy"
+        postRouteTraffic:
+          steps:
+          - script: echo "health check"
+
+  - job: notify
+    dependsOn: production
+    condition: always()
+    steps:
+    - script: echo "deployment result was $(Agent.JobStatus)"

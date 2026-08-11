@@ -1,0 +1,119 @@
+trigger:
+  enabled: false
+pr:
+  enabled: false
+pool:
+  vmImage: ubuntu-latest
+variables:
+- name: releaseName
+  value: corpus-app
+stages:
+- stage: build
+  jobs:
+  - job: package
+    steps:
+    - task: CmdLine@2
+      displayName: Package
+      inputs:
+        script: |
+          mkdir -p $(Build.ArtifactStagingDirectory)/drop
+          echo "app" > $(Build.ArtifactStagingDirectory)/drop/app.txt
+    - task: ecdc45f6-832d-4ad9-b52b-ee49e94659be@1
+      inputs:
+        path: $(Build.ArtifactStagingDirectory)/drop
+        artifactName: drop
+- stage: deploy_staging
+  displayName: Deploy to staging
+  dependsOn:
+  - build
+  jobs:
+  - deployment: staging
+    displayName: Staging (runOnce)
+    environment:
+      name: corpus-staging
+    variables:
+    - name: slot
+      value: staging
+    strategy:
+      runOnce:
+        preDeploy:
+          steps:
+          - task: 30f35852-3f7e-4c0c-9a88-e127b4f97211@1
+            inputs:
+              alias: current
+              artifact: drop
+          - task: CmdLine@2
+            inputs:
+              script: echo "preDeploy for $(releaseName) into $(slot)"
+        deploy:
+          steps:
+          - task: CmdLine@2
+            displayName: Deploy to staging
+            inputs:
+              script: echo "deploying $(releaseName) to staging"
+          - task: CmdLine@2
+            inputs:
+              script: echo "artifact at $(Pipeline.Workspace)/drop/app.txt"
+          - task: CmdLine@2
+            displayName: Health check
+            retryCountOnTaskFailure: 3
+            inputs:
+              script: echo "probing /healthz"
+        routeTraffic:
+          steps:
+          - task: CmdLine@2
+            inputs:
+              script: echo "routing traffic"
+        postRouteTraffic:
+          steps:
+          - task: CmdLine@2
+            inputs:
+              script: echo "smoke test"
+        on:
+          failure:
+            steps:
+            - task: CmdLine@2
+              displayName: Rollback
+              inputs:
+                script: echo "rolling back"
+          success:
+            steps:
+            - task: CmdLine@2
+              inputs:
+                script: echo "deployment succeeded"
+- stage: deploy_production
+  displayName: Deploy to production
+  dependsOn:
+  - deploy_staging
+  condition: succeeded()
+  jobs:
+  - deployment: production
+    environment:
+      name: corpus-production
+    strategy:
+      rolling:
+        maxParallel: 2
+        preDeploy:
+          steps:
+          - task: CmdLine@2
+            inputs:
+              script: echo "preparing $(Agent.Name)"
+        deploy:
+          steps:
+          - task: CmdLine@2
+            inputs:
+              script: echo "rolling deploy"
+        postRouteTraffic:
+          steps:
+          - task: CmdLine@2
+            inputs:
+              script: echo "health check"
+  - job: notify
+    dependsOn:
+    - production
+    condition: always()
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo "deployment result was $(Agent.JobStatus)"
+

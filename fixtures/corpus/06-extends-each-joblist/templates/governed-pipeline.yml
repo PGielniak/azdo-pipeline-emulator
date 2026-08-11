@@ -1,0 +1,44 @@
+# The "governance template" shape: a central team owns the pipeline skeleton, product teams pass
+# their jobs in as a jobList parameter and cannot remove the mandated steps.
+parameters:
+- name: buildJobs
+  type: jobList
+  default: []
+- name: deployStages
+  type: object
+  default: []
+- name: enforceScan
+  type: boolean
+  default: true
+
+variables:
+  governedBy: platform-team
+
+stages:
+- stage: build
+  displayName: Build (governed)
+  jobs:
+  - ${{ each job in parameters.buildJobs }}:
+    - ${{ each pair in job }}:
+        ${{ if ne(pair.key, 'steps') }}:
+          ${{ pair.key }}: ${{ pair.value }}
+      steps:
+      - script: echo "mandated pre-step for ${{ job.job }}"
+        displayName: Mandated pre-step
+      - ${{ job.steps }}
+      - ${{ if eq(parameters.enforceScan, true) }}:
+        - template: scan.yml
+          parameters:
+            component: ${{ job.job }}
+
+- ${{ each stage in parameters.deployStages }}:
+  - stage: deploy_${{ stage.name }}
+    displayName: Deploy to ${{ stage.name }}
+    dependsOn:
+    - build
+    ${{ if eq(stage.approvalRequired, true) }}:
+      condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+    - job: deploy
+      steps:
+      - script: echo "deploying to ${{ stage.name }} (governed by $(governedBy))"

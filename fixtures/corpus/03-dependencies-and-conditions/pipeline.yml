@@ -1,0 +1,72 @@
+trigger: none
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+- stage: probe
+  jobs:
+  - job: detect
+    steps:
+    - bash: |
+        echo "##vso[task.setvariable variable=changedApi;isOutput=true]true"
+        echo "##vso[task.setvariable variable=changedWeb;isOutput=true]false"
+      name: flags
+      displayName: Detect what changed
+    - bash: echo "##vso[task.setvariable variable=localOnly]not-an-output"
+      displayName: Job-local variable
+    - script: echo "local=$(localOnly)"
+
+- stage: build
+  dependsOn: probe
+  variables:
+    apiChanged: $[ stageDependencies.probe.detect.outputs['flags.changedApi'] ]
+  jobs:
+  - job: api
+    condition: eq(variables.apiChanged, 'true')
+    steps:
+    - script: echo "building api"
+    - bash: echo "##vso[task.setvariable variable=version;isOutput=true]1.2.3"
+      name: meta
+
+  - job: web
+    condition: eq(stageDependencies.probe.detect.outputs['flags.changedWeb'], 'true')
+    steps:
+    - script: echo "building web"
+
+  - job: summary
+    dependsOn:
+    - api
+    - web
+    condition: not(failed())
+    variables:
+      apiVersion: $[ dependencies.api.outputs['meta.version'] ]
+    steps:
+    - script: echo "api version $(apiVersion)"
+    - script: echo "web was skipped"
+      condition: eq(dependencies.web.result, 'Skipped')
+    - script: echo "always runs"
+      condition: always()
+    - script: echo "runs even after a failure earlier in the job"
+      condition: succeededOrFailed()
+
+- stage: report
+  dependsOn:
+  - probe
+  - build
+  condition: |
+    and(
+      succeeded('build'),
+      eq(dependencies.probe.result, 'Succeeded')
+    )
+  jobs:
+  - job: publish_report
+    timeoutInMinutes: 5
+    continueOnError: true
+    steps:
+    - script: echo "reporting"
+      continueOnError: true
+      retryCountOnTaskFailure: 2
+    - script: exit 0
+      condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))

@@ -144,8 +144,23 @@ Grounding: C-E00-019/020. UI path per the PAT doc (verified 2026-07-30):
   `research/experiments/`, replace the org name with `{org}` and check no PAT slipped in.
   PATs are mechanically detectable: 84 chars with a fixed `AZDO` signature at positions 76–80
   (C-E00-021) — `grep -rE '[A-Za-z0-9]{75}AZDO[A-Za-z0-9]{4}'` over staged files.
+- **What now lives in the oracle project** (E12-S01-T02 — keep this list current, it *is* the
+  cleanup checklist now that the project is not empty):
+  - `azure-pipelines.yml` — the anchor (E00-S03-T01).
+  - `/corpus/_probe/` — three template files backing the C-E12-011/012 resolution probe.
+  - `/corpus/<entry>/` — the corpus v1 fixtures, mirrored from `fixtures/corpus/` by
+    `node scripts/corpus-oracle.ts`; the service reads templates from the repo, so they must be
+    there for the corpus to have oracle pairs at all.
+  - Environments `corpus-staging`, `corpus-production` (no resources) and variable group
+    `azdo-emu-corpus-group` (two non-secret dummy values), all authorized for the anchor pipeline
+    by `node scripts/oracle-provision.ts`. They exist because an unknown `environment:`/`- group:`
+    fails the YAML at load time (C-E12-015/017).
+  - Owner decision recorded 2026-08-11: corpus files go to **`main`** under `corpus/` rather than
+    to a dedicated ref. `trigger: none` on the anchor means the pushes queue nothing.
 - **End of project**: revoke the PAT, then delete the org (Organization settings → Overview →
-  Delete). Nothing else lives there.
+  Delete). If only the *project* is being cleaned up (the org is the owner's personal one — see
+  deviation 1), deleting the `oracle` project removes the repo, both environments and the variable
+  group with it.
 
 ## Completion record (fill when followed end-to-end)
 

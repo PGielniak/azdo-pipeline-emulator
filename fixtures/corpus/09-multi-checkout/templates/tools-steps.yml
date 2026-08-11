@@ -1,0 +1,9 @@
+# Referenced as `…/tools-steps.yml@tools` — resolved through the repository *alias*, not through
+# the file system of the pipeline's own repository.
+parameters:
+- name: label
+  type: string
+
+steps:
+- script: echo "shared tooling step (${{ parameters.label }})"
+  displayName: Cross-repo template step

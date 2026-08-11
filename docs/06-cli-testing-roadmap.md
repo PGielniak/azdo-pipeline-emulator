@@ -73,6 +73,13 @@ Coverage gating: thresholds live in the root `vitest.config.ts` (coverage is roo
 
 Corpus: ≥30 pipelines patterned after real-world shapes — nested cross-repo templates, `extends` + `each` over `jobList`, matrix builds, deployment jobs with runOnce/canary, multi-checkout, artifact hand-offs between stages, variable groups + runtime expressions, monorepo path-heavy pipelines. Grown continuously from bug reports (every bug → corpus entry first).
 
+Corpus mechanics (E12-S01-T02): entries live at `fixtures/corpus/<entry>/` (`pipeline.yml`, optional `templates/*.yml`, a README naming what the entry exercises) and their oracle pairs at `fixtures/oracle/<entry>.final.yml`, with `MANIFEST.json` recording the input hash each pair was fetched for — so a fixture edited without re-verification is a red test (`test/corpus.test.ts`), not a stale golden. `fixtures/corpus/` **mirrors the oracle repository's `/corpus/` directory**, because the service resolves `template:` references against the repo, treating a `yamlOverride` as though it were the pipeline definition's own file: templates must be pushed before the preview call, root references spelled `/corpus/<entry>/…` and in-template references spelled as bare siblings (C-E12-011/012). Goldens are redacted, so every consumer of a fresh response — the `--update` flow, the nightly `preview-diff` — must redact before diffing.
+
+Two limits of the oracle as an instrument, found by authoring corpus v1 and load-bearing for what L2/L3 may claim:
+
+- **The oracle cannot see everything.** `strategy: matrix`/`parallel` is *not* expanded by the service (C-E12-018) — job multiplication happens at run time — so no golden can prove it; that behaviour is E04's, verified at L6. Variable-group contents are likewise never inlined (C-E12-016), which is independent confirmation of D5.
+- **Some corpus shapes need org objects, not just YAML.** `environment:` and `- group:` are validated at *load* time and fail with "does not exist or has not been authorized" until the object exists **and** the pipeline is authorized for it (C-E12-015/017); `scripts/oracle-provision.ts` provisions the ones corpus v1 needs. The expansion also rewrites shortcut steps to task **GUIDs** (`checkout`/`download` GUIDs that the task catalogue itself cannot resolve — C-E12-019/020), which the E03-S05-T01 normalizer must canonicalize or `preview-diff` reports permanent false drift.
+
 ## 4. Detailed roadmap & exit criteria
 
 | Phase | Size | Contents | Exit criteria |

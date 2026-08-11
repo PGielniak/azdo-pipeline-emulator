@@ -1,0 +1,94 @@
+trigger:
+  batch: true
+  branches:
+    include:
+    - main
+    - releases/*
+    exclude:
+    - releases/legacy/*
+  paths:
+    include:
+    - services/api/*
+    - shared/*
+    exclude:
+    - '**/*.md'
+  tags:
+    include:
+    - v*
+
+pr:
+  autoCancel: true
+  branches:
+    include:
+    - main
+  paths:
+    exclude:
+    - docs/*
+
+schedules:
+- cron: '0 3 * * Mon-Fri'
+  displayName: Nightly build
+  branches:
+    include:
+    - main
+  always: false
+
+resources:
+  containers:
+  - container: builder
+    image: node:22-bookworm
+    options: --user 0:0
+    env:
+      NODE_ENV: ci
+
+pool:
+  vmImage: ubuntu-latest
+
+jobs:
+- job: container_job
+  displayName: Job inside a container
+  container: builder
+  timeoutInMinutes: 20
+  cancelTimeoutInMinutes: 2
+  workspace:
+    clean: all
+  steps:
+  - script: node --version
+    displayName: Node from the container image
+  - bash: echo "running as $(id -u)"
+    failOnStderr: true
+  - task: Bash@3
+    displayName: Bash task with explicit working directory
+    inputs:
+      targetType: inline
+      script: |
+        set -euo pipefail
+        echo "cwd=$PWD"
+      workingDirectory: $(Build.SourcesDirectory)
+      failOnStderr: true
+
+- job: demand_job
+  displayName: Self-hosted pool with demands
+  pool:
+    name: Default
+    demands:
+    - agent.os -equals Linux
+    - docker
+  steps:
+  - script: echo "needs a specific agent"
+  - powershell: Write-Host "cross-platform powershell step"
+    displayName: PowerShell on a Linux agent
+    errorActionPreference: stop
+  - task: PowerShell@2
+    displayName: PowerShell task
+    inputs:
+      targetType: inline
+      script: Write-Host "from the task"
+      pwsh: true
+
+- job: services_job
+  displayName: Sidecar service container
+  services:
+    redis: builder
+  steps:
+  - script: echo "app can reach the sidecar"

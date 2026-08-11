@@ -54,6 +54,7 @@ Acceptance: policy function backed by an experiment matrix.
   **Do:** design & run oracle experiments: `${{ variables.x }}` read in root vs included template vs nested template; variable declared before/after use; variables from `variables:` templates; stage-level vs root-level. ≥ 12 cells; store inputs+`finalYaml`.
   **Ground:** the experiments **are** the grounding (docs are known-incomplete here — note the doc gap with links to what the templates/variables docs do say).
   **Done:** `research/E03-visibility.md` table: cell → observed behavior → claim ID.
+  *Note (2026-08-11, E12-S01-T02): one cell is already answered and should be carried in, plus a thirteenth the Do list doesn't name — **job-level scoping**: `${{ variables.x }}` read inside a job that overrides `x` resolves to the **job's** value, not the pipeline-level one (C-E12-024, `fixtures/oracle/04-variable-layers.final.yml:55`). Corpus entry 04 is a ready-made input for the matrix.*
 - [ ] **E03-S03-T02 — `compileTimeVariableScope()` policy implementation**
   **Do:** single policy function consumed by the walker; every branch annotated with the claim ID from T01.
   **Ground:** exclusively the T01 experiment claims (`research/E03-visibility.md`) — no branch may exist without a cell citation; templates/variables doc statements (where they exist) linked alongside as secondary support.
