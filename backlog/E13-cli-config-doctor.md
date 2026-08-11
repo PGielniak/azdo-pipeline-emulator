@@ -4,7 +4,7 @@ Phase: P0–P4 (incremental) · Depends on: E00 · Design: docs/06 §1–§2
 Primary grounding set: docs/06 (internal spec) · consuming epics' manifests · vendor docs for version-detection commands in doctor.
 
 ## E13-S01 — As a user, the CLI skeleton exists early with stable UX conventions, so every feature lands behind a consistent interface. (P0)
-- [ ] **E13-S01-T01 — CLI framework & command scaffold**
+- [x] **E13-S01-T01 — CLI framework & command scaffold** *(done 2026-08-11. commander 15.0.0 exact-pinned — clipanion's current release is a pre-release (`4.0.0-rc.4`). `packages/cli/src/`: `exit.ts` (EXIT 0/1/2/3 + `CliError`/`NotImplementedError`), `program.ts` (all six commands of docs/06 §1 with help text, global `--json`, `run()` returning a code and never calling `process.exit`), `bin.ts` (the only module touching process state; `azdo-emu` bin). Unimplemented commands are registered and fail naming the epic that implements them. 27 tests: 9 `--help` snapshots, exit-code policy, and the usage-error matrix. **Decided and recorded** (docs/06 §1 + §5 #11): CLI usage errors reuse exit 1 (also commander's default, C-E13-007); the engines floor rises to ≥22.12 for `packages/cli` alone, per commander 15's own floor and C-E00-002's decision-entry requirement.)*
   **Do:** `packages/cli` (commander or clipanion): `auth login|status`, `convert`, `doctor`, `fetch-artifacts`, `preview-diff`, `run` registered with help text per docs/06 §1; global `--json`, exit-code policy (0/1/2/3) centralized.
   **Ground:** docs/06 §1 as spec; chosen CLI lib docs pinned.
   **Done:** `--help` snapshots; exit-code unit tests; unknown-flag behavior defined.
