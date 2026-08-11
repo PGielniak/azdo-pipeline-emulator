@@ -17,6 +17,7 @@
     "refresh-schema": "node scripts/refresh-schema.ts",
     "oracle-probe": "node scripts/oracle-probe.ts",
     "oracle-quirks": "node scripts/oracle-quirks.ts",
+    "org-schema": "node scripts/org-schema.ts",
     "lint": "pnpm run lint:es && pnpm run lint:format && pnpm run lint:shell",
     "lint:es": "eslint .",
     "lint:format": "prettier --check .",

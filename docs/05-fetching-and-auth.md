@@ -33,7 +33,7 @@ Anonymous fallback for public repos (tarball download without auth).
 | Pipeline definition lookup (name → id, yaml path/repo) | `GET {org}/{proj}/_apis/build/definitions?name=…` |
 | Variable groups (names only) | `GET {org}/{proj}/_apis/distributedtask/variablegroups?groupName={n}` — used solely to list variable **names** for `.env.example`; values (secret or not) are never consumed (decision 2026-07-30) |
 | Installed task metadata (marketplace `task.json`) | `GET {org}/_apis/distributedtask/tasks` (list; filter by name/version) and `GET …/tasks/{taskId}/{version}` (zip, for P6 execution mode) |
-| Org YAML schema (validation incl. marketplace inputs) | `GET {org}/_apis/distributedtask/yamlschema` |
+| Org YAML schema (validation incl. marketplace inputs) | `GET {org}/_apis/distributedtask/yamlschema?api-version=7.1` — **org-scoped, no project segment**; optional `validateTaskNames=false` (C-E01-029/033) |
 | **Oracle**: server-side final YAML | `POST {org}/{proj}/_apis/pipelines/{pipelineId}/preview` body `{"previewRun": true, "yamlOverride": …, "templateParameters": …}` → `finalYaml` |
 | GitHub repo snapshot | `GET https://api.github.com/repos/{owner}/{repo}/tarball/{ref}` (or `git clone`); ref→SHA via `GET …/commits/{ref}` |
 
@@ -57,6 +57,17 @@ Anonymous fallback for public repos (tarball download without auth).
   tasks/<TaskName>@<version>/task.json (+ zip in P6)
   schema/yamlschema-<org>.json
 ```
+
+**`schema/yamlschema-<org>.json` cache policy** (measured in E01-S02-T03, `research/experiments/E01-orgschema/`):
+the service exposes **no version to bust the cache on** — the VS Code extension says so outright and
+therefore caches per session only, and the document's `$comment` is not a freshness signal (the live
+org reported `v1.183.0` against the vendored snapshot's `v1.261.1` while carrying the *newer* task
+list, C-E01-035). The response is also **not byte-stable**: consecutive calls reorder
+`definitions.task.anyOf`, so a body hash is not a validity check (C-E01-034). Expire by age and let
+`--refresh` force a re-fetch. Reading the cache goes through `parseOrgSchema()`/`resolvePipelineSchema()`
+(`packages/engine/src/frontend/org-schema.ts`), which falls back to the vendored schema rather than
+failing when the document is unusable. Scope: this operation is documented under **`vso.agentpools`**,
+wider than the `vso.build` the oracle needs (C-E01-036).
 
 `azdo-emu.lock.json` (committed by the user if they want reproducibility):
 

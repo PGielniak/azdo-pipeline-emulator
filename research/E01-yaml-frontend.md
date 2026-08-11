@@ -298,3 +298,100 @@ anchor on the document root, where no content-token exists) and positions from t
   — verified locally against yaml@2.9.0: `a: &shared first` → anchor token at offset 5, while the
     scalar node's range starts at `first`; `--- &root` leaves no anchor token under
     `doc.contents.srcToken` but does set `doc.contents.anchor`.
+
+## E01-S02-T03 — the per-org YAML schema (`distributedtask/yamlschema`)
+
+Experiment: `research/experiments/E01-orgschema/` (`node scripts/org-schema.ts`, 2026-08-11).
+
+[C-E01-029] The org schema route is **organization-scoped — no project segment**:
+`GET https://dev.azure.com/{organization}/_apis/distributedtask/yamlschema?api-version=7.1`, with an
+optional `validateTaskNames` query parameter. The client the VS Code extension uses passes no route
+values at all, which is what makes the route org-level.
+  — https://learn.microsoft.com/en-us/rest/api/azure/devops/distributedtask/yamlschema/get?view=azure-devops-rest-7.1 (checked 2026-08-11)
+  — "GET https://dev.azure.com/{organization}/_apis/distributedtask/yamlschema?api-version=7.1"
+  — https://github.com/microsoft/azure-devops-node-api/blob/cdf57a1407df00ed9465eeaed6c90c7777b74bb1/api/TaskAgentApiBase.ts#L7536-L7560
+  — "GET the Yaml schema used for Yaml file validation." · area `"distributedtask"`, locationId
+    `"1f9990b9-1dba-441f-9c2e-6485888c42b6"`, `let routeValues: any = { };`
+  — https://github.com/microsoft/azure-pipelines-vscode/blob/2f4500cf/src/schema-association-service.ts#L337-L339
+  — "const taskAgentApi = await azureDevOpsClient.getTaskAgentApi();
+     const schema = JSON.stringify(await taskAgentApi.getYamlSchema());"
+  — live: HTTP 200, `content-type: application/json; charset=utf-8; api-version=7.2-preview.1`,
+    611 170 bytes. `api-version=7.1` and an omitted `api-version` answer 200 as well.
+
+[C-E01-030] **The org response is the same document kind as the vendored `service-schema.json` — same
+generator, same dialect, same custom keywords.** It is draft-07, carries the vendor `$id`, and uses
+all four VS Code-extension keywords our walk implements (org counts: `firstProperty` 304,
+`ignoreCase` 3981, `aliases` 581, `doNotSuggest` 561, `deprecationMessage` 188 — the vendored file
+has 294/3772/552/541/157). `unsupportedKeywords()` returns `[]` for the live response, and both
+documents have the same 119 `definitions` and the same 2-branch top-level `oneOf`. **Consequence:
+injection is a wholesale swap, not a merge** — no vendored keyword annotation is lost by using the
+org document, so `firstProperty` (C-E01-013) and case-insensitive enums (C-E01-017) keep working.
+  — research/experiments/E01-orgschema/yamlschema.json — `"$schema": "http://json-schema.org/draft-07/schema#"`,
+    `"$id": "https://github.com/Microsoft/azure-pipelines-vscode/blob/main/service-schema.json"`
+
+[C-E01-031] The org document is a **strict superset of the vendored task list**: 269 task names vs
+254, with **zero** vendored tasks missing from it. The extras are (a) in-box tasks newer than the
+vendored snapshot (`AzureCLI@3`, `BicepDeploy@0`, `AzurePowerShell@3`, `UniversalPackages@1`, …) and
+(b) the marketplace extension installed in the test org, `qetza.replacetokens`, contributing
+`replacetokens@3..@7` with fully described inputs (`replacetokens@7`: 25 input properties,
+`inputs.additionalProperties: false`). `GET {org}/_apis/extensionmanagement/installedextensions`
+shows it is the only extension not flagged `builtIn` (32 installed, 31 `builtIn, trusted`). This is
+the concrete payoff the task exists for: marketplace task **inputs** only validate under the org
+schema.
+  — research/experiments/E01-orgschema/yamlschema.json · installedextensions listing (2026-08-11)
+
+[C-E01-032] Outside the task list the two documents differ in **exactly one** node, and that
+difference is **behaviourally inert**: `definitions.repositoryResource.properties.endpoint.$ref` is
+`#/definitions/string_allowExpressions` in the org response but `#/definitions/nonEmptyString` in the
+vendored file — while *both* definitions are, in both documents, the same schema `{"type":"string"}`.
+(The names suggest a stricter/looser pair; the vendored generator does not implement either as such,
+so nothing about acceptance changes.) Everything else — all 119 definitions, the root `oneOf` — is
+byte-identical once the task alternatives are set aside. This is what lets the swap test assert
+diagnostic-for-diagnostic equality on the in-box corpus rather than an approximate match.
+  — research/experiments/E01-orgschema/README.md (2026-08-11)
+  — packages/engine/vendor/schema/service-schema.json — `"nonEmptyString": {"type": "string"}`,
+    `"string_allowExpressions": {"type": "string"}`
+
+[C-E01-033] `validateTaskNames=false` does **not** shrink or change the task list. It appends exactly
+one catch-all alternative to `definitions.task.anyOf` — `{"properties":{"task":{"type":"string"},
+"inputs":{"additionalProperties":true}},"firstProperty":["task"],"required":["task"]}` — plus a bare
+`{"type":"string"}` to `definitions.task.properties.task.anyOf`. So the service's own "offline tools"
+mode is precisely *accept any task name with any inputs*, which is the behaviour our unknown-task /
+unknown-input **warnings** (C-E01-020) approximate when running against the vendored schema.
+  — https://learn.microsoft.com/en-us/rest/api/azure/devops/distributedtask/yamlschema/get?view=azure-devops-rest-7.1
+  — "Whether the schema should validate that tasks are actually installed (useful for offline tools
+     where you don't want validation)."
+  — research/experiments/E01-orgschema/README.md — 611 170 bytes vs 611 314, 269 task names in both
+
+[C-E01-034] **The response is not byte-stable across calls.** Three fetches inside ten minutes
+produced two different orderings of `definitions.task.anyOf` (e.g. `Bash@3`/`ShellScript@2`
+transposed) with an identical task *set*; the documents are identical once the task alternatives are
+sorted. A pinned sample must therefore be compared structurally, and any per-org cache (docs/05 §…,
+E08-S03-T07) must not key on a body hash.
+  — measured 2026-08-11 over three consecutive `scripts/org-schema.ts` runs
+
+[C-E01-035] The extension's own cache comment states there is **no service-side version to bust a
+cache on**, which is why it caches per session only — and the observed `$comment` values confirm it
+is not usable as a freshness signal: the live org reports `v1.183.0` while the *newer* vendored
+snapshot reports `v1.261.1`, yet the live org is the one carrying the newer tasks (C-E01-031).
+  — https://github.com/microsoft/azure-pipelines-vscode/blob/2f4500cf/src/schema-association-service.ts#L325-L331
+  — "NOTE: Despite saving the schema to disk, we can't use it as a persistent cache because:
+     1. ADO doesn't provide an API to indicate which version (milestone) it's on, so we don't have a
+     way of busting the cache. 2. Even if we did, organizations can add/remove tasks at any time."
+
+[C-E01-036] The documented authorization scope for this operation is **`vso.agentpools`** ("Grants
+the ability to view tasks, pools, queues, agents, …"), which is *wider* than the `vso.build` scope
+the oracle needs (C-E00-019). E08's auth must request it explicitly; our live call only succeeded
+because the test-org PAT is broader than the runbook prescribes (deviation already recorded in
+research/oracle-setup.md).
+  — https://learn.microsoft.com/en-us/rest/api/azure/devops/distributedtask/yamlschema/get?view=azure-devops-rest-7.1 (checked 2026-08-11)
+  — "vso.agentpools | Grants the ability to view tasks, pools, queues, agents, and currently running
+     or recently completed jobs for agents"
+
+[C-E01-037] The org document omits `target` on task steps exactly as the vendored file does
+(both list `task, displayName, name, condition, continueOnError, enabled, retryCountOnTaskFailure,
+timeoutInMinutes, inputs, env` and set `additionalProperties: false`), so the documented correction
+C-E01-011 is a property of the *generator*, not of the vendored snapshot: it must be applied to an
+injected org schema too, or `target:` — which learn.microsoft.com documents — would be rejected
+whenever a user is authenticated.
+  — research/experiments/E01-orgschema/yamlschema.json vs packages/engine/vendor/schema/service-schema.json (2026-08-11)

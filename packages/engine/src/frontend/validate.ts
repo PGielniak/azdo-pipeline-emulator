@@ -62,8 +62,12 @@ export const SUPPORTED_KEYWORDS: ReadonlySet<string> = new Set([
 
 export interface ValidateOptions {
   /** Schema document to validate against; defaults to the corrected vendored schema.
-   *  (Per-org schema injection is E01-S02-T03; this is the seam it plugs into.) */
+   *  Per-org injection goes through `resolvePipelineSchema()` (org-schema.ts, E01-S02-T03), whose
+   *  result spreads straight into these options. */
   schema?: JsonSchema;
+  /** Which document `schema` is, so diagnostics can explain *why* something is unknown.
+   *  Defaults to `'vendored'`. */
+  schemaSource?: 'vendored' | 'org';
 }
 
 /** Schema-validate a parsed pipeline document. Returns diagnostics in document order. */
@@ -73,7 +77,11 @@ export function validatePipeline(
 ): Diagnostic[] {
   if (!parsed.root) return [];
   const schema = options.schema ?? loadPipelineSchema();
-  const ctx: Ctx = { file: parsed.file, root: schema };
+  const ctx: Ctx = {
+    file: parsed.file,
+    root: schema,
+    schemaSource: options.schemaSource ?? 'vendored',
+  };
   const diagnostics: Diagnostic[] = [];
   validateNode(parsed.root, schema, '#', '$', ctx, diagnostics);
   return diagnostics;
@@ -105,6 +113,8 @@ export function unsupportedKeywords(schema: unknown): string[] {
 interface Ctx {
   file: string;
   root: JsonSchema;
+  /** See ValidateOptions.schemaSource — only diagnostics wording depends on it. */
+  schemaSource: 'vendored' | 'org';
 }
 
 type Kind = 'string' | 'number' | 'boolean' | 'null' | 'object' | 'array';
@@ -693,9 +703,15 @@ function valueNotAccepted(
       severity: 'warning',
       code: SCHEMA_UNKNOWN_TASK,
       message: `unknown task "${text}"`,
+      // Against the org schema the catalogue *is* the organization's, so "not installed" is the
+      // accurate reading — that is exactly what the service rejects unless a caller asks for
+      // `validateTaskNames=false` (C-E01-033). Against the vendored snapshot it means far less.
       hint:
-        'not in the vendored in-box task catalog — expected for marketplace or custom tasks; ' +
-        'their inputs are validated only against an org schema',
+        ctx.schemaSource === 'org'
+          ? 'not installed in this organization — check the task name, its version, or whether ' +
+            'the extension providing it is installed'
+          : 'not in the vendored in-box task catalog — expected for marketplace or custom tasks; ' +
+            'their inputs are validated only against an org schema',
     });
   }
   const suggestion = nearestName(

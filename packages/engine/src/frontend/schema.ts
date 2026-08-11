@@ -69,11 +69,24 @@ export function loadPipelineSchema(options: LoadSchemaOptions = {}): JsonSchema 
     return JSON.parse(readFileSync(vendoredSchemaPath(), 'utf8')) as JsonSchema;
   }
   if (!cached) {
-    const schema = JSON.parse(readFileSync(vendoredSchemaPath(), 'utf8')) as JsonSchema;
-    for (const correction of DOCUMENTED_CORRECTIONS) correction.apply(schema);
-    cached = schema;
+    cached = applyDocumentedCorrections(
+      JSON.parse(readFileSync(vendoredSchemaPath(), 'utf8')) as JsonSchema,
+    );
   }
   return cached;
+}
+
+/**
+ * Apply {@link DOCUMENTED_CORRECTIONS} in place and return the document.
+ *
+ * Every correction so far is a property of the *generator* rather than of our snapshot: the live
+ * per-org schema omits `target` on task steps exactly as the vendored file does (C-E01-037). An
+ * injected org schema (E01-S02-T03) therefore goes through here too, or authenticating would start
+ * rejecting YAML that learn.microsoft.com documents as valid.
+ */
+export function applyDocumentedCorrections(schema: JsonSchema): JsonSchema {
+  for (const correction of DOCUMENTED_CORRECTIONS) correction.apply(schema);
+  return schema;
 }
 
 function definitionOf(schema: JsonSchema, name: string): Record<string, unknown> | undefined {
