@@ -17,9 +17,21 @@ the 2026-08-12 integration merge, because E02-S02-T01/T02/T03 had taken the same
 | 040–059 | E02-S03-T02/T04 general string & utility functions (040 used) |
 | 060–079 | E02-S03-T03 status functions (060–072 used); 073–076 E02-S04-T01 doc-only first pass |
 | 080–091 | E02-S04-T01 context interface + parameters/variables (live survey) |
-| 092–099 | *free* |
+| 092–095 | E02-S04-T02 dependency shapes |
+| 096 | E02-S04-T01 addendum — `counter` slot restriction (allocated after 092–095 were taken) |
+| 097–099 | *free* |
 | 101–110 | E02-S01-T02 error rendering |
 | 111–199 | *free — reserve in this table before use; E02-S04-T02/T03 take blocks here* |
+
+E02-S04-T02 uses claims C-E02-092–095.
+
+[C-E02-092] `dependencies.<job>` exposes a dependency result and an `outputs` object whose keys are flattened `step.variable` names; a job with no same-stage dependencies sees an empty object. — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions?view=azure-devops#dependencies — "Reference the job status of a previous job ... [and] output variables in the previous job in the same stage" — checked 2026-08-12; live transcript `research/experiments/E02-dependencies/real-run.md`.
+
+[C-E02-093] `stageDependencies.<stage>.<job>` exposes the previous stage's job record and its flattened output variables. — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions?view=azure-devops#dependencies — "If you refer to an output variable from a job in another stage, the context is called `stageDependencies`." — checked 2026-08-12; live transcript `research/experiments/E02-dependencies/real-run.md`.
+
+[C-E02-094] Dependency context member names are case-insensitive at the job/stage lookup boundary and missing members null-propagate under the expression access rules. — research/experiments/E02-dependencies/real-run.md + C-E02-024..027 — checked 2026-08-12.
+
+[C-E02-095] Runtime dependency records may carry service metadata (`name`, `attempt`, `state`, `result`, timestamps) in addition to the stable `result` and `outputs` contract; the engine keeps the expression-facing contract deliberately narrow. — research/experiments/E02-dependencies/real-run.md — checked 2026-08-12.
 
 **Why this file leans on the oracle rather than the fork.** E02's primary grounding set names
 `actions/runner` `src/Sdk/DTExpressions2` as the open reference for the DistributedTask expression
@@ -902,3 +914,20 @@ it reported missing are not in the ambient environment but in `.env.oracle`, whi
 task's `[!]` is lifted. C-E02-073/074/075 stand as doc grounding; C-E02-075's "missing values
 resolve to no value" is correct for `variables` and is **corrected for `parameters` by C-E02-087**,
 where a miss is an error.
+
+[C-E02-096] **The function table is slot-keyed in both directions: `counter` is legal in exactly one
+slot, the runtime variable.** C-E02-065 established that status functions exist only in conditions;
+`counter` is the mirror image and is *narrower than the doc sentence*. Learn says "Use this function
+only in an expression that defines a variable. Don't use it as part of a condition for a step, job,
+or stage" — and the service does reject it in job and stage conditions, but it also rejects it in a
+**compile-time** `${{ }}` variable definition, which is a variable definition by any reading of that
+sentence. Only `$[ counter('probe', 1) ]` is accepted. All three rejections are the ordinary
+`Unrecognized value: 'counter'`, i.e. the name is simply absent from those tables. Implementation:
+`SLOT_RESTRICTED_FUNCTIONS` in `packages/engine/src/expr/context.ts`, so `registryForSlot` cannot
+hand every slot the full non-status set.
+  — research/experiments/E02-context/survey.md rows `counter-runtime-var` (accepted),
+    `counter-job-condition`, `counter-stage-condition`, `counter-compile-var` (all rejected)
+    (checked 2026-08-12)
+  — https://learn.microsoft.com/azure/devops/pipelines/process/expressions — counter entry: "Use
+    this function only in an expression that defines a variable. Don't use it as part of a
+    condition for a step, job, or stage." (checked 2026-08-12)

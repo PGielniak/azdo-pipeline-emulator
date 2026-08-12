@@ -8,6 +8,8 @@ import {
   accessIndex,
   accessProperty,
   contextsForSlot,
+  decodeExprValue,
+  encodeExprValue,
   isContextAvailable,
   parametersContext,
   parseExpression,
@@ -153,6 +155,34 @@ describe('the slot also gates the function table (C-E02-065)', () => {
     expect(parseExpression('always()', registry('runtime-variable')).ok).toBe(false);
   });
 
+  it('restricts counter to the runtime variable slot, the only one that accepts it (C-E02-096)', () => {
+    const ok = (slot: ExprSlot) =>
+      parseExpression("counter('probe', 1)", { registry: registryForSlot(slot) }).ok;
+    expect(ok('runtime-variable')).toBe(true);
+    // Rejected in both conditions AND in a compile-time variable — narrower than the doc sentence
+    // "only in an expression that defines a variable".
+    expect(ok('job-condition')).toBe(false);
+    expect(ok('stage-condition')).toBe(false);
+    expect(ok('template-expression')).toBe(false);
+  });
+
+  it('rejects counter with the service sentence, not a special one (probe counter-job-condition)', () => {
+    const result = parseExpression("counter('probe', 1)", {
+      registry: registryForSlot('job-condition'),
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.message).toBe("Unrecognized value: 'counter'");
+  });
+
+  it('leaves the unrestricted functions in every slot', () => {
+    for (const slot of ['template-expression', 'runtime-variable', 'job-condition'] as const) {
+      expect(parseExpression("format('{0}', 1)", { registry: registryForSlot(slot) }).ok).toBe(
+        true,
+      );
+    }
+  });
+
   it('carries the scope-dependent status arity through the slot (C-E02-064)', () => {
     // `succeeded('A')` is legal on a job, rejected on a step — the same spelling, two engines.
     expect(
@@ -239,5 +269,19 @@ describe('the variables context (C-E02-086/089)', () => {
 
   it('returns Null on a miss — the opposite of parameters in the same slot (probe variables-missing)', () => {
     expect(accessProperty(variables, 'noSuchVariable')).toEqual(NULL);
+  });
+});
+
+describe('miss policy survives serialization (C-E02-087/088)', () => {
+  it('round-trips a parameters context without downgrading it to null-propagating', () => {
+    const restored = decodeExprValue(encodeExprValue(parametersContext({})));
+    // Without the policy on the wire this returns Null and the divergence goes silent.
+    expect(() => accessProperty(restored, 'myParam')).toThrow(ExprKeyNotFoundError);
+  });
+
+  it('keeps a variables context null-propagating across the same round trip', () => {
+    const restored = decodeExprValue(encodeExprValue(variablesContext({ myVar: 'varValue' })));
+    expect(accessProperty(restored, 'noSuchVariable')).toEqual(NULL);
+    expect(accessProperty(restored, 'MYVAR')).toEqual(stringValue('varValue'));
   });
 });

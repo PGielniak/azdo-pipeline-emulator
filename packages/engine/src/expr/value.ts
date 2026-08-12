@@ -138,6 +138,9 @@ export function encodeExprValue(value: ExprValue): unknown {
       return {
         kind: 'object',
         keyComparison: value.keyComparison,
+        // Carried explicitly: dropping it would silently downgrade a round-tripped `parameters`
+        // context from raising `Key not found` to returning Null (C-E02-087/088).
+        missPolicy: value.missPolicy ?? 'null',
         value: Object.fromEntries(
           Object.entries(value.value).map(([key, child]) => [key, encodeExprValue(child)]),
         ),
@@ -178,11 +181,15 @@ export function decodeExprValue(input: unknown): ExprValue {
         if (record.keyComparison !== 'ordinal' && record.keyComparison !== 'ordinalIgnoreCase') {
           break;
         }
+        // Absent means an encoding written before miss policies existed, i.e. the old default.
+        const missPolicy = record.missPolicy ?? 'null';
+        if (missPolicy !== 'null' && missPolicy !== 'error') break;
         return objectValue(
           Object.fromEntries(
             Object.entries(record.value).map(([key, child]) => [key, decodeExprValue(child)]),
           ),
           record.keyComparison,
+          missPolicy,
         );
       }
       break;

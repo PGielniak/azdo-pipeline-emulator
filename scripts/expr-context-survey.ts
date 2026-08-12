@@ -653,6 +653,42 @@ const PROBES: readonly Probe[] = [
     expr: guard('environment.name'),
     decides: 'completes the `${{ if }}` column for `environment`',
   },
+
+  // ---- Fifth batch: is the *function* table slot-keyed in the other direction too? --------------
+  // C-E02-065 established that status functions are condition-only. The doc asserts the mirror
+  // image for `counter`: "Use this function only in an expression that defines a variable. Don't
+  // use it as part of a condition for a step, job, or stage." If that is enforced, `registryForSlot`
+  // must drop `counter` from the condition slots instead of handing every slot all 28 names.
+  {
+    id: 'counter-runtime-var',
+    group: 'Fifth batch — is `counter` really variable-only?',
+    placement: 'runtime-var',
+    expr: "counter('probe', 1)",
+    decides: 'the slot the doc endorses — the positive control for the two rows below',
+  },
+  {
+    id: 'counter-job-condition',
+    group: 'Fifth batch — is `counter` really variable-only?',
+    placement: 'job-condition',
+    expr: guard("counter('probe', 1)"),
+    decides:
+      'whether the doc sentence "Don\'t use it as part of a condition for a step, job, or stage" is enforced like the status-function restriction (C-E02-065) or is only advice',
+  },
+  {
+    id: 'counter-stage-condition',
+    group: 'Fifth batch — is `counter` really variable-only?',
+    placement: 'stage-condition',
+    expr: guard("counter('probe', 1)"),
+    decides: 'the same at stage level',
+  },
+  {
+    id: 'counter-compile-var',
+    group: 'Fifth batch — is `counter` really variable-only?',
+    placement: 'compile-var',
+    expr: "counter('probe', 1)",
+    decides:
+      'whether a compile-time variable may call it — the counter increments per run, so a compile-time call would be a different thing entirely',
+  },
 ];
 
 /** Every `condition:` the service emitted, in document order — including ones it injected. */

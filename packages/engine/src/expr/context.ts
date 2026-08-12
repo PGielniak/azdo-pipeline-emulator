@@ -146,15 +146,32 @@ export function statusScopeForSlot(slot: ExprSlot): StatusScope | undefined {
 }
 
 /**
- * The registry `parseExpression` needs for this slot: the non-status functions (legal everywhere),
- * the status functions where the slot has them, and exactly this slot's context names. Parsing
- * with it produces the service's own rejection for a wrong-slot context, because name resolution
- * happens during the parse (C-E02-011/012).
+ * Functions that are *not* legal in every slot, keyed lower-case. The status family is the
+ * mirror image of this and is handled by `statusScopeForSlot`.
+ *
+ * `counter` is legal in exactly one slot: a **runtime** variable. The doc says "Use this function
+ * only in an expression that defines a variable. Don't use it as part of a condition for a step,
+ * job, or stage", and the service enforces that — but more narrowly than the sentence reads, since
+ * a *compile-time* variable definition is a variable definition and is rejected too. All three
+ * rejections are the ordinary `Unrecognized value: 'counter'` (C-E02-096).
+ */
+const SLOT_RESTRICTED_FUNCTIONS: Readonly<Record<string, readonly ExprSlot[]>> = {
+  counter: ['runtime-variable'],
+};
+
+/**
+ * The registry `parseExpression` needs for this slot: the non-status functions minus any the slot
+ * does not carry, the status functions where the slot has them, and exactly this slot's context
+ * names. Parsing with it produces the service's own rejection for a wrong-slot name, because name
+ * resolution happens during the parse (C-E02-011/012).
  */
 export function registryForSlot(slot: ExprSlot): ExprRegistry {
   const scope = statusScopeForSlot(slot);
   const functions = [
-    ...NON_STATUS_FUNCTIONS,
+    ...NON_STATUS_FUNCTIONS.filter((signature) => {
+      const allowed = SLOT_RESTRICTED_FUNCTIONS[signature.name.toLowerCase()];
+      return allowed === undefined || allowed.includes(slot);
+    }),
     ...(scope === undefined ? [] : statusFunctionSignatures(scope)),
   ];
   return makeRegistry(functions, [...contextsForSlot(slot)]);
