@@ -74,7 +74,7 @@ Acceptance: full function set incl. status functions, each with cited behavior.
   *Done 2026-08-12:* `packages/engine/src/expr/status.ts`; scope-specific signatures and truth
   tables backed by 54 preview probes, one real agentless run, pinned agent source, and a fake-store
   integration test (C-E02-060..072; `packages/engine/test/expr/status.test.ts`).
-- [ ] **E02-S03-T04 — Remaining general functions: `startsWith endsWith xor format join split replace lower upper trim length coalesce iif convertToJson counter`**
+- [x] **E02-S03-T04 — Remaining general functions: `startsWith endsWith xor format join split replace lower upper trim length coalesce iif convertToJson counter`**
   **Do:** implement the complete current documented general-function remainder; `format` composite
   formatting includes `{{`/`}}` escapes and index reuse; `counter(prefix, seed)` delegates to a
   state-provider interface (local impl in E06); `convertToJson` serializes Object/Array values.
@@ -84,6 +84,9 @@ Acceptance: full function set incl. status functions, each with cited behavior.
   ambiguities with oracle probes (date-format claims belong to E05-S04).
   **Done:** per-function claim-linked test groups; `counter` tested against a state-provider fake;
   the implemented general-function registry matches the current documented non-status catalogue.
+  *Done 2026-08-12:* all 15 functions in `packages/engine/src/expr/general-functions.ts`, with a
+  28-name exact-catalogue registry, fake counter provider, 20 claim-linked tests, and 30 live
+  preview probes (C-E02-041..051; `research/experiments/E02-general/`).
 
 ## E02-S04 — As an engine developer, expression contexts resolve like the service in each evaluation phase, so the same expression means the same thing at the same time.
 Acceptance: `parameters`, `variables`, `dependencies`, `stageDependencies`, `resources.pipeline` contexts with phase gating.

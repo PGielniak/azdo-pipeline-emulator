@@ -29,6 +29,7 @@
     "expr-logical-survey": "node scripts/expr-logical-survey.ts",
     "expr-status-survey": "node scripts/expr-status-survey.ts",
     "expr-status-realrun": "node scripts/expr-status-realrun.ts",
+    "expr-general-survey": "node scripts/expr-general-survey.ts",
     "lint": "pnpm run lint:es && pnpm run lint:format && pnpm run lint:shell",
     "lint:es": "eslint .",
     "lint:format": "prettier --check .",

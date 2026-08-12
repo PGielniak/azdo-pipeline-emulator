@@ -19,7 +19,7 @@ which is present in the rendered HTML but dropped by markdown converters).
 | Area | URL |
 |---|---|
 | YAML schema reference (landing; per-keyword subpages → see index below) | https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/ (C-E00-009) |
-| Expressions | https://learn.microsoft.com/azure/devops/pipelines/process/expressions — **deep-verified 2026-08-12** (E02-S03-T01/T02 grounding): logical/comparison/membership signatures and behavior pinned in C-E02-028..032; live probes correct two doc/backlog errors (`in`/`notIn` require two parameters, and `contains` rejects Arrays). General-function catalogue drift (`startsWith`, `endsWith`, `xor`) recorded in C-E02-040 and corrected by E02-S03-T04. Member access C-E02-024..027; conversion C-E02-020..023; value model C-E02-018/019; grammar C-E02-002..009 |
+| Expressions | https://learn.microsoft.com/azure/devops/pipelines/process/expressions — **deep-verified 2026-08-12** (E02-S03): logical/comparison/membership C-E02-028..032; general functions C-E02-040..051 with live corrections (`iif` exactly 3 and eager, `counter` 1..2, `length` supports Object, `split` uses one exact delimiter); member access C-E02-024..027; conversion C-E02-020..023; value model C-E02-018/019; grammar C-E02-002..009 |
 | Conditions — re-verified 2026-08-12 for default/status summaries (C-E02-062/063) | https://learn.microsoft.com/azure/devops/pipelines/process/conditions |
 | Templates | https://learn.microsoft.com/azure/devops/pipelines/process/templates |
 | Template parameters | https://learn.microsoft.com/azure/devops/pipelines/process/template-parameters |

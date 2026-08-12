@@ -687,3 +687,77 @@ and at run time simply makes the condition False. So an unknown name behaves as 
 rather than raising — the emitter need not validate names, but must not treat a missing entry as
 vacuous truth.
   — research/experiments/E02-status/real-run.md row `unknown_named` (live run, checked 2026-08-12)
+
+## E02-S03-T04 — remaining general functions (block 040–059)
+
+[C-E02-041] **The current non-status catalogue adds `startsWith`, `endsWith`, and `xor` to the
+functions the original task split listed.** Their documented arities are 2, 2, and 2; the other
+remainder signatures are `format` 1..N, `join` 2, `split` 2, `replace` 3, `lower`/`upper`/`trim` 1,
+`length` 1, `coalesce` 2..N, `convertToJson` 1, while `iif` and `counter` require corrections below.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions#functions
+    (checked 2026-08-12)
+
+[C-E02-042] **`startsWith` and `endsWith` convert both inputs to String and compare ordinal
+ignore-case; `lower`, `upper`, and `trim` return transformed strings; `replace` is ordinal
+case-sensitive and an empty search leaves the input unchanged.** Live controls produce True for
+`startsWith(12345,'123')` + `endsWith('AbCdE','DE')`, `äbc|ÄBC` for non-ASCII casing, `AxA` for
+`replace('AaA','a','x')`, and `abc` for an empty search.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions#startswith
+    (checked 2026-08-12) · research/experiments/E02-general/{starts-ends-coercion,
+    case-conversion,trim-whitespace,replace-casing,replace-empty-old}.md (live preview 2026-08-12)
+
+[C-E02-043] **`xor` converts exactly two operands to Boolean and is True exactly when one is
+True.** The four live cells are `True|True|False|False` for TF, FT, TT, FF.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions#xor
+    (checked 2026-08-12) · research/experiments/E02-general/xor-values.md
+
+[C-E02-044] **`format` supports out-of-order/reused numeric placeholders and doubled braces, and
+errors on malformed braces or an index with no supplied argument.** `{1}-{0}-{1}` → `B-A-B` and
+`{{{0}}} {{ and }}` → `{x} { and }`; the two errors use the service's dedicated format-string
+messages. Date formatting is deliberately excluded here and remains E05-S04.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions#format
+    (checked 2026-08-12) · research/experiments/E02-general/format-*.md (live preview 2026-08-12)
+
+[C-E02-045] **`join(separator,array)` String-converts primitive elements, turns complex elements
+into empty strings, and when the right operand is not an Array returns its String conversion.**
+The live array `[Alpha,'',2]` → `Alpha;;2`; `join('-',12)` → `12`.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions#join
+    (checked 2026-08-12) · research/experiments/E02-general/join-{array,non-array}.md
+
+[C-E02-046] **`split` uses the second parameter as one exact delimiter string, preserves empty
+fields, and an empty delimiter leaves the input unsplit.** Therefore `split('a,b;c,,', ',;')`
+returns one element (the input unchanged), not a split on comma-or-semicolon.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions#split
+    (checked 2026-08-12) · research/experiments/E02-general/split-*.md
+
+[C-E02-047] **`length` returns String length, Array length, and Object property count.** The live
+Object result is 2 even though Learn only names String and Array, a documentation omission.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions#length
+    (checked 2026-08-12) · research/experiments/E02-general/length-{values,object}.md
+
+[C-E02-048] **`coalesce` evaluates left-to-right, skips only Null and empty String, short-circuits
+at the first other value, and returns Null when none qualifies.** False and zero are returned, not
+skipped; a failing expression after `'hit'` is not evaluated.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions#coalesce
+    (checked 2026-08-12) · research/experiments/E02-general/coalesce-*.md
+
+[C-E02-049] **`iif` takes exactly three arguments and evaluates both value branches eagerly.**
+One and two arguments are rejected at the closing parenthesis despite Learn saying minimum 1;
+`iif(true,'yes',lt(1,'bad'))` still raises the conversion error from the unselected branch.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions#iif
+    (checked 2026-08-12; contradicted) · research/experiments/E02-general/iif-*.md
+
+[C-E02-050] **`convertToJson` accepts any expression value and emits indented JSON.** Objects and
+Arrays preserve nesting and scalar types; a String becomes the JSON string text `"text"` including
+quotes. The local evaluator uses the same two-space JSON layout.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions#converttojson
+    (checked 2026-08-12) · research/experiments/E02-general/json-{object,primitive}.md
+
+[C-E02-051] **`counter` exists only in runtime variable definitions, is scoped by pipeline and
+prefix, and the live parser accepts one or two arguments (not exactly two as documented).** Three
+arguments, compile-time use, and condition use are rejected. Because this converter has no service
+pipeline identity, its state-provider seam deliberately scopes counters to the local run/project;
+the accepted one-argument form passes an absent seed through to that provider instead of inventing
+an undocumented default in E02.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions#counter
+    (checked 2026-08-12; arity contradicted) · research/experiments/E02-general/counter-*.md
