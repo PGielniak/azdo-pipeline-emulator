@@ -13,5 +13,6 @@ research/experiments/**/*.json
 fixtures/
 # Shell sources are shellcheck's domain, prose docs are hand-maintained
 *.bats
+*.bash
 *.sh
 *.md

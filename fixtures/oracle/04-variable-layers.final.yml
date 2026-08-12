@@ -1,0 +1,89 @@
+name: $(BuildDefinitionName)_$(Date:yyyyMMdd)$(Rev:.r)
+trigger:
+  enabled: false
+pr:
+  enabled: false
+pool:
+  vmImage: ubuntu-latest
+parameters:
+- name: environmentName
+  type: string
+  default: staging
+  values:
+  - staging
+  - production
+variables:
+- name: solution
+  value: '**/*.sln'
+- name: buildConfiguration
+  value: Release
+  readonly: true
+- name: targetEnv
+  value: staging
+- name: buildCounter
+  value: $[ counter(variables['buildConfiguration'], 1) ]
+- group: azdo-emu-corpus-group
+stages:
+- stage: main
+  variables:
+  - name: stageScoped
+    value: from-stage
+  - name: buildConfiguration
+    value: Debug
+  jobs:
+  - job: layers
+    variables:
+    - name: jobScoped
+      value: from-job
+    - name: solution
+      value: overridden-at-job
+    steps:
+    - task: CmdLine@2
+      displayName: Job layer wins over pipeline layer
+      inputs:
+        script: echo "solution=$(solution) config=$(buildConfiguration)"
+    - task: CmdLine@2
+      inputs:
+        script: echo "stage=$(stageScoped) job=$(jobScoped) env=$(targetEnv)"
+    - task: CmdLine@2
+      displayName: Runtime expression variable
+      inputs:
+        script: echo "counter=$(buildCounter)"
+    - task: CmdLine@2
+      displayName: Compile-time read sees the pipeline-level value
+      inputs:
+        script: echo "compile-time=overridden-at-job"
+    - task: CmdLine@2
+      displayName: Macro escaping next to a real macro
+      inputs:
+        script: echo "literal $$(not-a-variable) and $(Build.BuildId)"
+    - task: Bash@3
+      displayName: Variables as environment variables
+      inputs:
+        targetType: inline
+        script: echo "env sees $SOLUTION and $BUILDCONFIGURATION"
+    - task: CmdLine@2
+      env:
+        STEP_LEVEL: step-value
+        FROM_VARIABLE: $(jobScoped)
+      inputs:
+        script: echo "step env only"
+    - task: Bash@3
+      displayName: Set a variable mid-job
+      inputs:
+        targetType: inline
+        script: |
+          echo "##vso[task.setvariable variable=lateBound]set-at-runtime"
+    - task: CmdLine@2
+      displayName: Read it in a later step
+      inputs:
+        script: echo "late=$(lateBound)"
+  - job: settable
+    variables:
+    - name: fromTemplateExpression
+      value: staging-suffix
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo "$(fromTemplateExpression)"
+

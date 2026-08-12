@@ -1,0 +1,66 @@
+name: $(BuildDefinitionName)_$(Date:yyyyMMdd)$(Rev:.r)
+
+trigger: none
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+parameters:
+- name: environmentName
+  type: string
+  default: staging
+  values:
+  - staging
+  - production
+
+variables:
+- name: solution
+  value: '**/*.sln'
+- name: buildConfiguration
+  value: Release
+  readonly: true
+- name: targetEnv
+  value: ${{ parameters.environmentName }}
+- name: buildCounter
+  value: $[ counter(variables['buildConfiguration'], 1) ]
+- group: azdo-emu-corpus-group
+
+stages:
+- stage: main
+  variables:
+    stageScoped: from-stage
+    buildConfiguration: Debug
+  jobs:
+  - job: layers
+    variables:
+      jobScoped: from-job
+      solution: overridden-at-job
+    steps:
+    - script: echo "solution=$(solution) config=$(buildConfiguration)"
+      displayName: Job layer wins over pipeline layer
+    - script: echo "stage=$(stageScoped) job=$(jobScoped) env=$(targetEnv)"
+    - script: echo "counter=$(buildCounter)"
+      displayName: Runtime expression variable
+    - script: echo "compile-time=${{ variables.solution }}"
+      displayName: Compile-time read sees the pipeline-level value
+    - script: echo "literal $$(not-a-variable) and $(Build.BuildId)"
+      displayName: Macro escaping next to a real macro
+    - bash: echo "env sees $SOLUTION and $BUILDCONFIGURATION"
+      displayName: Variables as environment variables
+    - script: echo "step env only"
+      env:
+        STEP_LEVEL: step-value
+        FROM_VARIABLE: $(jobScoped)
+    - bash: |
+        echo "##vso[task.setvariable variable=lateBound]set-at-runtime"
+      displayName: Set a variable mid-job
+    - script: echo "late=$(lateBound)"
+      displayName: Read it in a later step
+
+  - job: settable
+    variables:
+    - name: fromTemplateExpression
+      value: ${{ format('{0}-{1}', parameters.environmentName, 'suffix') }}
+    steps:
+    - script: echo "$(fromTemplateExpression)"

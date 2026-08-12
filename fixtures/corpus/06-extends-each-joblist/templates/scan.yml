@@ -1,0 +1,8 @@
+parameters:
+- name: component
+  type: string
+
+steps:
+- script: echo "security scan for ${{ parameters.component }}"
+  displayName: Scan ${{ parameters.component }}
+  condition: succeededOrFailed()

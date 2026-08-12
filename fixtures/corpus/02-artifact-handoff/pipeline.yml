@@ -1,0 +1,65 @@
+trigger: none
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+- stage: build
+  displayName: Build and publish
+  jobs:
+  - job: compile
+    steps:
+    - checkout: self
+      fetchDepth: 1
+    - script: |
+        mkdir -p $(Build.ArtifactStagingDirectory)/app
+        echo "binary" > $(Build.ArtifactStagingDirectory)/app/app.bin
+      displayName: Stage build output
+    - task: CopyFiles@2
+      displayName: Copy config next to the binary
+      inputs:
+        SourceFolder: $(Build.SourcesDirectory)
+        Contents: |
+          **/*.yml
+          !**/node_modules/**
+        TargetFolder: $(Build.ArtifactStagingDirectory)/app
+        CleanTargetFolder: false
+    - task: PublishPipelineArtifact@1
+      displayName: Publish app artifact
+      inputs:
+        targetPath: $(Build.ArtifactStagingDirectory)/app
+        artifact: app
+        publishLocation: pipeline
+
+  - job: docs
+    steps:
+    - script: |
+        mkdir -p docs-out
+        echo "# docs" > docs-out/index.md
+      displayName: Generate docs
+    - publish: docs-out
+      artifact: docs
+
+- stage: deploy
+  displayName: Consume artifacts
+  dependsOn: build
+  condition: succeeded()
+  jobs:
+  - job: consume
+    steps:
+    - checkout: none
+    - download: current
+      artifact: app
+      patterns: '**/*.bin'
+      displayName: Download only the binary
+    - task: DownloadPipelineArtifact@2
+      displayName: Download docs to an explicit path
+      inputs:
+        buildType: current
+        artifactName: docs
+        targetPath: $(Pipeline.Workspace)/docs
+    - script: |
+        test -f "$(Pipeline.Workspace)/app/app.bin"
+        test -f "$(Pipeline.Workspace)/docs/index.md"
+      displayName: Assert both artifacts landed

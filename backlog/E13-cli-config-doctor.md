@@ -8,7 +8,7 @@ Primary grounding set: docs/06 (internal spec) · consuming epics' manifests · 
   **Do:** `packages/cli` (commander or clipanion): `auth login|status`, `convert`, `doctor`, `fetch-artifacts`, `preview-diff`, `run` registered with help text per docs/06 §1; global `--json`, exit-code policy (0/1/2/3) centralized.
   **Ground:** docs/06 §1 as spec; chosen CLI lib docs pinned.
   **Done:** `--help` snapshots; exit-code unit tests; unknown-flag behavior defined.
-- [ ] **E13-S01-T02 — Config loader & precedence**
+- [x] **E13-S01-T02 — Config loader & precedence** *(done 2026-08-11. `packages/cli/src/config/`: `types.ts` (typed `AzdoEmuConfig` + total `ResolvedSettings` + `DEFAULTS`), `load.ts` (discovery beside the pipeline, plain-`yaml` parse, hand-written validation with `file:line:col` + did-you-mean, every failure a `CliError`), `parameters.ts` (`--parameter name=value`, `@file.json`, `@@` escape), `resolve.ts` (CLI > config > defaults with per-key provenance). Schema published at `schema/azdo-emu.schema.json` (draft-07) with a drift-guard test pinning it to the loader's key set **and** defaults. 90 tests incl. a literal precedence matrix over all 14 scalar keys × 3 layers. **Decided** (C-E13-012/013): map-valued keys (`parameters`, `repositories`, `tasks.overrides`) merge per key while scalars/lists replace; CLI paths resolve from cwd, config paths from the config file's directory.)*
   **Do:** `azdo-emu.yaml` schema (typed, validated with friendly errors), precedence CLI > config > defaults, `--parameter` repeatable + `@file.json` complex values.
   **Ground:** docs/06 §2 example as schema source; JSON-schema for the config committed (self-documenting).
   **Done:** precedence matrix tests; schema published in repo.

@@ -1,0 +1,48 @@
+trigger: none
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+jobs:
+- job: build
+  displayName: Build
+  strategy:
+    matrix:
+      linux_debug:
+        imageName: ubuntu-latest
+        buildConfiguration: Debug
+      linux_release:
+        imageName: ubuntu-latest
+        buildConfiguration: Release
+      windows_release:
+        imageName: windows-latest
+        buildConfiguration: Release
+    maxParallel: 2
+  pool:
+    vmImage: $(imageName)
+  variables:
+    artifactSuffix: $(Agent.JobName)
+  steps:
+  - script: echo "config=$(buildConfiguration) image=$(imageName)"
+    displayName: Report matrix leg
+  - script: |
+      mkdir -p out
+      echo "$(buildConfiguration)" > out/config.txt
+    displayName: Produce output
+  - script: echo "suffix=$(artifactSuffix)"
+    displayName: Job-scoped variable over a matrix variable
+
+- job: fanin
+  displayName: Fan-in over every matrix leg
+  dependsOn: build
+  condition: succeeded()
+  steps:
+  - script: echo "all legs finished"
+
+- job: parallel_slices
+  displayName: Parallel (slice) strategy
+  strategy:
+    parallel: 3
+  steps:
+  - script: echo "slice $(System.JobPositionInPhase) of $(System.TotalJobsInPhase)"

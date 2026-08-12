@@ -1,0 +1,49 @@
+trigger: none
+pr: none
+
+resources:
+  repositories:
+  - repository: tools
+    type: git
+    name: oracle
+    ref: refs/heads/main
+
+pool:
+  vmImage: ubuntu-latest
+
+jobs:
+- job: multi_checkout
+  displayName: Two repositories in one workspace
+  workspace:
+    clean: outputs
+  steps:
+  - checkout: self
+    clean: true
+    fetchDepth: 0
+    fetchTags: false
+    submodules: recursive
+    persistCredentials: true
+    path: s/product
+  - checkout: tools
+    lfs: false
+    path: s/tools
+  - script: |
+      test -d "$(Build.SourcesDirectory)/../product"
+      echo "sources at $(Build.SourcesDirectory)"
+      echo "repo local path $(Build.Repository.LocalPath)"
+    displayName: Both repositories are present
+  - template: /corpus/09-multi-checkout/templates/tools-steps.yml@tools
+    parameters:
+      label: from-the-tools-repo
+
+- job: no_checkout
+  displayName: No sources at all
+  dependsOn: multi_checkout
+  steps:
+  - checkout: none
+  - script: echo "nothing cloned; $(Build.SourcesDirectory) is empty"
+
+- job: self_only
+  displayName: Implicit self checkout
+  steps:
+  - script: echo "no checkout step, so the agent checks out self implicitly"

@@ -72,11 +72,13 @@ exports[`CLI scaffold (E13-S01-T01) > help > \`azdo-emu convert --help\` output 
 convert a pipeline into a local project of bash scripts
 
 Arguments:
-  pipeline.yml     the pipeline to convert
+  pipeline.yml              the pipeline to convert
 
 Options:
-  -o, --out <dir>  output directory for the generated project
-  -h, --help       display help for command
+  -o, --out <dir>           output directory for the generated project
+  --parameter <name=value>  runtime parameter (repeatable); \`name=@file.json\`
+                            for a complex value
+  -h, --help                display help for command
 "
 `;
 

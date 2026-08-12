@@ -1,0 +1,8 @@
+parameters:
+- name: path
+  type: string
+
+steps:
+- script: echo "probing ${{ parameters.path }}"
+  displayName: Health check
+  retryCountOnTaskFailure: 3

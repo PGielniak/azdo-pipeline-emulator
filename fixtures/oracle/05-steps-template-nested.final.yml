@@ -1,0 +1,53 @@
+trigger:
+  enabled: false
+pr:
+  enabled: false
+pool:
+  vmImage: ubuntu-latest
+parameters:
+- name: runTests
+  type: boolean
+  default: true
+stages:
+- stage: __default
+  jobs:
+  - job: build
+    steps:
+    - task: CmdLine@2
+      displayName: Restore
+      inputs:
+        script: echo "restoring packages"
+    - task: CmdLine@2
+      displayName: Build src/app
+      inputs:
+        script: echo "building src/app as Release"
+    - task: CmdLine@2
+      displayName: Build src/lib
+      inputs:
+        script: echo "building src/lib as Release"
+    - task: CmdLine@2
+      displayName: Test Release
+      inputs:
+        script: echo "testing Release"
+    - task: PublishTestResults@2
+      displayName: Publish test results
+      condition: succeededOrFailed()
+      inputs:
+        testResultsFormat: JUnit
+        testResultsFiles: '**/TEST-*.xml'
+        failTaskOnFailedTests: true
+    - task: CmdLine@2
+      displayName: After the templates
+      inputs:
+        script: echo "back in the root document"
+  - job: reuse
+    steps:
+    - task: CmdLine@2
+      displayName: Build src/app
+      inputs:
+        script: echo "building src/app as Debug"
+    - task: CmdLine@2
+      displayName: Tests disabled
+      inputs:
+        script: echo "tests skipped for Debug"
+

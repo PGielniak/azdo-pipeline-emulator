@@ -1,0 +1,23 @@
+trigger: none
+pr: none
+
+extends:
+  template: /corpus/06-extends-each-joblist/templates/governed-pipeline.yml
+  parameters:
+    enforceScan: true
+    buildJobs:
+    - job: api
+      displayName: Build the API
+      steps:
+      - script: echo "compile api"
+      - script: echo "unit tests api"
+    - job: web
+      displayName: Build the web app
+      dependsOn: api
+      steps:
+      - script: echo "compile web"
+    deployStages:
+    - name: staging
+      approvalRequired: false
+    - name: production
+      approvalRequired: true

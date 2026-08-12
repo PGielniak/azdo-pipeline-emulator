@@ -1,0 +1,64 @@
+trigger:
+  enabled: false
+pr:
+  enabled: false
+resources:
+  repositories:
+  - repository: tools
+    type: git
+    name: oracle
+    ref: refs/heads/main
+pool:
+  vmImage: ubuntu-latest
+stages:
+- stage: __default
+  jobs:
+  - job: multi_checkout
+    displayName: Two repositories in one workspace
+    workspace:
+      clean: outputs
+    steps:
+    - task: 6d15af64-176c-496d-b583-fd2ae21d4df4@1
+      inputs:
+        repository: self
+        clean: true
+        fetchDepth: 0
+        fetchTags: false
+        submodules: recursive
+        persistCredentials: true
+        path: s/product
+    - task: 6d15af64-176c-496d-b583-fd2ae21d4df4@1
+      inputs:
+        repository: tools
+        lfs: false
+        path: s/tools
+    - task: CmdLine@2
+      displayName: Both repositories are present
+      inputs:
+        script: |
+          test -d "$(Build.SourcesDirectory)/../product"
+          echo "sources at $(Build.SourcesDirectory)"
+          echo "repo local path $(Build.Repository.LocalPath)"
+    - task: CmdLine@2
+      displayName: Cross-repo template step
+      inputs:
+        script: echo "shared tooling step (from-the-tools-repo)"
+  - job: no_checkout
+    displayName: No sources at all
+    dependsOn:
+    - multi_checkout
+    steps:
+    - task: 6d15af64-176c-496d-b583-fd2ae21d4df4@1
+      condition: false
+      inputs:
+        repository: none
+    - task: CmdLine@2
+      inputs:
+        script: echo "nothing cloned; $(Build.SourcesDirectory) is empty"
+  - job: self_only
+    displayName: Implicit self checkout
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo "no checkout step, so the agent checks out self implicitly"
+

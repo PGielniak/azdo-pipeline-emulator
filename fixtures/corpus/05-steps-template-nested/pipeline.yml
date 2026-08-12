@@ -1,0 +1,35 @@
+trigger: none
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+parameters:
+- name: runTests
+  type: boolean
+  default: true
+
+jobs:
+- job: build
+  steps:
+  - template: /corpus/05-steps-template-nested/templates/restore.yml
+
+  - template: /corpus/05-steps-template-nested/templates/build.yml
+    parameters:
+      configuration: Release
+      projects:
+      - src/app
+      - src/lib
+      runTests: ${{ parameters.runTests }}
+
+  - script: echo "back in the root document"
+    displayName: After the templates
+
+- job: reuse
+  steps:
+  - template: /corpus/05-steps-template-nested/templates/build.yml
+    parameters:
+      configuration: Debug
+      projects:
+      - src/app
+      runTests: false

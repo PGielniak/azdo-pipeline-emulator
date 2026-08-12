@@ -1,0 +1,16 @@
+# Referenced from inside a `runOnce.deploy.steps` hook — a template expanded into a lifecycle
+# hook rather than into a plain job's step list.
+parameters:
+- name: slot
+  type: string
+- name: healthCheckPath
+  type: string
+  default: /healthz
+
+steps:
+- script: echo "deploying $(releaseName) to ${{ parameters.slot }}"
+  displayName: Deploy to ${{ parameters.slot }}
+- script: echo "artifact at $(Pipeline.Workspace)/drop/app.txt"
+- template: health-check.yml
+  parameters:
+    path: ${{ parameters.healthCheckPath }}

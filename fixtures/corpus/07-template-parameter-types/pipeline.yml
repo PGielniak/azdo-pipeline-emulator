@@ -1,0 +1,72 @@
+trigger: none
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+parameters:
+- name: imageName
+  displayName: Agent image
+  type: string
+  default: ubuntu-latest
+  values:
+  - ubuntu-latest
+  - windows-latest
+- name: retries
+  type: number
+  default: 2
+  values:
+  - 1
+  - 2
+  - 5
+- name: verbose
+  type: boolean
+  default: false
+- name: settings
+  type: object
+  default:
+    timeout: 30
+    tags:
+    - fast
+    - smoke
+    nested:
+      key: value
+- name: customStep
+  type: step
+  default:
+    script: echo "default single step"
+- name: extraSteps
+  type: stepList
+  default:
+  - script: echo "default extra step one"
+  - bash: echo "default extra step two"
+
+jobs:
+- template: /corpus/07-template-parameter-types/templates/job-with-types.yml
+  parameters:
+    imageName: ${{ parameters.imageName }}
+    retries: ${{ parameters.retries }}
+    verbose: ${{ parameters.verbose }}
+    settings: ${{ parameters.settings }}
+    customStep: ${{ parameters.customStep }}
+    extraSteps: ${{ parameters.extraSteps }}
+
+- template: /corpus/07-template-parameter-types/templates/job-with-types.yml
+  parameters:
+    jobSuffix: overridden
+    imageName: windows-latest
+    retries: 5
+    verbose: true
+    settings:
+      timeout: 5
+      tags:
+      - slow
+      nested:
+        key: other
+    customStep:
+      task: CmdLine@2
+      displayName: Passed as a task step
+      inputs:
+        script: echo "overridden single step"
+    extraSteps:
+    - script: echo "overridden extra step"

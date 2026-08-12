@@ -1,0 +1,99 @@
+trigger:
+  enabled: false
+pr:
+  enabled: false
+pool:
+  vmImage: ubuntu-latest
+stages:
+- stage: probe
+  jobs:
+  - job: detect
+    steps:
+    - task: Bash@3
+      name: flags
+      displayName: Detect what changed
+      inputs:
+        targetType: inline
+        script: |
+          echo "##vso[task.setvariable variable=changedApi;isOutput=true]true"
+          echo "##vso[task.setvariable variable=changedWeb;isOutput=true]false"
+    - task: Bash@3
+      displayName: Job-local variable
+      inputs:
+        targetType: inline
+        script: echo "##vso[task.setvariable variable=localOnly]not-an-output"
+    - task: CmdLine@2
+      inputs:
+        script: echo "local=$(localOnly)"
+- stage: build
+  dependsOn:
+  - probe
+  variables:
+  - name: apiChanged
+    value: $[ stageDependencies.probe.detect.outputs['flags.changedApi'] ]
+  jobs:
+  - job: api
+    condition: eq(variables.apiChanged, 'true')
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo "building api"
+    - task: Bash@3
+      name: meta
+      inputs:
+        targetType: inline
+        script: echo "##vso[task.setvariable variable=version;isOutput=true]1.2.3"
+  - job: web
+    condition: eq(stageDependencies.probe.detect.outputs['flags.changedWeb'], 'true')
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo "building web"
+  - job: summary
+    dependsOn:
+    - api
+    - web
+    condition: not(failed())
+    variables:
+    - name: apiVersion
+      value: $[ dependencies.api.outputs['meta.version'] ]
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo "api version $(apiVersion)"
+    - task: CmdLine@2
+      condition: eq(dependencies.web.result, 'Skipped')
+      inputs:
+        script: echo "web was skipped"
+    - task: CmdLine@2
+      condition: always()
+      inputs:
+        script: echo "always runs"
+    - task: CmdLine@2
+      condition: succeededOrFailed()
+      inputs:
+        script: echo "runs even after a failure earlier in the job"
+- stage: report
+  dependsOn:
+  - probe
+  - build
+  condition: |
+    and(
+      succeeded('build'),
+      eq(dependencies.probe.result, 'Succeeded')
+    )
+  jobs:
+  - job: publish_report
+    timeoutInMinutes: 5
+    continueOnError: true
+    steps:
+    - task: CmdLine@2
+      continueOnError: true
+      retryCountOnTaskFailure: 2
+      inputs:
+        script: echo "reporting"
+    - task: CmdLine@2
+      condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+      inputs:
+        script: exit 0
+

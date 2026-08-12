@@ -144,8 +144,23 @@ Grounding: C-E00-019/020. UI path per the PAT doc (verified 2026-07-30):
   `research/experiments/`, replace the org name with `{org}` and check no PAT slipped in.
   PATs are mechanically detectable: 84 chars with a fixed `AZDO` signature at positions 76–80
   (C-E00-021) — `grep -rE '[A-Za-z0-9]{75}AZDO[A-Za-z0-9]{4}'` over staged files.
+- **What now lives in the oracle project** (E12-S01-T02 — keep this list current, it *is* the
+  cleanup checklist now that the project is not empty):
+  - `azure-pipelines.yml` — the anchor (E00-S03-T01).
+  - `/corpus/_probe/` — three template files backing the C-E12-011/012 resolution probe.
+  - `/corpus/<entry>/` — the corpus v1 fixtures, mirrored from `fixtures/corpus/` by
+    `node scripts/corpus-oracle.ts`; the service reads templates from the repo, so they must be
+    there for the corpus to have oracle pairs at all.
+  - Environments `corpus-staging`, `corpus-production` (no resources) and variable group
+    `azdo-emu-corpus-group` (two non-secret dummy values), all authorized for the anchor pipeline
+    by `node scripts/oracle-provision.ts`. They exist because an unknown `environment:`/`- group:`
+    fails the YAML at load time (C-E12-015/017).
+  - Owner decision recorded 2026-08-11: corpus files go to **`main`** under `corpus/` rather than
+    to a dedicated ref. `trigger: none` on the anchor means the pushes queue nothing.
 - **End of project**: revoke the PAT, then delete the org (Organization settings → Overview →
-  Delete). Nothing else lives there.
+  Delete). If only the *project* is being cleaned up (the org is the owner's personal one — see
+  deviation 1), deleting the `oracle` project removes the repo, both environments and the variable
+  group with it.
 
 ## Completion record (fill when followed end-to-end)
 
@@ -153,10 +168,10 @@ Grounding: C-E00-019/020. UI path per the PAT doc (verified 2026-07-30):
 |---|---|
 | Org created (name **redacted**; note only that it exists) | 2026-07-31 — existing personal org reused (see deviation below), not a throwaway |
 | Project + pipeline created, `definitionId` noted | 2026-07-31 — project `oracle` (private, Basic process) + pipeline `oracle-anchor` `definitionId=19`; anchor `azure-pipelines.yml` pushed to `refs/heads/main` |
-| PAT created (scope, expiry date) | 2026-07-31 — user-supplied, 84 chars (matches C-E00-021 format); scope broader than Build (read) — org-wide project list succeeded. **Rotation pending**, see below |
+| PAT created (scope, expiry date) | 2026-07-31 — user-supplied, 84 chars (matches C-E00-021 format); scope broader than Build (read). **Rotated 2026-08-11** (deviation 3 closed): replacement issued by the owner and written straight into `.env.oracle` — never through chat this time — old token revoked. Verified live: the full corpus (10 previews + repo tree reads) ran green against it and reproduced byte-identical goldens |
 | Step-5 preview curl returned 200 + `finalYaml` | 2026-07-31 — HTTP 200; `steps:`-only probe expanded to `stages: __default` → `job: Job` → `task: CmdLine@2`, confirming C-E00-017/018 (route, api-version, body) and the `finalYaml` field name live |
 | `.env.oracle` written locally (gitignore verified) | 2026-07-31 — `git check-ignore -v` → `.gitignore:7:.env.*`, confirmed before the token was written |
-| GitHub repo secrets stored | _deferred_ — see rotation note; only needed by E12-S03 (workflow no-ops until `ORACLE_ENABLED`) |
+| GitHub repo secrets stored | 2026-08-11 — all four (`AZDO_ORG_URL`, `AZDO_PROJECT`, `AZDO_ORACLE_PIPELINE_ID`, `AZDO_PAT`) stored as **secrets** by the owner, so the org name stays out of public logs. Repo variable `ORACLE_ENABLED` deliberately still unset — E12-S03 sets it when the preview-diff harness exists |
 
 ### Deviations from this runbook (recorded 2026-07-31)
 
@@ -169,8 +184,11 @@ Grounding: C-E00-019/020. UI path per the PAT doc (verified 2026-07-30):
 2. **PAT scope is wider than documented.** C-E00-019 says Build (read) suffices, and the preview
    call proves it works — but this token also lists every project in the org, so it is not
    minimally scoped. The narrowing happens at rotation.
-3. **PAT rotation outstanding.** The current token was transmitted in cleartext through a chat
-   transcript and must be treated as compromised: revoke it, issue a replacement scoped
-   **Build (read) on this org only**, write it straight into `.env.oracle` (never into a
-   transcript), re-run the Step-5 curl, and only then store the four GitHub repo secrets.
-   Until that is done, item 6 above stays `_deferred_` and CI has no oracle credentials.
+3. **PAT rotation — closed 2026-08-11.** The original token had been transmitted in cleartext
+   through a chat transcript and was treated as compromised. The owner issued a replacement,
+   wrote it directly into `.env.oracle` (no chat round-trip), stored the four GitHub repo
+   secrets, and revoked the old token; a full `pnpm corpus-oracle` run against the new token
+   returned all ten expansions byte-identical, which exercises Build (read) and Code (read).
+   **Code (write) is not yet exercised** by that check — nothing had changed, so no push was
+   attempted; the first corpus fixture edit will prove it, and a 403 there means re-issuing with
+   Code (read & write). Scope minimality (deviation 2) was not re-audited at rotation.

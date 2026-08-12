@@ -1,0 +1,80 @@
+trigger:
+  enabled: false
+pr:
+  enabled: false
+pool:
+  vmImage: ubuntu-latest
+stages:
+- stage: build
+  displayName: Build and publish
+  jobs:
+  - job: compile
+    steps:
+    - task: 6d15af64-176c-496d-b583-fd2ae21d4df4@1
+      inputs:
+        repository: self
+        fetchDepth: 1
+    - task: CmdLine@2
+      displayName: Stage build output
+      inputs:
+        script: |
+          mkdir -p $(Build.ArtifactStagingDirectory)/app
+          echo "binary" > $(Build.ArtifactStagingDirectory)/app/app.bin
+    - task: CopyFiles@2
+      displayName: Copy config next to the binary
+      inputs:
+        SourceFolder: $(Build.SourcesDirectory)
+        Contents: |
+          **/*.yml
+          !**/node_modules/**
+        TargetFolder: $(Build.ArtifactStagingDirectory)/app
+        CleanTargetFolder: false
+    - task: PublishPipelineArtifact@1
+      displayName: Publish app artifact
+      inputs:
+        targetPath: $(Build.ArtifactStagingDirectory)/app
+        artifact: app
+        publishLocation: pipeline
+  - job: docs
+    steps:
+    - task: CmdLine@2
+      displayName: Generate docs
+      inputs:
+        script: |
+          mkdir -p docs-out
+          echo "# docs" > docs-out/index.md
+    - task: ecdc45f6-832d-4ad9-b52b-ee49e94659be@1
+      inputs:
+        path: docs-out
+        artifactName: docs
+- stage: deploy
+  displayName: Consume artifacts
+  dependsOn:
+  - build
+  condition: succeeded()
+  jobs:
+  - job: consume
+    steps:
+    - task: 6d15af64-176c-496d-b583-fd2ae21d4df4@1
+      condition: false
+      inputs:
+        repository: none
+    - task: 30f35852-3f7e-4c0c-9a88-e127b4f97211@1
+      displayName: Download only the binary
+      inputs:
+        alias: current
+        artifact: app
+        patterns: '**/*.bin'
+    - task: DownloadPipelineArtifact@2
+      displayName: Download docs to an explicit path
+      inputs:
+        buildType: current
+        artifactName: docs
+        targetPath: $(Pipeline.Workspace)/docs
+    - task: CmdLine@2
+      displayName: Assert both artifacts landed
+      inputs:
+        script: |
+          test -f "$(Pipeline.Workspace)/app/app.bin"
+          test -f "$(Pipeline.Workspace)/docs/index.md"
+

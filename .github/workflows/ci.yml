@@ -33,10 +33,12 @@ jobs:
       - run: pnpm lint
       - name: Grounding guard (no unresolved research markers in code paths)
         run: bash scripts/check-verify-markers.sh --all
-      - name: Unit tests (vitest, junit report)
+      # --coverage is what enforces the per-package thresholds in vitest.config.ts (E12-S01-T01);
+      # without it the thresholds are inert. Same flags as `pnpm test:unit`, plus the junit report.
+      - name: Unit tests (vitest + coverage thresholds, junit report)
         run: |
           mkdir -p reports
-          pnpm vitest run --reporter=default --reporter=junit --outputFile.junit=reports/vitest-junit.xml
+          pnpm vitest run --coverage --reporter=default --reporter=junit --outputFile.junit=reports/vitest-junit.xml
       - name: Runtime tests (bats, junit report) # C-E00-003/004: dir invocation + --report-formatter
         run: |
           mkdir -p reports
@@ -46,4 +48,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: test-reports-${{ matrix.os }}-node${{ matrix.node }}
-          path: reports/
+          path: |
+            reports/
+            coverage/

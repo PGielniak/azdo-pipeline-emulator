@@ -1,0 +1,68 @@
+trigger:
+  enabled: false
+pr:
+  enabled: false
+variables:
+- name: governedBy
+  value: platform-team
+stages:
+- stage: build
+  displayName: Build (governed)
+  jobs:
+  - job: api
+    displayName: Build the API
+    steps:
+    - task: CmdLine@2
+      displayName: Mandated pre-step
+      inputs:
+        script: echo "mandated pre-step for api"
+    - task: CmdLine@2
+      inputs:
+        script: echo "compile api"
+    - task: CmdLine@2
+      inputs:
+        script: echo "unit tests api"
+    - task: CmdLine@2
+      displayName: Scan api
+      condition: succeededOrFailed()
+      inputs:
+        script: echo "security scan for api"
+  - job: web
+    displayName: Build the web app
+    dependsOn:
+    - api
+    steps:
+    - task: CmdLine@2
+      displayName: Mandated pre-step
+      inputs:
+        script: echo "mandated pre-step for web"
+    - task: CmdLine@2
+      inputs:
+        script: echo "compile web"
+    - task: CmdLine@2
+      displayName: Scan web
+      condition: succeededOrFailed()
+      inputs:
+        script: echo "security scan for web"
+- stage: deploy_staging
+  displayName: Deploy to staging
+  dependsOn:
+  - build
+  jobs:
+  - job: deploy
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo "deploying to staging (governed by $(governedBy))"
+- stage: deploy_production
+  displayName: Deploy to production
+  dependsOn:
+  - build
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - job: deploy
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo "deploying to production (governed by $(governedBy))"
+

@@ -1,0 +1,31 @@
+# Referenced root-absolutely from the root document; references its own siblings by bare name,
+# which resolves relative to *this* file's directory (C-E12-012).
+parameters:
+- name: configuration
+  type: string
+  default: Release
+- name: projects
+  type: object
+  default: []
+- name: runTests
+  type: boolean
+  default: true
+- name: preSteps
+  type: stepList
+  default: []
+
+steps:
+- ${{ each step in parameters.preSteps }}:
+  - ${{ step }}
+
+- ${{ each project in parameters.projects }}:
+  - script: echo "building ${{ project }} as ${{ parameters.configuration }}"
+    displayName: Build ${{ project }}
+
+- ${{ if eq(parameters.runTests, true) }}:
+  - template: test.yml
+    parameters:
+      configuration: ${{ parameters.configuration }}
+- ${{ else }}:
+  - script: echo "tests skipped for ${{ parameters.configuration }}"
+    displayName: Tests disabled

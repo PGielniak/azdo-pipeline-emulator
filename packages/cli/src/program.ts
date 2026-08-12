@@ -6,6 +6,7 @@
 // What this module owns is the shape: the surface a user sees, and the exit code they get.
 import { createRequire } from 'node:module';
 import { Command, CommanderError, Option } from 'commander';
+import { parseParameterOption, type ParameterValue } from './config/index.js';
 import { CliError, EXIT, NotImplementedError, type ExitCode } from './exit.js';
 
 /** Where the CLI writes, and what it knows about the terminal. Injected so tests are hermetic. */
@@ -83,6 +84,14 @@ export function createProgram(io: Io): Command {
     .description('convert a pipeline into a local project of bash scripts')
     .argument('<pipeline.yml>', 'the pipeline to convert')
     .requiredOption('-o, --out <dir>', 'output directory for the generated project')
+    // Repeatable, and parsed here so a malformed value fails before any work starts. The value
+    // stays as typed — coercion to the pipeline's declared parameter type is the binder's job
+    // (C-E13-009). `name=@file.json` loads a complex value; `@@` escapes a literal `@` (C-E13-013).
+    .option(
+      '--parameter <name=value>',
+      'runtime parameter (repeatable); `name=@file.json` for a complex value',
+      collectParameter,
+    )
     .action(() => {
       throw new NotImplementedError('convert', 'E13-S02-T01 (flag surface) on top of E05');
     });
@@ -158,6 +167,15 @@ function report(error: unknown, io: Io): ExitCode {
 
 function asExitCode(code: number): ExitCode {
   return (Object.values(EXIT) as number[]).includes(code) ? (code as ExitCode) : EXIT.error;
+}
+
+/** Accumulator for the repeatable `--parameter`; later occurrences win per name (C-E13-012). */
+function collectParameter(
+  raw: string,
+  previous: Record<string, ParameterValue> | undefined,
+): Record<string, ParameterValue> {
+  const [name, value] = parseParameterOption(raw);
+  return { ...previous, [name]: value };
 }
 
 /** `--mode interactive|az|pat` style options: a choice list commander validates and documents. */

@@ -1,0 +1,10 @@
+# Third level of nesting: referenced by bare name from build.yml, and referencing a fourth file
+# the same way. Depth matters — the context stack has to unwind correctly.
+parameters:
+- name: configuration
+  type: string
+
+steps:
+- script: echo "testing ${{ parameters.configuration }}"
+  displayName: Test ${{ parameters.configuration }}
+- template: publish-results.yml

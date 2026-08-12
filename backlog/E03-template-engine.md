@@ -26,6 +26,13 @@ Acceptance: directive semantics proven by oracle fixture pairs, not by reading a
   **Do:** lone-expression structural insertion vs mixed-content stringification; Null→``, Boolean→`True/False`, Number invariant; expression-in-key stringification.
   **Ground:** docs/02 §3 spec + oracle probes for each stringification rule (esp. Boolean casing, float rendering `0.5`/`1.0`); claims per rule.
   **Done:** table-driven goldens vs oracle.
+  *Note (E02-S01-T02, C-E02-109):* the service compiles a mixed-content scalar into a synthetic
+  `format('<literal with {0} holes>', <expr>, …)` call and parses **that** — a parse error inside
+  one is reported as `position 29 within expression: 'format('prefix {0} suffix', null)'`, and a
+  block scalar becomes one `format` whose literal carries real newlines. So "stringify and
+  concatenate" is `format`'s stringification (E02-S03-T02), not a separate rule, and the
+  lone-expression/mixed-content split is visible in the service's own error text. Transcripts:
+  `research/experiments/E02-errors/` rows `embed-mid-scalar`/`embed-second-expr`/`block-scalar`.
 
 ## E03-S02 — As a pipeline developer, includes/`extends` with typed parameters resolve like the service, so multi-file pipelines just work.
 Acceptance: reference forms, parameter typing, and `extends` restrictions all enforced with service-matching errors.
@@ -54,6 +61,7 @@ Acceptance: policy function backed by an experiment matrix.
   **Do:** design & run oracle experiments: `${{ variables.x }}` read in root vs included template vs nested template; variable declared before/after use; variables from `variables:` templates; stage-level vs root-level. ≥ 12 cells; store inputs+`finalYaml`.
   **Ground:** the experiments **are** the grounding (docs are known-incomplete here — note the doc gap with links to what the templates/variables docs do say).
   **Done:** `research/E03-visibility.md` table: cell → observed behavior → claim ID.
+  *Note (2026-08-11, E12-S01-T02): one cell is already answered and should be carried in, plus a thirteenth the Do list doesn't name — **job-level scoping**: `${{ variables.x }}` read inside a job that overrides `x` resolves to the **job's** value, not the pipeline-level one (C-E12-024, `fixtures/oracle/04-variable-layers.final.yml:55`). Corpus entry 04 is a ready-made input for the matrix.*
 - [ ] **E03-S03-T02 — `compileTimeVariableScope()` policy implementation**
   **Do:** single policy function consumed by the walker; every branch annotated with the claim ID from T01.
   **Ground:** exclusively the T01 experiment claims (`research/E03-visibility.md`) — no branch may exist without a cell citation; templates/variables doc statements (where they exist) linked alongside as secondary support.
@@ -77,7 +85,7 @@ Acceptance: limits enforced; `pipeline.expanded.yml` + `expansion-map.json` emit
 ## E03-S05 — As the project owner, `preview-diff` proves our engine against the service continuously, so parity drift is detected within a day.
 Acceptance: normalize-and-diff pipeline usable locally and in CI.
 
-- [ ] **E03-S05-T01 — Normalizer**
+- [x] **E03-S05-T01 — Normalizer** *(done 2026-08-11. `packages/engine/src/normalize/normalize.ts` — `normalizeExpandedYaml()` returning `{value, text, applied, errors}`: a path-addressable canonical structure for E03-S05-T02's semantic diff plus a stable serialization, with the exercised rule ids reported. Eight rules N1–N8, each citing its claim and its corpus sample; catalogue in `research/E03-normalizer.md`, evidence in `research/experiments/E03-normalizer/survey.md` (`pnpm normalizer-survey`). **The canonical target was established, not chosen**: re-submitting each committed `finalYaml` as `yamlOverride` returns it byte-for-byte — 10/10 fixpoint modulo the single output-only shape `trigger:/pr: {enabled: false}`, which the service emits and then **refuses to read back** (C-E03-001/002). Scope boundary held deliberately: the normalizer does **not** expand — no `stages: __default` wrapping, no shortcut→task desugaring — because doing expansion here would let a broken expander pass `preview-diff`. 49 tests; idempotence over every golden is a real gate, not a formality (it caught list-item rules re-wrapping their own output on each pass).)*
   **Do:** canonicalization for both sides: key ordering, insignificant whitespace, server-injected defaults (catalog them as discovered — each injected default gets a claim + normalizer rule).
   **Ground:** empirically from oracle outputs on the corpus; every normalizer rule cites the sample that motivated it.
   **Done:** normalizer idempotent; rule list documented in `research/E03-normalizer.md`.

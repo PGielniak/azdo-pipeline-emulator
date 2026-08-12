@@ -11,13 +11,22 @@
   "scripts": {
     "build": "pnpm -r run build",
     "test": "pnpm run test:unit && pnpm run test:bats",
-    "test:unit": "vitest run",
+    "test:unit": "vitest run --coverage",
     "test:bats": "pnpm --filter @azdo-emu/runtime run test",
-    "typecheck": "tsc --noEmit -p scripts && pnpm -r run typecheck",
+    "typecheck": "tsc --noEmit -p tsconfig.meta.json && tsc --noEmit -p scripts && pnpm -r run typecheck",
     "refresh-schema": "node scripts/refresh-schema.ts",
     "oracle-probe": "node scripts/oracle-probe.ts",
     "oracle-quirks": "node scripts/oracle-quirks.ts",
     "org-schema": "node scripts/org-schema.ts",
+    "oracle-provision": "node scripts/oracle-provision.ts",
+    "corpus-probe": "node scripts/corpus-probe.ts",
+    "corpus-oracle": "node scripts/corpus-oracle.ts",
+    "normalizer-survey": "node scripts/normalizer-survey.ts",
+    "expr-grammar-survey": "node scripts/expr-grammar-survey.ts",
+    "expr-error-survey": "node scripts/expr-error-survey.ts",
+    "expr-coercion-survey": "node scripts/expr-coercion-survey.ts",
+    "expr-member-survey": "node scripts/expr-member-survey.ts",
+    "expr-logical-survey": "node scripts/expr-logical-survey.ts",
     "lint": "pnpm run lint:es && pnpm run lint:format && pnpm run lint:shell",
     "lint:es": "eslint .",
     "lint:format": "prettier --check .",
@@ -27,12 +36,14 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.1.2",
+    "@vitest/coverage-v8": "4.1.10",
     "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.9.6",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.65.0",
-    "vitest": "^4.1.10"
+    "vitest": "4.1.10",
+    "yaml": "2.9.0"
   }
 }

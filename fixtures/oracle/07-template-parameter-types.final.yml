@@ -1,0 +1,125 @@
+trigger:
+  enabled: false
+pr:
+  enabled: false
+pool:
+  vmImage: ubuntu-latest
+parameters:
+- name: imageName
+  displayName: Agent image
+  type: string
+  default: ubuntu-latest
+  values:
+  - ubuntu-latest
+  - windows-latest
+- name: retries
+  type: number
+  default: 2
+  values:
+  - 1
+  - 2
+  - 5
+- name: verbose
+  type: boolean
+  default: false
+- name: settings
+  type: object
+  default:
+    timeout: 30
+    tags:
+    - fast
+    - smoke
+    nested:
+      key: value
+- name: customStep
+  type: step
+  default:
+    script: echo "default single step"
+- name: extraSteps
+  type: stepList
+  default:
+  - script: echo "default extra step one"
+  - bash: echo "default extra step two"
+stages:
+- stage: __default
+  jobs:
+  - job: typed_default
+    displayName: Typed parameters (default)
+    pool:
+      vmImage: ubuntu-latest
+    variables:
+    - name: timeoutSetting
+      value: 30
+    - name: nestedSetting
+      value: value
+    steps:
+    - task: CmdLine@2
+      displayName: Scalars survive their types
+      retryCountOnTaskFailure: 2
+      inputs:
+        script: echo "retries=2 verbose=False"
+    - task: CmdLine@2
+      displayName: Object parameter indexed by path
+      inputs:
+        script: echo "timeout=$(timeoutSetting) nested=$(nestedSetting)"
+    - task: CmdLine@2
+      displayName: Tag fast
+      inputs:
+        script: echo "tag fast"
+    - task: CmdLine@2
+      displayName: Tag smoke
+      inputs:
+        script: echo "tag smoke"
+    - task: CmdLine@2
+      inputs:
+        script: echo "default single step"
+    - task: CmdLine@2
+      inputs:
+        script: echo "default extra step one"
+    - task: Bash@3
+      inputs:
+        targetType: inline
+        script: echo "default extra step two"
+    - task: CmdLine@2
+      displayName: Functions over parameter collections
+      inputs:
+        script: echo "count=2 joined=fast,smoke"
+  - job: typed_overridden
+    displayName: Typed parameters (overridden)
+    pool:
+      vmImage: windows-latest
+    variables:
+    - name: timeoutSetting
+      value: 5
+    - name: nestedSetting
+      value: other
+    steps:
+    - task: CmdLine@2
+      displayName: Scalars survive their types
+      retryCountOnTaskFailure: 5
+      inputs:
+        script: echo "retries=5 verbose=True"
+    - task: CmdLine@2
+      displayName: Truthiness of a boolean parameter
+      inputs:
+        script: echo "verbose mode on"
+    - task: CmdLine@2
+      displayName: Object parameter indexed by path
+      inputs:
+        script: echo "timeout=$(timeoutSetting) nested=$(nestedSetting)"
+    - task: CmdLine@2
+      displayName: Tag slow
+      inputs:
+        script: echo "tag slow"
+    - task: CmdLine@2
+      displayName: Passed as a task step
+      inputs:
+        script: echo "overridden single step"
+    - task: CmdLine@2
+      inputs:
+        script: echo "overridden extra step"
+    - task: CmdLine@2
+      displayName: Functions over parameter collections
+      inputs:
+        script: echo "count=1 joined=slow"
+

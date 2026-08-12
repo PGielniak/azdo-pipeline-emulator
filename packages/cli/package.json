@@ -20,9 +20,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "commander": "15.0.0"
+    "commander": "15.0.0",
+    "yaml": "2.9.0"
   },
   "bin": {
     "azdo-emu": "./dist/bin.js"
+  },
+  "devDependencies": {
+    "ajv": "^8.20.0"
   }
 }
