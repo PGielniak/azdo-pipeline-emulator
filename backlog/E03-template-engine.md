@@ -22,7 +22,9 @@ Acceptance: directive semantics proven by oracle fixture pairs, not by reading a
   directive parameters are **expression tokens, not whitespace-split words**, so the `each`
   separator must be found by tokenizing rather than `indexOf(' in ')` (C-E03-101/104). Semantics
   stay with T02–T05 per their fixture obligations; two gaps were filed rather than fixed
-  (E01-S01-T04, E02-S01-T03).
+  (E01-S01-T04, E02-S01-T03). `loneExpression` finds its closing `}}` with a quote-aware scan: the
+  documented escape for a literal `${{` is to wrap it in an expression string (C-E03-117), which
+  E03-S01-T05 depends on.
 - [ ] **E03-S01-T02 — Conditional insertion chains**
   **Do:** `if/elseif/else` chain grouping in document order; winning branch spliced into parent; nested chains.
   **Ground:** templates doc "Conditional insertion"; **oracle fixtures**: ≥ 6 cases (mapping vs sequence, nested, else-only-missing) — commit input+`finalYaml` pairs under `fixtures/oracle/directives/` with claim IDs.

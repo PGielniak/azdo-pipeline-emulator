@@ -10,7 +10,7 @@ time the IDs were load-bearing in code comments and test names) is the reason th
 | Block | Task | File | Status |
 |---|---|---|---|
 | `C-E03-001..099` | E03-S05-T01 normalizer | `research/E03-normalizer.md` | 001–003 used |
-| `C-E03-100..119` | **E03-S01-T01 DOM walker with context stack** | this file | 100–115 used |
+| `C-E03-100..119` | **E03-S01-T01 DOM walker with context stack** | this file | 100–117 used |
 | `C-E03-120..139` | E03-S01-T02 conditional insertion chains | this file | free |
 | `C-E03-140..159` | E03-S01-T03 iterative insertion (`each`) | this file | free |
 | `C-E03-160..174` | E03-S01-T04 `${{ insert }}` merge | this file | free |
@@ -24,7 +24,7 @@ Leave gaps. A branch that numbers from what it can see collides silently with ev
 
 ---
 
-## E03-S01-T01 — directive recognition (`C-E03-100..115`)
+## E03-S01-T01 — directive recognition (`C-E03-100..117`)
 
 Evidence: `research/experiments/E03-walk/` — **33 live preview probes** (`pnpm template-walk-survey`).
 The task's **Ground** field asks for the templates doc plus the `actions/runner` object-templating
@@ -189,6 +189,18 @@ service collects every error in the document rather than stopping at the first.
   — research/experiments/E03-walk/{unknown-keyword,unknown-keyword-mapping,case-insert-upper}.md
     (live preview, checked 2026-08-12)
 
+[C-E03-117] **A literal `${{` is escaped by putting it inside an expression string**, which makes
+the closing `}}` findable only by a quote-aware scan. The doc gives both spellings, including the
+`''` escape inside the escape. Consequence for `loneExpression`: `endsWith('}}')` plus a
+"contains `${{`" rejection reports *not a lone expression* for the doc's own canonical spelling —
+and lone-expression-vs-mixed-content is precisely the distinction E03-S01-T05 is built on, so the
+bug would surface there rather than here. The scan skips single-quoted strings (`''` = a literal
+quote, C-E02-006) and takes the first `}}` outside one.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions (checked
+    2026-08-12) — "If you need to escape a value that literally contains `${{`, wrap the value in
+    an expression string. For example, use `${{ 'my${{value' }}` or `${{ 'my${{value with a ''
+    single quote too' }}`."
+
 ### Handed to other epics
 
 [C-E03-114] **E02 gap: `Expected '(' to follow a function: '<name>'` is a general expression error
@@ -210,6 +222,19 @@ about the directive set — the conditional and iterative directives this task r
 counterpart in it to read.
   — https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTObjectTemplating/ObjectTemplating/TemplateConstants.cs#L21
     (checked 2026-08-12) — `internal const String InsertDirective = "insert";`
+
+[C-E03-116] **The fork's evaluation loop is a recursive `Evaluate(DefinitionInfo)` driven by a
+`TemplateUnraveler`, and that shape — not its content — is what carries over.** `TemplateEvaluator`
+recurses per node (`Evaluate` at L89) and consumes children through unraveler predicates rather
+than an index: `while (!m_unraveler.AllowSequenceEnd(definition.Expand))` for sequences (L116) and
+`while (m_unraveler.AllowScalar(definition.Expand, out ScalarToken nextKeyScalar))` for mapping
+keys (L196), calling `Evaluate` again for each value (L203/L225/L314). Our `walkTemplate` is the
+same recursion over E01's already-materialized DOM, which is why it needs no unraveler: the
+streaming/`Expand` machinery exists to interleave expansion with reading, and T01 expands nothing.
+Read to satisfy this task's **Ground** ("pin permalink to its evaluation loop"); the loop is
+usable, its *directive* handling is not, per C-E03-115.
+  — https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTObjectTemplating/ObjectTemplating/TemplateEvaluator.cs#L89-L203
+    (checked 2026-08-12)
 
 ### Probe index
 

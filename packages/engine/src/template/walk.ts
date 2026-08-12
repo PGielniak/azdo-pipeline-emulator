@@ -92,19 +92,50 @@ export type DirectiveMatch =
  * "Exactly one" is load-bearing: mixed content (`name-${{ x }}`) is interpolation (T05), never a
  * directive, and a directive keyword in a *value* is not a directive at all (C-E03-112). The
  * returned offset is into `text`, so a caller holding the scalar's file offset can lift spans.
+ *
+ * The closing `}}` is found by scanning **outside single-quoted strings**, not by `endsWith`,
+ * because the documented escape for a literal `${{` is to put it inside one: `${{ 'my${{value' }}`
+ * (C-E03-117). A naive scan reports "not a lone expression" for a spelling the docs give as the
+ * canonical way to write it — and this function is what E03-S01-T05 will use to make exactly that
+ * distinction, so the bug would land there rather than here.
  */
 export function loneExpression(
   text: string,
 ): { readonly inner: string; readonly offset: number } | undefined {
   const trimmed = text.trim();
-  if (!trimmed.startsWith('${{') || !trimmed.endsWith('}}') || trimmed.length < 5) return undefined;
-  const body = trimmed.slice(3, -2);
-  // A second `${{` inside means this is mixed content the scanner would split, not a lone
-  // expression. `}}` cannot appear inside because the scan is not nestable.
-  if (body.includes('${{')) return undefined;
+  if (!trimmed.startsWith('${{')) return undefined;
+  const end = closingDelimiter(trimmed, 3);
+  // A `}}` anywhere before the end means the scalar continues past this expression: mixed content.
+  if (end === undefined || end + 2 !== trimmed.length) return undefined;
   const lead = text.length - text.trimStart().length;
-  const inner = trimExpressionText(body);
+  const inner = trimExpressionText(trimmed.slice(3, end));
   return { inner: inner.text, offset: lead + 3 + inner.offset };
+}
+
+/**
+ * Index of the `}}` that closes an expression opened at `from`, or `undefined` if there is none.
+ * Single-quoted strings are skipped, `''` being the escape for a quote inside one (C-E02-006).
+ */
+function closingDelimiter(text: string, from: number): number | undefined {
+  let index = from;
+  while (index < text.length) {
+    const char = text[index];
+    if (char === "'") {
+      index += 1;
+      while (index < text.length) {
+        if (text[index] === "'") {
+          if (text[index + 1] !== "'") break;
+          index += 1; // `''` — a literal quote, not the terminator
+        }
+        index += 1;
+      }
+      index += 1; // past the closing quote (or past the end of an unterminated string)
+      continue;
+    }
+    if (char === '}' && text[index + 1] === '}') return index;
+    index += 1;
+  }
+  return undefined;
 }
 
 /**

@@ -49,6 +49,20 @@ describe('loneExpression', () => {
   ])('rejects %j — %s', (text) => {
     expect(loneExpression(text)).toBeUndefined();
   });
+
+  // C-E03-117 — the documented escape for a literal `${{` is to wrap it in an expression string,
+  // so the closing delimiter must be found outside single quotes. Both spellings are the doc's own.
+  it.each([
+    ["${{ 'my${{value' }}", "'my${{value'"],
+    ["${{ 'my${{value with a '' single quote too' }}", "'my${{value with a '' single quote too'"],
+    ["${{ 'a }} b' }}", "'a }} b'"],
+  ])('C-E03-117 — %j is one expression', (text, inner) => {
+    expect(loneExpression(text)?.inner).toBe(inner);
+  });
+
+  it('C-E03-117 — a `}}` outside quotes still ends the expression, so this is mixed content', () => {
+    expect(loneExpression("${{ 'a' }} tail ${{ 'b' }}")).toBeUndefined();
+  });
 });
 
 describe('expressionUnits — C-E03-101', () => {
