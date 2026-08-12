@@ -104,7 +104,7 @@ Acceptance: `parameters`, `variables`, `dependencies`, `stageDependencies`, `res
   (`research/experiments/E02-context/survey.md`) found **three** slot-keyed name tables rather than
   the documented compile/runtime binary, and proved a wrong-slot context is rejected
   byte-identically to a nonexistent one — so gating needed no new error kind (C-E02-080..091).
-- [ ] **E02-S04-T02 — `dependencies` / `stageDependencies` shapes**
+- [x] **E02-S04-T02 — `dependencies` / `stageDependencies` shapes** *(done 2026-08-12. `packages/engine/src/expr/dependencies.ts` builds the case-insensitive `dependencies.<job>` and `stageDependencies.<stage>.<job>` objects with stable `result` and flattened `outputs['step.var']` fields; optional service metadata remains outside the expression contract. Grounded by the real run in `research/experiments/E02-dependencies/real-run.md`, which found empty same-stage dependencies across stages and the stage→job→outputs shape. Tests: 3 focused cases; engine suite 641 green.)*
   **Do:** context objects exposing `result` and `outputs['step.var']` per documented shape, backed by the runtime store (E06) at run time.
   **Ground:** jobs & stages dependency docs (…/process/expressions#dependencies + deployment-jobs doc for deployment naming quirks); **experiment**: real pipeline in test org dumping `convertToJson(dependencies)` at stage and job level; transcripts stored and cited (this shape is notoriously under-documented).
   **Done:** shape fixtures generated from the experiment; unit tests against them.

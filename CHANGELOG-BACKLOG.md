@@ -1,6 +1,7 @@
 # Backlog changelog (append-only)
 
 2026-08-12 E02-S04-T02 in-progress — claimed by Codex /root on e02-s04-t01-expr-contexts (evidence: pending).
+2026-08-12 E02-S04-T02 done — dependency context builders for `dependencies` and `stageDependencies`, with grounded result/output shapes and a redacted real-run transcript (evidence: research/E02-expressions.md C-E02-092..095; research/experiments/E02-dependencies/real-run.md; packages/engine/test/expr/dependencies.test.ts; engine 641 tests green).
 
 Format: `YYYY-MM-DD E##-S##-T## <done|blocked|dropped|in-progress> — <one-line summary> (evidence: <research paths / tests>)`
 
