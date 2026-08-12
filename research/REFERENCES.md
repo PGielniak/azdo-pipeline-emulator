@@ -19,7 +19,7 @@ which is present in the rendered HTML but dropped by markdown converters).
 | Area | URL |
 |---|---|
 | YAML schema reference (landing; per-keyword subpages → see index below) | https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/ (C-E00-009) |
-| Expressions | https://learn.microsoft.com/azure/devops/pipelines/process/expressions — **verified 2026-08-12** (E02-S02-T01): Literals/Null/Version/`containsValue` establish the seven-kind model and absence of array literal syntax (C-E02-018); Literals/Variables/Filtered-arrays sections pinned as C-E02-002..009; every accept/reject rule re-checked live because the docs are silent on operators |
+| Expressions | https://learn.microsoft.com/azure/devops/pipelines/process/expressions — **deep-verified 2026-08-12** (E02-S02-T02): conversion table/signatures transcribed in C-E02-020; live service contradicts `Int32.TryParse` wording by accepting invariant decimals/groups (C-E02-021), and conversion produces 2-segment Versions although literals require 3–4 (C-E02-022). Seven-kind model C-E02-018; grammar C-E02-002..009 |
 | Conditions | https://learn.microsoft.com/azure/devops/pipelines/process/conditions |
 | Templates | https://learn.microsoft.com/azure/devops/pipelines/process/templates |
 | Template parameters | https://learn.microsoft.com/azure/devops/pipelines/process/template-parameters |

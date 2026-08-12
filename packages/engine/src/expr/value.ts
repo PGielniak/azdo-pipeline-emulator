@@ -26,8 +26,8 @@ export interface ExprString {
 
 export interface ExprVersion {
   readonly kind: 'version';
-  /** Three or four non-negative integer segments (C-E02-005/018). */
-  readonly segments: readonly [number, number, number, number?];
+  /** Literals have 3–4 segments; conversion can produce 2–4 (C-E02-005/022). */
+  readonly segments: readonly [number, number, number?, number?];
 }
 
 export interface ExprObject {
@@ -55,17 +55,16 @@ const validVersionSegment = (segment: number): boolean =>
   Number.isSafeInteger(segment) && segment >= 0;
 
 export function versionValue(segments: readonly number[]): ExprVersion {
-  if ((segments.length !== 3 && segments.length !== 4) || !segments.every(validVersionSegment)) {
-    throw new RangeError('expression versions require three or four non-negative integer segments');
+  if (segments.length < 2 || segments.length > 4 || !segments.every(validVersionSegment)) {
+    throw new RangeError('expression versions require two to four non-negative integer segments');
   }
-  const [major, minor, build, revision] = segments;
-  return {
-    kind: 'version',
-    segments:
-      revision === undefined
-        ? [major as number, minor as number, build as number]
-        : [major as number, minor as number, build as number, revision],
-  };
+  const major = segments[0] as number;
+  const minor = segments[1] as number;
+  const build = segments[2];
+  const revision = segments[3];
+  if (build === undefined) return { kind: 'version', segments: [major, minor] };
+  if (revision === undefined) return { kind: 'version', segments: [major, minor, build] };
+  return { kind: 'version', segments: [major, minor, build, revision] };
 }
 
 /** Parse the only Version literal form Azure Pipelines documents and accepts (C-E02-005/018). */

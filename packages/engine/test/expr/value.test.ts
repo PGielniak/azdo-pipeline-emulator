@@ -52,7 +52,8 @@ describe('expression value model', () => {
   );
 
   it('rejects invalid constructed Versions and non-finite Numbers', () => {
-    expect(() => versionValue([1, 2])).toThrow(RangeError);
+    expect(versionValue([1, 2]).segments).toEqual([1, 2]); // conversion-only shape (C-E02-022)
+    expect(() => versionValue([1])).toThrow(RangeError);
     expect(() => versionValue([1, 2, 3, 4, 5])).toThrow(RangeError);
     expect(() => versionValue([1, -2, 3])).toThrow(RangeError);
     expect(() => versionValue([1, 2.5, 3])).toThrow(RangeError);
@@ -88,7 +89,7 @@ describe('expression value model', () => {
     [],
     {},
     { kind: 'number', value: Number.NaN },
-    { kind: 'version', segments: [1, 2] },
+    { kind: 'version', segments: [1] },
     { kind: 'array', value: [null] },
     { kind: 'object', value: { bad: { kind: 'boolean', value: 'true' } } },
   ])('rejects malformed tagged input %#', (input) => {

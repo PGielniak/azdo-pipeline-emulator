@@ -232,6 +232,58 @@ and C-E02-005 outrank the fork for that seventh kind.
   — https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTExpressions2/Expressions2/Sdk/IReadOnlyArray.cs#L7-L15
     (checked 2026-08-12)
 
+[C-E02-020] **Conversions are directional, and comparisons convert the right operand to the
+left operand's kind.** The documented primitive matrix, transcribed cell-for-cell, is:
+Boolean→Number/String; Null→Boolean/Number/String; Number→Boolean/String and partially Version;
+String→Boolean, partially Null/Number/Version; Version→Boolean/String; same-kind cells need no
+conversion; every other primitive cell is unsupported. Boolean→Number is 0/1 and →String is
+`False`/`True`; Null→Boolean/Number/String is false/0/empty; Number→Boolean is zero false, otherwise
+true; String→Boolean is empty false, otherwise true; only empty String→Null; Version is always true
+as Boolean and stringifies by its components. `eq`/`ne` return false/true when conversion fails;
+ordered comparisons error. Strings compare ordinal-ignore-case.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/expressions#type-casting
+    (conversion table and per-type rules, checked 2026-08-12)
+  — table cells: `Boolean: - - Yes Yes -`; `Null: Yes - Yes Yes -`;
+    `Number: Yes - - Yes Partial`; `String: Yes Partial Partial - Partial`;
+    `Version: Yes - - Yes -`
+  — comparison entries say "Converts right parameter to match type of left parameter"; `eq`
+    false, `ne` true, and ordered comparisons error on failure.
+
+[C-E02-021] **The live service's String→Number behavior contradicts the current Learn wording:**
+it accepts invariant decimal and grouped strings, not only Int32. `eq(.5, '0.5')` and
+`eq(1000, '1,000')` are True; reverse-direction controls prove Number→String yields `0.5` and
+`1000`. Failed conversion makes `eq(1,'x')` False and `ne(1,'x')` True, while `lt(1,'x')` rejects
+with `Unable to convert from String to Number`. Empty String and Null compare equal in both
+directions, and Null compares equal to Number zero.
+  — research/experiments/E02-coercion/ (`string-to-number-half`,
+    `string-to-number-thousands`, `number-to-string-half`, `number-to-string-thousands`,
+    `string-number-failure-{eq,ne,lt}`, `empty-string-left-null`,
+    `null-left-empty-string`, `null-to-number`; live preview, checked 2026-08-12)
+  — contradicts https://learn.microsoft.com/azure/devops/pipelines/process/expressions#string
+    saying String→Number runs `Int32.TryParse`; decimal `.5` cannot be an Int32.
+
+[C-E02-022] **Version literals and converted Versions have different minimum arities.** A literal
+requires 3–4 segments (C-E02-005), but String→Version and Number→Version can produce a 2-segment
+Version: `lt(1.2.0, '1.3')` and `lt(1.2.0, 1.3)` are True. Missing components remain significant:
+`eq(1.2.0, '1.2')` and `eq(1.2.0, 1.2)` are False, while the three-component string control is
+True. Versions order component-wise (`1.2.3 < 1.10.0`). Whole Number `2` cannot convert because it
+has no nonzero decimal.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/expressions#number and #string
+    (partial Number→Version constraint and `Version.TryParse`; checked 2026-08-12)
+  — research/experiments/E02-coercion/ (`number-to-version{,-ordered,-invalid}`,
+    `string-to-version-{two,ordered,three}`, `version-order`, `version-to-number`; live preview,
+    checked 2026-08-12)
+
+[C-E02-023] **Object and Array equality is reference identity, not structural equality.** Comparing
+the same parameter object/array with itself is True; comparing two separately declared values with
+the same shape is False. Every ordered collection comparison — even a reference against itself —
+is rejected as an Object/Array→Number conversion failure.
+  — research/experiments/E02-coercion/ (`object-{same-reference,distinct-equal-shape}` and
+    `array-{same-reference,distinct-equal-shape}`, plus `{object,array}-{same,distinct}-order`;
+    live preview, checked 2026-08-12)
+  — corroborated by https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTExpressions2/Expressions2/EvaluationResult.cs#L139-L141
+    (`Object.ReferenceEquals`; checked 2026-08-12)
+
 ## Known message-level divergence (deliberate)
 
 `! true` (bang, space, operand) is rejected by both sides but at different places: the service

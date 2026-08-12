@@ -32,10 +32,12 @@ Acceptance: the documented conversion table implemented and cross-verified.
   *Done 2026-08-12:* `packages/engine/src/expr/value.ts` defines the seven-kind tagged model,
   parser-literal bridge, validated 3–4 segment Version constructor/parser, and tagged recursive
   round-trip encoding. `packages/engine/test/expr/value.test.ts`: 22 tests (C-E02-018/019).
-- [ ] **E02-S02-T02 — Coercion & equality table**
+- [x] **E02-S02-T02 — Coercion & equality table**
   **Do:** implement conversion matrix + `eq/ne/lt/le/gt/ge` semantics: ordinal-ignore-case string compare, Boolean→String `'True'/'False'`, String→Number invariant parse (failure semantics per doc), Null interactions, Version comparisons.
   **Ground:** the doc's conversion table verbatim (quote each cell you encode as a claim); ambiguous cells (`'' vs null`, objects in `eq`, number formatting of `0.5`) → oracle experiments with `${{ }}` probes; transcripts in `research/experiments/E02-coercion/`.
   **Done:** table-driven test file `coercion.table.ts` ≥ 120 rows, every row citing claim or experiment ID.
+  *Done 2026-08-12:* `packages/engine/src/expr/coercion.ts`; exactly 120 comparison rows
+  (20 grounded scenarios × 6 operators), each citing C-E02-020..023; 28 live preview transcripts.
 - [ ] **E02-S02-T03 — Member access semantics**
   **Do:** property/index on Objects/Arrays; missing member → Null; index into Null → Null (safe chaining); case-insensitivity of property names (verify!).
   **Ground:** expressions doc + oracle probes for case sensitivity and missing-member behavior; pin agent SDK `Get`/indexer code path.
