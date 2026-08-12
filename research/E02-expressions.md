@@ -372,12 +372,14 @@ E02-S03-T01's requested "contains string/array duality"; Array membership belong
 [C-E02-032] **`containsValue` takes exactly two parameters and searches either Array items or
 Object property values.** Each candidate is converted to the right parameter's type, a conversion
 failure is a nonmatch, String comparison is ordinal-ignore-case, and iteration stops at the first
-match. Live Object probes confirm both case-insensitive matching (`beta` matches `BETA`) and the
-conversion direction (`'01'` among the property values matches right-side Number `1`).
+match. A non-collection left parameter returns false. Live probes confirm the Array path, Object
+case-insensitive matching (`beta` matches `BETA`), the conversion direction (`'01'` among the
+property values matches right-side Number `1`), and the primitive fallback.
   — https://learn.microsoft.com/azure/devops/pipelines/process/expressions#containsvalue
     (checked 2026-08-12)
-  — research/experiments/E02-logical/ (`contains-value-object-hit`,
-    `contains-value-conversion-direction`; live preview, checked 2026-08-12)
+  — research/experiments/E02-logical/ (`contains-value-array-hit`, `contains-value-object-hit`,
+    `contains-value-conversion-direction`, `contains-value-primitive-left`; live preview, checked
+    2026-08-12)
 
 ## Known message-level divergence (deliberate)
 

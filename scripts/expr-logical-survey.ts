@@ -75,10 +75,21 @@ const PROBES: readonly Probe[] = [
     OBJECT_PARAMETER,
   ),
   probe(
+    'contains-value-array-hit',
+    "containsValue(parameters.items, 'BETA')",
+    'Array items participate in ordinal-ignore-case membership.',
+    ARRAY_PARAMETER,
+  ),
+  probe(
     'contains-value-conversion-direction',
     'containsValue(parameters.values, 1)',
     'A collection String value is converted to the right parameter Number type.',
     OBJECT_PARAMETER,
+  ),
+  probe(
+    'contains-value-primitive-left',
+    "containsValue('Alpha', 'alpha')",
+    'Settles the fallback when the left parameter is neither Array nor Object.',
   ),
 ];
 
