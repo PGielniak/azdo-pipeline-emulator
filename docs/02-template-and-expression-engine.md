@@ -55,6 +55,14 @@ Server limits enforced identically so we fail where the server would: max distin
 
 **`${{ insert }}`** — merge a mapping into the parent mapping (used e.g. to inject extra keys into a job).
 
+**Recognition rules (measured 2026-08-12, E03-S01-T01, C-E03-100..113; 33 preview probes in `research/experiments/E03-walk/`).** The four paragraphs above describe what the directives *do*; none of the rules below is stated by either doc, and three of them are the opposite of the natural guess:
+
+- **The keyword set is closed and case-sensitive** — lower-case only. `${{ IF … }}`, `${{ EACH … }}`, `${{ INSERT }}` are rejected, and rejected *as expressions*: a wrongly cased keyword is not a mis-spelled directive, it is not a directive at all and the whole delimited text falls through to ordinary expression parsing. This is the only case-sensitive corner of the language — names, functions and boolean literals all fold case (C-E02-002/011/012).
+- **Directive parameters are top-level expression units, not whitespace-split words.** `eq(1, 1)` counts as one, which is why `${{ else if eq(1, 1) }}` is rejected "Exactly 0 parameter(s) were expected following the directive 'else'. Actual parameter count: 2". Expected counts: `each` 3, `else` 0, `insert` 0; `if`/`elseif` never produce that sentence and fall through to an expression parse instead. **Implementation consequence:** the directive text is tokenized with the expression lexer, never string-split — `${{ each item in split('a in b', ' in ') }}` iterates `a`,`b`, and an `indexOf(' in ')` splitter iterates the wrong collection *silently*.
+- **Loop variables share one flat namespace with the contexts, and redefinition is an error rather than shadowing**: `${{ each variables in … }}` → "The idenfifier 'variables' has already been defined within the current scope" (the service's own typo). Variable names fold case; the keyword does not.
+- **Directives are recognized on mapping keys and one-key sequence items only** — never on a scalar value, where `${{ if … }}` is rejected `Unexpected value '<raw>'` with no expression error at all.
+- **Position sensitivity is real but narrow, and the template-expressions doc's statement about it is wrong.** That doc says expressions are expanded "only for `stages`, `jobs`, `steps`, and `containers`" and not inside `trigger` — but `trigger: [${{ 'main' }}]` expands, as does an expression in `pool.demands`, and an `if` directive expands in `pool.demands` and in root `variables:`. Exactly one position rejects a directive with its own sentence, `A template expression is not allowed in this context`: inside `resources.repositories`. Inside `trigger:` a directive is simply left unexpanded and then fails schema validation. So the gate is a per-position attribute with one measured member and is modelled as a seam, not as a table extrapolated from the doc's list.
+
 ## 5. Template resolution
 
 Reference forms, all supported (P1 local, P3 remote):

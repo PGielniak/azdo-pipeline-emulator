@@ -32,6 +32,7 @@
     "expr-general-survey": "node scripts/expr-general-survey.ts",
     "expr-context-survey": "node scripts/expr-context-survey.ts",
     "expr-resources-realrun": "node scripts/expr-resources-realrun.ts",
+    "template-walk-survey": "node scripts/template-walk-survey.ts",
     "lint": "pnpm run lint:es && pnpm run lint:format && pnpm run lint:shell",
     "lint:es": "eslint .",
     "lint:format": "prettier --check .",

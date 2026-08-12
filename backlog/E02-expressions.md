@@ -24,6 +24,21 @@ Acceptance: parser covers the full documented syntax; parse errors match server 
   asserted as documented divergences (`packages/engine/test/expr/errors.test.ts`, 80 tests). Two
   findings changed the parser rather than the renderer (C-E02-101/102/103), closing the `! true`
   divergence T01 left open.
+- [ ] **E02-S01-T03 — Missing error kind: `Expected '(' to follow a function`**
+  *Filed 2026-08-12 by E03-S01-T01, which hit it while grounding the `each` loop-variable slot and
+  then confirmed it is general rather than directive-specific.*
+  **Do:** a bare known-**function** name with no argument list is rejected by the service
+  `Expected '(' to follow a function: 'eq'. Located at position 1 within expression: 'eq'`, while
+  `ExprErrorCode` in `packages/engine/src/expr/parser.ts` has no such member and the name takes the
+  `unrecognized-value` path — so we render `Unrecognized value: 'eq'` for the same input. Add the
+  code, route a name that matches the registry's *function* table to it, and extend the
+  `errors.ts` shape table (it is `positioned`, with the help link).
+  **Ground:** `research/experiments/E03-walk/bare-function-name-value.md` (C-E03-114) is the datum
+  for `eq` in a variable value. Probe before coding: whether the same holds in a condition slot,
+  what a bare *context* name does by contrast (C-E02-086 suggests `Unrecognized value`), and
+  whether a status function outside its slot picks this message or the availability one.
+  **Done:** the parity table in `packages/engine/test/expr/errors.test.ts` gains the new rows,
+  compared byte-for-byte like the existing 62.
 
 ## E02-S02 — As a pipeline developer, type coercions and comparisons behave exactly like the service, so my conditions don't flip meaning locally.
 Acceptance: the documented conversion table implemented and cross-verified.

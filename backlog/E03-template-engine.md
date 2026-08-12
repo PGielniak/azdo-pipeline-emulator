@@ -6,10 +6,23 @@ Primary grounding set: learn.microsoft.com/azure/devops/pipelines/process/templa
 ## E03-S01 — As a pipeline developer, `${{ if/elseif/else }}`, `${{ each }}` and `${{ insert }}` expand exactly like the service, so template-heavy pipelines convert byte-equivalently.
 Acceptance: directive semantics proven by oracle fixture pairs, not by reading alone.
 
-- [ ] **E03-S01-T01 — DOM walker with context stack**
+- [x] **E03-S01-T01 — DOM walker with context stack**
   **Do:** `packages/engine/src/template/walk.ts`: depth-first mapping/sequence walk, per-file context frames (parameters, file variables), directive-key detection.
   **Ground:** templates doc structure sections; agent object-templating walker (pin permalink to its evaluation loop) as design reference.
   **Done:** walker unit tests on synthetic DOMs incl. directive keys in both mappings and sequences.
+  *Done 2026-08-12:* `packages/engine/src/template/walk.ts` — `parseDirectiveKey`/`loneExpression`/
+  `expressionUnits` (recognition), `TemplateFrame`/`bindLoopVariable`/`childFrame` (context stack),
+  `walkTemplate` with a per-directive visitor seam; 54 tests. **Both Ground sources turned out
+  insufficient in opposite directions**, which is why this task ran 33 live probes
+  (`pnpm template-walk-survey`, `research/experiments/E03-walk/`, C-E03-100..115): the docs state
+  none of the recognition rules and their one structural claim about *where* expressions expand is
+  false (C-E03-109), while the `actions/runner` walker knows exactly one directive, `insert`, and
+  none of the others (C-E03-115) — usable for the loop shape and nothing else. Headline findings:
+  directive keywords are **case-sensitive** in an otherwise case-folding language (C-E03-100), and
+  directive parameters are **expression tokens, not whitespace-split words**, so the `each`
+  separator must be found by tokenizing rather than `indexOf(' in ')` (C-E03-101/104). Semantics
+  stay with T02–T05 per their fixture obligations; two gaps were filed rather than fixed
+  (E01-S01-T04, E02-S01-T03).
 - [ ] **E03-S01-T02 — Conditional insertion chains**
   **Do:** `if/elseif/else` chain grouping in document order; winning branch spliced into parent; nested chains.
   **Ground:** templates doc "Conditional insertion"; **oracle fixtures**: ≥ 6 cases (mapping vs sequence, nested, else-only-missing) — commit input+`finalYaml` pairs under `fixtures/oracle/directives/` with claim IDs.
