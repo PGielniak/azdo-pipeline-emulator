@@ -525,7 +525,23 @@ const PROBES: readonly Probe[] = [
     group: 'Second batch — is the runtime variable table job-scoped?',
     placement: 'job-scoped-runtime-var',
     expr: 'variables.myVar',
-    decides: 'control: the new placement resolves contexts at all',
+    decides: 'positive control: the new placement accepts a context that certainly exists',
+  },
+  {
+    id: 'ctl-unknown-job-scoped-runtime-var',
+    group: 'Second batch — is the runtime variable table job-scoped?',
+    placement: 'job-scoped-runtime-var',
+    expr: 'nosuchcontext.probe',
+    decides:
+      'THE negative control for this whole column. `parameters` and `dependencies` are both accepted here while both are rejected at the root, which is either a real scope rule or a permissive path like the step condition slot. If a name that exists nowhere is also accepted, every accept in this column is worthless',
+  },
+  {
+    id: 'ctl-arity-job-scoped-runtime-var',
+    group: 'Second batch — is the runtime variable table job-scoped?',
+    placement: 'job-scoped-runtime-var',
+    expr: 'eq(1)',
+    decides:
+      'second negative control: a known-bad arity. Separates "names are not resolved here" from "nothing is parsed here at all"',
   },
   {
     id: 'dependencies-job-scoped-runtime-var',
@@ -584,6 +600,57 @@ const PROBES: readonly Probe[] = [
     placement: 'deployment-scoped-runtime-var',
     expr: 'variables.myVar',
     decides: 'control: the deployment placement resolves contexts at all',
+  },
+
+  // ---- Third batch: the three cells still empty in the job-scoped runtime column ----------------
+  // `dependencies` turned out legal there while it is rejected at the root, so the job-scoped
+  // column is its own row of the matrix and every context owes it a cell.
+  {
+    id: 'parameters-job-scoped-runtime-var',
+    group: 'Third batch — completing the job-scoped runtime column',
+    placement: 'job-scoped-runtime-var',
+    expr: 'parameters.myParam',
+    parameters: PARAM,
+    decides: 'whether the doc\'s "no parameters at runtime" holds inside a job as well as at root',
+  },
+  {
+    id: 'stagedependencies-job-scoped-runtime-var',
+    group: 'Third batch — completing the job-scoped runtime column',
+    placement: 'job-scoped-runtime-var',
+    expr: 'stageDependencies.A.A1.result',
+    decides: 'whether `stageDependencies` follows `dependencies` into the job-scoped variable slot',
+  },
+  {
+    id: 'pipeline-job-scoped-runtime-var',
+    group: 'Third batch — completing the job-scoped runtime column',
+    placement: 'job-scoped-runtime-var',
+    expr: 'pipeline.startTime',
+    decides: 'completes the column for the `pipeline` context',
+  },
+
+  // ---- Fourth batch: completing the compile-time column ----------------------------------------
+  // `${{ }}` in a variable value and `${{ if }}` are both compile-time slots; the implementation
+  // collapses them into one name set only if the service agrees they are one.
+  {
+    id: 'resources-if-directive',
+    group: 'Fourth batch — do the two compile-time slots share one table?',
+    placement: 'if-directive',
+    expr: guard('resources.pipeline.probe.runID'),
+    decides: 'completes the `${{ if }}` column for `resources`',
+  },
+  {
+    id: 'pipeline-if-directive',
+    group: 'Fourth batch — do the two compile-time slots share one table?',
+    placement: 'if-directive',
+    expr: guard('pipeline.startTime'),
+    decides: 'completes the `${{ if }}` column for `pipeline`',
+  },
+  {
+    id: 'environment-if-directive',
+    group: 'Fourth batch — do the two compile-time slots share one table?',
+    placement: 'if-directive',
+    expr: guard('environment.name'),
+    decides: 'completes the `${{ if }}` column for `environment`',
   },
 ];
 
