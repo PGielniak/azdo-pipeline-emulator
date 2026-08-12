@@ -24,7 +24,7 @@ Acceptance: parser covers the full documented syntax; parse errors match server 
   asserted as documented divergences (`packages/engine/test/expr/errors.test.ts`, 80 tests). Two
   findings changed the parser rather than the renderer (C-E02-101/102/103), closing the `! true`
   divergence T01 left open.
-- [ ] **E02-S01-T03 — Missing error kind: `Expected '(' to follow a function`**
+- [x] **E02-S01-T03 — Missing error kind: `Expected '(' to follow a function`**
   *Filed 2026-08-12 by E03-S01-T01, which hit it while grounding the `each` loop-variable slot and
   then confirmed it is general rather than directive-specific.*
   **Do:** a bare known-**function** name with no argument list is rejected by the service
@@ -39,6 +39,10 @@ Acceptance: parser covers the full documented syntax; parse errors match server 
   whether a status function outside its slot picks this message or the availability one.
   **Done:** the parity table in `packages/engine/test/expr/errors.test.ts` gains the new rows,
   compared byte-for-byte like the existing 62.
+  *Done 2026-08-12:* `expected-function-call` is a positioned seventh parse error; it is selected
+  by the per-slot function registry while legal contexts and unavailable status functions retain
+  their distinct paths. Four live previews and the 82-test parity suite establish the behavior
+  (C-E02-132..134; `research/experiments/E02-bare-functions/`).
 
 ## E02-S02 — As a pipeline developer, type coercions and comparisons behave exactly like the service, so my conditions don't flip meaning locally.
 Acceptance: the documented conversion table implemented and cross-verified.

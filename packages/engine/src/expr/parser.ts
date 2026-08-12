@@ -73,6 +73,7 @@ export type ExprErrorCode =
   | 'unexpected-symbol'
   | 'empty-expression'
   | 'expected-property-name'
+  | 'expected-function-call'
   | 'unclosed-function'
   | 'exceeded-max-depth';
 
@@ -181,13 +182,28 @@ interface State {
 }
 
 /** First name error wins; any syntax error raised later still beats it. */
-function defer(state: State, name: Token): void {
-  state.pending ??= {
+function defer(state: State, error: ExprParseError): void {
+  state.pending ??= error;
+}
+
+function deferUnrecognizedValue(state: State, name: Token): void {
+  defer(state, {
     code: 'unrecognized-value',
     message: `Unrecognized value: '${name.raw}'`,
     raw: name.raw,
     span: name.span,
-  };
+  });
+}
+
+function deferExpectedFunctionCall(state: State, name: Token): void {
+  // The lexer deliberately leaves a bare keyword as a named-value token. Name resolution is what
+  // distinguishes a legal context from a known function that is missing `(` (C-E02-132..134).
+  defer(state, {
+    code: 'expected-function-call',
+    message: `Expected '(' to follow a function: '${name.raw}'`,
+    raw: name.raw,
+    span: name.span,
+  });
 }
 
 const peek = (state: State): Token | undefined => state.tokens[state.at];
@@ -307,13 +323,13 @@ function parsePrimary(state: State): ExprNode {
         span: token.span,
       };
     case 'namedValue': {
-      // Unknown contexts are reported at the name (C-E02-012) — but only once the parse gets that
-      // far, so `nosuchcontext 2` reports the `2` instead (C-E02-103).
-      if (
-        state.registry !== undefined &&
-        !state.registry.namedValues.has(token.raw.toLowerCase())
-      ) {
-        defer(state, token);
+      // A bare function is a distinct parse error, while a bare legal context is still an ordinary
+      // named value. Both are deferred so a later syntax error keeps its C-E02-103 precedence.
+      const normalized = token.raw.toLowerCase();
+      if (state.registry?.functions.has(normalized)) {
+        deferExpectedFunctionCall(state, token);
+      } else if (state.registry !== undefined && !state.registry.namedValues.has(normalized)) {
+        deferUnrecognizedValue(state, token);
       }
       return { type: 'namedValue', name: token.raw, span: token.span };
     }
@@ -330,7 +346,7 @@ function parseCall(state: State, name: Token): ExprNode {
   // any other name (C-E02-103); with no signature there is also no arity to check, which is why
   // `nosuchfunc(1)` is reported at the name and not at its argument count.
   const signature = state.registry?.functions.get(name.raw.toLowerCase());
-  if (state.registry !== undefined && signature === undefined) defer(state, name);
+  if (state.registry !== undefined && signature === undefined) deferUnrecognizedValue(state, name);
 
   const open = peek(state);
   // The lexer only classifies a keyword as a function when `(` follows, so this cannot happen.

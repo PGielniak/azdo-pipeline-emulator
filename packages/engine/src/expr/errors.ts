@@ -48,7 +48,7 @@ export type ExprMode = 'compile' | 'runtime';
 export const RUNTIME_MESSAGE_PREFIX = 'An error occurred while loading the YAML build pipeline. ';
 
 /**
- * How each error code is phrased. Measured per code; rendering all six alike would invent a
+ * How each error code is phrased. Measured per code; rendering all seven alike would invent a
  * position for the two that have none and a help link for the one that has neither (C-E02-106).
  */
 const SHAPE: Record<ExprErrorCode, 'positioned' | 'help-only' | 'bare'> = {
@@ -56,6 +56,7 @@ const SHAPE: Record<ExprErrorCode, 'positioned' | 'help-only' | 'bare'> = {
   'unrecognized-value': 'positioned',
   'unexpected-symbol': 'positioned',
   'expected-property-name': 'positioned',
+  'expected-function-call': 'positioned',
   'unclosed-function': 'positioned',
   // `<sentence>. For more help, …` — the depth ceiling is a property of the whole expression.
   'exceeded-max-depth': 'help-only',
@@ -67,6 +68,7 @@ const DIAGNOSTIC_CODE: Record<ExprErrorCode, string> = {
   'unrecognized-value': 'EXPRESSION_UNRECOGNIZED_VALUE',
   'unexpected-symbol': 'EXPRESSION_UNEXPECTED_SYMBOL',
   'expected-property-name': 'EXPRESSION_EXPECTED_PROPERTY_NAME',
+  'expected-function-call': 'EXPRESSION_EXPECTED_FUNCTION_CALL',
   'unclosed-function': 'EXPRESSION_UNCLOSED_FUNCTION',
   'exceeded-max-depth': 'EXPRESSION_MAX_DEPTH',
   'empty-expression': 'EXPRESSION_EMPTY',

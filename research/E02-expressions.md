@@ -24,7 +24,9 @@ the 2026-08-12 integration merge, because E02-S02-T01/T02/T03 had taken the same
 | 111–112 | E02-S04-T03 doc-only first pass — **superseded by 120–127** (see below) |
 | 113–119 | *free* |
 | 120–127 | E02-S04-T03 `resources` context + pipeline-resource variables (live runs) |
-| 128–199 | *free — reserve in this table before use* |
+| 128–131 | E02-S05-T01 Bash compiler |
+| 132–134 | E02-S01-T03 bare known-function error kind |
+| 135–199 | *free — reserve in this table before use* |
 
 E02-S04-T02 uses claims C-E02-092–095.
 
@@ -1045,3 +1047,9 @@ is set to `ResourceTrigger`".
 [C-E02-130] Bash conditional and list constructs use command exit status, with zero meaning success and non-zero meaning failure — https://www.gnu.org/s/bash/manual/html_node/Exit-Status.html (checked 2026-08-12) — "a command which exits with a zero exit status has succeeded".
 
 [C-E02-131] The shell backend must read runtime variable and dependency-output state through the generated runtime API and use helper functions for awkward string operations — docs/02-template-and-expression-engine.md §6 (checked 2026-08-12) — "azdo_var" / "azdo_output" and "small generated helper functions in lib/expr.sh".
+
+[C-E02-132] A bare non-status function registered in the current slot is rejected as a missing call in both a compile-time variable and a job condition: `Expected '(' to follow a function: 'eq'`; it is a positioned error with the standard help link. — research/experiments/E02-bare-functions/bare-nonstatus-compile.md and research/experiments/E02-bare-functions/bare-nonstatus-job-condition.md (live preview, checked 2026-08-12) — "Expected '(' to follow a function: 'eq'".
+
+[C-E02-133] A status-function spelling is not classified as a function outside its allowed slot: a bare `always` in a compile-time variable is `Unrecognized value: 'always'`, not a missing-parenthesis error. — research/experiments/E02-bare-functions/bare-status-outside-slot.md (live preview, checked 2026-08-12) — "Unrecognized value: 'always'".
+
+[C-E02-134] A legal bare context name remains a named value rather than being mistaken for a function: `${{ variables }}` is evaluated to a mapping, then rejected by variable-schema validation (`A mapping was not expected`) rather than by expression parsing. — research/experiments/E02-bare-functions/bare-context-compile.md (live preview, checked 2026-08-12) — "A mapping was not expected".
