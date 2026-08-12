@@ -58,6 +58,8 @@ Acceptance: full function set incl. status functions, each with cited behavior.
   **Do:** short-circuit `and`/`or`; string-only `contains`; `containsValue` for arrays and objects.
   **Ground:** expressions doc per-function entries — quote each signature+behavior as a claim; confirm short-circuiting via doc or agent SDK code (pin).
   **Done:** per-function test groups referencing claims.
+  *Done 2026-08-12:* `packages/engine/src/expr/functions.ts`; 12 live probes and 16 tests cover all
+  13 functions, including lazy short-circuiting and the grounded `contains`/`containsValue` split.
 - [ ] **E02-S03-T02 — String/util: `format join split replace lower upper trim length coalesce iif convertToJson counter`**
   **Do:** `format` composite formatting incl. `{{`/`}}` escapes and index reuse; `counter(prefix, seed)` delegates to a state provider interface (local impl in E06); `convertToJson` object serialization.
   **Ground:** doc entries per function; `counter` semantics section (per-prefix persistence) — our local deviation (per-run local state) written up as a documented delta in the research note; `format` specifics validated by oracle probes (date-format claims belong to run-number task E05-S04, not here).
