@@ -87,7 +87,10 @@ state/outputs/<stage>/<job>/<step>.<var>
 state/results/<stage>[/<job>[/<step>]]   # Succeeded|SucceededWithIssues|Failed|Skipped|Canceled
 state/path.d/NNN-<step>            # PATH prepends, applied in order to subsequent steps
 ```
-File-per-value dodges quoting/newline pitfalls entirely. Job variable scope is copied at job start — `setvariable` never leaks across jobs except through `outputs/` (agent-faithful).
+File-per-value dodges quoting/newline pitfalls entirely. Variable keys are case-insensitive, matching the agent dictionary (C-E06-003). Job variable scope is copied at job start — `setvariable` never leaks across jobs except through `outputs/` (agent-faithful).
+
+The runner exports `AZDO_STATE_DIR` and the current `AZDO_VAR_SCOPE` before it sources the runtime.
+`azdo_var <name> [scope]` reads a value (missing → empty); `azdo_var_set <name> <value> [secret] [output] [readonly] [scope]` writes it; and `azdo_var_meta <name> [scope]` prints the flags sidecar. `azdo_var_scope_copy <source> <target>` seeds a fresh job scope. An output write requires `AZDO_STEP_NAME` and `AZDO_OUTPUT_DIR`; it is stored as `<step>.<name>` in the current job and in `outputs/`, read cross-job by `azdo_output <stage> <job> <step.variable>`. Read-only overwrites emit an error and preserve the first value (C-E06-005/006).
 
 ## 5. `run_step` lifecycle (the heart of parity)
 

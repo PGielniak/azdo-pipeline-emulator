@@ -34,15 +34,33 @@ Follow the **grounding** skill for this task's **Ground** field:
 - Write/extend the tests the **Done** field names (vitest / bats / snapshots), run them, and run lint/typecheck/shellcheck for touched areas.
 - Walk the **Done** list literally, item by item. Anything unmeetable now (e.g. needs live org): implement the rest, leave the task `[!]` with a note listing exactly which Done items remain and why — never `[x]` a partially-done task.
 
-## 5. Record & report
+## 5. Record
 
 1. Flip the checkbox in the epic file; add `CHANGELOG-BACKLOG.md` entry (format in CLAUDE.md).
 2. Update `research/REFERENCES.md` statuses for sources you pinned.
 3. `git add`/`commit` (message `E##-S##-T## <title>`; `git init` first if needed).
-4. Report: task done, key findings from grounding (especially surprises vs the design docs), evidence paths, test results, and the suggested next task. If grounding contradicted `docs/` or `PLAN.md`, update the doc + decisions record per CLAUDE.md rule 5 and say so explicitly.
+
+## 6. Ship — push, PR, merge (do this automatically; don't ask)
+
+The task is not delivered until it is on `main`. Run this whole section without pausing for approval;
+CLAUDE.md's "work on main while solo" is superseded — **always go through a PR**, never push to `main`.
+
+1. **Branch.** If you are on `main`, create `<task-id-lowercase>` (e.g. `e03-s01-t02-conditional-insertion`) *before* committing. Otherwise stay on the current branch: sessions run in parallel and share one, and switching would strand a sibling's uncommitted work.
+2. **Push.** `git push -u origin <branch>`. If it is rejected as non-fast-forward, `git fetch` and rebase or merge — **never force-push a shared branch**; if history has genuinely diverged, stop and ask.
+3. **PR.** `gh pr list --head <branch> --state open` first — a sibling session may already have one open for this branch, in which case **update it** (`gh api -X PATCH repos/{owner}/{repo}/pulls/<n> -f title=… -F body=@<file>`) rather than opening a second. Otherwise `gh pr create --base main`. Fill in `.github/pull_request_template.md` honestly — every checkbox is a claim about *this* diff. Title: the task ID + title, or a summary naming each task when the branch carries several.
+   - `gh pr edit` can abort on an unrelated "Projects (classic)" GraphQL deprecation error; the REST `gh api -X PATCH` form above is the reliable path.
+4. **Wait for CI, then merge.** `gh pr checks <n> --watch`. Green → `gh pr merge <n> --squash`. Red → fix and push again; never merge red.
+5. **Realign the branch after a squash merge.** A squash rewrites history, so the branch's own commits now look unmerged and its next PR would replay them. Verify the content is identical (`git fetch origin && git diff HEAD origin/main --quiet`), then `git reset --soft origin/main` — soft, so a sibling's uncommitted work in the tree is untouched. Do not force-push the realigned branch while another session is using it; leave the remote stale and say so.
+
+**When the branch carries sibling commits** (the normal case here — see the parallel-worktree setup): they ride along in your PR. Say so explicitly in the PR body and in your report, listing them by SHA and task ID. Do **not** flip a sibling's checkbox, edit their changelog entry, or judge their Done criteria — you are shipping their commit, not certifying it.
+
+## 7. Report
+
+Task done, key findings from grounding (especially surprises vs the design docs), evidence paths, test results, the PR/merge outcome, and the suggested next task. If grounding contradicted `docs/` or `PLAN.md`, update the doc + decisions record per CLAUDE.md rule 5 and say so explicitly.
 
 ## Guardrails
 
 - One task per invocation unless the user explicitly asks for a batch.
 - Never reorder or reword backlog tasks to fit what you built — if a task is wrong, mark `[~]` with a note and add a corrected task at the end of its story.
 - If the user interrupts with a different request mid-task, leave the checkbox untouched and note in-progress state in the changelog.
+- Ship §6 automatically, but its two stop-and-ask cases stand: genuinely diverged history, and a red CI run you cannot fix within the task.

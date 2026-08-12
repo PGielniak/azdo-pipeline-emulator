@@ -13,18 +13,15 @@ Acceptance: store + env materialization per docs/04 §4–§5 with cited agent b
   **Do:** file-per-value store (`state/vars/<scope>/<NAME>` + `.meta` flags secret/output/readonly); scope copy at job start; API `azdo_var`, `azdo_var_set`, `azdo_var_meta`.
   **Ground:** docs/04 §4 spec; job-isolation claim (setvariable never crosses jobs except outputs) from set-variables-scripts doc — quote; pin agent `Variables` handling reference.
   **Done:** bats: newline/quote/unicode values survive; readonly write → warning + ignored (behavior per logging-commands doc — quote exact wording).
-- [!] **E06-S01-T02 — Env materialization & name transform**
-  *Blocked 2026-08-12: requires E06-S01-T04 variable-store APIs before environment materialization can run.*
+- [ ] **E06-S01-T02 — Env materialization & name transform**
   **Do:** non-secret vars exported as `UPPER` with `.`/space→`_`; secrets **not** auto-exported; step `env:` overlay (values macro-expanded); PATH assembly from `path.d`.
   **Ground:** variables doc "Environment variables" + "Secret variables" sections — quote both rules (the secret non-export rule is the critical one); verify collision behavior (`A.B` vs `A_B`) via real-run experiment; transcript stored.
   **Done:** bats matrix: transform cases, secret exclusion, env: overlay wins, PATH order.
-- [!] **E06-S01-T03 — `.env` loader**
-  *Blocked 2026-08-12: requires E06-S01-T04 variable-store APIs before `.env` values can be registered.*
+- [ ] **E06-S01-T03 — `.env` loader**
   **Do:** documented `KEY=value` parser (quoting rules stated in generated README), `--env-file` overlay, values registered into store with secret flags from manifest.
   **Ground:** docs/04 §10 load rules; POSIX shell quoting claims from GNU bash manual (pin).
   **Done:** bats: quoting/multiline edge cases; overlay precedence.
-- [!] **E06-S01-T04 — Variable store (strict read-only correction)**
-  *In progress 2026-08-12 by Codex on e02-s04-t01-expr-contexts; do not pick.*
+- [x] **E06-S01-T04 — Variable store (strict read-only correction)**
   **Do:** file-per-value store (`state/vars/<scope>/<NAME>` + `.meta` flags secret/output/readonly); scope copy at job start; APIs `azdo_var`, `azdo_var_set`, and `azdo_var_meta`. An attempt to overwrite an existing readonly name emits the grounded error and retains the original value.
   **Ground:** docs/04 §4 spec; job-isolation and output-reference claims from set-variables-scripts/variables docs; pinned agent variable handling; real-run transcript `research/experiments/E06-readonly-variables/real-run.md` (C-E06-001..006).
   **Done:** bats: newline/quote/unicode values survive; readonly overwrite errors and retains the first value; output variable fixture covers same-job and cross-job storage paths.

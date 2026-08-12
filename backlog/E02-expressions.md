@@ -148,8 +148,7 @@ Acceptance: AST→bash compiler with conformance vs the evaluator.
   **Do:** `packages/engine/src/expr/compile-bash.ts`: comparisons/logical ops → `[ ]`/`&&`/`||` with correct quoting; string ops → emitted helper functions in `lib/expr.sh`; store reads via `azdo_var`/`azdo_output` runtime API (E06). Unsupported-in-shell nodes → typed fallback error at convert time (docs/02 §6 policy).
   **Ground:** docs/02 §6 compiled examples as the spec; POSIX/bash semantics claims (quoting, exit codes) cited from GNU bash manual (pin section links) — external-but-real grounding required for shell semantics.
   **Done:** golden tests: expression → emitted bash snapshot; shellcheck-clean output.
-- [!] **E02-S05-T02 — Dual-backend conformance harness**
-  *Blocked 2026-08-12: requires `azdo_var`/`azdo_output` fixture-store APIs from unstarted E06-S01-T04.*
+- [ ] **E02-S05-T02 — Dual-backend conformance harness**
   **Do:** the E02-S02/S03 test tables execute through both the evaluator and the compiled bash (via bats running each compiled snippet against a fixture store); one table, two runners.
   **Ground:** BACKLOG §3 (protocol); claims already attached to table rows carry over — harness must print claim IDs on failure.
   **Done:** CI job runs both; divergence = red build.
