@@ -8,7 +8,8 @@ All tasks here are bash (`packages/runtime/src/*.sh`) with bats tests; shellchec
 ## E06-S01 — As a pipeline developer, variables behave exactly as on the agent (store, env mapping, secrets), so scripts see identical environments locally.
 Acceptance: store + env materialization per docs/04 §4–§5 with cited agent behavior.
 
-- [ ] **E06-S01-T01 — Variable store**
+- [!] **E06-S01-T01 — Variable store**
+  *Blocked 2026-08-12: its required "readonly write → warning + ignored" behavior contradicts the pinned agent — legacy mode warns then overwrites; enforced mode throws before writing (C-E06-004). Needs a user-approved fidelity policy or a corrected successor task.*
   **Do:** file-per-value store (`state/vars/<scope>/<NAME>` + `.meta` flags secret/output/readonly); scope copy at job start; API `azdo_var`, `azdo_var_set`, `azdo_var_meta`.
   **Ground:** docs/04 §4 spec; job-isolation claim (setvariable never crosses jobs except outputs) from set-variables-scripts doc — quote; pin agent `Variables` handling reference.
   **Done:** bats: newline/quote/unicode values survive; readonly write → warning + ignored (behavior per logging-commands doc — quote exact wording).

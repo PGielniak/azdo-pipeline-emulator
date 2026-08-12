@@ -109,7 +109,7 @@ run_step --id 030 --file steps/030-build-solution.sh --cond cond_step_030
 
 | Command | Behavior |
 |---|---|
-| `task.setvariable` (`variable`, `isSecret`, `isOutput`, `isReadOnly`) | Store write; output vars additionally to `outputs/`; readonly honored (warn+ignore on rewrite) |
+| `task.setvariable` (`variable`, `isSecret`, `isOutput`, `isReadOnly`) | Store write; output vars additionally to `outputs/`; read-only overwrite policy is blocked pending the fidelity decision recorded in docs/06 §5 decision 21 |
 | `task.setsecret` | Add value to the masker |
 | `task.prependpath` | Append to `path.d` → subsequent steps |
 | `task.uploadartifact` / `artifact.upload` | Copy into `.artifacts/<artifactname>/` |
