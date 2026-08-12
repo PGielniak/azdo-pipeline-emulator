@@ -35,7 +35,11 @@ export type TokenKind =
   | 'version'
   /** Single-quoted, `''` escape (C-E02-006). */
   | 'string'
-  /** A keyword not followed by `(` — a context such as `parameters` (C-E02-012). */
+  /**
+   * A keyword not followed by `(` — a context such as `parameters`, but also any non-numeric text
+   * the lexer cannot classify (`"double"`, `+1`, `!true`). Whether it *resolves* is a separate,
+   * deferred question (C-E02-102).
+   */
   | 'namedValue'
   /** A keyword followed (possibly after whitespace) by `(` (C-E02-011). */
   | 'function'
@@ -51,7 +55,12 @@ export type TokenKind =
   | 'wildcard'
   /** `=` `<` `>` `&` `|` `!=` … — lexically recognised, never legal (C-E02-001). */
   | 'symbol'
-  /** Value-shaped text that resolves to nothing: `null`, `+1`, `0x1F`, `"x"` (C-E02-003/004/006). */
+  /**
+   * Text the lexer **started reading as a number** and could not finish: `1e3`, `0x1F`, `1..2`,
+   * `-1.2.3`. That distinction is the whole point — this kind is rejected where it is read, while a
+   * keyword-shaped token is only rejected when it fails to resolve (C-E02-102). Also carries an
+   * unterminated string, which the template scanner rejects first in practice (C-E02-006).
+   */
   | 'unrecognized';
 
 export interface Token {
@@ -64,8 +73,7 @@ export interface Token {
 }
 
 /**
- * Characters that end a keyword or number scan. Whitespace plus the punctuation the lexer owns.
- * `!` is in here as a symbol-starter, but with one measured exception — see `readSymbol`.
+ * Characters that end a number scan: whitespace plus the punctuation the lexer owns.
  */
 function isBoundary(c: string): boolean {
   switch (c) {
@@ -87,11 +95,24 @@ function isBoundary(c: string): boolean {
   }
 }
 
+/**
+ * A keyword scan swallows `!` (C-E02-101): `!!true` comes back from the service as **one** token
+ * (`Unrecognized value: '!!true'`) while `1 !` reports a lone `!`, so `!` ends nothing — it just
+ * fails to start anything either. A number scan still stops there, which is why this is a second
+ * predicate rather than a hole in `isBoundary`.
+ */
+const isKeywordBoundary = (c: string): boolean => c !== '!' && isBoundary(c);
+
 /** Property-name rule, documented and confirmed live: `[A-Za-z_][A-Za-z0-9_]*` (C-E02-007). */
 const KEYWORD = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
+/**
+ * The operator spellings the service rejects as `Unexpected symbol` rather than as unresolvable
+ * text (C-E02-001). There is no one-character list any more: every character that reaches
+ * `readSymbol` (`> < = & |`) is a symbol on its own, and `!` — the one that is not — is routed to
+ * the keyword scan unless it is the `!=` spelling (C-E02-101).
+ */
 const TWO_CHAR_SYMBOLS = new Set(['==', '!=', '>=', '<=', '&&', '||']);
-const ONE_CHAR_SYMBOLS = new Set(['>', '<', '=', '&', '|']);
 
 /**
  * `1.` and `.5` are legal, `1e3`/`0x1F`/`+1`/`1..2` are not (C-E02-004). Deliberately hand-rolled
@@ -143,25 +164,16 @@ export function tokenize(expression: string): readonly Token[] {
     ...(value === undefined ? {} : { value }),
   });
 
-  /** Scan a single- or double-character symbol; anything else runs to the boundary. */
+  /**
+   * Two-character symbol if there is one, otherwise the single character. Every character routed
+   * here is in one of the two sets, because `!` — the one that was not — now starts a keyword scan
+   * unless it is the `!=` spelling (C-E02-101).
+   */
   const readSymbol = (): Token => {
     const start = index;
     const two = expression.slice(start, start + 2);
-    if (TWO_CHAR_SYMBOLS.has(two)) {
-      index += 2;
-      return token('symbol', start, index);
-    }
-    const one = expression[start] as string;
-    if (ONE_CHAR_SYMBOLS.has(one)) {
-      index += 1;
-      return token('symbol', start, index);
-    }
-    // A lone `!`: the service does not treat it as a symbol on its own — `!true` comes back as
-    // `Unrecognized value: '!true'`, one token scanned to the boundary (C-E02-013, and the
-    // "known message-level divergence" note in research/E02-expressions.md).
-    index += 1;
-    while (index < expression.length && !isBoundary(expression[index] as string)) index += 1;
-    return token('unrecognized', start, index);
+    index += TWO_CHAR_SYMBOLS.has(two) ? 2 : 1;
+    return token('symbol', start, index);
   };
 
   const readNumber = (): Token => {
@@ -202,14 +214,21 @@ export function tokenize(expression: string): readonly Token[] {
     return closed ? token('string', start, index, value) : token('unrecognized', start, index);
   };
 
+  /**
+   * Everything that is not punctuation, a quote or number-shaped. **The identifier charset is not
+   * checked here** (C-E02-102): `"double"`, `+1` and `!true` are all scanned as one keyword and
+   * become named values, which is why the service reports them only once name resolution runs —
+   * `"double" 2` reports the leftover `2` at position 9, not the quote-shaped text at 1. Only after
+   * a `.` does the charset gate, because there the service rejects eagerly (`9num`, C-E02-007).
+   */
   const readKeyword = (): Token => {
     const start = index;
     index += 1;
-    while (index < expression.length && !isBoundary(expression[index] as string)) index += 1;
+    while (index < expression.length && !isKeywordBoundary(expression[index] as string)) index += 1;
     const raw = expression.slice(start, index);
-    if (!KEYWORD.test(raw)) return token('unrecognized', start, index);
 
-    if (last?.kind === 'dereference') return token('propertyName', start, index);
+    if (last?.kind === 'dereference')
+      return token(KEYWORD.test(raw) ? 'propertyName' : 'unrecognized', start, index);
     if (/^true$/i.test(raw)) return token('boolean', start, index, true);
     if (/^false$/i.test(raw)) return token('boolean', start, index, false);
 
@@ -255,7 +274,10 @@ export function tokenize(expression: string): readonly Token[] {
       case "'":
         push(readString());
         break;
+      // `!=` is a symbol; a bare `!` starts a keyword scan instead (C-E02-101).
       case '!':
+        push(expression[index + 1] === '=' ? readSymbol() : readKeyword());
+        break;
       case '>':
       case '<':
       case '=':

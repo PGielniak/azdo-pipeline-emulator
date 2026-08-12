@@ -23,6 +23,14 @@ Rules (BACKLOG.md §3 + grounding skill):
 
 - One claim = **one falsifiable behavior sentence**; quote ≤ 2 sentences from the source.
 - IDs are sequential per epic file (`C-E06-001`, `C-E06-002`, …) and **never reused**.
+- **Allocating IDs across parallel branches.** "Next free number" is only safe when one branch is in
+  flight. When several tasks of an epic run concurrently (separate branches or worktrees), each task
+  takes a **reserved block** recorded in a table at the top of the epic's claim file — a branch that
+  numbers from the file it can see will collide with every sibling branch, silently, and the
+  collision only surfaces at merge, by which time claim IDs in code comments and test names point at
+  the wrong claims. Blocks are cheap; leave gaps. On a collision that reached a merge, the task whose
+  claims are **least referenced elsewhere** renumbers into a fresh block and the renumber is recorded
+  in the epic file's block table (see `E02-expressions.md` for a worked example).
 - GitHub sources must be commit-pinned permalinks (`…/blob/<sha>/<path>#L10-L20`).
 - A claim later proven wrong is struck (`~~…~~`) with a pointer to the superseding claim — never
   deleted.

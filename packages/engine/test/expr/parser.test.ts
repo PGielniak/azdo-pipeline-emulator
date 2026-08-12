@@ -92,7 +92,16 @@ const CASES: readonly Case[] = [
     row: 'null-upper',
     claim: 'C-E02-003',
   },
-  { expr: '+1', code: 'unrecognized-value', pos: 1, row: 'num-plus', claim: 'C-E02-004' },
+  // `+1` and `"double"` are keyword-shaped, not number-shaped, so the service only rejects them
+  // once names are resolved — `+1 2` reports the leftover `2` (C-E02-102/103, E02-S01-T02).
+  {
+    expr: '+1',
+    code: 'unrecognized-value',
+    pos: 1,
+    needsRegistry: true,
+    row: 'num-plus',
+    claim: 'C-E02-004',
+  },
   { expr: '1e3', code: 'unrecognized-value', pos: 1, row: 'num-exp', claim: 'C-E02-004' },
   { expr: '0x1F', code: 'unrecognized-value', pos: 1, row: 'num-hex', claim: 'C-E02-004' },
   { expr: '1..2', code: 'unrecognized-value', pos: 1, row: 'num-double-dot', claim: 'C-E02-004' },
@@ -114,7 +123,14 @@ const CASES: readonly Case[] = [
   },
   { expr: '-1.2.3', code: 'unrecognized-value', pos: 1, row: 'neg-version', claim: 'C-E02-005' },
   { expr: '1.2.3.4.5', code: 'unrecognized-value', pos: 1, row: 'ver-five', claim: 'C-E02-005' },
-  { expr: '"double"', code: 'unrecognized-value', pos: 1, row: 'str-double', claim: 'C-E02-006' },
+  {
+    expr: '"double"',
+    code: 'unrecognized-value',
+    pos: 1,
+    needsRegistry: true,
+    row: 'str-double',
+    claim: 'C-E02-006',
+  },
   {
     expr: "'unclosed",
     code: 'unrecognized-value',
@@ -145,7 +161,14 @@ const CASES: readonly Case[] = [
     row: 'op-pipe-single',
     claim: 'C-E02-001',
   },
-  { expr: '!true', code: 'unrecognized-value', pos: 1, row: 'op-not', claim: 'C-E02-001' },
+  {
+    expr: '!true',
+    code: 'unrecognized-value',
+    pos: 1,
+    needsRegistry: true,
+    row: 'op-not',
+    claim: 'C-E02-001',
+  },
   { expr: '(true)', code: 'unexpected-symbol', pos: 1, row: 'op-group', claim: 'C-E02-001' },
   { expr: 'eq(1, 1)', row: 'op-func-control', claim: 'C-E02-001' },
 
@@ -424,12 +447,13 @@ describe('tokenizer', () => {
     }
   });
 
-  it('rejects `! true` too, at a position we knowingly do not share with the service', () => {
-    // Documented divergence: the service reports `Unexpected symbol: 'true'` at 3; the operand is
-    // where its lexer gives up. Ours reports the `!` run at 1. Both reject — see
-    // research/E02-expressions.md, "Known message-level divergence".
-    const result = parseExpression('! true');
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.span.start + 1).toBe(1);
+  it('scans `!` as keyword text, not as a symbol (C-E02-101)', () => {
+    // What T01 recorded as an unexplained divergence, settled by the E02-errors probes: `!` ends
+    // no token (`!!true` is one), starts none either, and a lone `!` is a named value that fails to
+    // resolve. The three spellings therefore report in three different places, all matching.
+    expect(tokenize('!!true').map((t) => t.raw)).toEqual(['!!true']);
+    expect(tokenize('1 !').map((t) => t.kind)).toEqual(['number', 'namedValue']);
+    expect(tokenize('1 != 2').map((t) => t.raw)).toEqual(['1', '!=', '2']);
+    expect(tokenize('!eq(1, 1)')[0]).toMatchObject({ kind: 'function', raw: '!eq' });
   });
 });
