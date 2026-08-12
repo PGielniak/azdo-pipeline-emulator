@@ -5,6 +5,13 @@ Primary grounding set: `microsoft/azure-pipelines-tasks` — pinned `task.json` 
 
 Global rule (in addition to E09's input-table rule): each handler's Done includes a **live parity check**: run the fixture pipeline once in the real test org and once locally; compare the effective CLI invocations / resulting cloud state; record both transcripts under `research/experiments/E10-<task>/`.
 
+Inherited open cell (from E02-S04-T01 decision 19, re-handed here by E02-S04-T03 on 2026-08-12):
+the **deployment-scoped variable slot for the `environment` context** is unmeasured. `environment`
+was rejected in every slot E02 could probe — including a deployment job's own `condition:` — but the
+deployment-scoped *variable* cell failed together with its control because the test org has no
+environment. Whichever E10 task first provisions one should re-run that probe (add the row to
+`scripts/expr-context-survey.ts`) and close `SLOT_AVAILABILITY` for it (C-E02-091).
+
 ## E10-S01 — As a pipeline developer, Azure service connections have a faithful local substitute, so every Azure task can authenticate.
 Acceptance: `.env` contract + `azdo_sc_login` per docs/03 §5, grounded in real endpoint schemas.
 

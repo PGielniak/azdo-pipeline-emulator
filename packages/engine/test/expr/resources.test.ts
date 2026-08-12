@@ -220,4 +220,12 @@ describe('the resources context: repositories and containers (C-E02-123/125)', (
     expect(chain(empty, 'containers').kind).toBe('object');
     expect(chain(empty, 'repositories.self').kind).toBe('null');
   });
+
+  it('gives the same shape when the slot allows resources but the caller supplied none', () => {
+    // `resolveContext` falls back to an empty context object; a bare `{}` would make
+    // `resources.repositories` Null, which no run ever reports (C-E02-121).
+    const fallback = resolveContext({ slot: 'runtime-variable', values: {} }, 'resources');
+    expect(chain(fallback, 'repositories').kind).toBe('object');
+    expect(chain(fallback, 'containers').kind).toBe('object');
+  });
 });

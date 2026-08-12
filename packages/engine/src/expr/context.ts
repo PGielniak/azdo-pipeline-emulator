@@ -35,6 +35,7 @@
 import { makeRegistry, type ExprRegistry } from './parser.js';
 import { NON_STATUS_FUNCTIONS } from './general-functions.js';
 import { statusFunctionSignatures, type StatusScope } from './status.js';
+import { resourcesContext } from './resources.js';
 import { objectValue, stringValue, type ExprObject, type ExprValue } from './value.js';
 
 /** The seven context names the service knows. Anything else is `Unrecognized value` everywhere. */
@@ -219,8 +220,20 @@ export function resolveContext(context: ExprContext, name: string): ExprValue {
   return value ?? emptyContextObject(canonical);
 }
 
+/**
+ * "No data supplied" is not the same as "empty object" for every context. Two have inner structure
+ * the service always presents, so the fallback has to go through their builders:
+ *
+ *  - `parameters` keeps its `error` miss policy, so a miss still raises `Key not found` when the
+ *    pipeline declares no parameters at all (C-E02-087).
+ *  - `resources` always has **both** `repositories` and `containers`; a run with nothing declared
+ *    still dumps `{"repositories": {"self": …}, "containers": {}}`, so a bare `{}` here would make
+ *    `resources.repositories` Null where the service gives an object (C-E02-121).
+ */
 function emptyContextObject(name: ExprContextName | undefined): ExprObject {
-  return name === 'parameters' ? parametersContext({}) : objectValue({}, 'ordinalIgnoreCase');
+  if (name === 'parameters') return parametersContext({});
+  if (name === 'resources') return resourcesContext({});
+  return objectValue({}, 'ordinalIgnoreCase');
 }
 
 /**
