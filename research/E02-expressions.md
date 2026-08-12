@@ -1036,3 +1036,12 @@ is set to `ResourceTrigger`".
   — research/experiments/E02-resources/real-run.md probe 1 `env` rows (checked 2026-08-12)
   — https://learn.microsoft.com/en-us/azure/devops/pipelines/yaml-schema/resources-pipelines-pipeline?view=azure-pipelines
     — printenv sample + "variable names become uppercase, and periods turn into underscores"
+# E02 — Expression language claims
+
+[C-E02-128] Azure Pipelines runtime expressions are used in variables and conditions, and an expression may be a literal, context reference, function, or nested combination — https://learn.microsoft.com/azure/devops/pipelines/process/expressions (checked 2026-08-12) — "Use runtime expressions in variables and conditions".
+
+[C-E02-129] Bash quoting removes the special meaning of shell metacharacters and prevents parameter expansion — https://www.gnu.org/software/bash/manual/html_node/Quoting.html (checked 2026-08-12) — "Quoting is used to remove the special meaning of certain characters or words to the shell."
+
+[C-E02-130] Bash conditional and list constructs use command exit status, with zero meaning success and non-zero meaning failure — https://www.gnu.org/s/bash/manual/html_node/Exit-Status.html (checked 2026-08-12) — "a command which exits with a zero exit status has succeeded".
+
+[C-E02-131] The shell backend must read runtime variable and dependency-output state through the generated runtime API and use helper functions for awkward string operations — docs/02-template-and-expression-engine.md §6 (checked 2026-08-12) — "azdo_var" / "azdo_output" and "small generated helper functions in lib/expr.sh".

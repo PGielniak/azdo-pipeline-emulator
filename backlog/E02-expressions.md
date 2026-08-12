@@ -125,7 +125,11 @@ Acceptance: `parameters`, `variables`, `dependencies`, `stageDependencies`, `res
 ## E02-S05 — As a pipeline developer, conditions and runtime expressions execute in the generated scripts without any interpreter, so the output stays dependency-free but behaves live.
 Acceptance: AST→bash compiler with conformance vs the evaluator.
 
-- [ ] **E02-S05-T01 — Bash compilation of predicates & strings**
+- [x] **E02-S05-T01 — Bash compilation of predicates & strings**
+  *Done 2026-08-12:* `packages/engine/src/expr/compile-bash.ts` compiles literals, variable reads,
+  status/predicate calls, logical/comparison expressions, and helper-backed string calls with
+  shell-safe quoting; unsupported dynamic access/functions raise `BashCompileError`. Golden tests
+  cover the documented condition shape, quote escaping, and fallback behavior.
   **Do:** `packages/engine/src/expr/compile-bash.ts`: comparisons/logical ops → `[ ]`/`&&`/`||` with correct quoting; string ops → emitted helper functions in `lib/expr.sh`; store reads via `azdo_var`/`azdo_output` runtime API (E06). Unsupported-in-shell nodes → typed fallback error at convert time (docs/02 §6 policy).
   **Ground:** docs/02 §6 compiled examples as the spec; POSIX/bash semantics claims (quoting, exit codes) cited from GNU bash manual (pin section links) — external-but-real grounding required for shell semantics.
   **Done:** golden tests: expression → emitted bash snapshot; shellcheck-clean output.

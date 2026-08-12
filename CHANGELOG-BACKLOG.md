@@ -1,5 +1,8 @@
 # Backlog changelog (append-only)
 
+2026-08-12 E02-S05-T01 in-progress — claimed by Codex on e02-s04-t01-expr-contexts (evidence: pending).
+2026-08-12 E02-S05-T01 done — AST-to-Bash compiler with runtime variable access, predicates, logical/comparison forms, helper-backed strings, shell-safe quoting, and typed fallback errors (evidence: research/E02-expressions.md C-E02-128..131; packages/engine/test/expr/compile-bash.test.ts; 660 Vitest tests; engine typecheck/build; shellcheck helper pass).
+
 2026-08-12 E02-S04-T02 in-progress — claimed by Codex /root on e02-s04-t01-expr-contexts (evidence: pending).
 2026-08-12 E02-S04-T02 done — dependency context builders for `dependencies` and `stageDependencies`, with grounded result/output shapes and a redacted real-run transcript (evidence: research/E02-expressions.md C-E02-092..095; research/experiments/E02-dependencies/real-run.md; packages/engine/test/expr/dependencies.test.ts; engine 641 tests green).
 2026-08-12 E02-S04-T03 in-progress — claimed by Codex on e02-s04-t03-resources (evidence: pending).
