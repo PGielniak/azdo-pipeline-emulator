@@ -60,7 +60,10 @@ Acceptance: full function set incl. status functions, each with cited behavior.
   **Done:** per-function test groups referencing claims.
   *Done 2026-08-12:* `packages/engine/src/expr/functions.ts`; 12 live probes and 16 tests cover all
   13 functions, including lazy short-circuiting and the grounded `contains`/`containsValue` split.
-- [ ] **E02-S03-T02 — String/util: `format join split replace lower upper trim length coalesce iif convertToJson counter`**
+- [~] **E02-S03-T02 — String/util: `format join split replace lower upper trim length coalesce iif convertToJson counter`**
+  *Superseded 2026-08-12 by E02-S03-T04: the current documented catalogue also includes
+  `startsWith`, `endsWith`, and `xor`, so this task cannot satisfy the story's “every documented
+  function” acceptance criterion (C-E02-040).*
   **Do:** `format` composite formatting incl. `{{`/`}}` escapes and index reuse; `counter(prefix, seed)` delegates to a state provider interface (local impl in E06); `convertToJson` object serialization.
   **Ground:** doc entries per function; `counter` semantics section (per-prefix persistence) — our local deviation (per-run local state) written up as a documented delta in the research note; `format` specifics validated by oracle probes (date-format claims belong to run-number task E05-S04, not here).
   **Done:** test groups per function; `counter` tested against the state-provider fake.
@@ -68,6 +71,16 @@ Acceptance: full function set incl. status functions, each with cited behavior.
   **Do:** implemented against an injected `StatusContext` (job/step results, dependency names); exact truth table per doc incl. behavior with arguments.
   **Ground:** conditions doc (…/process/conditions) truth tables + job status semantics — quote; `VERIFY:` behavior of args referencing skipped dependencies via a real-run experiment (E12-S05 fixture) or agent source (pin).
   **Done:** truth-table tests; integration test with fake results store.
+- [ ] **E02-S03-T04 — Remaining general functions: `startsWith endsWith xor format join split replace lower upper trim length coalesce iif convertToJson counter`**
+  **Do:** implement the complete current documented general-function remainder; `format` composite
+  formatting includes `{{`/`}}` escapes and index reuse; `counter(prefix, seed)` delegates to a
+  state-provider interface (local impl in E06); `convertToJson` serializes Object/Array values.
+  **Ground:** expressions-doc entries per function, including the catalogue drift recorded by
+  C-E02-040; `counter` semantics section (per-prefix persistence) with our per-run local-state
+  deviation documented in research; validate `format` specifics and any documentation/arity
+  ambiguities with oracle probes (date-format claims belong to E05-S04).
+  **Done:** per-function claim-linked test groups; `counter` tested against a state-provider fake;
+  the implemented general-function registry matches the current documented non-status catalogue.
 
 ## E02-S04 — As an engine developer, expression contexts resolve like the service in each evaluation phase, so the same expression means the same thing at the same time.
 Acceptance: `parameters`, `variables`, `dependencies`, `stageDependencies`, `resources.pipeline` contexts with phase gating.

@@ -14,7 +14,7 @@ the 2026-08-12 integration merge, because E02-S02-T01/T02/T03 had taken the same
 | 020–023 | E02-S02-T02 coercion & equality |
 | 024–027 | E02-S02-T03 member access |
 | 028–039 | E02-S03-T01 logical & membership (028–032 used) |
-| 040–059 | *free — next S03/S04 task takes a block here* |
+| 040–059 | E02-S03-T02/T04 general string & utility functions (040 used) |
 | 101–110 | E02-S01-T02 error rendering |
 | 111–199 | *free — reserve in this table before use* |
 
@@ -396,6 +396,15 @@ property values matches right-side Number `1`), and the primitive fallback.
   — research/experiments/E02-logical/ (`contains-value-array-hit`, `contains-value-object-hit`,
     `contains-value-conversion-direction`, `contains-value-primitive-left`; live preview, checked
     2026-08-12)
+
+[C-E02-040] **The current documented general-function catalogue includes `startsWith`,
+`endsWith`, and `xor`, so E02-S03-T02's enumerated function set is incomplete.** Learn specifies
+two String-converting, ordinal-ignore-case parameters for `startsWith` and `endsWith`, and exactly
+two Boolean-converting parameters for `xor`. The story acceptance requires every documented
+function, but neither E02-S03-T01 nor the original T02/T03 task split owns these three functions;
+the original T02 therefore cannot meet that acceptance criterion and is superseded by T04.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/expressions#startswith (the
+    `startsWith`, `endsWith`, and `xor` entries; checked 2026-08-12)
 
 ## E02-S01-T02 — error rendering (second experiment)
 

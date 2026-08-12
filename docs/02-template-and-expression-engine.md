@@ -93,7 +93,7 @@ Types: Null, Boolean, Number (double), String, Version, Object/Array. Implement 
 
 ### Functions (implement all; ✱ = stateful/local behavior noted)
 
-`and or not eq ne lt le gt ge in notIn contains containsValue startsWith endsWith format join split replace length lower upper trim coalesce iif convertToJson counter✱` — plus status functions valid only in conditions: `always() canceled() failed([names]) succeeded([names]) succeededOrFailed([names])`.
+`and or not xor eq ne lt le gt ge in notIn contains containsValue startsWith endsWith format join split replace length lower upper trim coalesce iif convertToJson counter✱` — plus status functions valid only in conditions: `always() canceled() failed([names]) succeeded([names]) succeededOrFailed([names])`.
 
 - `counter(prefix, seed)`✱: per-prefix state file under `<out>/.work/.state/counters/` incremented per local run — mirrors "per pipeline+prefix" semantics locally.
 - `format`: composite formatting incl. `{{` escapes; date specifiers only exist in the `name:` run-number context (separate mini-formatter shared with `Build.BuildNumber` evaluation).
