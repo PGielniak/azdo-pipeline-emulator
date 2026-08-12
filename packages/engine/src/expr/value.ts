@@ -35,9 +35,19 @@ export interface ExprObject {
   readonly value: Readonly<Record<string, ExprValue>>;
   /** Parameter objects are ordinal; contexts such as variables opt into ignore-case (C-E02-027). */
   readonly keyComparison: ObjectKeyComparison;
+  /**
+   * What a *miss* does. Almost everything null-propagates (C-E02-024/025) — but the top-level
+   * `parameters` context does not: the service raises `Key not found 'x'` there while returning
+   * Null for the same miss on `variables`, both measured in the same slot and syntax (C-E02-087).
+   * Optional, and `undefined` means `'null'`, so every object built before this existed keeps the
+   * behavior it was tested with.
+   */
+  readonly missPolicy?: ObjectMissPolicy | undefined;
 }
 
 export type ObjectKeyComparison = 'ordinal' | 'ordinalIgnoreCase';
+
+export type ObjectMissPolicy = 'null' | 'error';
 
 export interface ExprArray {
   readonly kind: 'array';
@@ -82,6 +92,7 @@ export function parseVersionValue(text: string): ExprVersion | undefined {
 export function objectValue(
   value: Readonly<Record<string, ExprValue>>,
   keyComparison: ObjectKeyComparison = 'ordinal',
+  missPolicy: ObjectMissPolicy = 'null',
 ): ExprObject {
   if (keyComparison === 'ordinalIgnoreCase') {
     const keys = new Set<string>();
@@ -91,7 +102,7 @@ export function objectValue(
       keys.add(folded);
     }
   }
-  return { kind: 'object', value, keyComparison };
+  return { kind: 'object', value, keyComparison, missPolicy };
 }
 
 export const arrayValue = (value: readonly ExprValue[]): ExprArray => ({ kind: 'array', value });

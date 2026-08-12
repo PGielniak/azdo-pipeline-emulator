@@ -3,6 +3,23 @@ import { NULL, stringValue, type ExprObject, type ExprValue } from './value.js';
 
 const INT32_MAX = 2_147_483_647;
 
+/**
+ * A miss on an object whose `missPolicy` is `'error'` — in practice the top-level `parameters`
+ * context, the one collection the service refuses to null-propagate (C-E02-087).
+ *
+ * The service renders this as a *bare* sentence behind file coordinates and nothing else:
+ * `/azure-pipelines.yml (Line: 6, Col: 10): Key not found 'noSuchParameter'` — no "Located at
+ * position N within expression", no help link. That is a shape none of the six parse errors in
+ * `errors.ts` use, and it is not a parse error at all: the expression parsed fine and the context
+ * resolved, so it is raised here, during evaluation (C-E02-088).
+ */
+export class ExprKeyNotFoundError extends Error {
+  constructor(readonly key: string) {
+    super(`Key not found '${key}'`);
+    this.name = 'ExprKeyNotFoundError';
+  }
+}
+
 function objectKey(object: ExprObject, wanted: string): string | undefined {
   if (object.keyComparison === 'ordinal') {
     return Object.hasOwn(object.value, wanted) ? wanted : undefined;
@@ -26,7 +43,11 @@ export function accessIndex(target: ExprValue, index: ExprValue): ExprValue {
       const converted = convertValue(index, 'string');
       if (converted.kind !== 'string') return NULL;
       const key = objectKey(target, converted.value);
-      return key === undefined ? NULL : (target.value[key] ?? NULL);
+      if (key === undefined) {
+        if (target.missPolicy === 'error') throw new ExprKeyNotFoundError(converted.value);
+        return NULL;
+      }
+      return target.value[key] ?? NULL;
     } catch (error) {
       if (error instanceof ExprConversionError) return NULL;
       throw error;
