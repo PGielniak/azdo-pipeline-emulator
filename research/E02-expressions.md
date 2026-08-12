@@ -225,6 +225,124 @@ otherwise a named value.
     2026-08-11
   — every rule above re-verified against the service in survey.md before being encoded
 
+[C-E02-018] **The Azure Pipelines evaluator has seven observable value kinds: Null, Boolean,
+Number, String, Version, Object, and Array.** Boolean, Number, String, and Version have literal
+syntax; Null is produced by a dictionary miss but cannot be written directly; Object and Array
+arrive through contexts such as parameters, and the language has no array literal syntax. This is
+why the evaluator value type must tag all seven even though the parser can construct only four.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/expressions (Literals, Null,
+    Version, and `containsValue`; checked 2026-08-12)
+  — "Null can be the output of an expression but can't be called directly within an expression."
+  — "There is no literal syntax in a YAML pipeline for specifying an array."
+
+[C-E02-019] **The open fork corroborates distinct tagged primitive/Object/Array values and a
+read-only array boundary, but it does not contain Azure Pipelines' Version kind.** Its `ValueKind`
+enum is exactly Array, Boolean, Null, Number, Object, String; `EvaluationResult.GetKind` maps the
+canonical CLR value into those tags; and `IReadOnlyArray` exposes only `Count`, a getter, and an
+enumerator. The missing Version is another measured dialect boundary, so Azure's official docs
+and C-E02-005 outrank the fork for that seventh kind.
+  — https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTExpressions2/Expressions2/ValueKind.cs#L7-L15
+    (checked 2026-08-12)
+  — https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTExpressions2/Expressions2/EvaluationResult.cs#L379-L408
+    (checked 2026-08-12)
+  — https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTExpressions2/Expressions2/Sdk/IReadOnlyArray.cs#L7-L15
+    (checked 2026-08-12)
+
+[C-E02-020] **Conversions are directional, and comparisons convert the right operand to the
+left operand's kind.** The documented primitive matrix, transcribed cell-for-cell, is:
+Boolean→Number/String; Null→Boolean/Number/String; Number→Boolean/String and partially Version;
+String→Boolean, partially Null/Number/Version; Version→Boolean/String; same-kind cells need no
+conversion; every other primitive cell is unsupported. Boolean→Number is 0/1 and →String is
+`False`/`True`; Null→Boolean/Number/String is false/0/empty; Number→Boolean is zero false, otherwise
+true; String→Boolean is empty false, otherwise true; only empty String→Null; Version is always true
+as Boolean and stringifies by its components. `eq`/`ne` return false/true when conversion fails;
+ordered comparisons error. Strings compare ordinal-ignore-case.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/expressions#type-casting
+    (conversion table and per-type rules, checked 2026-08-12)
+  — table cells: `Boolean: - - Yes Yes -`; `Null: Yes - Yes Yes -`;
+    `Number: Yes - - Yes Partial`; `String: Yes Partial Partial - Partial`;
+    `Version: Yes - - Yes -`
+  — comparison entries say "Converts right parameter to match type of left parameter"; `eq`
+    false, `ne` true, and ordered comparisons error on failure.
+
+[C-E02-021] **The live service's String→Number behavior contradicts the current Learn wording:**
+it accepts invariant decimal and grouped strings, not only Int32. `eq(.5, '0.5')` and
+`eq(1000, '1,000')` are True; reverse-direction controls prove Number→String yields `0.5` and
+`1000`. Failed conversion makes `eq(1,'x')` False and `ne(1,'x')` True, while `lt(1,'x')` rejects
+with `Unable to convert from String to Number`. Empty String and Null compare equal in both
+directions, and Null compares equal to Number zero.
+  — research/experiments/E02-coercion/ (`string-to-number-half`,
+    `string-to-number-thousands`, `number-to-string-half`, `number-to-string-thousands`,
+    `string-number-failure-{eq,ne,lt}`, `empty-string-left-null`,
+    `null-left-empty-string`, `null-to-number`; live preview, checked 2026-08-12)
+  — contradicts https://learn.microsoft.com/azure/devops/pipelines/process/expressions#string
+    saying String→Number runs `Int32.TryParse`; decimal `.5` cannot be an Int32.
+
+[C-E02-022] **Version literals and converted Versions have different minimum arities.** A literal
+requires 3–4 segments (C-E02-005), but String→Version and Number→Version can produce a 2-segment
+Version: `lt(1.2.0, '1.3')` and `lt(1.2.0, 1.3)` are True. Missing components remain significant:
+`eq(1.2.0, '1.2')` and `eq(1.2.0, 1.2)` are False, while the three-component string control is
+True. Versions order component-wise (`1.2.3 < 1.10.0`). Whole Number `2` cannot convert because it
+has no nonzero decimal.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/expressions#number and #string
+    (partial Number→Version constraint and `Version.TryParse`; checked 2026-08-12)
+  — research/experiments/E02-coercion/ (`number-to-version{,-ordered,-invalid}`,
+    `string-to-version-{two,ordered,three}`, `version-order`, `version-to-number`; live preview,
+    checked 2026-08-12)
+
+[C-E02-023] **Object and Array equality is reference identity, not structural equality.** Comparing
+the same parameter object/array with itself is True; comparing two separately declared values with
+the same shape is False. Every ordered collection comparison — even a reference against itself —
+is rejected as an Object/Array→Number conversion failure.
+  — research/experiments/E02-coercion/ (`object-{same-reference,distinct-equal-shape}` and
+    `array-{same-reference,distinct-equal-shape}`, plus `{object,array}-{same,distinct}-order`;
+    live preview, checked 2026-08-12)
+  — corroborated by https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTExpressions2/Expressions2/EvaluationResult.cs#L139-L141
+    (`Object.ReferenceEquals`; checked 2026-08-12)
+
+[C-E02-024] **Property and index syntax are the same lookup operation after parsing; object indices
+convert primitive keys to String, and every dictionary miss returns Null.** Exact-case property and
+index reads both return `CamelKey`; index syntax reaches `dotted.name`; numeric index `1` reaches
+the object key `'1'`; and both missing spellings make `coalesce` select its fallback.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/expressions (index/property syntax,
+    Null from a dictionary miss; checked 2026-08-12)
+  — research/experiments/E02-members/ (`property-exact`, `index-exact`, `dotted-index`,
+    `numeric-object-index`, `missing-property`, `missing-index`; live preview, checked 2026-08-12)
+  — https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTExpressions2/Expressions2/Sdk/Operators/Index.cs#L148-L180
+    (primitive String index + `TryGetValue`, otherwise null; checked 2026-08-12)
+
+[C-E02-025] **Member access is null-propagating for both Null and every other non-collection.** A
+missing property followed by `.deeper` or `['deeper']` remains Null, and property access on a String
+also returns Null; no chain throws.
+  — research/experiments/E02-members/ (`missing-chain-property`, `missing-chain-index`,
+    `primitive-chain`; live preview, checked 2026-08-12)
+  — https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTExpressions2/Expressions2/Sdk/Operators/Index.cs#L51-L64
+    (a non-collection returns null; checked 2026-08-12)
+
+[C-E02-026] **Array indices convert to Number, reject negative/non-numeric/out-of-range values,
+floor non-negative fractions, and start at zero.** `[0]` is the first item; `['1']` and `[1.9]` are
+the second; `[-1]`, `[2]`, and `['x']` miss; a Null index converts to zero.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/expressions — "When an expression
+    returns an array, normal indexing rules apply and the index starts with `0`." (checked
+    2026-08-12)
+  — research/experiments/E02-members/ (`array-zero`, `array-one-string`, `array-fraction`,
+    `array-negative`, `array-out-of-range`, `array-nonnumeric`, `array-null-index`; live preview,
+    checked 2026-08-12)
+  — https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTExpressions2/Expressions2/Sdk/Operators/Index.cs#L183-L215
+    and #L247-L267 (Number conversion, floor, bounds; checked 2026-08-12)
+
+[C-E02-027] **Object key casing is a property of the context, not a language-wide rule.** Nested
+parameter-object keys are ordinal case-sensitive (`CamelKey` succeeds; `camelkey` and `CAMELKEY`
+miss in both property/index syntax), while the variables context is ordinal-ignore-case
+(`variables.myvar` and `variables['MYVAR']` both resolve `MyVar`). The value model must therefore
+carry the comparer policy with each Object.
+  — research/experiments/E02-members/ (`property-{exact,lower,upper}`, `index-{exact,lower}`,
+    `variable-property-lower`, `variable-index-upper`; live preview, checked 2026-08-12)
+  — https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTPipelines/Pipelines/ContextData/DictionaryContextData.cs#L71-L89
+    (`StringComparer.OrdinalIgnoreCase`) and
+    https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTPipelines/Pipelines/ContextData/CaseSensitiveDictionaryContextData.cs#L71-L89
+    (`StringComparer.Ordinal`; checked 2026-08-12)
+
 ## E02-S01-T02 — error rendering (second experiment)
 
 64 further live rejections, `research/experiments/E02-errors/` (`pnpm expr-error-survey`,

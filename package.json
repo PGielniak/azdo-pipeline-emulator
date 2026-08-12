@@ -24,6 +24,8 @@
     "normalizer-survey": "node scripts/normalizer-survey.ts",
     "expr-grammar-survey": "node scripts/expr-grammar-survey.ts",
     "expr-error-survey": "node scripts/expr-error-survey.ts",
+    "expr-coercion-survey": "node scripts/expr-coercion-survey.ts",
+    "expr-member-survey": "node scripts/expr-member-survey.ts",
     "lint": "pnpm run lint:es && pnpm run lint:format && pnpm run lint:shell",
     "lint:es": "eslint .",
     "lint:format": "prettier --check .",
