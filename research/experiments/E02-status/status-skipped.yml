@@ -1,0 +1,419 @@
+# E02-S03-T03 — real-run probe: what do the job-level status functions return when a dependency
+# was SKIPPED? Preview cannot answer (it never evaluates status functions) and the job-level
+# engine is server-side, so this is the one cell that needs an actual run.
+#
+# Every job here is **agentless** (`pool: server`): agentless jobs execute on the orchestrator, so
+# the run needs no hosted-agent parallelism and finishes in seconds. `Delay@1` with 0 minutes is
+# the shortest server task that always succeeds.
+#
+# Read the answer off the run timeline: a probe job whose condition evaluated False is `Skipped`;
+# one whose condition evaluated True is `Succeeded`. Nothing is echoed — the *result* is the datum.
+#
+# Pushed to the oracle repo and queued by `scripts/expr-status-realrun.ts`.
+trigger: none
+pr: none
+
+jobs:
+  # --- the dependency under test: never runs, so its result is Skipped ---------------------------
+  - job: dep_skipped
+    displayName: dependency (condition false -> Skipped)
+    pool: server
+    condition: false
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  # --- control dependency: runs normally, so its result is Succeeded -----------------------------
+  - job: dep_ok
+    displayName: dependency (runs -> Succeeded)
+    pool: server
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  # --- a FAILED dependency, produced without an agent --------------------------------------------
+  # `gt` errors rather than returning False when the right operand cannot be converted (C-E02-022),
+  # and a condition that throws is evaluated by the orchestrator, so this job fails without ever
+  # being dispatched to a pool. (Measured: the result is `abandoned`, not `failed` — see real-run.md.)
+  - job: dep_abandon
+    displayName: dependency (condition errors -> Abandoned)
+    pool: server
+    condition: gt(1, 'not-a-number')
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  # --- a FAILED dependency: the server task itself errors -----------------------------------------
+  - job: dep_fail
+    displayName: dependency (task errors -> Failed)
+    pool: server
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: 'not-a-number'
+
+  # --- probes over the SKIPPED dependency --------------------------------------------------------
+  - job: skipped_succeeded
+    dependsOn: dep_skipped
+    pool: server
+    condition: succeeded()
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: skipped_succeeded_named
+    dependsOn: dep_skipped
+    pool: server
+    condition: succeeded('dep_skipped')
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: skipped_succeededorfailed
+    dependsOn: dep_skipped
+    pool: server
+    condition: succeededOrFailed()
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: skipped_succeededorfailed_named
+    dependsOn: dep_skipped
+    pool: server
+    condition: succeededOrFailed('dep_skipped')
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: skipped_failed
+    dependsOn: dep_skipped
+    pool: server
+    condition: failed()
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: skipped_failed_named
+    dependsOn: dep_skipped
+    pool: server
+    condition: failed('dep_skipped')
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: skipped_always
+    dependsOn: dep_skipped
+    pool: server
+    condition: always()
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: skipped_canceled
+    dependsOn: dep_skipped
+    pool: server
+    condition: canceled()
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: skipped_not_canceled
+    dependsOn: dep_skipped
+    pool: server
+    condition: not(canceled())
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: skipped_result_is_skipped
+    dependsOn: dep_skipped
+    pool: server
+    condition: eq(dependencies.dep_skipped.result, 'Skipped')
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  # --- controls over the SUCCEEDED dependency, to prove the harness measures what we think --------
+  - job: ok_succeeded
+    dependsOn: dep_ok
+    pool: server
+    condition: succeeded()
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: ok_failed
+    dependsOn: dep_ok
+    pool: server
+    condition: failed()
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: ok_succeededorfailed
+    dependsOn: dep_ok
+    pool: server
+    condition: succeededOrFailed()
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: ok_canceled
+    dependsOn: dep_ok
+    pool: server
+    condition: canceled()
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  # --- mixed graph: one Succeeded dependency AND one Skipped dependency ---------------------------
+  # The docs' wording for the argument forms cannot be read unambiguously ("evaluates to True if
+  # *all* of those jobs succeeded" vs "evaluates to True whether *any* of those jobs succeeded or
+  # failed"), and a single-dependency probe cannot tell all from any. These can.
+  - job: mixed_succeeded
+    dependsOn:
+      - dep_ok
+      - dep_skipped
+    pool: server
+    condition: succeeded()
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: mixed_succeededorfailed
+    dependsOn:
+      - dep_ok
+      - dep_skipped
+    pool: server
+    condition: succeededOrFailed()
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: mixed_succeeded_named_ok
+    dependsOn:
+      - dep_ok
+      - dep_skipped
+    pool: server
+    condition: succeeded('dep_ok')
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: mixed_succeededorfailed_named_ok
+    dependsOn:
+      - dep_ok
+      - dep_skipped
+    pool: server
+    condition: succeededOrFailed('dep_ok')
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: mixed_succeeded_named_both
+    dependsOn:
+      - dep_ok
+      - dep_skipped
+    pool: server
+    condition: succeeded('dep_ok', 'dep_skipped')
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: mixed_not_canceled
+    dependsOn:
+      - dep_ok
+      - dep_skipped
+    pool: server
+    condition: not(canceled())
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  # --- probes over the FAILED dependency ----------------------------------------------------------
+  - job: abandon_succeeded
+    dependsOn: dep_abandon
+    pool: server
+    condition: succeeded()
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: abandon_failed
+    dependsOn: dep_abandon
+    pool: server
+    condition: failed()
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: abandon_failed_named
+    dependsOn: dep_abandon
+    pool: server
+    condition: failed('dep_abandon')
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: abandon_succeededorfailed
+    dependsOn: dep_abandon
+    pool: server
+    condition: succeededOrFailed()
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: abandon_always
+    dependsOn: dep_abandon
+    pool: server
+    condition: always()
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: abandon_canceled
+    dependsOn: dep_abandon
+    pool: server
+    condition: canceled()
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: abandon_result
+    dependsOn: dep_abandon
+    pool: server
+    condition: eq(dependencies.dep_abandon.result, 'Failed')
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  # Preview accepts `succeeded('nosuchjob')` without checking the name against the graph; this asks
+  # what the *runtime* does with a name that is not a dependency.
+  - job: unknown_named
+    dependsOn: dep_ok
+    pool: server
+    condition: succeeded('nosuchjob')
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  # --- probes over the FAILED dependency ----------------------------------------------------------
+  - job: fail_succeeded
+    dependsOn: dep_fail
+    pool: server
+    condition: succeeded()
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: fail_failed
+    dependsOn: dep_fail
+    pool: server
+    condition: failed()
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: fail_failed_named
+    dependsOn: dep_fail
+    pool: server
+    condition: failed('dep_fail')
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: fail_succeededorfailed
+    dependsOn: dep_fail
+    pool: server
+    condition: succeededOrFailed()
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: fail_always
+    dependsOn: dep_fail
+    pool: server
+    condition: always()
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: fail_result_is_failed
+    dependsOn: dep_fail
+    pool: server
+    condition: eq(dependencies.dep_fail.result, 'Failed')
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  # --- no dependencies at all: what do the all-of / any-of rules do over an empty set? ------------
+  - job: nodep_succeeded
+    pool: server
+    condition: succeeded()
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: nodep_succeededorfailed
+    pool: server
+    condition: succeededOrFailed()
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  - job: nodep_failed
+    pool: server
+    condition: failed()
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
+
+  # --- is a dependency name argument matched case-sensitively? -----------------------------------
+  - job: case_named
+    dependsOn: dep_ok
+    pool: server
+    condition: succeeded('DEP_OK')
+    steps:
+      - task: Delay@1
+        inputs:
+          delayForMinutes: '0'
