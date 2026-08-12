@@ -209,14 +209,116 @@ otherwise a named value.
     2026-08-11
   — every rule above re-verified against the service in survey.md before being encoded
 
-## Known message-level divergence (deliberate)
+## E02-S01-T02 — error rendering (second experiment)
 
-`! true` (bang, space, operand) is rejected by both sides but at different places: the service
-reports `Unexpected symbol: 'true'` at position 3, ours reports the `!` at position 1. The service's
-lexer evidently consumes a lone `!` as a token and fails on the operand, while `!true` (no space)
-comes back as `Unrecognized value: '!true'` — one scan-to-boundary token. Reproducing both required
-guessing at the closed v1 lexer's fall-through, so the tokenizer implements the `!true` case (which
-is the one a human writes) and accepts the position difference on `! true`. Both spellings are
-rejected, which is what matters here; E02-S01-T02 owns message parity and can revisit with more
-probes.
-  — research/experiments/E02-grammar/survey.md rows `op-not`/`op-bang-alone`
+64 further live rejections, `research/experiments/E02-errors/` (`pnpm expr-error-survey`,
+`cases.json` is the machine-readable form the parity test replays). Where the grammar survey asked
+*which expressions are rejected*, these ask *what the rejection says and what its numbers point at*.
+
+[C-E02-018] **`!` ends no token and starts none.** `!!true` comes back as a single
+`Unrecognized value: '!!true'`; `!eq(1, 1)` as `Unrecognized value: '!eq'` (the scan stops at the
+`(`, and the `(` still makes it a *function* name); `1 !` as `Unexpected symbol: '!'` at 3; `!=`
+survives as its own two-character symbol (`1 != 2` → `Unexpected symbol: '!='`). So the lexer scans
+a `!` run exactly as it scans a keyword, and the only special case is the `!=` spelling. This
+**closes** the "known message-level divergence" E02-S01-T01 recorded and handed to this task: with
+`!` keyword-shaped and name resolution deferred (C-E02-020), all six `!` spellings now report the
+same kind, raw text and position as the service.
+  — research/experiments/E02-errors/survey.md §Bang, rows `bang-alone`/`bang-after-value`/
+    `bang-double`/`bang-tight`/`bang-spaced`/`bang-eq` (live preview, checked 2026-08-12)
+
+[C-E02-019] **Two rejection classes, separated by how the token was read.** Text the lexer starts
+reading as a *number* and cannot finish is rejected where it is read: `1e3 2` reports `1e3` at
+position 1, not the leftover `2` at 5, and so do `0x1F 2` and `-1.2.3 2` — all three number
+*starts* the docs list (a digit and a `-`; the `.` case cannot carry a competing error). Everything
+else non-numeric is scanned as a keyword and
+becomes a named value regardless of charset — `"double" 2` reports the **`2`** at position 9 and
+`+1 2` reports the **`2`** at position 4, i.e. the quote- and sign-shaped text was accepted as a
+*name* and only failed later. Consequence for the lexer: the identifier charset is not a lexical
+gate (except immediately after `.`, C-E02-007), and `unrecognized` must mean "failed number scan"
+and nothing else. Consequence for the tests: `+1`, `"double"` and `!true` are `needsRegistry` rows —
+a syntax-only parse accepts them, exactly as it accepts `null` (C-E02-003).
+  — research/experiments/E02-errors/survey.md §Ordering, rows `order-unrec-then-garbage`/
+    `order-hex-then-garbage`/`order-negver-then-garbage` (eager) against
+    `order-quote-then-garbage`/`order-plus-then-garbage` (deferred) (live preview, checked
+    2026-08-12)
+
+[C-E02-020] **Name resolution is deferred behind the syntax parse; syntax errors are eager.**
+`nosuchcontext 2` and `nosuchfunc(1) 2` both report the leftover `2` at position 15 — never the
+unresolvable name — while `eq(1) 2` reports the arity error at the `)` (position 5) and
+`order-bang-bang-spaced` (`! !`) reports the second `!`. So an unresolvable name is remembered and
+raised only if the parse otherwise succeeds; arity, on the other hand, is syntax and fires
+immediately (C-E02-017). A second rule falls out of the same rows: a **leftover** token is always
+phrased `Unexpected symbol`, whatever kind it is — `1 !` reports a symbol for text that would be an
+`Unrecognized value` in operand position, and `! true` reports the boolean `true`.
+  — research/experiments/E02-errors/survey.md §Ordering, all rows (live preview, checked 2026-08-12)
+  — implemented as `State.pending` in `packages/engine/src/expr/parser.ts`; first name error wins
+    (two unresolvable names in one expression is unprobed — the fork throws at the first)
+
+[C-E02-021] **The service trims the delimited text before parsing.** `${{␣␣␣␣null␣}}` reports
+`Located at position 1 within expression: 'null'`, and `${{␣␣␣␣1 == 1␣}}` reports position **3**,
+not 7 — so both the position and the echoed expression are relative to the *trimmed* text. A folded
+newline inside the delimiters behaves the same way. Every one of the 74 grammar-survey rows was
+written with exactly one space each side, which is why this was indistinguishable until now; get it
+wrong and every rendered position is off by the file's indentation.
+  — research/experiments/E02-errors/survey.md rows `ws-baseline`/`ws-leading`/`ws-leading-inner`/
+    `ws-newline` (live preview, checked 2026-08-12)
+
+[C-E02-022] **`(Line: L, Col: C)` points at the host scalar, never at the offending token.**
+`probe: prefix ${{ null }} suffix` reports Col 10 — the `p` of `prefix`, with the bad token 19
+characters further on. Confirmed against four different document shapes: `condition:` → Col 14,
+`displayName:` nested in a job → Line 5 Col 18, a block scalar → Line 2 Col 11 (the `|`, not the
+line the expression is on), a variable at `  a:` → Col 6. The location is the *node*; the position
+inside the expression is what the message body carries. **Deliberate divergence:** our `Diagnostic`
+ranges cover the offending token so E01's code frame can caret it, which is a superset of the
+service's information (the message body still carries the service's own position verbatim).
+  — research/experiments/E02-errors/survey.md §Position, rows `embed-mid-scalar`/`condition-field`/
+    `deep-indent`/`block-scalar`/`multi-bad-scalars` (live preview, checked 2026-08-12)
+
+[C-E02-023] **Three message shapes, one per group of codes.** Positioned:
+`<sentence>. Located at position N within expression: '<expr>'. For more help, refer to
+https://go.microsoft.com/fwlink/?linkid=842996` — used by `Unrecognized value`, `Unexpected symbol`,
+`Expected a property name…` and `Unclosed function`. Help-only: `Exceeded max expression depth 50.
+For more help, refer to …` — no position, no echo. Bare: `An expression was expected` — no position,
+no echo, no link, and no trailing period.
+  — research/experiments/E02-errors/survey.md rows `grammar-val-depth-51`/`grammar-val-empty` and
+    every positioned row (live preview, checked 2026-08-12)
+
+[C-E02-024] **Compile-time messages are cut to 500 characters with `[...]` appended; runtime ones
+are not cut at all.** The cap applies to the *assembled* string including the `<file> (Line…):`
+prefix, not to the echoed expression: a 353-character expression produced a 505-character message
+severed **inside the fwlink URL**. The same expression submitted as `$[ ]` — whose prefix is 16
+characters longer — came back whole at 591 characters, so the cap belongs to the compile-time error
+collector rather than to the expression parser. **Deliberate divergence:** we never truncate; the
+parity test proves equality by truncating *our* assembled message the same way.
+  — research/experiments/E02-errors/survey.md §Echo, rows `long-echo`/`echo-cap-control`/
+    `echo-cap-runtime` (live preview, checked 2026-08-12)
+
+[C-E02-025] **Runtime (`$[ ]`) errors carry no file coordinates, only a sentence.** The prefix is
+`An error occurred while loading the YAML build pipeline. ` and the body is byte-identical to the
+compile-time one: `$[ eq(1) ]` → `Unexpected symbol: ')'` at 5, `$[ variables. ]` → the dereference
+sentence at 10, `$[ nosuchcontext.a ]` → the name at 1, and the depth message unchanged. This
+narrows C-E02-015: the kind swap seen there (`$[ 1 == 1 ]` saying `Unrecognized value` where `${{ 1
+== 1 }}` says `Unexpected symbol`) is confined to operator text, and is deliberately **not**
+reproduced — one grammar, one kind. We render the prefix and keep our own file coordinates, which
+the service has thrown away by queue time.
+  — research/experiments/E02-errors/survey.md §Runtime, rows `rt-arity`/`rt-named-unknown`/
+    `rt-trailing-dot`/`rt-depth` (live preview, checked 2026-08-12)
+
+[C-E02-026] **An expression embedded in a larger scalar is reported against a synthetic
+`format(…)` call.** `probe: prefix ${{ null }} suffix` → `Located at position 29 within expression:
+'format('prefix {0} suffix', null)'`; two expressions in one scalar →
+`'format('{0} then {1}', 'ok', null)'`; a block scalar → `'format('echo one\necho two\necho
+{0}\necho three\n', null)'`, real newlines and all. So the service compiles mixed content into a
+`format` call and parses *that* — which independently confirms docs/02 §3's stringify-and-
+concatenate rule and names the function that does it. **Deliberate divergence:** the synthetic text
+exists nowhere in the user's file, so a caret cannot be drawn on it; we report the user's own
+expression positioned within itself. Evidence for E03-S01-T05, which owns interpolation.
+  — research/experiments/E02-errors/survey.md §Position, rows `embed-mid-scalar`/
+    `embed-second-expr`/`block-scalar` (live preview, checked 2026-08-12)
+
+[C-E02-027] **The service reports every bad expression in the document, newline-joined.** Two
+variables with bad expressions come back as two full messages in one string, each with its own
+`(Line, Col)`. Our `ExprParseError` is per expression by design — collecting them belongs to the
+document walk in E03-S01 — and `renderDiagnostics` already joins a list.
+  — research/experiments/E02-errors/survey.md row `multi-bad-scalars` (live preview, checked
+    2026-08-12)

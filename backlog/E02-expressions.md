@@ -14,10 +14,16 @@ Acceptance: parser covers the full documented syntax; parse errors match server 
   round-trip invariants (`packages/engine/test/expr/parser.test.ts`, 85 tests). Grammar decided by 74
   live probes (`research/experiments/E02-grammar/survey.md`) because the fork named above is the
   **Actions** dialect: Azure Pipelines has no operators at all (C-E02-001).
-- [ ] **E02-S01-T02 — Server-style parse errors**
+- [x] **E02-S01-T02 — Server-style parse errors**
   **Do:** error messages carry the offending expression with a caret position, mirroring service phrasing where documented.
   **Ground:** collect 5 real service error strings by submitting invalid expressions via oracle preview; store transcripts `research/experiments/E02-errors/`.
   **Done:** snapshot tests match our renderer against collected shapes (not necessarily byte-identical; same information).
+  *Done 2026-08-12:* `packages/engine/src/expr/errors.ts`; **66** live rejections (`pnpm
+  expr-error-survey` → `research/experiments/E02-errors/{survey.md,cases.json}`) replayed as a
+  parity table — 62 rows compared field-by-field *and* byte-for-byte against our renderer, six rows
+  asserted as documented divergences (`packages/engine/test/expr/errors.test.ts`, 80 tests). Two
+  findings changed the parser rather than the renderer (C-E02-018/019/020), closing the `! true`
+  divergence T01 left open.
 
 ## E02-S02 — As a pipeline developer, type coercions and comparisons behave exactly like the service, so my conditions don't flip meaning locally.
 Acceptance: the documented conversion table implemented and cross-verified.

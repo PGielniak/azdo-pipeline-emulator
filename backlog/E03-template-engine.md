@@ -26,6 +26,13 @@ Acceptance: directive semantics proven by oracle fixture pairs, not by reading a
   **Do:** lone-expression structural insertion vs mixed-content stringification; Null→``, Boolean→`True/False`, Number invariant; expression-in-key stringification.
   **Ground:** docs/02 §3 spec + oracle probes for each stringification rule (esp. Boolean casing, float rendering `0.5`/`1.0`); claims per rule.
   **Done:** table-driven goldens vs oracle.
+  *Note (E02-S01-T02, C-E02-026):* the service compiles a mixed-content scalar into a synthetic
+  `format('<literal with {0} holes>', <expr>, …)` call and parses **that** — a parse error inside
+  one is reported as `position 29 within expression: 'format('prefix {0} suffix', null)'`, and a
+  block scalar becomes one `format` whose literal carries real newlines. So "stringify and
+  concatenate" is `format`'s stringification (E02-S03-T02), not a separate rule, and the
+  lone-expression/mixed-content split is visible in the service's own error text. Transcripts:
+  `research/experiments/E02-errors/` rows `embed-mid-scalar`/`embed-second-expr`/`block-scalar`.
 
 ## E03-S02 — As a pipeline developer, includes/`extends` with typed parameters resolve like the service, so multi-file pipelines just work.
 Acceptance: reference forms, parameter typing, and `extends` restrictions all enforced with service-matching errors.

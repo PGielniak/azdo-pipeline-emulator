@@ -20,6 +20,12 @@
  * paren (C-E02-011/012/013a). Function semantics belong to E02-S03 and contexts to E02-S04, so
  * this module takes an `ExprRegistry` instead of knowing any of them — omit it and names pass
  * unchecked, which is what the tokenizer tests and any syntax-only caller want.
+ *
+ * **Name resolution is deferred; syntax is not** (C-E02-020, E02-S01-T02). `nosuchfunc(1) 2` and
+ * `nosuchcontext 2` are both reported by the service at the leftover `2`, never at the name, while
+ * `eq(1) 2` (an arity error, i.e. syntax) is reported at the `)`. So an unresolvable name is
+ * remembered and raised only if the parse otherwise succeeds. That is what makes `! true` report
+ * the operand rather than the `!`, which E02-S01-T01 recorded as an unexplained divergence.
  */
 import { tokenize, type Span, type Token } from './lexer.js';
 
@@ -146,12 +152,19 @@ export function parseExpression(text: string, options: ParseOptions = {}): ExprP
     if (tokens.length === 0) {
       fail('empty-expression', 'An expression was expected', text, { start: 0, end: text.length });
     }
-    const state = { tokens, at: 0, registry: options.registry };
+    const state: State = { tokens, at: 0, registry: options.registry, pending: undefined };
     const node = parseOperand(state);
     const next = state.tokens[state.at];
-    // Anything left over is an error at the leftover token: `1 2` → "Unexpected symbol: '2'".
-    if (next !== undefined) unexpected(next);
+    // Anything left over is an error at the leftover token, and it is always phrased as a *symbol*
+    // whatever the token is: `1 2` → "Unexpected symbol: '2'", `! true` → "Unexpected symbol:
+    // 'true'", `1 !` → "Unexpected symbol: '!'" (C-E02-020).
+    if (next !== undefined) {
+      fail('unexpected-symbol', `Unexpected symbol: '${next.raw}'`, next.raw, next.span);
+    }
+    // Before the deferred name error: the service's depth counter runs while it parses, so a
+    // too-deep expression full of unknown names reports the depth (C-E02-014).
     checkDepth(node, 1, text);
+    if (state.pending !== undefined) throw new ParseFailure(state.pending);
     return { ok: true, node, text };
   } catch (error) {
     if (error instanceof ParseFailure) return { ok: false, error: error.error, text };
@@ -163,6 +176,18 @@ interface State {
   readonly tokens: readonly Token[];
   at: number;
   readonly registry: ExprRegistry | undefined;
+  /** The first unresolvable name, raised at the end of a successful parse (C-E02-020). */
+  pending: ExprParseError | undefined;
+}
+
+/** First name error wins; any syntax error raised later still beats it. */
+function defer(state: State, name: Token): void {
+  state.pending ??= {
+    code: 'unrecognized-value',
+    message: `Unrecognized value: '${name.raw}'`,
+    raw: name.raw,
+    span: name.span,
+  };
 }
 
 const peek = (state: State): Token | undefined => state.tokens[state.at];
@@ -282,12 +307,13 @@ function parsePrimary(state: State): ExprNode {
         span: token.span,
       };
     case 'namedValue': {
-      // Unknown contexts fail at the name, before any member access (C-E02-012).
+      // Unknown contexts are reported at the name (C-E02-012) — but only once the parse gets that
+      // far, so `nosuchcontext 2` reports the `2` instead (C-E02-020).
       if (
         state.registry !== undefined &&
         !state.registry.namedValues.has(token.raw.toLowerCase())
       ) {
-        fail('unrecognized-value', `Unrecognized value: '${token.raw}'`, token.raw, token.span);
+        defer(state, token);
       }
       return { type: 'namedValue', name: token.raw, span: token.span };
     }
@@ -300,11 +326,11 @@ function parsePrimary(state: State): ExprNode {
 
 function parseCall(state: State, name: Token): ExprNode {
   // Same message and position as an unknown context — the service does not say "function"
-  // (C-E02-011): `nosuchfunc(1)` → "Unrecognized value: 'nosuchfunc'" at the name.
+  // (C-E02-011): `nosuchfunc(1)` → "Unrecognized value: 'nosuchfunc'" at the name. Deferred like
+  // any other name (C-E02-020); with no signature there is also no arity to check, which is why
+  // `nosuchfunc(1)` is reported at the name and not at its argument count.
   const signature = state.registry?.functions.get(name.raw.toLowerCase());
-  if (state.registry !== undefined && signature === undefined) {
-    fail('unrecognized-value', `Unrecognized value: '${name.raw}'`, name.raw, name.span);
-  }
+  if (state.registry !== undefined && signature === undefined) defer(state, name);
 
   const open = peek(state);
   // The lexer only classifies a keyword as a function when `(` follows, so this cannot happen.
