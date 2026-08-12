@@ -209,6 +209,29 @@ otherwise a named value.
     2026-08-11
   — every rule above re-verified against the service in survey.md before being encoded
 
+[C-E02-018] **The Azure Pipelines evaluator has seven observable value kinds: Null, Boolean,
+Number, String, Version, Object, and Array.** Boolean, Number, String, and Version have literal
+syntax; Null is produced by a dictionary miss but cannot be written directly; Object and Array
+arrive through contexts such as parameters, and the language has no array literal syntax. This is
+why the evaluator value type must tag all seven even though the parser can construct only four.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/expressions (Literals, Null,
+    Version, and `containsValue`; checked 2026-08-12)
+  — "Null can be the output of an expression but can't be called directly within an expression."
+  — "There is no literal syntax in a YAML pipeline for specifying an array."
+
+[C-E02-019] **The open fork corroborates distinct tagged primitive/Object/Array values and a
+read-only array boundary, but it does not contain Azure Pipelines' Version kind.** Its `ValueKind`
+enum is exactly Array, Boolean, Null, Number, Object, String; `EvaluationResult.GetKind` maps the
+canonical CLR value into those tags; and `IReadOnlyArray` exposes only `Count`, a getter, and an
+enumerator. The missing Version is another measured dialect boundary, so Azure's official docs
+and C-E02-005 outrank the fork for that seventh kind.
+  — https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTExpressions2/Expressions2/ValueKind.cs#L7-L15
+    (checked 2026-08-12)
+  — https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTExpressions2/Expressions2/EvaluationResult.cs#L379-L408
+    (checked 2026-08-12)
+  — https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTExpressions2/Expressions2/Sdk/IReadOnlyArray.cs#L7-L15
+    (checked 2026-08-12)
+
 ## Known message-level divergence (deliberate)
 
 `! true` (bang, space, operand) is rejected by both sides but at different places: the service

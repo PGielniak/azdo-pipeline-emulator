@@ -22,13 +22,16 @@ Acceptance: parser covers the full documented syntax; parse errors match server 
 ## E02-S02 — As a pipeline developer, type coercions and comparisons behave exactly like the service, so my conditions don't flip meaning locally.
 Acceptance: the documented conversion table implemented and cross-verified.
 
-- [ ] **E02-S02-T01 — Value model**
+- [x] **E02-S02-T01 — Value model**
   **Do:** `ExprValue` = Null | Boolean | Number(double) | String | Version | Object | Array with kind tags; Version parsing (2–4 numeric parts).
   **Ground:** expressions doc "Types"/conversion sections; agent expressions SDK value kinds (pin). Record claim per type rule.
   **Done:** unit tests for construction/round-trip incl. Version edge cases (`1.2`, `1.2.3.4`, invalid).
   *Note (E02-S01-T01, C-E02-005):* "Version 2–4 parts" above is wrong — a Version has **3 or 4**
   segments; `1.2` is a Number, settled live by `gt(1.10, 1.9)` → False. The lexer already classifies
   both, so this task inherits the split rather than re-deciding it.
+  *Done 2026-08-12:* `packages/engine/src/expr/value.ts` defines the seven-kind tagged model,
+  parser-literal bridge, validated 3–4 segment Version constructor/parser, and tagged recursive
+  round-trip encoding. `packages/engine/test/expr/value.test.ts`: 22 tests (C-E02-018/019).
 - [ ] **E02-S02-T02 — Coercion & equality table**
   **Do:** implement conversion matrix + `eq/ne/lt/le/gt/ge` semantics: ordinal-ignore-case string compare, Boolean→String `'True'/'False'`, String→Number invariant parse (failure semantics per doc), Null interactions, Version comparisons.
   **Ground:** the doc's conversion table verbatim (quote each cell you encode as a claim); ambiguous cells (`'' vs null`, objects in `eq`, number formatting of `0.5`) → oracle experiments with `${{ }}` probes; transcripts in `research/experiments/E02-coercion/`.
