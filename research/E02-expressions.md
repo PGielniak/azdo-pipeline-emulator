@@ -5,7 +5,7 @@ branches, allocated **per task from the block table below** rather than by takin
 number in whatever copy of this file your branch happens to see (research/README.md, "Allocating IDs
 across parallel branches"). E02-S01-T02 originally took 018–027 and was renumbered to 101–110 during
 the 2026-08-12 integration merge, because E02-S02-T01/T02/T03 had taken the same ten numbers on
-`codex/e02-s02-*` at the same time; the 018–032 claims below are the codex chain's, unchanged.
+`codex/e02-s02-*` at the same time; the 018–027 claims below are the codex chain's, unchanged.
 
 | Block | Task |
 |---|---|
@@ -13,7 +13,7 @@ the 2026-08-12 integration merge, because E02-S02-T01/T02/T03 had taken the same
 | 018–019 | E02-S02-T01 value model |
 | 020–023 | E02-S02-T02 coercion & equality |
 | 024–027 | E02-S02-T03 member access |
-| 028–039 | E02-S03-T01 logical & membership (028–032 used) |
+| 028–039 | E02-S03-T01 logical & membership — 028–032 written on `codex/e02-s03-t01`, not yet merged here (that task is `[!]` blocked; see backlog/E02) |
 | 040–059 | *free — next S03/S04 task takes a block here* |
 | 101–110 | E02-S01-T02 error rendering |
 | 111–199 | *free — reserve in this table before use* |
