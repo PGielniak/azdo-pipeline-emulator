@@ -91,7 +91,8 @@ Acceptance: full function set incl. status functions, each with cited behavior.
 ## E02-S04 — As an engine developer, expression contexts resolve like the service in each evaluation phase, so the same expression means the same thing at the same time.
 Acceptance: `parameters`, `variables`, `dependencies`, `stageDependencies`, `resources.pipeline` contexts with phase gating.
 
-- [ ] **E02-S04-T01 — Context interface + parameters/variables**
+- [!] **E02-S04-T01 — Context interface + parameters/variables**
+  *Blocked 2026-08-12: grounding requires one preview-oracle rejection for a phase-unavailable context; AZDO_ORG_URL, AZDO_PROJECT, AZDO_ORACLE_PIPELINE_ID, and AZDO_PAT are absent.*
   **Do:** `ExprContext` provider API; compile-time contexts wired by E03; index & property syntax; unknown context name = error matching service.
   **Ground:** expressions doc context availability matrix (which contexts exist in which phase) — encode as a table with claims; verify one "not available here" error via oracle.
   **Done:** phase-gating tests (e.g. `dependencies` rejected at compile time).

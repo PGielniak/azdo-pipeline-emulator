@@ -761,3 +761,17 @@ the accepted one-argument form passes an absent seed through to that provider in
 an undocumented default in E02.
   — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions#counter
     (checked 2026-08-12; arity contradicted) · research/experiments/E02-general/counter-*.md
+[C-E02-073] Template expressions expose the `parameters` context and the YAML-defined/predefined `variables` context during template expansion.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/template-expressions?view=azure-devops (checked 2026-08-12)
+  — "Within a template expression, you have access to the `parameters` context ... Additionally, you have access to the `variables` context"
+
+[C-E02-074] Azure Pipelines variables are strings, while runtime parameters are typed and available during template parsing.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/variables?view=azure-devops (checked 2026-08-12)
+  — "All variables are strings"; "Runtime parameters are typed and available during template parsing."
+
+[C-E02-075] Expression contexts support both index syntax and restricted property dereference syntax, and missing variable values resolve to no value in template/runtime variable expansion.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions?view=azure-devops-2022 (checked 2026-08-12)
+  — "Index syntax: `variables['MyVar']`" and "property dereference syntax"; variable lookup returns no value when absent.
+
+[C-E02-076] A compile-time context-availability rejection must be verified against the Azure DevOps preview oracle before implementing phase gating.
+  — Required experiment: `research/experiments/E02-contexts/` (blocked 2026-08-12: AZDO_ORG_URL, AZDO_PROJECT, AZDO_ORACLE_PIPELINE_ID, and AZDO_PAT are absent)
