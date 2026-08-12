@@ -284,6 +284,49 @@ is rejected as an Object/Array→Number conversion failure.
   — corroborated by https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTExpressions2/Expressions2/EvaluationResult.cs#L139-L141
     (`Object.ReferenceEquals`; checked 2026-08-12)
 
+[C-E02-024] **Property and index syntax are the same lookup operation after parsing; object indices
+convert primitive keys to String, and every dictionary miss returns Null.** Exact-case property and
+index reads both return `CamelKey`; index syntax reaches `dotted.name`; numeric index `1` reaches
+the object key `'1'`; and both missing spellings make `coalesce` select its fallback.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/expressions (index/property syntax,
+    Null from a dictionary miss; checked 2026-08-12)
+  — research/experiments/E02-members/ (`property-exact`, `index-exact`, `dotted-index`,
+    `numeric-object-index`, `missing-property`, `missing-index`; live preview, checked 2026-08-12)
+  — https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTExpressions2/Expressions2/Sdk/Operators/Index.cs#L148-L180
+    (primitive String index + `TryGetValue`, otherwise null; checked 2026-08-12)
+
+[C-E02-025] **Member access is null-propagating for both Null and every other non-collection.** A
+missing property followed by `.deeper` or `['deeper']` remains Null, and property access on a String
+also returns Null; no chain throws.
+  — research/experiments/E02-members/ (`missing-chain-property`, `missing-chain-index`,
+    `primitive-chain`; live preview, checked 2026-08-12)
+  — https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTExpressions2/Expressions2/Sdk/Operators/Index.cs#L51-L64
+    (a non-collection returns null; checked 2026-08-12)
+
+[C-E02-026] **Array indices convert to Number, reject negative/non-numeric/out-of-range values,
+floor non-negative fractions, and start at zero.** `[0]` is the first item; `['1']` and `[1.9]` are
+the second; `[-1]`, `[2]`, and `['x']` miss; a Null index converts to zero.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/expressions — "When an expression
+    returns an array, normal indexing rules apply and the index starts with `0`." (checked
+    2026-08-12)
+  — research/experiments/E02-members/ (`array-zero`, `array-one-string`, `array-fraction`,
+    `array-negative`, `array-out-of-range`, `array-nonnumeric`, `array-null-index`; live preview,
+    checked 2026-08-12)
+  — https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTExpressions2/Expressions2/Sdk/Operators/Index.cs#L183-L215
+    and #L247-L267 (Number conversion, floor, bounds; checked 2026-08-12)
+
+[C-E02-027] **Object key casing is a property of the context, not a language-wide rule.** Nested
+parameter-object keys are ordinal case-sensitive (`CamelKey` succeeds; `camelkey` and `CAMELKEY`
+miss in both property/index syntax), while the variables context is ordinal-ignore-case
+(`variables.myvar` and `variables['MYVAR']` both resolve `MyVar`). The value model must therefore
+carry the comparer policy with each Object.
+  — research/experiments/E02-members/ (`property-{exact,lower,upper}`, `index-{exact,lower}`,
+    `variable-property-lower`, `variable-index-upper`; live preview, checked 2026-08-12)
+  — https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTPipelines/Pipelines/ContextData/DictionaryContextData.cs#L71-L89
+    (`StringComparer.OrdinalIgnoreCase`) and
+    https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTPipelines/Pipelines/ContextData/CaseSensitiveDictionaryContextData.cs#L71-L89
+    (`StringComparer.Ordinal`; checked 2026-08-12)
+
 ## Known message-level divergence (deliberate)
 
 `! true` (bang, space, operand) is rejected by both sides but at different places: the service

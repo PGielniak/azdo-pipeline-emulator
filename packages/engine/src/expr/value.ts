@@ -33,7 +33,11 @@ export interface ExprVersion {
 export interface ExprObject {
   readonly kind: 'object';
   readonly value: Readonly<Record<string, ExprValue>>;
+  /** Parameter objects are ordinal; contexts such as variables opt into ignore-case (C-E02-027). */
+  readonly keyComparison: ObjectKeyComparison;
 }
+
+export type ObjectKeyComparison = 'ordinal' | 'ordinalIgnoreCase';
 
 export interface ExprArray {
   readonly kind: 'array';
@@ -75,10 +79,20 @@ export function parseVersionValue(text: string): ExprVersion | undefined {
   return versionValue(segments);
 }
 
-export const objectValue = (value: Readonly<Record<string, ExprValue>>): ExprObject => ({
-  kind: 'object',
-  value,
-});
+export function objectValue(
+  value: Readonly<Record<string, ExprValue>>,
+  keyComparison: ObjectKeyComparison = 'ordinal',
+): ExprObject {
+  if (keyComparison === 'ordinalIgnoreCase') {
+    const keys = new Set<string>();
+    for (const key of Object.keys(value)) {
+      const folded = key.toUpperCase();
+      if (keys.has(folded)) throw new RangeError(`duplicate case-insensitive object key: ${key}`);
+      keys.add(folded);
+    }
+  }
+  return { kind: 'object', value, keyComparison };
+}
 
 export const arrayValue = (value: readonly ExprValue[]): ExprArray => ({ kind: 'array', value });
 
@@ -112,6 +126,7 @@ export function encodeExprValue(value: ExprValue): unknown {
     case 'object':
       return {
         kind: 'object',
+        keyComparison: value.keyComparison,
         value: Object.fromEntries(
           Object.entries(value.value).map(([key, child]) => [key, encodeExprValue(child)]),
         ),
@@ -149,10 +164,14 @@ export function decodeExprValue(input: unknown): ExprValue {
         record.value !== null &&
         !Array.isArray(record.value)
       ) {
+        if (record.keyComparison !== 'ordinal' && record.keyComparison !== 'ordinalIgnoreCase') {
+          break;
+        }
         return objectValue(
           Object.fromEntries(
             Object.entries(record.value).map(([key, child]) => [key, decodeExprValue(child)]),
           ),
+          record.keyComparison,
         );
       }
       break;

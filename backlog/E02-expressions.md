@@ -38,10 +38,12 @@ Acceptance: the documented conversion table implemented and cross-verified.
   **Done:** table-driven test file `coercion.table.ts` ≥ 120 rows, every row citing claim or experiment ID.
   *Done 2026-08-12:* `packages/engine/src/expr/coercion.ts`; exactly 120 comparison rows
   (20 grounded scenarios × 6 operators), each citing C-E02-020..023; 28 live preview transcripts.
-- [ ] **E02-S02-T03 — Member access semantics**
+- [x] **E02-S02-T03 — Member access semantics**
   **Do:** property/index on Objects/Arrays; missing member → Null; index into Null → Null (safe chaining); case-insensitivity of property names (verify!).
   **Ground:** expressions doc + oracle probes for case sensitivity and missing-member behavior; pin agent SDK `Get`/indexer code path.
   **Done:** tests incl. `variables['no.such']`, chained missing access.
+  *Done 2026-08-12:* `packages/engine/src/expr/access.ts`; 21 live probes established
+  context-specific object casing, null-propagating chains, and array index conversion (C-E02-024..027).
 
 ## E02-S03 — As a pipeline developer, every documented function works locally, so expressions never need rewriting.
 Acceptance: full function set incl. status functions, each with cited behavior.

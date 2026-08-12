@@ -123,6 +123,8 @@ Decided 2026-07-30 (with the user):
 
 13. **Expression conversion follows the live service where Learn's prose is stale (2026-08-12, E02-S02-T02).** The Learn table is correct about direction and supported cells, but its String→Number prose says `Int32.TryParse`; live preview accepts both `'0.5'` and `'1,000'` as Numbers (C-E02-021). Also, the 3–4 segment rule applies to Version *literals* only: String/Number conversion produces 2-segment Versions, with missing Build distinct from zero (C-E02-022). Decided: preserve the literal parser rule, widen the evaluator's Version invariant to 2–4, implement invariant decimal/grouped String→Number conversion, and let D6's oracle hierarchy override the stale prose. Updated: docs/02 §6; evidence `research/experiments/E02-coercion/`.
 
+14. **Expression Object values carry their key comparer (2026-08-12, E02-S02-T03).** The backlog's "case-insensitivity (verify!)" is not global: live preview proves nested parameter objects use ordinal case-sensitive lookup while variables use ordinal-ignore-case, matching the fork's two distinct dictionary context classes (C-E02-027). Decided: `ExprObject` stores `ordinal` or `ordinalIgnoreCase`; context construction chooses it, while property and index syntax share one null-propagating access operation. Updated: docs/02 §6; evidence `research/experiments/E02-members/`.
+
 Still open:
 1. Distribution: npm global install acceptable, or single static binary required?
 2. Should `coverage.min` have an opinionated default (e.g. warn under 60%), or stay report-only until asked?
