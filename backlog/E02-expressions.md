@@ -54,13 +54,8 @@ Acceptance: the documented conversion table implemented and cross-verified.
 ## E02-S03 — As a pipeline developer, every documented function works locally, so expressions never need rewriting.
 Acceptance: full function set incl. status functions, each with cited behavior.
 
-- [!] **E02-S03-T01 — Logical & membership: `and or not eq ne lt le gt ge in notIn contains containsValue`**
-  *Blocked 2026-08-12 (Codex, `codex/e02-s03-t01`): live Azure DevOps preview and the official
-  function entry contradict the **Do** criterion's "contains string/array duality" —
-  `contains(Array, value)` errors Array→String, and Array membership is `containsValue`
-  (C-E02-031). `in`/`notIn` also require 2..N arguments despite the docs saying 1..N. Correct or
-  supersede the task before implementation. Claims are in the 028–039 block.*
-  **Do:** short-circuit `and`/`or`; `contains` string/array duality; `containsValue` for objects.
+- [x] **E02-S03-T01 — Logical & membership: `and or not eq ne lt le gt ge in notIn contains containsValue`**
+  **Do:** short-circuit `and`/`or`; string-only `contains`; `containsValue` for arrays and objects.
   **Ground:** expressions doc per-function entries — quote each signature+behavior as a claim; confirm short-circuiting via doc or agent SDK code (pin).
   **Done:** per-function test groups referencing claims.
 - [ ] **E02-S03-T02 — String/util: `format join split replace lower upper trim length coalesce iif convertToJson counter`**

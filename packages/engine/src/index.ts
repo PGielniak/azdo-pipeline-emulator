@@ -13,3 +13,4 @@ export * from './expr/errors.js';
 export * from './expr/value.js';
 export * from './expr/coercion.js';
 export * from './expr/access.js';
+export * from './expr/functions.js';
