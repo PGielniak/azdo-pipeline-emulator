@@ -139,6 +139,11 @@ describe('phase gating through the parser (C-E02-081)', () => {
   });
 });
 
+// Pipeline resource metadata used to be asserted here as a `resources.pipeline.<alias>` context
+// object. The live runs in `research/experiments/E02-resources/` showed the service has no such
+// context member, so those cases now live in `resources.test.ts` against the measured shape
+// (C-E02-120/121 supersede C-E02-111/112).
+
 describe('the slot also gates the function table (C-E02-065)', () => {
   it('maps each condition slot to its status scope and the value slots to none', () => {
     expect(statusScopeForSlot('step-condition')).toBe('step');

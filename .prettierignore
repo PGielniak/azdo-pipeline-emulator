@@ -8,6 +8,9 @@ packages/*/vendor/
 # Pinned live-service response bodies: byte-identical to what the service returned, and rewritten
 # verbatim on re-fetch (E01-S02-T03). Only the JSON bodies — experiment prose stays formattable.
 research/experiments/**/*.json
+# Probe YAML is what was *submitted* to the live service, byte for byte. Reformatting it would
+# desynchronise the source from the transcript the service produced for it (E02-S04-T02/T03).
+research/experiments/**/*.yml
 # Pipeline fixtures are test *input*: reformatting them would move the line/col
 # positions that diagnostics snapshots assert (and some are deliberately malformed)
 fixtures/

@@ -17,3 +17,4 @@ export * from './expr/functions.js';
 export * from './expr/status.js';
 export * from './expr/general-functions.js';
 export * from './expr/context.js';
+export * from './expr/resources.js';

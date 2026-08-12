@@ -1,0 +1,69 @@
+resources:
+  repositories:
+  - repository: MixedAlias
+    type: git
+    name: oracle
+    ref: refs/heads/main
+  containers:
+  - container: probeimg
+    image: alpine:3.20
+
+trigger: none
+
+variables:
+  reposJson: $[ convertToJson(resources.repositories) ]
+  containersJson: $[ convertToJson(resources.containers) ]
+  selfRef: $[ resources.repositories.self.ref ]
+  selfIndex: $[ resources.repositories['self']['ref'] ]
+  aliasUpper: $[ resources.repositories.SELF.ref ]
+  fieldUpper: $[ resources.repositories.self.REF ]
+  declaredAsWritten: $[ resources.repositories.MixedAlias.name ]
+  declaredLowered: $[ resources.repositories.mixedalias.name ]
+  flatRepoVar: $[ variables['resources.repositories.self.ref'] ]
+  containerType: $[ resources.containers.probeimg.image ]
+  containerSingular: $[ convertToJson(resources.container) ]
+
+jobs:
+- job: Probe
+  pool:
+    vmImage: ubuntu-latest
+  steps:
+  - bash: |
+      echo "P|reposJson|${REPOS}"
+      echo "P|containersJson|[${CONTAINERS}]"
+      echo "P|selfRef|[${SELF_REF}]"
+      echo "P|selfIndex|[${SELF_INDEX}]"
+      echo "P|aliasUpper|[${ALIAS_UPPER}]"
+      echo "P|fieldUpper|[${FIELD_UPPER}]"
+      echo "P|declaredAsWritten|[${DECLARED_AS_WRITTEN}]"
+      echo "P|declaredLowered|[${DECLARED_LOWERED}]"
+      echo "P|flatRepoVar|[${FLAT_REPO_VAR}]"
+      echo "P|containerImage|[${CONTAINER_IMAGE}]"
+      echo "P|containerSingular|[${CONTAINER_SINGULAR}]"
+      printenv | grep -i '^RESOURCES' | sort | sed 's/^/P|env|/' || echo "P|env|<none>"
+    env:
+      REPOS: $(reposJson)
+      CONTAINERS: $(containersJson)
+      SELF_REF: $(selfRef)
+      SELF_INDEX: $(selfIndex)
+      ALIAS_UPPER: $(aliasUpper)
+      FIELD_UPPER: $(fieldUpper)
+      DECLARED_AS_WRITTEN: $(declaredAsWritten)
+      DECLARED_LOWERED: $(declaredLowered)
+      FLAT_REPO_VAR: $(flatRepoVar)
+      CONTAINER_IMAGE: $(containerType)
+      CONTAINER_SINGULAR: $(containerSingular)
+- job: Risky
+  dependsOn: []
+  pool:
+    vmImage: ubuntu-latest
+  variables:
+    missAlias: $[ resources.repositories.nosuchalias.ref ]
+    missField: $[ resources.repositories.self.noSuchField ]
+  steps:
+  - bash: |
+      echo "R|repoMissAlias|[${MISS_ALIAS}]"
+      echo "R|repoMissField|[${MISS_FIELD}]"
+    env:
+      MISS_ALIAS: $(missAlias)
+      MISS_FIELD: $(missField)

@@ -21,9 +21,21 @@ the 2026-08-12 integration merge, because E02-S02-T01/T02/T03 had taken the same
 | 096 | E02-S04-T01 addendum — `counter` slot restriction (allocated after 092–095 were taken) |
 | 097–099 | *free* |
 | 101–110 | E02-S01-T02 error rendering |
-| 111–199 | *free — reserve in this table before use; E02-S04-T02/T03 take blocks here* |
+| 111–112 | E02-S04-T03 doc-only first pass — **superseded by 120–127** (see below) |
+| 113–119 | *free* |
+| 120–127 | E02-S04-T03 `resources` context + pipeline-resource variables (live runs) |
+| 128–199 | *free — reserve in this table before use* |
 
 E02-S04-T02 uses claims C-E02-092–095.
+
+[C-E02-111] ~~Pipeline resource metadata is available at runtime under `resources.pipeline.<Alias>`~~
+**Superseded by C-E02-120/121 on 2026-08-12.** The doc sentence this quoted says the metadata is
+available "as the following predefined **variables**"; reading `resources.pipeline.<Alias>` as a
+member of the `resources` *context* is an over-read of the path spelling, and two live runs measured
+it false — the context has no `pipeline` key at all. Kept for the audit trail; do not cite.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/yaml-schema/resources-pipelines-pipeline?view=azure-pipelines (checked 2026-08-12) — "In each run, the metadata for a pipeline resource is available to all jobs ... at runtime".
+
+[C-E02-112] `projectName` is omitted when the pipeline resource does not specify a project, while the other documented metadata fields remain string-valued. — https://learn.microsoft.com/en-us/azure/devops/pipelines/yaml-schema/resources-pipelines-pipeline?view=azure-pipelines (checked 2026-08-12) — "projectName is not present in the variables if the pipeline resource does not have a project value specified."; **the cited transcript `research/experiments/E02-context/survey.md` contains no such measurement — the claim was doc-only. Now measured: C-E02-122.**
 
 [C-E02-092] `dependencies.<job>` exposes a dependency result and an `outputs` object whose keys are flattened `step.variable` names; a job with no same-stage dependencies sees an empty object. — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions?view=azure-devops#dependencies — "Reference the job status of a previous job ... [and] output variables in the previous job in the same stage" — checked 2026-08-12; live transcript `research/experiments/E02-dependencies/real-run.md`.
 
@@ -931,3 +943,96 @@ hand every slot the full non-status set.
   — https://learn.microsoft.com/azure/devops/pipelines/process/expressions — counter entry: "Use
     this function only in an expression that defines a variable. Don't use it as part of a
     condition for a step, job, or stage." (checked 2026-08-12)
+
+## E02-S04-T03 — `resources` context and pipeline-resource variables (claims 120–127)
+
+Evidence: `research/experiments/E02-resources/real-run.md` — two real runs in the test org
+(probe 1 declares a pipeline resource, probe 2 declares a repository and a container resource),
+sources `resources-pipeline.yml` / `resources-repository.yml` in the same directory, reproducible
+with `pnpm expr-resources-realrun`.
+
+[C-E02-120] **The twelve `resources.pipeline.<Alias>.*` names are predefined *variables*, not members
+of the `resources` context, and they are runtime-only.** The documented list is `projectName`,
+`projectID`, `pipelineName`, `pipelineID`, `runName`, `runID`, `runURI`, `sourceBranch`,
+`sourceCommit`, `sourceProvider`, `requestedFor`, `requestedForID`.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/yaml-schema/resources-pipelines-pipeline?view=azure-pipelines
+    — "In each run, the metadata for a pipeline resource is available to all jobs as the following
+    predefined variables. These variables are available to your pipeline at runtime, and therefore
+    can't be used in template expressions, which are evaluated at pipeline compile time."
+    (checked 2026-08-12; page `git_commit_id` d089fd2dbb54483ec611eeb478e3eff14be74393)
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/resources?view=azure-devops
+    — same list under "Pipeline resource variables" (page `git_commit_id`
+    1eeaa8de39f8b7130d8eb45ec907d9e47d6f5a32, checked 2026-08-12)
+
+[C-E02-121] **Measured: the `resources` context has no `pipeline` key, so the three access paths for
+the same metadata disagree.** In a run where the metadata was demonstrably present (`printenv` shows
+all eleven applicable `RESOURCES_PIPELINE_PROBE_*` variables), probe 1 read `runID` three ways:
+`resources.pipeline.probe.runID` → **empty**, `variables['resources.pipeline.probe.runID']` → `531`,
+`$(resources.pipeline.probe.runID)` → `531`. `convertToJson(resources.pipeline)` → `null`, and
+`convertToJson(resources)` dumps exactly `{"repositories": {…}, "containers": {}}`. Every one of the
+twelve documented fields read through the chain came back empty. This is not missing data — it is a
+name that does not exist in the context. It also means a *job or stage condition*, where the
+`resources` context itself is rejected (C-E02-082), can still read resource metadata through
+`variables[…]`: job `CondFlat` (`condition: ne(variables['resources.pipeline.probe.runID'], '')`)
+ran, while the false-comparison control `CondFlatControl` did not.
+  — research/experiments/E02-resources/real-run.md probe 1 rows `chain*`, `flatVar`, `macro`,
+    `resJson`, `bareResourcesPipeline`, `env`, job results (checked 2026-08-12)
+
+[C-E02-122] **`projectName` is absent, not empty, when the resource declares no `project:`.** Through
+an expression the two are indistinguishable (both yield empty), so the measurement is the environment
+dump: eleven `RESOURCES_PIPELINE_PROBE_*` variables are set and `…_PROJECTNAME` is not among them.
+The distinction is observable at the emitter's env export, which is why it is modelled as key
+absence rather than an empty string.
+  — research/experiments/E02-resources/real-run.md probe 1 `env` rows + `projName`,
+    `flatVarProjectName` (checked 2026-08-12)
+  — doc corroboration: "projectName is not present in the variables if the pipeline resource does
+    not have a project value specified."
+
+[C-E02-123] **What the `resources` context does carry: `repositories.<alias>` with six fields, and
+its lookup policies.** `convertToJson(resources.repositories)` returns `id`, `name`, `ref`, `type`,
+`url`, `version` per alias — the doc's `azure-devops` moniker list, `version` included. `self` is
+present in every run whether or not a repository resource is declared. Alias **and** field names fold
+case (`resources.repositories.SELF.REF` resolves), property and index syntax agree, and a miss —
+unknown alias or unknown field — **null-propagates** rather than raising the way `parameters` does
+(C-E02-087).
+  — research/experiments/E02-resources/real-run.md probe 2 rows `reposJson`, `selfRef`, `selfIndex`,
+    `aliasUpper`, `fieldUpper`, `declaredAsWritten`, `declaredLowered`, `repoMissAlias`,
+    `repoMissField` (checked 2026-08-12)
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/resources?view=azure-devops
+    — "Repository resource variables": `resources.repositories.<alias>.{name,ref,type,id,url,version}`
+
+[C-E02-124] **Keys fold case in the `resources` context; values never do.** The implicit `self`
+repository reports `"type": "Git"` while a repository declared `type: git` reports `"git"` — the YAML
+verbatim. `eq(resources.repositories.X.type, 'git')` therefore behaves differently for `self` than
+for a declared alias, and the builder passes `type` through unnormalised.
+  — research/experiments/E02-resources/real-run.md probe 2 `reposJson` (checked 2026-08-12)
+
+[C-E02-125] **Repository/container metadata is the mirror image of pipeline metadata: context-only.**
+`variables['resources.repositories.self.ref']` is **empty** while
+`resources.repositories.self.ref` resolves — the exact opposite of the pipeline family (C-E02-121).
+No `RESOURCES_REPOSITORIES_*` or `RESOURCES_CONTAINER_*` environment variables appeared in the same
+run's `printenv`. Container objects live under `containers.<alias>` and carry
+`{environment, mapDockerSocket, image, options, volumes, ports}`; only `image` was exercised, and no
+job used the container, so the container shape is recorded but not modelled (E11/E14).
+  — research/experiments/E02-resources/real-run.md probe 2 rows `flatRepoVar`, `containersJson`,
+    `containerImage`, `env` (checked 2026-08-12)
+
+[C-E02-126] **Singular vs plural is not cosmetic.** The variable/context path uses singular
+`resources.pipeline.<alias>`, while the YAML block is `resources.pipelines:`; containers invert it —
+the context key is plural `containers` while the documented *macro* is singular
+`$(resources.container.<name>.type)`. Measured: `resources.pipelines.probe.runID` → empty and
+`convertToJson(resources.container)` → `null`, so mirroring the YAML key name produces a name that
+resolves to nothing.
+  — research/experiments/E02-resources/real-run.md probe 1 `pluralPath`, probe 2 `containerSingular`
+    (checked 2026-08-12)
+
+[C-E02-127] **The environment name is upper-case with `.` → `_` and hyphens preserved.** Measured
+`RESOURCES_PIPELINE_PROBE_RUNID`; the doc's own two-resource sample shows
+`RESOURCES_PIPELINE_OTHER-PROJECT-PIPELINE_PROJECTNAME`, and the alias charset is `[-_A-Za-z0-9]*`,
+so a blanket non-alphanumeric replacement would emit a name the agent never sets. Also observed:
+`RESOURCES_TRIGGERINGALIAS` and `RESOURCES_TRIGGERINGCATEGORY` are set but **empty** in a run not
+started by a resource trigger, matching "These variables are empty unless the `Build.Reason` variable
+is set to `ResourceTrigger`".
+  — research/experiments/E02-resources/real-run.md probe 1 `env` rows (checked 2026-08-12)
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/yaml-schema/resources-pipelines-pipeline?view=azure-pipelines
+    — printenv sample + "variable names become uppercase, and periods turn into underscores"

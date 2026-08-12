@@ -108,7 +108,16 @@ Acceptance: `parameters`, `variables`, `dependencies`, `stageDependencies`, `res
   **Do:** context objects exposing `result` and `outputs['step.var']` per documented shape, backed by the runtime store (E06) at run time.
   **Ground:** jobs & stages dependency docs (…/process/expressions#dependencies + deployment-jobs doc for deployment naming quirks); **experiment**: real pipeline in test org dumping `convertToJson(dependencies)` at stage and job level; transcripts stored and cited (this shape is notoriously under-documented).
   **Done:** shape fixtures generated from the experiment; unit tests against them.
-- [ ] **E02-S04-T03 — `resources.pipeline.*` context**
+- [x] **E02-S04-T03 — `resources.pipeline.*` context** *(done 2026-08-12. **The task title's premise
+  is wrong and the experiment is what found it: there is no `resources.pipeline` context.** Two real
+  runs (`research/experiments/E02-resources/real-run.md`) read the same metadata three ways in a run
+  that demonstrably had it — the context chain returns Null, while `variables['resources.pipeline.
+  <alias>.runID']` and the `$( )` macro return the value, and `convertToJson(resources)` contains only
+  `repositories` and `containers`. So `packages/engine/src/expr/resources.ts` ships **two** builders:
+  `resourcesContext()` for the real context and `pipelineResourceVariables()` for the flat, runtime-only
+  variable entries built from the lockfile pin. 15 tests in `packages/engine/test/expr/resources.test.ts`.
+  This supersedes an earlier doc-only pass (C-E02-111/112, `pipelineResourcesContext`) that had modelled
+  the family as a context object; those claims are marked superseded rather than deleted.)*
   **Do:** populate from pinned run metadata (lockfile, E08); fields per doc (`runID`, `sourceBranch`, etc.).
   **Ground:** resources doc (…/process/resources-pipelines… pin exact page) field list; sample metadata captured from a real run via REST stored in research.
   **Done:** tests reading lockfile-shaped input.

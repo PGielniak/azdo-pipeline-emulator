@@ -33,7 +33,8 @@ which is present in the rendered HTML but dropped by markdown converters).
 | Deployment jobs | https://learn.microsoft.com/azure/devops/pipelines/process/deployment-jobs |
 | Container jobs | https://learn.microsoft.com/azure/devops/pipelines/process/container-phases |
 | Service containers | https://learn.microsoft.com/azure/devops/pipelines/process/service-containers |
-| Resources | https://learn.microsoft.com/azure/devops/pipelines/process/resources |
+| Pipeline resource metadata | https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/resources-pipelines-pipeline — **deep-verified 2026-08-12** (E02-S04-T03, page `git_commit_id` d089fd2dbb54483ec611eeb478e3eff14be74393): §"Pipeline resource metadata as predefined variables" is the canonical 12-name list, and the word **variables** is load-bearing — two real runs proved the same names do *not* exist in the `resources` expression context (C-E02-120/121, superseding the doc-only C-E02-111/112). Same page carries the `projectName`-absent caveat (C-E02-122) and the printenv sample that fixes the env-name rule incl. hyphens (C-E02-127) |
+| Resources | https://learn.microsoft.com/azure/devops/pipelines/process/resources — verified 2026-08-12 (page `git_commit_id` 1eeaa8de39f8b7130d8eb45ec907d9e47d6f5a32): `resources.repositories.<alias>.{name,ref,type,id,url,version}` confirmed live as **context** members, unlike the pipeline family (C-E02-123/125) |
 | Multi-repo checkout | https://learn.microsoft.com/azure/devops/pipelines/repos/multi-repo-checkout |
 | Pipeline artifacts | https://learn.microsoft.com/azure/devops/pipelines/artifacts/pipeline-artifacts |
 | Build artifacts | https://learn.microsoft.com/azure/devops/pipelines/artifacts/build-artifacts |
