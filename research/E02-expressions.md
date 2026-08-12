@@ -327,6 +327,58 @@ carry the comparer policy with each Object.
     https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTPipelines/Pipelines/ContextData/CaseSensitiveDictionaryContextData.cs#L71-L89
     (`StringComparer.Ordinal`; checked 2026-08-12)
 
+[C-E02-028] **`and`, `or`, and `not` operate on Boolean conversions with fixed documented
+arities.** `and` and `or` each take 2..N parameters; `not` takes exactly one. `and` is true only
+when every converted parameter is true and stops at the first false; `or` is true when any
+converted parameter is true and stops at the first true; `not` returns the inverse of its converted
+parameter. Live controls prove the short circuit is evaluation-lazy: the otherwise-failing
+`lt(1, 'not-a-number')` is not evaluated after `and(false, ...)` or `or(true, ...)`.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/expressions#and (the `and`, `not`,
+    and `or` function entries; checked 2026-08-12)
+  — research/experiments/E02-logical/ (`and-short-circuit`, `or-short-circuit`; live preview,
+    checked 2026-08-12)
+
+[C-E02-029] **The six comparison functions all take exactly two parameters and use directional,
+ordinal-ignore-case comparison.** `eq`/`ne` test equality/inequality, convert the right parameter
+to the left parameter's type, and return false/true on failed conversion. `lt`/`le`/`gt`/`ge`
+test the named ordering relation, perform the same right-to-left conversion, and error on failed
+conversion. Every String comparison is ordinal-ignore-case. These entries are the function-level
+contract implemented by C-E02-020..023's conversion and comparison primitives.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/expressions#eq (the `eq`, `ne`,
+    `lt`, `le`, `gt`, and `ge` entries; checked 2026-08-12)
+
+[C-E02-030] **`in` and `notIn` require 2..N parameters in the service, despite Learn saying a
+minimum of one.** They compare the left parameter to each right parameter after converting that
+right parameter to the left type; failed conversions are nonmatches and String comparison is
+ordinal-ignore-case. Both stop at the first match: a matching first candidate prevents evaluation
+of a later failing expression. `in('Alpha')` and `notIn('Alpha')` are rejected at the closing `)`,
+so the service minimum is two, not the documented one.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/expressions#in (`in` and `notIn`
+    entries; documented 1..N, directional conversion, short-circuit; checked 2026-08-12)
+  — research/experiments/E02-logical/ (`in-short-circuit`, `not-in-short-circuit`,
+    `in-one-argument`, `not-in-one-argument`; live preview, checked 2026-08-12)
+
+[C-E02-031] **`contains` is String-only; an Array is not a second membership mode.** The function
+takes exactly two parameters, converts both to String, and performs ordinal-ignore-case substring
+search. Passing an Array as the left parameter is rejected with `Unable to convert from Array to
+String. Value: Array`, including when an element would otherwise match. This directly contradicts
+E02-S03-T01's requested "contains string/array duality"; Array membership belongs to
+`containsValue`.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/expressions#contains (`contains`
+    and `containsValue` entries; checked 2026-08-12)
+  — research/experiments/E02-logical/ (`contains-array-hit`, `contains-array-number`; live preview,
+    checked 2026-08-12)
+
+[C-E02-032] **`containsValue` takes exactly two parameters and searches either Array items or
+Object property values.** Each candidate is converted to the right parameter's type, a conversion
+failure is a nonmatch, String comparison is ordinal-ignore-case, and iteration stops at the first
+match. Live Object probes confirm both case-insensitive matching (`beta` matches `BETA`) and the
+conversion direction (`'01'` among the property values matches right-side Number `1`).
+  — https://learn.microsoft.com/azure/devops/pipelines/process/expressions#containsvalue
+    (checked 2026-08-12)
+  — research/experiments/E02-logical/ (`contains-value-object-hit`,
+    `contains-value-conversion-direction`; live preview, checked 2026-08-12)
+
 ## Known message-level divergence (deliberate)
 
 `! true` (bang, space, operand) is rejected by both sides but at different places: the service
