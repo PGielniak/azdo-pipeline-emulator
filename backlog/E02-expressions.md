@@ -134,7 +134,7 @@ Acceptance: AST→bash compiler with conformance vs the evaluator.
   **Ground:** docs/02 §6 compiled examples as the spec; POSIX/bash semantics claims (quoting, exit codes) cited from GNU bash manual (pin section links) — external-but-real grounding required for shell semantics.
   **Done:** golden tests: expression → emitted bash snapshot; shellcheck-clean output.
 - [!] **E02-S05-T02 — Dual-backend conformance harness**
-  *Blocked 2026-08-12: requires `azdo_var`/`azdo_output` fixture-store APIs from unstarted E06-S01-T01.*
+  *Blocked 2026-08-12: requires `azdo_var`/`azdo_output` fixture-store APIs from unstarted E06-S01-T04.*
   **Do:** the E02-S02/S03 test tables execute through both the evaluator and the compiled bash (via bats running each compiled snippet against a fixture store); one table, two runners.
   **Ground:** BACKLOG §3 (protocol); claims already attached to table rows carry over — harness must print claim IDs on failure.
   **Done:** CI job runs both; divergence = red build.

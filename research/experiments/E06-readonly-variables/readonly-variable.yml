@@ -1,0 +1,16 @@
+trigger: none
+pr: none
+jobs:
+- job: readonly
+  pool:
+    vmImage: ubuntu-latest
+  steps:
+  - bash: |
+      echo "##vso[task.setvariable variable=readonlyProbe;isReadOnly=true]first"
+      echo "##vso[task.setvariable variable=readonlyProbe]second"
+    name: write
+    continueOnError: true
+  - bash: |
+      printf 'READONLY_PROBE=%s\n' '$(readonlyProbe)'
+    name: observe
+    condition: always()

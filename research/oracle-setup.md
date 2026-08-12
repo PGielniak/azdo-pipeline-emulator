@@ -167,6 +167,11 @@ Grounding: C-E00-019/020. UI path per the PAT doc (verified 2026-07-30):
     Runs 520–527 are the recorded evidence. Two of its jobs end non-green **by design** (`dep_fail`
     fails, `dep_abandon` is abandoned — they are the Failed and Abandoned dependencies under test),
     so the pipeline's run history is expected to show failed runs; that is not a broken probe.
+  - `/experiments/readonly-variable.yml` and the pipeline **`oracle-readonly-variable-probe`**
+    (E06-S01-T01), pushed and created by `node scripts/readonly-variable-realrun.ts`. It has one
+    hosted Ubuntu job because only an agent executes `task.setvariable`; run 539 records strict
+    readonly enforcement (overwrite error; original value survives). Re-running the script queues
+    another hosted job.
 - **End of project**: revoke the PAT, then delete the org (Organization settings → Overview →
   Delete). If only the *project* is being cleaned up (the org is the owner's personal one — see
   deviation 1), deleting the `oracle` project removes the repo, both environments and the variable

@@ -62,3 +62,5 @@ Format: `YYYY-MM-DD E##-S##-T## <done|blocked|dropped|in-progress> — <one-line
 2026-08-12 E02-S05-T02 blocked — requires the unimplemented E06-S01-T01 runtime fixture-store APIs `azdo_var` and `azdo_output` (evidence: backlog/E02-expressions.md).
 2026-08-12 E06-S01-T01 in-progress — claimed by Codex on e02-s04-t01-expr-contexts (evidence: pending).
 2026-08-12 E06-S01-T01 blocked — required readonly warning+ignore behavior is contradicted by pinned agent code: legacy mode warns then overwrites; enabled enforcement throws before writing (evidence: research/E06-runtime.md C-E06-001..005).
+2026-08-12 E06-S01-T01 in-progress — resumed by Codex on e02-s04-t01-expr-contexts to run a real hosted-agent probe of the effective readonly-variable policy (evidence: pending).
+2026-08-12 E06-S01-T01 dropped — real hosted run 539 proves strict readonly enforcement (error and original value retained), so the task's required warning+ignore behavior is superseded by E06-S01-T04 (evidence: research/E06-runtime.md C-E06-006; research/experiments/E06-readonly-variables/real-run.md).

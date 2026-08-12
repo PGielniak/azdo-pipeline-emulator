@@ -8,8 +8,8 @@ All tasks here are bash (`packages/runtime/src/*.sh`) with bats tests; shellchec
 ## E06-S01 — As a pipeline developer, variables behave exactly as on the agent (store, env mapping, secrets), so scripts see identical environments locally.
 Acceptance: store + env materialization per docs/04 §4–§5 with cited agent behavior.
 
-- [!] **E06-S01-T01 — Variable store**
-  *Blocked 2026-08-12: its required "readonly write → warning + ignored" behavior contradicts the pinned agent — legacy mode warns then overwrites; enforced mode throws before writing (C-E06-004). Needs a user-approved fidelity policy or a corrected successor task.*
+- [~] **E06-S01-T01 — Variable store**
+  *Superseded 2026-08-12 by E06-S01-T04: real run 539 proves strict read-only enforcement (error + original value retained), contradicting this task's required warning+ignore behavior (C-E06-006).*
   **Do:** file-per-value store (`state/vars/<scope>/<NAME>` + `.meta` flags secret/output/readonly); scope copy at job start; API `azdo_var`, `azdo_var_set`, `azdo_var_meta`.
   **Ground:** docs/04 §4 spec; job-isolation claim (setvariable never crosses jobs except outputs) from set-variables-scripts doc — quote; pin agent `Variables` handling reference.
   **Done:** bats: newline/quote/unicode values survive; readonly write → warning + ignored (behavior per logging-commands doc — quote exact wording).
@@ -21,6 +21,10 @@ Acceptance: store + env materialization per docs/04 §4–§5 with cited agent b
   **Do:** documented `KEY=value` parser (quoting rules stated in generated README), `--env-file` overlay, values registered into store with secret flags from manifest.
   **Ground:** docs/04 §10 load rules; POSIX shell quoting claims from GNU bash manual (pin).
   **Done:** bats: quoting/multiline edge cases; overlay precedence.
+- [ ] **E06-S01-T04 — Variable store (strict read-only correction)**
+  **Do:** file-per-value store (`state/vars/<scope>/<NAME>` + `.meta` flags secret/output/readonly); scope copy at job start; APIs `azdo_var`, `azdo_var_set`, and `azdo_var_meta`. An attempt to overwrite an existing readonly name emits the grounded error and retains the original value.
+  **Ground:** docs/04 §4 spec; job-isolation and output-reference claims from set-variables-scripts/variables docs; pinned agent variable handling; real-run transcript `research/experiments/E06-readonly-variables/real-run.md` (C-E06-001..006).
+  **Done:** bats: newline/quote/unicode values survive; readonly overwrite errors and retains the first value; output variable fixture covers same-job and cross-job storage paths.
 
 ## E06-S02 — As a pipeline developer, `$(macro)` expansion is agent-identical (just-in-time, textual, unmatched left literal), so timing bugs reproduce locally.
 Acceptance: macro engine with cited semantics.
