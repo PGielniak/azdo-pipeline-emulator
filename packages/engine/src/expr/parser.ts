@@ -21,7 +21,7 @@
  * this module takes an `ExprRegistry` instead of knowing any of them — omit it and names pass
  * unchecked, which is what the tokenizer tests and any syntax-only caller want.
  *
- * **Name resolution is deferred; syntax is not** (C-E02-020, E02-S01-T02). `nosuchfunc(1) 2` and
+ * **Name resolution is deferred; syntax is not** (C-E02-103, E02-S01-T02). `nosuchfunc(1) 2` and
  * `nosuchcontext 2` are both reported by the service at the leftover `2`, never at the name, while
  * `eq(1) 2` (an arity error, i.e. syntax) is reported at the `)`. So an unresolvable name is
  * remembered and raised only if the parse otherwise succeeds. That is what makes `! true` report
@@ -157,7 +157,7 @@ export function parseExpression(text: string, options: ParseOptions = {}): ExprP
     const next = state.tokens[state.at];
     // Anything left over is an error at the leftover token, and it is always phrased as a *symbol*
     // whatever the token is: `1 2` → "Unexpected symbol: '2'", `! true` → "Unexpected symbol:
-    // 'true'", `1 !` → "Unexpected symbol: '!'" (C-E02-020).
+    // 'true'", `1 !` → "Unexpected symbol: '!'" (C-E02-103).
     if (next !== undefined) {
       fail('unexpected-symbol', `Unexpected symbol: '${next.raw}'`, next.raw, next.span);
     }
@@ -176,7 +176,7 @@ interface State {
   readonly tokens: readonly Token[];
   at: number;
   readonly registry: ExprRegistry | undefined;
-  /** The first unresolvable name, raised at the end of a successful parse (C-E02-020). */
+  /** The first unresolvable name, raised at the end of a successful parse (C-E02-103). */
   pending: ExprParseError | undefined;
 }
 
@@ -308,7 +308,7 @@ function parsePrimary(state: State): ExprNode {
       };
     case 'namedValue': {
       // Unknown contexts are reported at the name (C-E02-012) — but only once the parse gets that
-      // far, so `nosuchcontext 2` reports the `2` instead (C-E02-020).
+      // far, so `nosuchcontext 2` reports the `2` instead (C-E02-103).
       if (
         state.registry !== undefined &&
         !state.registry.namedValues.has(token.raw.toLowerCase())
@@ -327,7 +327,7 @@ function parsePrimary(state: State): ExprNode {
 function parseCall(state: State, name: Token): ExprNode {
   // Same message and position as an unknown context — the service does not say "function"
   // (C-E02-011): `nosuchfunc(1)` → "Unrecognized value: 'nosuchfunc'" at the name. Deferred like
-  // any other name (C-E02-020); with no signature there is also no arity to check, which is why
+  // any other name (C-E02-103); with no signature there is also no arity to check, which is why
   // `nosuchfunc(1)` is reported at the name and not at its argument count.
   const signature = state.registry?.functions.get(name.raw.toLowerCase());
   if (state.registry !== undefined && signature === undefined) defer(state, name);

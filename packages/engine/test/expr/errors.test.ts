@@ -74,7 +74,7 @@ const CASES: readonly Case[] = (
  */
 const DIVERGENCES: Record<string, string> = {
   // The service compiles an interpolated scalar into a synthetic `format(…)` call and positions the
-  // error inside *that* text (C-E02-026). It is not in the user's file, so we never render it.
+  // error inside *that* text (C-E02-109). It is not in the user's file, so we never render it.
   'embed-mid-scalar': 'format() synthesis',
   'embed-second-expr': 'format() synthesis',
   'block-scalar': 'format() synthesis',
@@ -82,7 +82,7 @@ const DIVERGENCES: Record<string, string> = {
   // the message.
   'quote-in-raw': 'template scanner, not the expression parser',
   'grammar-str-unclosed': 'template scanner, not the expression parser',
-  // Two bad expressions, two messages, newline-joined (C-E02-027). Our error type is per
+  // Two bad expressions, two messages, newline-joined (C-E02-110). Our error type is per
   // expression; collecting them is E03-S01's job.
   'multi-bad-scalars': 'document-level collection',
 };
@@ -204,13 +204,13 @@ describe('message parity (every row = one live service rejection)', () => {
       }
 
       // Then byte for byte, reconstructed under the service's own prefix and its 500-character cap
-      // — which applies to compile-time messages only (C-E02-024).
+      // — which applies to compile-time messages only (C-E02-107).
       const full = `${prefix}${ours}`;
       expect(testCase.mode === 'compile' ? truncateServiceMessage(full) : full).toBe(service);
     });
   }
 
-  it('renders the runtime prefix the service uses when it has no file to point at (C-E02-025)', () => {
+  it('renders the runtime prefix the service uses when it has no file to point at (C-E02-108)', () => {
     const { text } = trimExpressionText(caseById('rt-arity').inner);
     const rendered = renderExprError(rejectionOf(text), text, 'runtime');
     expect(rendered.split('\n')[0]).toBe(messageOf('rt-arity'));
@@ -237,7 +237,7 @@ describe('message parity (every row = one live service rejection)', () => {
 });
 
 describe('documented divergences', () => {
-  it('never reports a position inside the synthetic format() call (C-E02-026)', () => {
+  it('never reports a position inside the synthetic format() call (C-E02-109)', () => {
     for (const id of ['embed-mid-scalar', 'embed-second-expr', 'block-scalar']) {
       const testCase = caseById(id);
       const parsed = parseServiceMessage(messageOf(id));
@@ -264,7 +264,7 @@ describe('documented divergences', () => {
     }
   });
 
-  it('is singular where the service reports every bad expression in the document (C-E02-027)', () => {
+  it('is singular where the service reports every bad expression in the document (C-E02-110)', () => {
     const messages = messageOf('multi-bad-scalars').split('\n');
     expect(messages).toHaveLength(2);
     const first = parseServiceMessage(messages[0] as string);
@@ -275,7 +275,7 @@ describe('documented divergences', () => {
     expect(serviceMessageBody(rejectionOf(text), text)).toBe(first.body);
   });
 
-  it('does not truncate its own messages, and the cap is on the assembled string (C-E02-024)', () => {
+  it('does not truncate its own messages, and the cap is on the assembled string (C-E02-107)', () => {
     const control = caseById('echo-cap-control');
     const runtime = caseById('echo-cap-runtime');
     // A 353-character expression is severed mid-URL: the cap counts the location prefix too.
@@ -303,7 +303,7 @@ describe('file coordinates', () => {
   //     condition: ${{ null }}
   const CONDITION = caseById('condition-field');
 
-  it('points the diagnostic at the offending token, not at the host scalar (C-E02-022)', () => {
+  it('points the diagnostic at the offending token, not at the host scalar (C-E02-105)', () => {
     const { text, offset } = trimExpressionText(CONDITION.inner);
     const error = rejectionOf(text);
     // `${{` at Col 14 (service-reported and locally computed agree), delimiters are 3 characters.
@@ -389,7 +389,7 @@ describe('file coordinates', () => {
   });
 });
 
-describe('trimming (C-E02-021)', () => {
+describe('trimming (C-E02-104)', () => {
   it('strips exactly what the service strips, and says how much', () => {
     expect(trimExpressionText(' null ')).toEqual({ text: 'null', offset: 1 });
     expect(trimExpressionText('    1 == 1 ')).toEqual({ text: '1 == 1', offset: 4 });

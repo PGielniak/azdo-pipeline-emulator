@@ -11,16 +11,16 @@
  * `packages/engine/test/expr/errors.test.ts`. Four findings shape the module:
  *
  *  * The service **trims** the delimited text before parsing: `${{    null }}` reports position 1
- *    over the expression `'null'` (C-E02-021). Hence `trimExpressionText`, which every caller must
+ *    over the expression `'null'` (C-E02-104). Hence `trimExpressionText`, which every caller must
  *    use, or every position it renders is off by the indentation.
  *  * `(Line, Col)` points at the **host scalar**, never at the offending token — `probe: prefix ${{
  *    null }}` reports Col 10, the `p` of `prefix`, with the token 19 characters further on
- *    (C-E02-022). We deliberately point at the token instead: a caret under the scalar's first
+ *    (C-E02-105). We deliberately point at the token instead: a caret under the scalar's first
  *    character would be useless, and the position within the expression is in the message anyway.
  *  * Three message shapes, not one: two of the six codes carry no position and one carries no help
- *    link either (C-E02-023). A single format string gets those wrong.
+ *    link either (C-E02-106). A single format string gets those wrong.
  *  * The service truncates the assembled compile-time message at 500 characters and appends
- *    `[...]` — mid-URL if that is where 500 falls (C-E02-024). We do not truncate; the test proves
+ *    `[...]` — mid-URL if that is where 500 falls (C-E02-107). We do not truncate; the test proves
  *    parity by truncating *our* message the same way and comparing.
  */
 import type { SourceRange } from '../frontend/parse.js';
@@ -28,11 +28,11 @@ import type { Diagnostic } from '../frontend/diagnostics.js';
 import type { Span } from './lexer.js';
 import type { ExprErrorCode, ExprParseError } from './parser.js';
 
-/** The link the service appends to every expression error that has a help page (C-E02-023). */
+/** The link the service appends to every expression error that has a help page (C-E02-106). */
 export const EXPRESSION_HELP_URL = 'https://go.microsoft.com/fwlink/?linkid=842996';
 
 /**
- * Compile-time messages are cut to this many characters, `[...]` appended (C-E02-024). Runtime
+ * Compile-time messages are cut to this many characters, `[...]` appended (C-E02-107). Runtime
  * (`$[ ]`) messages are not cut at all — a 591-character one came back whole. Exported because the
  * parity test needs to apply it to reproduce a truncated row; our own output never uses it.
  */
@@ -43,13 +43,13 @@ export type ExprMode = 'compile' | 'runtime';
 
 /**
  * The service loses file coordinates for runtime expressions — they are parsed at queue time, long
- * after the file is gone — and prefixes them with this instead (C-E02-015/025).
+ * after the file is gone — and prefixes them with this instead (C-E02-015/108).
  */
 export const RUNTIME_MESSAGE_PREFIX = 'An error occurred while loading the YAML build pipeline. ';
 
 /**
  * How each error code is phrased. Measured per code; rendering all six alike would invent a
- * position for the two that have none and a help link for the one that has neither (C-E02-023).
+ * position for the two that have none and a help link for the one that has neither (C-E02-106).
  */
 const SHAPE: Record<ExprErrorCode, 'positioned' | 'help-only' | 'bare'> = {
   // `<sentence>. Located at position N within expression: '<expr>'. For more help, …`
@@ -73,7 +73,7 @@ const DIAGNOSTIC_CODE: Record<ExprErrorCode, string> = {
 };
 
 /**
- * The delimited text with the whitespace the service strips before parsing removed (C-E02-021).
+ * The delimited text with the whitespace the service strips before parsing removed (C-E02-104).
  * `offset` is how many characters were dropped from the front, so a caller that knows where the
  * delimited text starts in the file can still reach file coordinates:
  *
@@ -96,7 +96,7 @@ export function servicePosition(error: ExprParseError): number | undefined {
  * `text` must be the trimmed expression (`trimExpressionText`), because the echo is the parsed
  * text and not the source slice: `${{    1 == 1 }}` echoes `'1 == 1'`.
  *
- * Not truncated (C-E02-024) and not synthesized: where the service compiles an interpolated scalar
+ * Not truncated (C-E02-107) and not synthesized: where the service compiles an interpolated scalar
  * into a `format(...)` call and positions the error inside *that*, we keep the user's expression —
  * see `expressionDiagnostic`.
  */
@@ -115,7 +115,7 @@ export function serviceMessageBody(error: ExprParseError, text: string): string 
 }
 
 /**
- * Cut like the service cuts a compile-time message (C-E02-024). The cap applies to the assembled
+ * Cut like the service cuts a compile-time message (C-E02-107). The cap applies to the assembled
  * string *including* its location prefix — `echo-cap-control` was severed mid-URL at 505 characters
  * with an expression of only 353 — so callers pass the whole thing, prefix included.
  */
@@ -137,7 +137,7 @@ export interface ExprHost {
   readonly source?: string | undefined;
   /**
    * Location to fall back on when `source` is absent — normally the host scalar's range, which is
-   * exactly what the service would have reported (C-E02-022).
+   * exactly what the service would have reported (C-E02-105).
    */
   readonly range?: SourceRange | undefined;
   /** Default `compile`. */
@@ -165,11 +165,11 @@ function fileRange(span: Span, host: ExprHost): SourceRange | undefined {
  * `--json` shape — like every other error the converter produces.
  *
  * **Deliberate divergence, and the reason this task exists.** The service reports the *host
- * scalar's* position and then says "Located at position N within expression" (C-E02-022); our range
+ * scalar's* position and then says "Located at position N within expression" (C-E02-105); our range
  * covers the offending token itself, so the caret lands on it. The message still carries the
  * service's own sentence verbatim, so the two are reconcilable by eye. When the expression is
  * embedded in a larger scalar the service goes further and reports a position inside a synthetic
- * `format(…)` call it compiled the scalar into (C-E02-026) — a text that appears nowhere in the
+ * `format(…)` call it compiled the scalar into (C-E02-109) — a text that appears nowhere in the
  * user's file. We never reproduce that: pointing at real source is the whole point of a caret.
  */
 export function expressionDiagnostic(

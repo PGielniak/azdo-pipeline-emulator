@@ -1,6 +1,22 @@
 # E02 — expression language: claims
 
-Claim format per BACKLOG.md §3. IDs sequential, never reused.
+Claim format per BACKLOG.md §3. IDs never reused — and, because E02's tasks run on parallel
+branches, allocated **per task from the block table below** rather than by taking the next free
+number in whatever copy of this file your branch happens to see (research/README.md, "Allocating IDs
+across parallel branches"). E02-S01-T02 originally took 018–027 and was renumbered to 101–110 during
+the 2026-08-12 integration merge, because E02-S02-T01/T02/T03 had taken the same ten numbers on
+`codex/e02-s02-*` at the same time; the 018–032 claims below are the codex chain's, unchanged.
+
+| Block | Task |
+|---|---|
+| 001–017 | E02-S01-T01 tokenizer + parser |
+| 018–019 | E02-S02-T01 value model |
+| 020–023 | E02-S02-T02 coercion & equality |
+| 024–027 | E02-S02-T03 member access |
+| 028–039 | E02-S03-T01 logical & membership (028–032 used) |
+| 040–059 | *free — next S03/S04 task takes a block here* |
+| 101–110 | E02-S01-T02 error rendering |
+| 111–199 | *free — reserve in this table before use* |
 
 **Why this file leans on the oracle rather than the fork.** E02's primary grounding set names
 `actions/runner` `src/Sdk/DTExpressions2` as the open reference for the DistributedTask expression
@@ -215,18 +231,18 @@ otherwise a named value.
 `cases.json` is the machine-readable form the parity test replays). Where the grammar survey asked
 *which expressions are rejected*, these ask *what the rejection says and what its numbers point at*.
 
-[C-E02-018] **`!` ends no token and starts none.** `!!true` comes back as a single
+[C-E02-101] **`!` ends no token and starts none.** `!!true` comes back as a single
 `Unrecognized value: '!!true'`; `!eq(1, 1)` as `Unrecognized value: '!eq'` (the scan stops at the
 `(`, and the `(` still makes it a *function* name); `1 !` as `Unexpected symbol: '!'` at 3; `!=`
 survives as its own two-character symbol (`1 != 2` → `Unexpected symbol: '!='`). So the lexer scans
 a `!` run exactly as it scans a keyword, and the only special case is the `!=` spelling. This
 **closes** the "known message-level divergence" E02-S01-T01 recorded and handed to this task: with
-`!` keyword-shaped and name resolution deferred (C-E02-020), all six `!` spellings now report the
+`!` keyword-shaped and name resolution deferred (C-E02-103), all six `!` spellings now report the
 same kind, raw text and position as the service.
   — research/experiments/E02-errors/survey.md §Bang, rows `bang-alone`/`bang-after-value`/
     `bang-double`/`bang-tight`/`bang-spaced`/`bang-eq` (live preview, checked 2026-08-12)
 
-[C-E02-019] **Two rejection classes, separated by how the token was read.** Text the lexer starts
+[C-E02-102] **Two rejection classes, separated by how the token was read.** Text the lexer starts
 reading as a *number* and cannot finish is rejected where it is read: `1e3 2` reports `1e3` at
 position 1, not the leftover `2` at 5, and so do `0x1F 2` and `-1.2.3 2` — all three number
 *starts* the docs list (a digit and a `-`; the `.` case cannot carry a competing error). Everything
@@ -242,7 +258,7 @@ a syntax-only parse accepts them, exactly as it accepts `null` (C-E02-003).
     `order-quote-then-garbage`/`order-plus-then-garbage` (deferred) (live preview, checked
     2026-08-12)
 
-[C-E02-020] **Name resolution is deferred behind the syntax parse; syntax errors are eager.**
+[C-E02-103] **Name resolution is deferred behind the syntax parse; syntax errors are eager.**
 `nosuchcontext 2` and `nosuchfunc(1) 2` both report the leftover `2` at position 15 — never the
 unresolvable name — while `eq(1) 2` reports the arity error at the `)` (position 5) and
 `order-bang-bang-spaced` (`! !`) reports the second `!`. So an unresolvable name is remembered and
@@ -254,7 +270,7 @@ phrased `Unexpected symbol`, whatever kind it is — `1 !` reports a symbol for 
   — implemented as `State.pending` in `packages/engine/src/expr/parser.ts`; first name error wins
     (two unresolvable names in one expression is unprobed — the fork throws at the first)
 
-[C-E02-021] **The service trims the delimited text before parsing.** `${{␣␣␣␣null␣}}` reports
+[C-E02-104] **The service trims the delimited text before parsing.** `${{␣␣␣␣null␣}}` reports
 `Located at position 1 within expression: 'null'`, and `${{␣␣␣␣1 == 1␣}}` reports position **3**,
 not 7 — so both the position and the echoed expression are relative to the *trimmed* text. A folded
 newline inside the delimiters behaves the same way. Every one of the 74 grammar-survey rows was
@@ -263,7 +279,7 @@ wrong and every rendered position is off by the file's indentation.
   — research/experiments/E02-errors/survey.md rows `ws-baseline`/`ws-leading`/`ws-leading-inner`/
     `ws-newline` (live preview, checked 2026-08-12)
 
-[C-E02-022] **`(Line: L, Col: C)` points at the host scalar, never at the offending token.**
+[C-E02-105] **`(Line: L, Col: C)` points at the host scalar, never at the offending token.**
 `probe: prefix ${{ null }} suffix` reports Col 10 — the `p` of `prefix`, with the bad token 19
 characters further on. Confirmed against four different document shapes: `condition:` → Col 14,
 `displayName:` nested in a job → Line 5 Col 18, a block scalar → Line 2 Col 11 (the `|`, not the
@@ -274,7 +290,7 @@ service's information (the message body still carries the service's own position
   — research/experiments/E02-errors/survey.md §Position, rows `embed-mid-scalar`/`condition-field`/
     `deep-indent`/`block-scalar`/`multi-bad-scalars` (live preview, checked 2026-08-12)
 
-[C-E02-023] **Three message shapes, one per group of codes.** Positioned:
+[C-E02-106] **Three message shapes, one per group of codes.** Positioned:
 `<sentence>. Located at position N within expression: '<expr>'. For more help, refer to
 https://go.microsoft.com/fwlink/?linkid=842996` — used by `Unrecognized value`, `Unexpected symbol`,
 `Expected a property name…` and `Unclosed function`. Help-only: `Exceeded max expression depth 50.
@@ -283,7 +299,7 @@ no echo, no link, and no trailing period.
   — research/experiments/E02-errors/survey.md rows `grammar-val-depth-51`/`grammar-val-empty` and
     every positioned row (live preview, checked 2026-08-12)
 
-[C-E02-024] **Compile-time messages are cut to 500 characters with `[...]` appended; runtime ones
+[C-E02-107] **Compile-time messages are cut to 500 characters with `[...]` appended; runtime ones
 are not cut at all.** The cap applies to the *assembled* string including the `<file> (Line…):`
 prefix, not to the echoed expression: a 353-character expression produced a 505-character message
 severed **inside the fwlink URL**. The same expression submitted as `$[ ]` — whose prefix is 16
@@ -293,7 +309,7 @@ parity test proves equality by truncating *our* assembled message the same way.
   — research/experiments/E02-errors/survey.md §Echo, rows `long-echo`/`echo-cap-control`/
     `echo-cap-runtime` (live preview, checked 2026-08-12)
 
-[C-E02-025] **Runtime (`$[ ]`) errors carry no file coordinates, only a sentence.** The prefix is
+[C-E02-108] **Runtime (`$[ ]`) errors carry no file coordinates, only a sentence.** The prefix is
 `An error occurred while loading the YAML build pipeline. ` and the body is byte-identical to the
 compile-time one: `$[ eq(1) ]` → `Unexpected symbol: ')'` at 5, `$[ variables. ]` → the dereference
 sentence at 10, `$[ nosuchcontext.a ]` → the name at 1, and the depth message unchanged. This
@@ -304,7 +320,7 @@ the service has thrown away by queue time.
   — research/experiments/E02-errors/survey.md §Runtime, rows `rt-arity`/`rt-named-unknown`/
     `rt-trailing-dot`/`rt-depth` (live preview, checked 2026-08-12)
 
-[C-E02-026] **An expression embedded in a larger scalar is reported against a synthetic
+[C-E02-109] **An expression embedded in a larger scalar is reported against a synthetic
 `format(…)` call.** `probe: prefix ${{ null }} suffix` → `Located at position 29 within expression:
 'format('prefix {0} suffix', null)'`; two expressions in one scalar →
 `'format('{0} then {1}', 'ok', null)'`; a block scalar → `'format('echo one\necho two\necho
@@ -316,7 +332,7 @@ expression positioned within itself. Evidence for E03-S01-T05, which owns interp
   — research/experiments/E02-errors/survey.md §Position, rows `embed-mid-scalar`/
     `embed-second-expr`/`block-scalar` (live preview, checked 2026-08-12)
 
-[C-E02-027] **The service reports every bad expression in the document, newline-joined.** Two
+[C-E02-110] **The service reports every bad expression in the document, newline-joined.** Two
 variables with bad expressions come back as two full messages in one string, each with its own
 `(Line, Col)`. Our `ExprParseError` is per expression by design — collecting them belongs to the
 document walk in E03-S01 — and `renderDiagnostics` already joins a list.

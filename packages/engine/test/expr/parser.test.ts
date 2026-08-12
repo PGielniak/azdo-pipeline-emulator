@@ -93,7 +93,7 @@ const CASES: readonly Case[] = [
     claim: 'C-E02-003',
   },
   // `+1` and `"double"` are keyword-shaped, not number-shaped, so the service only rejects them
-  // once names are resolved — `+1 2` reports the leftover `2` (C-E02-019/020, E02-S01-T02).
+  // once names are resolved — `+1 2` reports the leftover `2` (C-E02-102/103, E02-S01-T02).
   {
     expr: '+1',
     code: 'unrecognized-value',
@@ -447,7 +447,7 @@ describe('tokenizer', () => {
     }
   });
 
-  it('scans `!` as keyword text, not as a symbol (C-E02-018)', () => {
+  it('scans `!` as keyword text, not as a symbol (C-E02-101)', () => {
     // What T01 recorded as an unexplained divergence, settled by the E02-errors probes: `!` ends
     // no token (`!!true` is one), starts none either, and a lone `!` is a named value that fails to
     // resolve. The three spellings therefore report in three different places, all matching.

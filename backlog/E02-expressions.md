@@ -22,7 +22,7 @@ Acceptance: parser covers the full documented syntax; parse errors match server 
   expr-error-survey` → `research/experiments/E02-errors/{survey.md,cases.json}`) replayed as a
   parity table — 62 rows compared field-by-field *and* byte-for-byte against our renderer, six rows
   asserted as documented divergences (`packages/engine/test/expr/errors.test.ts`, 80 tests). Two
-  findings changed the parser rather than the renderer (C-E02-018/019/020), closing the `! true`
+  findings changed the parser rather than the renderer (C-E02-101/102/103), closing the `! true`
   divergence T01 left open.
 
 ## E02-S02 — As a pipeline developer, type coercions and comparisons behave exactly like the service, so my conditions don't flip meaning locally.

@@ -38,7 +38,7 @@ export type TokenKind =
   /**
    * A keyword not followed by `(` — a context such as `parameters`, but also any non-numeric text
    * the lexer cannot classify (`"double"`, `+1`, `!true`). Whether it *resolves* is a separate,
-   * deferred question (C-E02-019).
+   * deferred question (C-E02-102).
    */
   | 'namedValue'
   /** A keyword followed (possibly after whitespace) by `(` (C-E02-011). */
@@ -58,7 +58,7 @@ export type TokenKind =
   /**
    * Text the lexer **started reading as a number** and could not finish: `1e3`, `0x1F`, `1..2`,
    * `-1.2.3`. That distinction is the whole point — this kind is rejected where it is read, while a
-   * keyword-shaped token is only rejected when it fails to resolve (C-E02-019). Also carries an
+   * keyword-shaped token is only rejected when it fails to resolve (C-E02-102). Also carries an
    * unterminated string, which the template scanner rejects first in practice (C-E02-006).
    */
   | 'unrecognized';
@@ -96,7 +96,7 @@ function isBoundary(c: string): boolean {
 }
 
 /**
- * A keyword scan swallows `!` (C-E02-018): `!!true` comes back from the service as **one** token
+ * A keyword scan swallows `!` (C-E02-101): `!!true` comes back from the service as **one** token
  * (`Unrecognized value: '!!true'`) while `1 !` reports a lone `!`, so `!` ends nothing — it just
  * fails to start anything either. A number scan still stops there, which is why this is a second
  * predicate rather than a hole in `isBoundary`.
@@ -110,7 +110,7 @@ const KEYWORD = /^[A-Za-z_][A-Za-z0-9_]*$/;
  * The operator spellings the service rejects as `Unexpected symbol` rather than as unresolvable
  * text (C-E02-001). There is no one-character list any more: every character that reaches
  * `readSymbol` (`> < = & |`) is a symbol on its own, and `!` — the one that is not — is routed to
- * the keyword scan unless it is the `!=` spelling (C-E02-018).
+ * the keyword scan unless it is the `!=` spelling (C-E02-101).
  */
 const TWO_CHAR_SYMBOLS = new Set(['==', '!=', '>=', '<=', '&&', '||']);
 
@@ -167,7 +167,7 @@ export function tokenize(expression: string): readonly Token[] {
   /**
    * Two-character symbol if there is one, otherwise the single character. Every character routed
    * here is in one of the two sets, because `!` — the one that was not — now starts a keyword scan
-   * unless it is the `!=` spelling (C-E02-018).
+   * unless it is the `!=` spelling (C-E02-101).
    */
   const readSymbol = (): Token => {
     const start = index;
@@ -216,7 +216,7 @@ export function tokenize(expression: string): readonly Token[] {
 
   /**
    * Everything that is not punctuation, a quote or number-shaped. **The identifier charset is not
-   * checked here** (C-E02-019): `"double"`, `+1` and `!true` are all scanned as one keyword and
+   * checked here** (C-E02-102): `"double"`, `+1` and `!true` are all scanned as one keyword and
    * become named values, which is why the service reports them only once name resolution runs —
    * `"double" 2` reports the leftover `2` at position 9, not the quote-shaped text at 1. Only after
    * a `.` does the charset gate, because there the service rejects eagerly (`9num`, C-E02-007).
@@ -274,7 +274,7 @@ export function tokenize(expression: string): readonly Token[] {
       case "'":
         push(readString());
         break;
-      // `!=` is a symbol; a bare `!` starts a keyword scan instead (C-E02-018).
+      // `!=` is a symbol; a bare `!` starts a keyword scan instead (C-E02-101).
       case '!':
         push(expression[index + 1] === '=' ? readSymbol() : readKeyword());
         break;
