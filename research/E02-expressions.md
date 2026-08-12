@@ -15,10 +15,11 @@ the 2026-08-12 integration merge, because E02-S02-T01/T02/T03 had taken the same
 | 024–027 | E02-S02-T03 member access |
 | 028–039 | E02-S03-T01 logical & membership (028–032 used) |
 | 040–059 | E02-S03-T02/T04 general string & utility functions (040 used) |
-| 060–079 | E02-S03-T03 status functions (060–072 used) |
-| 080–099 | *free — next S04 task takes a block here* |
+| 060–079 | E02-S03-T03 status functions (060–072 used); 073–076 E02-S04-T01 doc-only first pass |
+| 080–091 | E02-S04-T01 context interface + parameters/variables (live survey) |
+| 092–099 | *free* |
 | 101–110 | E02-S01-T02 error rendering |
-| 111–199 | *free — reserve in this table before use* |
+| 111–199 | *free — reserve in this table before use; E02-S04-T02/T03 take blocks here* |
 
 **Why this file leans on the oracle rather than the fork.** E02's primary grounding set names
 `actions/runner` `src/Sdk/DTExpressions2` as the open reference for the DistributedTask expression
@@ -775,3 +776,129 @@ an undocumented default in E02.
 
 [C-E02-076] A compile-time context-availability rejection must be verified against the Azure DevOps preview oracle before implementing phase gating.
   — Required experiment: `research/experiments/E02-contexts/` (blocked 2026-08-12: AZDO_ORG_URL, AZDO_PROJECT, AZDO_ORACLE_PIPELINE_ID, and AZDO_PAT are absent)
+
+[C-E02-080] **Context availability is a per-slot name table, and there are three of them — not the
+doc's two.** The expressions doc says compile-time expressions get `parameters` + statically
+defined `variables` and runtime expressions get "more `variables` but no parameters", which implies
+a compile/runtime binary. Measured across seven contexts and five slots, the grid is:
+
+| context | `${{ }}` value + `${{ if }}` | `$[ ]` root variable | job/stage `condition:` |
+|---|:---:|:---:|:---:|
+| `parameters` | yes | no | no |
+| `variables` | yes | yes | yes |
+| `dependencies` | no | no | yes |
+| `stageDependencies` | no | no | yes |
+| `resources` | no | yes | no |
+| `pipeline` | no | yes | yes |
+| `environment` | no | no | no |
+
+  — research/experiments/E02-context/survey.md, 61 live preview calls, rows `<context>-compile-var`
+    / `-runtime-var` / `-job-condition` / `-stage-condition` / `-if-directive`, each with a
+    matching `ctl-unknown-*` negative control in the same slot (checked 2026-08-12)
+  — https://learn.microsoft.com/azure/devops/pipelines/process/expressions — "The difference
+    between runtime and compile time expression syntaxes is primarily what context is available. In
+    a compile-time expression (`${{ <expression> }}`), you have access to `parameters` and
+    statically defined `variables`. In a runtime expression (`$[ <expression> ]`), you have access
+    to more `variables` but no parameters." (checked 2026-08-12)
+
+[C-E02-081] **A context that exists but is wrong for the slot is rejected byte-identically to one
+that exists nowhere.** `${{ dependencies.A.result }}` returns `Unrecognized value: 'dependencies'.
+Located at position 1 within expression: 'dependencies.A.result'. For more help, refer to
+<fwlink>` — the same sentence, position rule and help link as `${{ nosuchcontext.probe }}`.
+Implementation consequence: phase gating needs **no new error kind**; it is `makeRegistry` with a
+per-slot `namedValues` set, and `errors.ts` renders the result unchanged.
+  — research/experiments/E02-context/survey.md rows `dependencies-compile-var` vs
+    `ctl-unknown-compile-var` (checked 2026-08-12)
+
+[C-E02-082] **The two runtime slots are different tables — a double dissociation.** `resources` is
+accepted in a root `$[ ]` variable and rejected in both job and stage conditions; `dependencies` is
+rejected in a root `$[ ]` variable and accepted in both conditions. Neither table contains the
+other, so no compile-time/run-time split describes the gate: the slot does. This also settles why
+the root `$[ ]` rejection of `dependencies` is a *name* rule rather than an empty dependency graph
+— an in-table name over an empty collection yields Null (`variables.noSuchVariable` does exactly
+that in the same slot), whereas this is `Unrecognized value`, which is name resolution failing.
+  — research/experiments/E02-context/survey.md rows `resources-runtime-var`,
+    `resources-job-condition`, `resources-stage-condition`, `dependencies-runtime-var`,
+    `dependencies-job-condition`, `dependencies-stage-condition` (checked 2026-08-12)
+
+[C-E02-083] **The two compile-time slots share one table.** `${{ }}` in a variable value and the
+`${{ if }}` directive accept and reject the same seven contexts, `parameters` and `variables` in
+and the other five out.
+  — research/experiments/E02-context/survey.md rows `*-if-directive` vs `*-compile-var`
+    (checked 2026-08-12)
+
+[C-E02-084] **Job and stage conditions share one table.** Every context probed in both slots agreed,
+including the two that discriminate (`pipeline` accepted, `resources` rejected).
+  — research/experiments/E02-context/survey.md rows `pipeline-stage-condition`,
+    `resources-stage-condition`, `dependencies-stage-condition`,
+    `stagedependencies-stage-condition` (checked 2026-08-12)
+
+[C-E02-085] **A job-scoped `variables:` value is a second permissive slot that validates nothing —
+no probe placed there is evidence.** Inside a job's own `variables:` block the service accepts
+`$[ nosuchcontext.probe ]` *and* the known-bad arity `$[ eq(1) ]`, while both are rejected at the
+root. This was caught only because those two negative controls were run: an earlier read of the
+same rows had concluded that `dependencies` and `parameters` "become available inside a job", which
+is an artifact of the slot never being checked. It is the same failure mode as the step-condition
+slot (C-E02-060, docs/06 §5 decision 17), now known to have a second instance.
+  — research/experiments/E02-context/survey.md rows `ctl-unknown-job-scoped-runtime-var`,
+    `ctl-arity-job-scoped-runtime-var` vs `ctl-unknown-runtime-var` (checked 2026-08-12)
+
+[C-E02-086] **A legal context the run has no data for behaves as empty, not as an error.**
+`variables.noSuchVariable` expands to the empty string at compile time rather than being rejected,
+which is the doc's "Null is … returned from a dictionary miss" sentence holding for `variables`.
+  — research/experiments/E02-context/survey.md row `variables-missing` (checked 2026-08-12)
+  — https://learn.microsoft.com/azure/devops/pipelines/process/expressions — "Null is a special
+    literal expression that's returned from a dictionary miss, for example (`variables['noSuch']`)"
+
+[C-E02-087] **The `parameters` context folds key case and raises on a miss — on both counts the
+opposite of what the rest of the value model does.** `parameters.MYPARAM` resolves a parameter
+declared `myParam`, and `parameters.noSuchParameter` is **rejected** `Key not found
+'noSuchParameter'` instead of null-propagating. Both were measured against `variables` in the same
+slot and syntax, where the same miss returns Null (C-E02-086). The rejection also appears when the
+pipeline declares no `parameters:` block at all, so the context always exists and it is the lookup
+that fails. Note the scope: this is the **top-level context object only** — an object nested inside
+a parameter value stays ordinal case-sensitive and null-propagating per C-E02-024/027.
+  — research/experiments/E02-context/survey.md rows `parameters-property-case`,
+    `parameters-index-syntax`, `parameters-missing`, `parameters-undeclared-block`,
+    `variables-missing` (checked 2026-08-12)
+
+[C-E02-088] **`Key not found 'x'` is an evaluation error with a shape no parse error uses.** It
+carries file coordinates and nothing else — no `Located at position N within expression`, no help
+link — and it appears in none of the 66 rejections E02-S01-T02 collected, because it is not a parse
+failure: the expression parsed and the context resolved. It therefore lives in the evaluator
+(`ExprKeyNotFoundError` in `access.ts`), not in `ExprErrorCode`/`errors.ts`.
+  — research/experiments/E02-context/survey.md row `parameters-missing`:
+    `/azure-pipelines.yml (Line: 6, Col: 10): Key not found 'noSuchParameter'` (checked 2026-08-12)
+  — absent from research/experiments/E02-errors/ (E02-S01-T02 corpus)
+
+[C-E02-089] **The `variables` context is flat: a dotted variable name is one key, not structure.**
+`variables['My.Var']` returns the value of a variable named `My.Var`, while the property chain
+`variables.My.Var` returns empty — it reads a variable named `My`, misses, and null-propagates.
+Keys fold case (`variables.MYVAR` resolves `myVar`).
+  — research/experiments/E02-context/survey.md rows `variables-index-dotted`,
+    `variables-property-dotted`, `variables-property-case` (checked 2026-08-12)
+
+[C-E02-090] **"Statically defined variables" includes the predefined system variables.**
+`${{ variables['Build.SourceBranch'] }}` expands at compile time to the run's branch ref, and a
+probe that named the bare `variables` context leaked the compile-time table, which the service
+listed as containing `system`, `system.hostType`, `system.collectionUri`,
+`system.pipelineStartTime` and siblings. (The branch value itself is run-specific and is recorded
+as presence, not as a fixture.)
+  — research/experiments/E02-context/survey.md rows `variables-predefined-compile`, `variables-bare`
+    (checked 2026-08-12)
+
+[C-E02-091] **`environment` is rejected in every slot measured, including inside a deployment job's
+own condition.** The rejection is the ordinary `Unrecognized value: 'environment'`, and it arrives
+*before* the service resolves the environment itself. The deployment-scoped **variable** slot could
+not be measured: both the probe and its control failed earlier on `Environment probe-env could not
+be found`, so that one cell is open and belongs to E02-S04-T03 / E10 rather than here.
+  — research/experiments/E02-context/survey.md rows `environment-compile-var`,
+    `environment-runtime-var`, `environment-job-condition`, `environment-if-directive`,
+    `environment-deployment-condition`, `environment-deployment-runtime-var` (checked 2026-08-12)
+
+*Resolution of [C-E02-076]:* the oracle probe that claim required **has now run** — the credentials
+it reported missing are not in the ambient environment but in `.env.oracle`, which every
+`scripts/expr-*-survey.ts` loads via `loadEnvFile`. C-E02-080..091 above are its result, and the
+task's `[!]` is lifted. C-E02-073/074/075 stand as doc grounding; C-E02-075's "missing values
+resolve to no value" is correct for `variables` and is **corrected for `parameters` by C-E02-087**,
+where a miss is an error.

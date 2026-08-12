@@ -91,11 +91,19 @@ Acceptance: full function set incl. status functions, each with cited behavior.
 ## E02-S04 — As an engine developer, expression contexts resolve like the service in each evaluation phase, so the same expression means the same thing at the same time.
 Acceptance: `parameters`, `variables`, `dependencies`, `stageDependencies`, `resources.pipeline` contexts with phase gating.
 
-- [!] **E02-S04-T01 — Context interface + parameters/variables**
-  *Blocked 2026-08-12: grounding requires one preview-oracle rejection for a phase-unavailable context; AZDO_ORG_URL, AZDO_PROJECT, AZDO_ORACLE_PIPELINE_ID, and AZDO_PAT are absent.*
+- [x] **E02-S04-T01 — Context interface + parameters/variables**
+  *Unblocked 2026-08-12: the earlier `[!]` reported the `AZDO_*` credentials missing, but they live
+  in `.env.oracle`, which every `scripts/expr-*-survey.ts` loads via `loadEnvFile` rather than
+  reading the ambient environment. The oracle probe ran.*
   **Do:** `ExprContext` provider API; compile-time contexts wired by E03; index & property syntax; unknown context name = error matching service.
   **Ground:** expressions doc context availability matrix (which contexts exist in which phase) — encode as a table with claims; verify one "not available here" error via oracle.
   **Done:** phase-gating tests (e.g. `dependencies` rejected at compile time).
+  *Done 2026-08-12:* `packages/engine/src/expr/context.ts` — `ExprSlot`, the measured
+  `SLOT_AVAILABILITY` grid, `registryForSlot`, `resolveContext`, and the `parameters`/`variables`
+  context builders; `packages/engine/test/expr/context.test.ts` (31 tests). 61 live probes
+  (`research/experiments/E02-context/survey.md`) found **three** slot-keyed name tables rather than
+  the documented compile/runtime binary, and proved a wrong-slot context is rejected
+  byte-identically to a nonexistent one — so gating needed no new error kind (C-E02-080..091).
 - [ ] **E02-S04-T02 — `dependencies` / `stageDependencies` shapes**
   **Do:** context objects exposing `result` and `outputs['step.var']` per documented shape, backed by the runtime store (E06) at run time.
   **Ground:** jobs & stages dependency docs (…/process/expressions#dependencies + deployment-jobs doc for deployment naming quirks); **experiment**: real pipeline in test org dumping `convertToJson(dependencies)` at stage and job level; transcripts stored and cited (this shape is notoriously under-documented).

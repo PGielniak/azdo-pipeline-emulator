@@ -370,14 +370,14 @@ const PROBES: readonly Probe[] = [
     id: 'resources-compile-var',
     group: '`resources` / `pipeline` / `environment`',
     placement: 'compile-var',
-    expr: "resources.pipeline.probe.runID",
+    expr: 'resources.pipeline.probe.runID',
     decides: 'compile-time availability of the pinned-run context E02-S04-T03 populates',
   },
   {
     id: 'resources-runtime-var',
     group: '`resources` / `pipeline` / `environment`',
     placement: 'runtime-var',
-    expr: "resources.pipeline.probe.runID",
+    expr: 'resources.pipeline.probe.runID',
     decides: 'runtime availability of the same',
   },
   {
@@ -563,7 +563,8 @@ const PROBES: readonly Probe[] = [
     group: 'Second batch — do job and stage conditions share one table?',
     placement: 'stage-condition',
     expr: guard('pipeline.startTime'),
-    decides: '`pipeline` was accepted in a job condition; if the stage slot agrees they are one table',
+    decides:
+      '`pipeline` was accepted in a job condition; if the stage slot agrees they are one table',
   },
   {
     id: 'resources-stage-condition',
@@ -592,7 +593,7 @@ const PROBES: readonly Probe[] = [
     group: 'Second batch — is `environment` deployment-job-only?',
     placement: 'deployment-scoped-runtime-var',
     expr: 'environment.name',
-    decides: 'the same question in the deployment job\'s own runtime variable slot',
+    decides: "the same question in the deployment job's own runtime variable slot",
   },
   {
     id: 'variables-deployment-runtime-var',
@@ -802,7 +803,12 @@ const body = [
 ];
 
 for (const group of groups) {
-  body.push(`## ${group}`, '', '| id | placement | expression | outcome | detail | decides |', '|---|---|---|---|---|---|');
+  body.push(
+    `## ${group}`,
+    '',
+    '| id | placement | expression | outcome | detail | decides |',
+    '|---|---|---|---|---|---|',
+  );
   for (const row of rows.filter((r) => r.group === group)) {
     body.push(
       `| \`${row.id}\` | ${row.placement} | \`${cell(row.expr)}\` | **${row.verdict}** | ${cell(row.detail)} | ${cell(row.decides)} |`,
