@@ -157,6 +157,16 @@ Grounding: C-E00-019/020. UI path per the PAT doc (verified 2026-07-30):
     fails the YAML at load time (C-E12-015/017).
   - Owner decision recorded 2026-08-11: corpus files go to **`main`** under `corpus/` rather than
     to a dedicated ref. `trigger: none` on the anchor means the pushes queue nothing.
+  - `/experiments/status-skipped.yml` and the pipeline **`oracle-status-probe`** (E02-S03-T03),
+    pushed and created by `node scripts/expr-status-realrun.ts`. **This is the first thing in the
+    repo that produces real runs** — the status functions are runtime-only and the job-level engine
+    is closed, so no preview could answer what `succeeded()` does over a skipped dependency. Owner
+    authorized it 2026-08-12. The probe is built to cost **no hosted-agent parallelism**: every job
+    is agentless (`pool: server`, one `Delay@1` of 0 minutes), so a run completes in ~15 s on the
+    orchestrator, and the datum is each job's own timeline result rather than anything it prints.
+    Runs 520–527 are the recorded evidence. Two of its jobs end non-green **by design** (`dep_fail`
+    fails, `dep_abandon` is abandoned — they are the Failed and Abandoned dependencies under test),
+    so the pipeline's run history is expected to show failed runs; that is not a broken probe.
 - **End of project**: revoke the PAT, then delete the org (Organization settings → Overview →
   Delete). If only the *project* is being cleaned up (the org is the owner's personal one — see
   deviation 1), deleting the `oracle` project removes the repo, both environments and the variable

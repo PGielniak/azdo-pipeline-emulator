@@ -14,3 +14,5 @@ export * from './expr/value.js';
 export * from './expr/coercion.js';
 export * from './expr/access.js';
 export * from './expr/functions.js';
+export * from './expr/status.js';
+export * from './expr/general-functions.js';

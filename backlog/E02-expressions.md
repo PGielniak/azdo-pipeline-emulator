@@ -67,11 +67,14 @@ Acceptance: full function set incl. status functions, each with cited behavior.
   **Do:** `format` composite formatting incl. `{{`/`}}` escapes and index reuse; `counter(prefix, seed)` delegates to a state provider interface (local impl in E06); `convertToJson` object serialization.
   **Ground:** doc entries per function; `counter` semantics section (per-prefix persistence) — our local deviation (per-run local state) written up as a documented delta in the research note; `format` specifics validated by oracle probes (date-format claims belong to run-number task E05-S04, not here).
   **Done:** test groups per function; `counter` tested against the state-provider fake.
-- [ ] **E02-S03-T03 — Status functions: `always canceled failed succeeded succeededOrFailed` (with job-name args)**
+- [x] **E02-S03-T03 — Status functions: `always canceled failed succeeded succeededOrFailed` (with job-name args)**
   **Do:** implemented against an injected `StatusContext` (job/step results, dependency names); exact truth table per doc incl. behavior with arguments.
-  **Ground:** conditions doc (…/process/conditions) truth tables + job status semantics — quote; `VERIFY:` behavior of args referencing skipped dependencies via a real-run experiment (E12-S05 fixture) or agent source (pin).
+  **Ground:** conditions doc (…/process/conditions) truth tables + job status semantics — quote; the behaviour of args referencing skipped dependencies — settled 2026-08-12 by the real-run experiment below, since agent source covers the step level only.
   **Done:** truth-table tests; integration test with fake results store.
-- [ ] **E02-S03-T04 — Remaining general functions: `startsWith endsWith xor format join split replace lower upper trim length coalesce iif convertToJson counter`**
+  *Done 2026-08-12:* `packages/engine/src/expr/status.ts`; scope-specific signatures and truth
+  tables backed by 54 preview probes, one real agentless run, pinned agent source, and a fake-store
+  integration test (C-E02-060..072; `packages/engine/test/expr/status.test.ts`).
+- [x] **E02-S03-T04 — Remaining general functions: `startsWith endsWith xor format join split replace lower upper trim length coalesce iif convertToJson counter`**
   **Do:** implement the complete current documented general-function remainder; `format` composite
   formatting includes `{{`/`}}` escapes and index reuse; `counter(prefix, seed)` delegates to a
   state-provider interface (local impl in E06); `convertToJson` serializes Object/Array values.
@@ -81,11 +84,15 @@ Acceptance: full function set incl. status functions, each with cited behavior.
   ambiguities with oracle probes (date-format claims belong to E05-S04).
   **Done:** per-function claim-linked test groups; `counter` tested against a state-provider fake;
   the implemented general-function registry matches the current documented non-status catalogue.
+  *Done 2026-08-12:* all 15 functions in `packages/engine/src/expr/general-functions.ts`, with a
+  28-name exact-catalogue registry, fake counter provider, 20 claim-linked tests, and 30 live
+  preview probes (C-E02-041..051; `research/experiments/E02-general/`).
 
 ## E02-S04 — As an engine developer, expression contexts resolve like the service in each evaluation phase, so the same expression means the same thing at the same time.
 Acceptance: `parameters`, `variables`, `dependencies`, `stageDependencies`, `resources.pipeline` contexts with phase gating.
 
-- [ ] **E02-S04-T01 — Context interface + parameters/variables**
+- [!] **E02-S04-T01 — Context interface + parameters/variables**
+  *Blocked 2026-08-12: grounding requires one preview-oracle rejection for a phase-unavailable context; AZDO_ORG_URL, AZDO_PROJECT, AZDO_ORACLE_PIPELINE_ID, and AZDO_PAT are absent.*
   **Do:** `ExprContext` provider API; compile-time contexts wired by E03; index & property syntax; unknown context name = error matching service.
   **Ground:** expressions doc context availability matrix (which contexts exist in which phase) — encode as a table with claims; verify one "not available here" error via oracle.
   **Done:** phase-gating tests (e.g. `dependencies` rejected at compile time).

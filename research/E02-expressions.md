@@ -15,6 +15,8 @@ the 2026-08-12 integration merge, because E02-S02-T01/T02/T03 had taken the same
 | 024–027 | E02-S02-T03 member access |
 | 028–039 | E02-S03-T01 logical & membership (028–032 used) |
 | 040–059 | E02-S03-T02/T04 general string & utility functions (040 used) |
+| 060–079 | E02-S03-T03 status functions (060–072 used) |
+| 080–099 | *free — next S04 task takes a block here* |
 | 101–110 | E02-S01-T02 error rendering |
 | 111–199 | *free — reserve in this table before use* |
 
@@ -519,3 +521,257 @@ variables with bad expressions come back as two full messages in one string, eac
 document walk in E03-S01 — and `renderDiagnostics` already joins a list.
   — research/experiments/E02-errors/survey.md row `multi-bad-scalars` (live preview, checked
     2026-08-12)
+
+## E02-S03-T03 — job status check functions (block 060–079)
+
+**Two engines, not one.** The status family is the only function group in E02 whose behaviour is
+split across two implementations: step conditions are evaluated by the **agent**
+(`azure-pipelines-agent`, open, pinned below) and job/stage conditions by the **orchestrator**
+(server-side, closed). They differ in arity, in what `canceled()` reads, and in what a status call
+even means. Three evidence sources are used and they are deliberately not interchangeable:
+`research/experiments/E02-status/survey.md` (54 live preview calls — legality and arity only,
+because preview never *evaluates* a status function), `research/experiments/E02-status/real-run.md`
+(one real agentless run — the truth tables that no document states), and the agent source.
+
+[C-E02-060] **A step condition and a job/stage condition are validated by different code paths with
+different function tables.** `condition: nosuchfunc()` on a *step* is **accepted** (HTTP 200) and so
+is `nosuchfunc(1, 2, 3)` and a bare `always`; the same `nosuchfunc()` on a *job* or *stage* is
+rejected with `Unrecognized value: 'nosuchfunc'`. Yet `eq(1)` is rejected in all three slots, and a
+step rejection is wrapped — `Job Job: Step  specifies condition eq(1) which is not valid. Reason:
+<the usual expression error>` — where job/stage rejections carry the bare message. So the step slot
+checks syntax, plus arity for names it happens to know, and defers name resolution to the agent;
+the job/stage slot resolves names fully. **Consequence for us: "the service accepted it in a step
+condition" is not evidence that a step condition may contain it.**
+  — research/experiments/E02-status/survey.md §Controls, §Controls II, rows `ctl-step-unknown-fn`,
+    `ctl-step-unknown-fn-arity`, `ctl-job-unknown-fn`, `ctl-stage-unknown-fn`, `ctl-step-arity`,
+    `ctl-step-eq-3args`, `step-bare-always` (live preview, checked 2026-08-12)
+
+[C-E02-061] **At the step level all five status functions take exactly zero arguments.** The agent
+registers them itself: `new FunctionInfo<AlwaysNode>(name: …, minParameters: 0, maxParameters: 0)`
+and the same for `CanceledNode`, `FailedNode`, `SucceededNode`, `SucceededOrFailedNode`. Per
+C-E02-060 the service cannot catch `succeeded('A')` in a step condition, so this is an agent-side
+rejection at run time — the emitter must enforce it at convert time or a pipeline that fails on the
+service will pass locally.
+  — https://github.com/microsoft/azure-pipelines-agent/blob/9d00422e75eae78e4a7b8c75d7b46a13bd41274e/src/Agent.Worker/ExpressionManager.cs#L37-L44
+    — "var functions = new IFunctionInfo[] { new FunctionInfo<AlwaysNode>(name:
+    Constants.Expressions.Always, minParameters: 0, maxParameters: 0), …"
+    (commit-pinned, checked 2026-08-12)
+
+[C-E02-062] **The step-level truth table reads one variable, `Agent.JobStatus`, defaulting to
+Succeeded.** Every node is `TaskResult jobStatus = executionContext.Variables.Agent_JobStatus ??
+TaskResult.Succeeded;` followed by: `always` → literal `true` with no context read at all;
+`canceled` → `jobStatus == TaskResult.Canceled`; `failed` → `jobStatus == TaskResult.Failed`;
+`succeeded` → `Succeeded || SucceededWithIssues`; `succeededOrFailed` → `Succeeded ||
+SucceededWithIssues || Failed`. This matches the doc's "equivalent to
+`in(variables['Agent.JobStatus'], 'Succeeded', 'SucceededWithIssues')`" literally, and that
+expansion is legal in the same slot. **Note `canceled()` at step level is the *job's* status, not
+run-level cancellation** — the doc's "Evaluates to `True` if the pipeline is canceled" is the
+job/stage reading, not this one. The `?? Succeeded` default is why the docs can say succeeded()
+"also returns `true` if there is no previous step".
+  — https://github.com/microsoft/azure-pipelines-agent/blob/9d00422e75eae78e4a7b8c75d7b46a13bd41274e/src/Agent.Worker/ExpressionManager.cs#L99-L152
+    (commit-pinned, checked 2026-08-12); survey row `step-agent-jobstatus` (accepted)
+
+[C-E02-063] **A step with no condition gets `succeeded()`.** The agent's parser returns
+`parser.CreateTree(condition, …) ?? new SucceededNode()`, i.e. an absent or empty condition is the
+succeeded node itself. Independently stated for all three levels by the conditions doc: "By
+default, a pipeline job or stage runs if it doesn't depend on any other job or stage, or if all its
+dependencies completed and succeeded." The service does **not** materialize the default into
+`finalYaml` — every survey row shows only the conditions the author wrote — so the emitter must
+supply it.
+  — https://github.com/microsoft/azure-pipelines-agent/blob/9d00422e75eae78e4a7b8c75d7b46a13bd41274e/src/Agent.Worker/ExpressionManager.cs#L45
+    (commit-pinned) · https://learn.microsoft.com/en-us/azure/devops/pipelines/process/conditions
+    (checked 2026-08-12)
+
+[C-E02-064] **At job/stage level the arity split is 2–3, not 5.** `always` and `canceled` take
+exactly zero arguments — `always('A')` and `canceled('A')` are rejected with `Unexpected symbol:
+')'` at the closing paren, the arity-failure position C-E02-013a established — while `succeeded`,
+`failed` and `succeededOrFailed` accept 0..N. Measured up to three arguments, and identically in
+the stage slot. The argument is **not** validated: `succeeded('nosuchjob')`, `succeeded('')`,
+`succeeded(1)` and even `succeeded(variables['jobName'])` are all accepted, so it is an ordinary
+expression evaluated to a String and not a statically-checked job name.
+  — research/experiments/E02-status/survey.md §Arguments — job slot, §Arguments II, rows
+    `job-always-arg`, `job-canceled-arg`, `job-always-zero`, `job-canceled-zero`,
+    `job-succeeded-three-args`, `job-failed-two-args`, `job-sof-two-args`,
+    `job-succeeded-unknown`, `job-succeeded-empty-string`, `job-succeeded-nonstring`,
+    `job-succeeded-var-arg`, `stage-always-arg`, `stage-canceled-arg` (live preview, 2026-08-12)
+
+[C-E02-065] **Status functions exist in neither the compile-time table nor the runtime *variable*
+table — only in conditions.** `variables: probe: ${{ always() }}` → `Unrecognized value: 'always'`,
+and so does `${{ if succeeded() }}` and a `condition: ${{ succeeded() }}` wrapped in compile-time
+delimiters. `variables: probe: $[ always() ]` is *also* rejected, `Unrecognized value: 'always'`,
+while the control `$[ eq(1, 1) ]` in the same slot is accepted — so the doc sentence "Use the
+following status check functions as expressions in conditions, but not in variable definitions" is
+**enforced, not advisory**, and the runtime-variable table is a third table distinct from the
+condition one. The compile-time rejection is the same `Unrecognized value` class C-E02-003/004 found
+for `null`/`NaN`: a name that resolves to nothing, not a lexical error. The `$[ ]` variable
+rejection arrives in the positionless envelope C-E02-106 catalogued ("An error occurred while
+loading the YAML build pipeline."), the compile-time one with a `(Line, Col)` prefix.
+  — research/experiments/E02-status/survey.md §Phase gating, rows `compile-always`,
+    `compile-succeeded`, `runtime-var-always`, `runtime-var-succeeded`, `ctl-runtime-var-eq`,
+    `if-succeeded`, `step-condition-compile-wrapped` (live preview, checked 2026-08-12)
+
+[C-E02-066] **Status function names are case-insensitive and are functions, not named values.**
+`SUCCEEDED()` and `succeededorfailed()` are accepted. A bare `always` in the slot that resolves
+names is rejected with a distinct third message — `Expected '(' to follow a function: 'always'` —
+which proves the name is registered as a function; C-E02-012's `Unrecognized value` is what an
+unknown name gets instead.
+  — research/experiments/E02-status/survey.md rows `case-upper`, `case-lower-sof`,
+    `job-bare-always` (live preview, checked 2026-08-12)
+
+[C-E02-067] **`succeeded()` at job level is all-of, and arguments narrow the set.** Over
+`dependsOn: [dep_ok, dep_skipped]` (Succeeded + Skipped), `succeeded()` is **False** while
+`succeeded('dep_ok')` — naming only the succeeded dependency, with the skipped one still in the
+graph — is **True**, and `succeeded('dep_ok', 'dep_skipped')` is False again. So the no-argument
+form is "all dependencies" and the argument form replaces that set rather than filtering it. Matches
+the doc: "With no arguments, evaluates to `True` if all previous jobs in the dependency graph
+succeeded or partially succeeded." Over an **empty** dependency set (a job with no `dependsOn`) it
+is True, which is all-of behaving normally and matches "a job or stage runs if it doesn't depend on
+any other job or stage". The name lookup **folds case**: `succeeded('DEP_OK')` against a dependency
+declared `dep_ok` is True.
+  — research/experiments/E02-status/real-run.md rows `mixed_succeeded`,
+    `mixed_succeeded_named_ok`, `mixed_succeeded_named_both`, `ok_succeeded`, `nodep_succeeded`,
+    `case_named` (live run 2026-08-12)
+
+[C-E02-068] **`succeededOrFailed()` is any-of, and is False when every dependency was skipped —
+the docs' "regardless" is wrong.** Over a single Skipped dependency it is **False**; over
+{Succeeded, Skipped} it is **True**; over a single Succeeded dependency True; over a single Failed
+dependency True. So the rule is "at least one dependency is Succeeded, SucceededWithIssues or
+Failed", which is the doc's own argument-form wording ("evaluates to `True` whether **any** of
+those jobs succeeded or failed") but contradicts its no-argument wording ("evaluates to `True`
+regardless of whether any jobs in the dependency graph succeeded or failed") and its summary ("like
+`always()`, except it evaluates to `False` when the pipeline is canceled" — it is also False when
+the dependencies were skipped). The doc's own remedy is the tell and it checks out live:
+`not(canceled())` is **True** in exactly the cases `succeededOrFailed()` is False here.
+
+**It is not pure any-of, though**: over an *empty* dependency set it is **True**, where any-of would
+give False and a dependency-free job carrying this condition would never run. The measured rule,
+stated so the empty case is not an inference, is: **True unless the dependency set is non-empty and
+none of its members is Succeeded, SucceededWithIssues or Failed.** `succeeded()` (all-of, C-E02-067)
+and `failed()` (any-of, empty → False, row `nodep_failed`) need no such carve-out — the asymmetry
+belongs to this function alone.
+  — research/experiments/E02-status/real-run.md rows `skipped_succeededorfailed`,
+    `mixed_succeededorfailed`, `ok_succeededorfailed`, `fail_succeededorfailed`,
+    `skipped_not_canceled`, `mixed_not_canceled`, `nodep_succeededorfailed` (live run 2026-08-12) ·
+    https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions (checked
+    2026-08-12)
+
+[C-E02-069] **A Skipped dependency satisfies no status function except `always()`.** With the
+dependency's result recorded as `Skipped` (independently confirmed by a sibling job conditioned on
+`eq(dependencies.dep_skipped.result, 'Skipped')`, which ran): `succeeded()` False,
+`succeeded('dep_skipped')` False, `succeededOrFailed()` False, `succeededOrFailed('dep_skipped')`
+False, `failed()` False, `failed('dep_skipped')` False, `canceled()` False, `always()` True,
+`not(canceled())` True. **This is the cell no document states** — the docs only ever spell `Skipped`
+out explicitly in `dependencies.<x>.result` examples, which is a hint, not a rule.
+  — research/experiments/E02-status/real-run.md §skipped_* rows (live run, checked 2026-08-12)
+
+[C-E02-070] **A Failed dependency: `failed()`, `succeededOrFailed()` and `always()` are True,
+`succeeded()` is False.** Measured with a dependency whose server task errored (result `Failed`,
+confirmed by a sibling conditioned on `eq(dependencies.dep_fail.result, 'Failed')`), including the
+named forms. Agrees with the doc's "With no arguments, evaluates to `True` if any previous job in
+the dependency graph failed" and with the step-level source (C-E02-062).
+  — research/experiments/E02-status/real-run.md §fail_* rows (live run, checked 2026-08-12)
+
+[C-E02-071] **`Abandoned` is a sixth job result the docs never list, and `failed()` does not catch
+it.** A job whose *condition itself* errors (`condition: gt(1, 'not-a-number')` — `gt` errors
+rather than returning False on an unconvertible operand, C-E02-022) completes with result
+`abandoned`, not `failed`. Over that dependency `failed()`, `failed('dep_abandon')`,
+`succeededOrFailed()` and `succeeded()` are **all False**, only `always()` is True, and
+`eq(dependencies.dep_abandon.result, 'Failed')` is False. The documented result set is
+"Succeeded|SucceededWithIssues|Skipped|Failed|Canceled"; this is outside it. Consequence: an
+errored condition is not a failure any downstream condition can catch except `always()`.
+  — research/experiments/E02-status/real-run.md §abandon_* rows (live run, checked 2026-08-12)
+
+[C-E02-072] **A job name that is not a dependency evaluates to False, not to an error.**
+`succeeded('nosuchjob')` on a job depending on a succeeded job is accepted at preview (C-E02-064)
+and at run time simply makes the condition False. So an unknown name behaves as "not succeeded"
+rather than raising — the emitter need not validate names, but must not treat a missing entry as
+vacuous truth.
+  — research/experiments/E02-status/real-run.md row `unknown_named` (live run, checked 2026-08-12)
+
+## E02-S03-T04 — remaining general functions (block 040–059)
+
+[C-E02-041] **The current non-status catalogue adds `startsWith`, `endsWith`, and `xor` to the
+functions the original task split listed.** Their documented arities are 2, 2, and 2; the other
+remainder signatures are `format` 1..N, `join` 2, `split` 2, `replace` 3, `lower`/`upper`/`trim` 1,
+`length` 1, `coalesce` 2..N, `convertToJson` 1, while `iif` and `counter` require corrections below.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions#functions
+    (checked 2026-08-12)
+
+[C-E02-042] **`startsWith` and `endsWith` convert both inputs to String and compare ordinal
+ignore-case; `lower`, `upper`, and `trim` return transformed strings; `replace` is ordinal
+case-sensitive and an empty search leaves the input unchanged.** Live controls produce True for
+`startsWith(12345,'123')` + `endsWith('AbCdE','DE')`, `äbc|ÄBC` for non-ASCII casing, `AxA` for
+`replace('AaA','a','x')`, and `abc` for an empty search.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions#startswith
+    (checked 2026-08-12) · research/experiments/E02-general/{starts-ends-coercion,
+    case-conversion,trim-whitespace,replace-casing,replace-empty-old}.md (live preview 2026-08-12)
+
+[C-E02-043] **`xor` converts exactly two operands to Boolean and is True exactly when one is
+True.** The four live cells are `True|True|False|False` for TF, FT, TT, FF.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions#xor
+    (checked 2026-08-12) · research/experiments/E02-general/xor-values.md
+
+[C-E02-044] **`format` supports out-of-order/reused numeric placeholders and doubled braces, and
+errors on malformed braces or an index with no supplied argument.** `{1}-{0}-{1}` → `B-A-B` and
+`{{{0}}} {{ and }}` → `{x} { and }`; the two errors use the service's dedicated format-string
+messages. Date formatting is deliberately excluded here and remains E05-S04.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions#format
+    (checked 2026-08-12) · research/experiments/E02-general/format-*.md (live preview 2026-08-12)
+
+[C-E02-045] **`join(separator,array)` String-converts primitive elements, turns complex elements
+into empty strings, and when the right operand is not an Array returns its String conversion.**
+The live array `[Alpha,'',2]` → `Alpha;;2`; `join('-',12)` → `12`.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions#join
+    (checked 2026-08-12) · research/experiments/E02-general/join-{array,non-array}.md
+
+[C-E02-046] **`split` uses the second parameter as one exact delimiter string, preserves empty
+fields, and an empty delimiter leaves the input unsplit.** Therefore `split('a,b;c,,', ',;')`
+returns one element (the input unchanged), not a split on comma-or-semicolon.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions#split
+    (checked 2026-08-12) · research/experiments/E02-general/split-*.md
+
+[C-E02-047] **`length` returns String length, Array length, and Object property count.** The live
+Object result is 2 even though Learn only names String and Array, a documentation omission.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions#length
+    (checked 2026-08-12) · research/experiments/E02-general/length-{values,object}.md
+
+[C-E02-048] **`coalesce` evaluates left-to-right, skips only Null and empty String, short-circuits
+at the first other value, and returns Null when none qualifies.** False and zero are returned, not
+skipped; a failing expression after `'hit'` is not evaluated.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions#coalesce
+    (checked 2026-08-12) · research/experiments/E02-general/coalesce-*.md
+
+[C-E02-049] **`iif` takes exactly three arguments and evaluates both value branches eagerly.**
+One and two arguments are rejected at the closing parenthesis despite Learn saying minimum 1;
+`iif(true,'yes',lt(1,'bad'))` still raises the conversion error from the unselected branch.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions#iif
+    (checked 2026-08-12; contradicted) · research/experiments/E02-general/iif-*.md
+
+[C-E02-050] **`convertToJson` accepts any expression value and emits indented JSON.** Objects and
+Arrays preserve nesting and scalar types; a String becomes the JSON string text `"text"` including
+quotes. The local evaluator uses the same two-space JSON layout.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions#converttojson
+    (checked 2026-08-12) · research/experiments/E02-general/json-{object,primitive}.md
+
+[C-E02-051] **`counter` exists only in runtime variable definitions, is scoped by pipeline and
+prefix, and the live parser accepts one or two arguments (not exactly two as documented).** Three
+arguments, compile-time use, and condition use are rejected. Because this converter has no service
+pipeline identity, its state-provider seam deliberately scopes counters to the local run/project;
+the accepted one-argument form passes an absent seed through to that provider instead of inventing
+an undocumented default in E02.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions#counter
+    (checked 2026-08-12; arity contradicted) · research/experiments/E02-general/counter-*.md
+[C-E02-073] Template expressions expose the `parameters` context and the YAML-defined/predefined `variables` context during template expansion.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/template-expressions?view=azure-devops (checked 2026-08-12)
+  — "Within a template expression, you have access to the `parameters` context ... Additionally, you have access to the `variables` context"
+
+[C-E02-074] Azure Pipelines variables are strings, while runtime parameters are typed and available during template parsing.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/variables?view=azure-devops (checked 2026-08-12)
+  — "All variables are strings"; "Runtime parameters are typed and available during template parsing."
+
+[C-E02-075] Expression contexts support both index syntax and restricted property dereference syntax, and missing variable values resolve to no value in template/runtime variable expansion.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions?view=azure-devops-2022 (checked 2026-08-12)
+  — "Index syntax: `variables['MyVar']`" and "property dereference syntax"; variable lookup returns no value when absent.
+
+[C-E02-076] A compile-time context-availability rejection must be verified against the Azure DevOps preview oracle before implementing phase gating.
+  — Required experiment: `research/experiments/E02-contexts/` (blocked 2026-08-12: AZDO_ORG_URL, AZDO_PROJECT, AZDO_ORACLE_PIPELINE_ID, and AZDO_PAT are absent)
