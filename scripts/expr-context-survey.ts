@@ -370,14 +370,14 @@ const PROBES: readonly Probe[] = [
     id: 'resources-compile-var',
     group: '`resources` / `pipeline` / `environment`',
     placement: 'compile-var',
-    expr: "resources.pipeline.probe.runID",
+    expr: 'resources.pipeline.probe.runID',
     decides: 'compile-time availability of the pinned-run context E02-S04-T03 populates',
   },
   {
     id: 'resources-runtime-var',
     group: '`resources` / `pipeline` / `environment`',
     placement: 'runtime-var',
-    expr: "resources.pipeline.probe.runID",
+    expr: 'resources.pipeline.probe.runID',
     decides: 'runtime availability of the same',
   },
   {
@@ -525,7 +525,23 @@ const PROBES: readonly Probe[] = [
     group: 'Second batch — is the runtime variable table job-scoped?',
     placement: 'job-scoped-runtime-var',
     expr: 'variables.myVar',
-    decides: 'control: the new placement resolves contexts at all',
+    decides: 'positive control: the new placement accepts a context that certainly exists',
+  },
+  {
+    id: 'ctl-unknown-job-scoped-runtime-var',
+    group: 'Second batch — is the runtime variable table job-scoped?',
+    placement: 'job-scoped-runtime-var',
+    expr: 'nosuchcontext.probe',
+    decides:
+      'THE negative control for this whole column. `parameters` and `dependencies` are both accepted here while both are rejected at the root, which is either a real scope rule or a permissive path like the step condition slot. If a name that exists nowhere is also accepted, every accept in this column is worthless',
+  },
+  {
+    id: 'ctl-arity-job-scoped-runtime-var',
+    group: 'Second batch — is the runtime variable table job-scoped?',
+    placement: 'job-scoped-runtime-var',
+    expr: 'eq(1)',
+    decides:
+      'second negative control: a known-bad arity. Separates "names are not resolved here" from "nothing is parsed here at all"',
   },
   {
     id: 'dependencies-job-scoped-runtime-var',
@@ -547,7 +563,8 @@ const PROBES: readonly Probe[] = [
     group: 'Second batch — do job and stage conditions share one table?',
     placement: 'stage-condition',
     expr: guard('pipeline.startTime'),
-    decides: '`pipeline` was accepted in a job condition; if the stage slot agrees they are one table',
+    decides:
+      '`pipeline` was accepted in a job condition; if the stage slot agrees they are one table',
   },
   {
     id: 'resources-stage-condition',
@@ -576,7 +593,7 @@ const PROBES: readonly Probe[] = [
     group: 'Second batch — is `environment` deployment-job-only?',
     placement: 'deployment-scoped-runtime-var',
     expr: 'environment.name',
-    decides: 'the same question in the deployment job\'s own runtime variable slot',
+    decides: "the same question in the deployment job's own runtime variable slot",
   },
   {
     id: 'variables-deployment-runtime-var',
@@ -584,6 +601,93 @@ const PROBES: readonly Probe[] = [
     placement: 'deployment-scoped-runtime-var',
     expr: 'variables.myVar',
     decides: 'control: the deployment placement resolves contexts at all',
+  },
+
+  // ---- Third batch: the three cells still empty in the job-scoped runtime column ----------------
+  // `dependencies` turned out legal there while it is rejected at the root, so the job-scoped
+  // column is its own row of the matrix and every context owes it a cell.
+  {
+    id: 'parameters-job-scoped-runtime-var',
+    group: 'Third batch — completing the job-scoped runtime column',
+    placement: 'job-scoped-runtime-var',
+    expr: 'parameters.myParam',
+    parameters: PARAM,
+    decides: 'whether the doc\'s "no parameters at runtime" holds inside a job as well as at root',
+  },
+  {
+    id: 'stagedependencies-job-scoped-runtime-var',
+    group: 'Third batch — completing the job-scoped runtime column',
+    placement: 'job-scoped-runtime-var',
+    expr: 'stageDependencies.A.A1.result',
+    decides: 'whether `stageDependencies` follows `dependencies` into the job-scoped variable slot',
+  },
+  {
+    id: 'pipeline-job-scoped-runtime-var',
+    group: 'Third batch — completing the job-scoped runtime column',
+    placement: 'job-scoped-runtime-var',
+    expr: 'pipeline.startTime',
+    decides: 'completes the column for the `pipeline` context',
+  },
+
+  // ---- Fourth batch: completing the compile-time column ----------------------------------------
+  // `${{ }}` in a variable value and `${{ if }}` are both compile-time slots; the implementation
+  // collapses them into one name set only if the service agrees they are one.
+  {
+    id: 'resources-if-directive',
+    group: 'Fourth batch — do the two compile-time slots share one table?',
+    placement: 'if-directive',
+    expr: guard('resources.pipeline.probe.runID'),
+    decides: 'completes the `${{ if }}` column for `resources`',
+  },
+  {
+    id: 'pipeline-if-directive',
+    group: 'Fourth batch — do the two compile-time slots share one table?',
+    placement: 'if-directive',
+    expr: guard('pipeline.startTime'),
+    decides: 'completes the `${{ if }}` column for `pipeline`',
+  },
+  {
+    id: 'environment-if-directive',
+    group: 'Fourth batch — do the two compile-time slots share one table?',
+    placement: 'if-directive',
+    expr: guard('environment.name'),
+    decides: 'completes the `${{ if }}` column for `environment`',
+  },
+
+  // ---- Fifth batch: is the *function* table slot-keyed in the other direction too? --------------
+  // C-E02-065 established that status functions are condition-only. The doc asserts the mirror
+  // image for `counter`: "Use this function only in an expression that defines a variable. Don't
+  // use it as part of a condition for a step, job, or stage." If that is enforced, `registryForSlot`
+  // must drop `counter` from the condition slots instead of handing every slot all 28 names.
+  {
+    id: 'counter-runtime-var',
+    group: 'Fifth batch — is `counter` really variable-only?',
+    placement: 'runtime-var',
+    expr: "counter('probe', 1)",
+    decides: 'the slot the doc endorses — the positive control for the two rows below',
+  },
+  {
+    id: 'counter-job-condition',
+    group: 'Fifth batch — is `counter` really variable-only?',
+    placement: 'job-condition',
+    expr: guard("counter('probe', 1)"),
+    decides:
+      'whether the doc sentence "Don\'t use it as part of a condition for a step, job, or stage" is enforced like the status-function restriction (C-E02-065) or is only advice',
+  },
+  {
+    id: 'counter-stage-condition',
+    group: 'Fifth batch — is `counter` really variable-only?',
+    placement: 'stage-condition',
+    expr: guard("counter('probe', 1)"),
+    decides: 'the same at stage level',
+  },
+  {
+    id: 'counter-compile-var',
+    group: 'Fifth batch — is `counter` really variable-only?',
+    placement: 'compile-var',
+    expr: "counter('probe', 1)",
+    decides:
+      'whether a compile-time variable may call it — the counter increments per run, so a compile-time call would be a different thing entirely',
   },
 ];
 
@@ -735,7 +839,12 @@ const body = [
 ];
 
 for (const group of groups) {
-  body.push(`## ${group}`, '', '| id | placement | expression | outcome | detail | decides |', '|---|---|---|---|---|---|');
+  body.push(
+    `## ${group}`,
+    '',
+    '| id | placement | expression | outcome | detail | decides |',
+    '|---|---|---|---|---|---|',
+  );
   for (const row of rows.filter((r) => r.group === group)) {
     body.push(
       `| \`${row.id}\` | ${row.placement} | \`${cell(row.expr)}\` | **${row.verdict}** | ${cell(row.detail)} | ${cell(row.decides)} |`,

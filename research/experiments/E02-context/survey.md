@@ -102,7 +102,9 @@ Regenerate with `pnpm expr-context-survey`. Source of truth for C-E02-080..089 i
 
 | id | placement | expression | outcome | detail | decides |
 |---|---|---|---|---|---|
-| `variables-job-scoped-runtime-var` | job-scoped-runtime-var | `variables.myVar` | **accepted** | `$[ variables.myVar ]` | control: the new placement resolves contexts at all |
+| `variables-job-scoped-runtime-var` | job-scoped-runtime-var | `variables.myVar` | **accepted** | `$[ variables.myVar ]` | positive control: the new placement accepts a context that certainly exists |
+| `ctl-unknown-job-scoped-runtime-var` | job-scoped-runtime-var | `nosuchcontext.probe` | **accepted** | `$[ nosuchcontext.probe ]` | THE negative control for this whole column. `parameters` and `dependencies` are both accepted here while both are rejected at the root, which is either a real scope rule or a permissive path like the step condition slot. If a name that exists nowhere is also accepted, every accept in this column is worthless |
+| `ctl-arity-job-scoped-runtime-var` | job-scoped-runtime-var | `eq(1)` | **accepted** | `$[ eq(1) ]` | second negative control: a known-bad arity. Separates "names are not resolved here" from "nothing is parsed here at all" |
 | `dependencies-job-scoped-runtime-var` | job-scoped-runtime-var | `dependencies.A.result` | **accepted** | `$[ dependencies.A.result ]` | whether `dependencies` is rejected in a runtime *variable* because variables never carry it, or only because the ROOT variables block has no dependency graph — the difference between one runtime table and two |
 | `resources-job-scoped-runtime-var` | job-scoped-runtime-var | `resources.pipeline.probe.runID` | **accepted** | `$[ resources.pipeline.probe.runID ]` | whether `resources` survives into a job-scoped runtime variable too |
 
@@ -121,3 +123,28 @@ Regenerate with `pnpm expr-context-survey`. Source of truth for C-E02-080..089 i
 | `environment-deployment-condition` | deployment-job-condition | `eq(environment.name, 'x')` | **rejected (400)** | Unrecognized value: 'environment'. Located at position 4 within expression: 'eq(environment.name, 'x')'. For more help, refer to https://go.microsoft.com/fwlink/?linkid=842996 | whether `environment` is rejected everywhere or only outside a deployment job — i.e. whether the name table also varies by JOB KIND, which would add a dimension E04/E10 must carry |
 | `environment-deployment-runtime-var` | deployment-scoped-runtime-var | `environment.name` | **rejected (400)** | Job D: Environment probe-env could not be found. The environment does not exist or has not been authorized for use. | the same question in the deployment job's own runtime variable slot |
 | `variables-deployment-runtime-var` | deployment-scoped-runtime-var | `variables.myVar` | **rejected (400)** | Job D: Environment probe-env could not be found. The environment does not exist or has not been authorized for use. | control: the deployment placement resolves contexts at all |
+
+## Third batch — completing the job-scoped runtime column
+
+| id | placement | expression | outcome | detail | decides |
+|---|---|---|---|---|---|
+| `parameters-job-scoped-runtime-var` | job-scoped-runtime-var | `parameters.myParam` | **accepted** | `$[ parameters.myParam ]` | whether the doc's "no parameters at runtime" holds inside a job as well as at root |
+| `stagedependencies-job-scoped-runtime-var` | job-scoped-runtime-var | `stageDependencies.A.A1.result` | **accepted** | `$[ stageDependencies.A.A1.result ]` | whether `stageDependencies` follows `dependencies` into the job-scoped variable slot |
+| `pipeline-job-scoped-runtime-var` | job-scoped-runtime-var | `pipeline.startTime` | **accepted** | `$[ pipeline.startTime ]` | completes the column for the `pipeline` context |
+
+## Fourth batch — do the two compile-time slots share one table?
+
+| id | placement | expression | outcome | detail | decides |
+|---|---|---|---|---|---|
+| `resources-if-directive` | if-directive | `eq(resources.pipeline.probe.runID, 'x')` | **rejected (400)** | /azure-pipelines.yml (Line: 2, Col: 3): Unrecognized value: 'resources'. Located at position 4 within expression: 'eq(resources.pipeline.probe.runID, 'x')'. For more help, refer to https://go.microsoft.com/fwlink/?linkid=842996 | completes the `${{ if }}` column for `resources` |
+| `pipeline-if-directive` | if-directive | `eq(pipeline.startTime, 'x')` | **rejected (400)** | /azure-pipelines.yml (Line: 2, Col: 3): Unrecognized value: 'pipeline'. Located at position 4 within expression: 'eq(pipeline.startTime, 'x')'. For more help, refer to https://go.microsoft.com/fwlink/?linkid=842996 | completes the `${{ if }}` column for `pipeline` |
+| `environment-if-directive` | if-directive | `eq(environment.name, 'x')` | **rejected (400)** | /azure-pipelines.yml (Line: 2, Col: 3): Unrecognized value: 'environment'. Located at position 4 within expression: 'eq(environment.name, 'x')'. For more help, refer to https://go.microsoft.com/fwlink/?linkid=842996 | completes the `${{ if }}` column for `environment` |
+
+## Fifth batch — is `counter` really variable-only?
+
+| id | placement | expression | outcome | detail | decides |
+|---|---|---|---|---|---|
+| `counter-runtime-var` | runtime-var | `counter('probe', 1)` | **accepted** | `$[ counter('probe', 1) ]` | the slot the doc endorses — the positive control for the two rows below |
+| `counter-job-condition` | job-condition | `eq(counter('probe', 1), 'x')` | **rejected (400)** | Unrecognized value: 'counter'. Located at position 4 within expression: 'eq(counter('probe', 1), 'x')'. For more help, refer to https://go.microsoft.com/fwlink/?linkid=842996 | whether the doc sentence "Don't use it as part of a condition for a step, job, or stage" is enforced like the status-function restriction (C-E02-065) or is only advice |
+| `counter-stage-condition` | stage-condition | `eq(counter('probe', 1), 'x')` | **rejected (400)** | Unrecognized value: 'counter'. Located at position 4 within expression: 'eq(counter('probe', 1), 'x')'. For more help, refer to https://go.microsoft.com/fwlink/?linkid=842996 | the same at stage level |
+| `counter-compile-var` | compile-var | `counter('probe', 1)` | **rejected (400)** | /azure-pipelines.yml (Line: 2, Col: 10): Unrecognized value: 'counter'. Located at position 1 within expression: 'counter('probe', 1)'. For more help, refer to https://go.microsoft.com/fwlink/?linkid=842996 | whether a compile-time variable may call it — the counter increments per run, so a compile-time call would be a different thing entirely |

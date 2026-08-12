@@ -16,3 +16,7 @@ export * from './expr/access.js';
 export * from './expr/functions.js';
 export * from './expr/status.js';
 export * from './expr/general-functions.js';
+export * from './expr/context.js';
+export * from './expr/resources.js';
+export * from './expr/compile-bash.js';
+export * from './template/walk.js';

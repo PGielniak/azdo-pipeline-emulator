@@ -1,0 +1,22 @@
+stages:
+- stage: Produce
+  jobs:
+  - job: A
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+    - bash: echo "##vso[task.setvariable variable=answer;isOutput=true]42"
+      name: setAnswer
+- stage: Consume
+  dependsOn: Produce
+  jobs:
+  - job: B
+    variables:
+      depsJson: $[ convertToJson(dependencies) ]
+      stageDepsJson: $[ convertToJson(stageDependencies) ]
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+    - bash: |
+        echo "DEPS=$(depsJson)"
+        echo "STAGE_DEPS=$(stageDepsJson)"

@@ -81,10 +81,27 @@ wider than the `vso.build` the oracle needs (C-E01-036).
     "self":      { "url": "https://dev.azure.com/contoso/App/_git/app", "ref": "refs/heads/main", "commit": "8c1f…" },
     "templates": { "type": "azdo", "url": "…/_git/pipeline-templates", "ref": "refs/heads/main", "commit": "ab12…" }
   },
-  "pipelines": { "upstream": { "pipelineId": 42, "runId": 1234, "artifacts": ["drop"] } },
+  "pipelines": {
+    "upstream": {
+      "projectId": "2f2cfc9d-…", "projectName": "Fabrikam",
+      "pipelineId": 42, "pipelineName": "SmartHotel-CI",
+      "runId": 1234, "runName": "20260812.3", "runUri": "vstfs:///Build/Build/1234",
+      "sourceBranch": "refs/heads/main", "sourceCommit": "69d3…", "sourceProvider": "TfsGit",
+      "requestedFor": "Jane Doe", "requestedForId": "a49d…",
+      "artifacts": ["drop"]
+    }
+  },
   "tasks": { "replacetokens@5": { "id": "guid", "version": "5.6.1" } }
 }
 ```
+
+The `pipelines.<alias>` entry was widened from `{pipelineId, runId, artifacts}` in E02-S04-T03: a
+pinned run has to reproduce **all twelve** `resources.pipeline.<alias>.*` predefined variables a real
+run exposes (C-E02-120), so every documented field is pinned. `projectName` is written **only** when
+the YAML resource declares `project:` — the service omits the variable otherwise, and absence is
+observable in the emitted environment (C-E02-122). Lockfile keys use the repo's camelCase
+(`pipelineId`, `runUri`); `pipelineResourceVariables()` in `packages/engine/src/expr/resources.ts`
+maps them to the service's own spelling (`pipelineID`, `runURI`).
 
 - `convert --frozen`: fully offline, errors if anything required is missing from cache — reproducible regeneration.
 - `convert --update [alias|artifact|all]`: re-resolve pins.

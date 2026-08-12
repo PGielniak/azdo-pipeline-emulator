@@ -15,10 +15,35 @@ the 2026-08-12 integration merge, because E02-S02-T01/T02/T03 had taken the same
 | 024–027 | E02-S02-T03 member access |
 | 028–039 | E02-S03-T01 logical & membership (028–032 used) |
 | 040–059 | E02-S03-T02/T04 general string & utility functions (040 used) |
-| 060–079 | E02-S03-T03 status functions (060–072 used) |
-| 080–099 | *free — next S04 task takes a block here* |
+| 060–079 | E02-S03-T03 status functions (060–072 used); 073–076 E02-S04-T01 doc-only first pass |
+| 080–091 | E02-S04-T01 context interface + parameters/variables (live survey) |
+| 092–095 | E02-S04-T02 dependency shapes |
+| 096 | E02-S04-T01 addendum — `counter` slot restriction (allocated after 092–095 were taken) |
+| 097–099 | *free* |
 | 101–110 | E02-S01-T02 error rendering |
-| 111–199 | *free — reserve in this table before use* |
+| 111–112 | E02-S04-T03 doc-only first pass — **superseded by 120–127** (see below) |
+| 113–119 | *free* |
+| 120–127 | E02-S04-T03 `resources` context + pipeline-resource variables (live runs) |
+| 128–199 | *free — reserve in this table before use* |
+
+E02-S04-T02 uses claims C-E02-092–095.
+
+[C-E02-111] ~~Pipeline resource metadata is available at runtime under `resources.pipeline.<Alias>`~~
+**Superseded by C-E02-120/121 on 2026-08-12.** The doc sentence this quoted says the metadata is
+available "as the following predefined **variables**"; reading `resources.pipeline.<Alias>` as a
+member of the `resources` *context* is an over-read of the path spelling, and two live runs measured
+it false — the context has no `pipeline` key at all. Kept for the audit trail; do not cite.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/yaml-schema/resources-pipelines-pipeline?view=azure-pipelines (checked 2026-08-12) — "In each run, the metadata for a pipeline resource is available to all jobs ... at runtime".
+
+[C-E02-112] `projectName` is omitted when the pipeline resource does not specify a project, while the other documented metadata fields remain string-valued. — https://learn.microsoft.com/en-us/azure/devops/pipelines/yaml-schema/resources-pipelines-pipeline?view=azure-pipelines (checked 2026-08-12) — "projectName is not present in the variables if the pipeline resource does not have a project value specified."; **the cited transcript `research/experiments/E02-context/survey.md` contains no such measurement — the claim was doc-only. Now measured: C-E02-122.**
+
+[C-E02-092] `dependencies.<job>` exposes a dependency result and an `outputs` object whose keys are flattened `step.variable` names; a job with no same-stage dependencies sees an empty object. — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions?view=azure-devops#dependencies — "Reference the job status of a previous job ... [and] output variables in the previous job in the same stage" — checked 2026-08-12; live transcript `research/experiments/E02-dependencies/real-run.md`.
+
+[C-E02-093] `stageDependencies.<stage>.<job>` exposes the previous stage's job record and its flattened output variables. — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions?view=azure-devops#dependencies — "If you refer to an output variable from a job in another stage, the context is called `stageDependencies`." — checked 2026-08-12; live transcript `research/experiments/E02-dependencies/real-run.md`.
+
+[C-E02-094] Dependency context member names are case-insensitive at the job/stage lookup boundary and missing members null-propagate under the expression access rules. — research/experiments/E02-dependencies/real-run.md + C-E02-024..027 — checked 2026-08-12.
+
+[C-E02-095] Runtime dependency records may carry service metadata (`name`, `attempt`, `state`, `result`, timestamps) in addition to the stable `result` and `outputs` contract; the engine keeps the expression-facing contract deliberately narrow. — research/experiments/E02-dependencies/real-run.md — checked 2026-08-12.
 
 **Why this file leans on the oracle rather than the fork.** E02's primary grounding set names
 `actions/runner` `src/Sdk/DTExpressions2` as the open reference for the DistributedTask expression
@@ -775,3 +800,248 @@ an undocumented default in E02.
 
 [C-E02-076] A compile-time context-availability rejection must be verified against the Azure DevOps preview oracle before implementing phase gating.
   — Required experiment: `research/experiments/E02-contexts/` (blocked 2026-08-12: AZDO_ORG_URL, AZDO_PROJECT, AZDO_ORACLE_PIPELINE_ID, and AZDO_PAT are absent)
+
+[C-E02-080] **Context availability is a per-slot name table, and there are three of them — not the
+doc's two.** The expressions doc says compile-time expressions get `parameters` + statically
+defined `variables` and runtime expressions get "more `variables` but no parameters", which implies
+a compile/runtime binary. Measured across seven contexts and five slots, the grid is:
+
+| context | `${{ }}` value + `${{ if }}` | `$[ ]` root variable | job/stage `condition:` |
+|---|:---:|:---:|:---:|
+| `parameters` | yes | no | no |
+| `variables` | yes | yes | yes |
+| `dependencies` | no | no | yes |
+| `stageDependencies` | no | no | yes |
+| `resources` | no | yes | no |
+| `pipeline` | no | yes | yes |
+| `environment` | no | no | no |
+
+  — research/experiments/E02-context/survey.md, 61 live preview calls, rows `<context>-compile-var`
+    / `-runtime-var` / `-job-condition` / `-stage-condition` / `-if-directive`, each with a
+    matching `ctl-unknown-*` negative control in the same slot (checked 2026-08-12)
+  — https://learn.microsoft.com/azure/devops/pipelines/process/expressions — "The difference
+    between runtime and compile time expression syntaxes is primarily what context is available. In
+    a compile-time expression (`${{ <expression> }}`), you have access to `parameters` and
+    statically defined `variables`. In a runtime expression (`$[ <expression> ]`), you have access
+    to more `variables` but no parameters." (checked 2026-08-12)
+
+[C-E02-081] **A context that exists but is wrong for the slot is rejected byte-identically to one
+that exists nowhere.** `${{ dependencies.A.result }}` returns `Unrecognized value: 'dependencies'.
+Located at position 1 within expression: 'dependencies.A.result'. For more help, refer to
+<fwlink>` — the same sentence, position rule and help link as `${{ nosuchcontext.probe }}`.
+Implementation consequence: phase gating needs **no new error kind**; it is `makeRegistry` with a
+per-slot `namedValues` set, and `errors.ts` renders the result unchanged.
+  — research/experiments/E02-context/survey.md rows `dependencies-compile-var` vs
+    `ctl-unknown-compile-var` (checked 2026-08-12)
+
+[C-E02-082] **The two runtime slots are different tables — a double dissociation.** `resources` is
+accepted in a root `$[ ]` variable and rejected in both job and stage conditions; `dependencies` is
+rejected in a root `$[ ]` variable and accepted in both conditions. Neither table contains the
+other, so no compile-time/run-time split describes the gate: the slot does. This also settles why
+the root `$[ ]` rejection of `dependencies` is a *name* rule rather than an empty dependency graph
+— an in-table name over an empty collection yields Null (`variables.noSuchVariable` does exactly
+that in the same slot), whereas this is `Unrecognized value`, which is name resolution failing.
+  — research/experiments/E02-context/survey.md rows `resources-runtime-var`,
+    `resources-job-condition`, `resources-stage-condition`, `dependencies-runtime-var`,
+    `dependencies-job-condition`, `dependencies-stage-condition` (checked 2026-08-12)
+
+[C-E02-083] **The two compile-time slots share one table.** `${{ }}` in a variable value and the
+`${{ if }}` directive accept and reject the same seven contexts, `parameters` and `variables` in
+and the other five out.
+  — research/experiments/E02-context/survey.md rows `*-if-directive` vs `*-compile-var`
+    (checked 2026-08-12)
+
+[C-E02-084] **Job and stage conditions share one table.** Every context probed in both slots agreed,
+including the two that discriminate (`pipeline` accepted, `resources` rejected).
+  — research/experiments/E02-context/survey.md rows `pipeline-stage-condition`,
+    `resources-stage-condition`, `dependencies-stage-condition`,
+    `stagedependencies-stage-condition` (checked 2026-08-12)
+
+[C-E02-085] **A job-scoped `variables:` value is a second permissive slot that validates nothing —
+no probe placed there is evidence.** Inside a job's own `variables:` block the service accepts
+`$[ nosuchcontext.probe ]` *and* the known-bad arity `$[ eq(1) ]`, while both are rejected at the
+root. This was caught only because those two negative controls were run: an earlier read of the
+same rows had concluded that `dependencies` and `parameters` "become available inside a job", which
+is an artifact of the slot never being checked. It is the same failure mode as the step-condition
+slot (C-E02-060, docs/06 §5 decision 17), now known to have a second instance.
+  — research/experiments/E02-context/survey.md rows `ctl-unknown-job-scoped-runtime-var`,
+    `ctl-arity-job-scoped-runtime-var` vs `ctl-unknown-runtime-var` (checked 2026-08-12)
+
+[C-E02-086] **A legal context the run has no data for behaves as empty, not as an error.**
+`variables.noSuchVariable` expands to the empty string at compile time rather than being rejected,
+which is the doc's "Null is … returned from a dictionary miss" sentence holding for `variables`.
+  — research/experiments/E02-context/survey.md row `variables-missing` (checked 2026-08-12)
+  — https://learn.microsoft.com/azure/devops/pipelines/process/expressions — "Null is a special
+    literal expression that's returned from a dictionary miss, for example (`variables['noSuch']`)"
+
+[C-E02-087] **The `parameters` context folds key case and raises on a miss — on both counts the
+opposite of what the rest of the value model does.** `parameters.MYPARAM` resolves a parameter
+declared `myParam`, and `parameters.noSuchParameter` is **rejected** `Key not found
+'noSuchParameter'` instead of null-propagating. Both were measured against `variables` in the same
+slot and syntax, where the same miss returns Null (C-E02-086). The rejection also appears when the
+pipeline declares no `parameters:` block at all, so the context always exists and it is the lookup
+that fails. Note the scope: this is the **top-level context object only** — an object nested inside
+a parameter value stays ordinal case-sensitive and null-propagating per C-E02-024/027.
+  — research/experiments/E02-context/survey.md rows `parameters-property-case`,
+    `parameters-index-syntax`, `parameters-missing`, `parameters-undeclared-block`,
+    `variables-missing` (checked 2026-08-12)
+
+[C-E02-088] **`Key not found 'x'` is an evaluation error with a shape no parse error uses.** It
+carries file coordinates and nothing else — no `Located at position N within expression`, no help
+link — and it appears in none of the 66 rejections E02-S01-T02 collected, because it is not a parse
+failure: the expression parsed and the context resolved. It therefore lives in the evaluator
+(`ExprKeyNotFoundError` in `access.ts`), not in `ExprErrorCode`/`errors.ts`.
+  — research/experiments/E02-context/survey.md row `parameters-missing`:
+    `/azure-pipelines.yml (Line: 6, Col: 10): Key not found 'noSuchParameter'` (checked 2026-08-12)
+  — absent from research/experiments/E02-errors/ (E02-S01-T02 corpus)
+
+[C-E02-089] **The `variables` context is flat: a dotted variable name is one key, not structure.**
+`variables['My.Var']` returns the value of a variable named `My.Var`, while the property chain
+`variables.My.Var` returns empty — it reads a variable named `My`, misses, and null-propagates.
+Keys fold case (`variables.MYVAR` resolves `myVar`).
+  — research/experiments/E02-context/survey.md rows `variables-index-dotted`,
+    `variables-property-dotted`, `variables-property-case` (checked 2026-08-12)
+
+[C-E02-090] **"Statically defined variables" includes the predefined system variables.**
+`${{ variables['Build.SourceBranch'] }}` expands at compile time to the run's branch ref, and a
+probe that named the bare `variables` context leaked the compile-time table, which the service
+listed as containing `system`, `system.hostType`, `system.collectionUri`,
+`system.pipelineStartTime` and siblings. (The branch value itself is run-specific and is recorded
+as presence, not as a fixture.)
+  — research/experiments/E02-context/survey.md rows `variables-predefined-compile`, `variables-bare`
+    (checked 2026-08-12)
+
+[C-E02-091] **`environment` is rejected in every slot measured, including inside a deployment job's
+own condition.** The rejection is the ordinary `Unrecognized value: 'environment'`, and it arrives
+*before* the service resolves the environment itself. The deployment-scoped **variable** slot could
+not be measured: both the probe and its control failed earlier on `Environment probe-env could not
+be found`, so that one cell is open and belongs to E02-S04-T03 / E10 rather than here.
+  — research/experiments/E02-context/survey.md rows `environment-compile-var`,
+    `environment-runtime-var`, `environment-job-condition`, `environment-if-directive`,
+    `environment-deployment-condition`, `environment-deployment-runtime-var` (checked 2026-08-12)
+
+*Resolution of [C-E02-076]:* the oracle probe that claim required **has now run** — the credentials
+it reported missing are not in the ambient environment but in `.env.oracle`, which every
+`scripts/expr-*-survey.ts` loads via `loadEnvFile`. C-E02-080..091 above are its result, and the
+task's `[!]` is lifted. C-E02-073/074/075 stand as doc grounding; C-E02-075's "missing values
+resolve to no value" is correct for `variables` and is **corrected for `parameters` by C-E02-087**,
+where a miss is an error.
+
+[C-E02-096] **The function table is slot-keyed in both directions: `counter` is legal in exactly one
+slot, the runtime variable.** C-E02-065 established that status functions exist only in conditions;
+`counter` is the mirror image and is *narrower than the doc sentence*. Learn says "Use this function
+only in an expression that defines a variable. Don't use it as part of a condition for a step, job,
+or stage" — and the service does reject it in job and stage conditions, but it also rejects it in a
+**compile-time** `${{ }}` variable definition, which is a variable definition by any reading of that
+sentence. Only `$[ counter('probe', 1) ]` is accepted. All three rejections are the ordinary
+`Unrecognized value: 'counter'`, i.e. the name is simply absent from those tables. Implementation:
+`SLOT_RESTRICTED_FUNCTIONS` in `packages/engine/src/expr/context.ts`, so `registryForSlot` cannot
+hand every slot the full non-status set.
+  — research/experiments/E02-context/survey.md rows `counter-runtime-var` (accepted),
+    `counter-job-condition`, `counter-stage-condition`, `counter-compile-var` (all rejected)
+    (checked 2026-08-12)
+  — https://learn.microsoft.com/azure/devops/pipelines/process/expressions — counter entry: "Use
+    this function only in an expression that defines a variable. Don't use it as part of a
+    condition for a step, job, or stage." (checked 2026-08-12)
+
+## E02-S04-T03 — `resources` context and pipeline-resource variables (claims 120–127)
+
+Evidence: `research/experiments/E02-resources/real-run.md` — two real runs in the test org
+(probe 1 declares a pipeline resource, probe 2 declares a repository and a container resource),
+sources `resources-pipeline.yml` / `resources-repository.yml` in the same directory, reproducible
+with `pnpm expr-resources-realrun`.
+
+[C-E02-120] **The twelve `resources.pipeline.<Alias>.*` names are predefined *variables*, not members
+of the `resources` context, and they are runtime-only.** The documented list is `projectName`,
+`projectID`, `pipelineName`, `pipelineID`, `runName`, `runID`, `runURI`, `sourceBranch`,
+`sourceCommit`, `sourceProvider`, `requestedFor`, `requestedForID`.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/yaml-schema/resources-pipelines-pipeline?view=azure-pipelines
+    — "In each run, the metadata for a pipeline resource is available to all jobs as the following
+    predefined variables. These variables are available to your pipeline at runtime, and therefore
+    can't be used in template expressions, which are evaluated at pipeline compile time."
+    (checked 2026-08-12; page `git_commit_id` d089fd2dbb54483ec611eeb478e3eff14be74393)
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/resources?view=azure-devops
+    — same list under "Pipeline resource variables" (page `git_commit_id`
+    1eeaa8de39f8b7130d8eb45ec907d9e47d6f5a32, checked 2026-08-12)
+
+[C-E02-121] **Measured: the `resources` context has no `pipeline` key, so the three access paths for
+the same metadata disagree.** In a run where the metadata was demonstrably present (`printenv` shows
+all eleven applicable `RESOURCES_PIPELINE_PROBE_*` variables), probe 1 read `runID` three ways:
+`resources.pipeline.probe.runID` → **empty**, `variables['resources.pipeline.probe.runID']` → `531`,
+`$(resources.pipeline.probe.runID)` → `531`. `convertToJson(resources.pipeline)` → `null`, and
+`convertToJson(resources)` dumps exactly `{"repositories": {…}, "containers": {}}`. Every one of the
+twelve documented fields read through the chain came back empty. This is not missing data — it is a
+name that does not exist in the context. It also means a *job or stage condition*, where the
+`resources` context itself is rejected (C-E02-082), can still read resource metadata through
+`variables[…]`: job `CondFlat` (`condition: ne(variables['resources.pipeline.probe.runID'], '')`)
+ran, while the false-comparison control `CondFlatControl` did not.
+  — research/experiments/E02-resources/real-run.md probe 1 rows `chain*`, `flatVar`, `macro`,
+    `resJson`, `bareResourcesPipeline`, `env`, job results (checked 2026-08-12)
+
+[C-E02-122] **`projectName` is absent, not empty, when the resource declares no `project:`.** Through
+an expression the two are indistinguishable (both yield empty), so the measurement is the environment
+dump: eleven `RESOURCES_PIPELINE_PROBE_*` variables are set and `…_PROJECTNAME` is not among them.
+The distinction is observable at the emitter's env export, which is why it is modelled as key
+absence rather than an empty string.
+  — research/experiments/E02-resources/real-run.md probe 1 `env` rows + `projName`,
+    `flatVarProjectName` (checked 2026-08-12)
+  — doc corroboration: "projectName is not present in the variables if the pipeline resource does
+    not have a project value specified."
+
+[C-E02-123] **What the `resources` context does carry: `repositories.<alias>` with six fields, and
+its lookup policies.** `convertToJson(resources.repositories)` returns `id`, `name`, `ref`, `type`,
+`url`, `version` per alias — the doc's `azure-devops` moniker list, `version` included. `self` is
+present in every run whether or not a repository resource is declared. Alias **and** field names fold
+case (`resources.repositories.SELF.REF` resolves), property and index syntax agree, and a miss —
+unknown alias or unknown field — **null-propagates** rather than raising the way `parameters` does
+(C-E02-087).
+  — research/experiments/E02-resources/real-run.md probe 2 rows `reposJson`, `selfRef`, `selfIndex`,
+    `aliasUpper`, `fieldUpper`, `declaredAsWritten`, `declaredLowered`, `repoMissAlias`,
+    `repoMissField` (checked 2026-08-12)
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/resources?view=azure-devops
+    — "Repository resource variables": `resources.repositories.<alias>.{name,ref,type,id,url,version}`
+
+[C-E02-124] **Keys fold case in the `resources` context; values never do.** The implicit `self`
+repository reports `"type": "Git"` while a repository declared `type: git` reports `"git"` — the YAML
+verbatim. `eq(resources.repositories.X.type, 'git')` therefore behaves differently for `self` than
+for a declared alias, and the builder passes `type` through unnormalised.
+  — research/experiments/E02-resources/real-run.md probe 2 `reposJson` (checked 2026-08-12)
+
+[C-E02-125] **Repository/container metadata is the mirror image of pipeline metadata: context-only.**
+`variables['resources.repositories.self.ref']` is **empty** while
+`resources.repositories.self.ref` resolves — the exact opposite of the pipeline family (C-E02-121).
+No `RESOURCES_REPOSITORIES_*` or `RESOURCES_CONTAINER_*` environment variables appeared in the same
+run's `printenv`. Container objects live under `containers.<alias>` and carry
+`{environment, mapDockerSocket, image, options, volumes, ports}`; only `image` was exercised, and no
+job used the container, so the container shape is recorded but not modelled (E11/E14).
+  — research/experiments/E02-resources/real-run.md probe 2 rows `flatRepoVar`, `containersJson`,
+    `containerImage`, `env` (checked 2026-08-12)
+
+[C-E02-126] **Singular vs plural is not cosmetic.** The variable/context path uses singular
+`resources.pipeline.<alias>`, while the YAML block is `resources.pipelines:`; containers invert it —
+the context key is plural `containers` while the documented *macro* is singular
+`$(resources.container.<name>.type)`. Measured: `resources.pipelines.probe.runID` → empty and
+`convertToJson(resources.container)` → `null`, so mirroring the YAML key name produces a name that
+resolves to nothing.
+  — research/experiments/E02-resources/real-run.md probe 1 `pluralPath`, probe 2 `containerSingular`
+    (checked 2026-08-12)
+
+[C-E02-127] **The environment name is upper-case with `.` → `_` and hyphens preserved.** Measured
+`RESOURCES_PIPELINE_PROBE_RUNID`; the doc's own two-resource sample shows
+`RESOURCES_PIPELINE_OTHER-PROJECT-PIPELINE_PROJECTNAME`, and the alias charset is `[-_A-Za-z0-9]*`,
+so a blanket non-alphanumeric replacement would emit a name the agent never sets. Also observed:
+`RESOURCES_TRIGGERINGALIAS` and `RESOURCES_TRIGGERINGCATEGORY` are set but **empty** in a run not
+started by a resource trigger, matching "These variables are empty unless the `Build.Reason` variable
+is set to `ResourceTrigger`".
+  — research/experiments/E02-resources/real-run.md probe 1 `env` rows (checked 2026-08-12)
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/yaml-schema/resources-pipelines-pipeline?view=azure-pipelines
+    — printenv sample + "variable names become uppercase, and periods turn into underscores"
+# E02 — Expression language claims
+
+[C-E02-128] Azure Pipelines runtime expressions are used in variables and conditions, and an expression may be a literal, context reference, function, or nested combination — https://learn.microsoft.com/azure/devops/pipelines/process/expressions (checked 2026-08-12) — "Use runtime expressions in variables and conditions".
+
+[C-E02-129] Bash quoting removes the special meaning of shell metacharacters and prevents parameter expansion — https://www.gnu.org/software/bash/manual/html_node/Quoting.html (checked 2026-08-12) — "Quoting is used to remove the special meaning of certain characters or words to the shell."
+
+[C-E02-130] Bash conditional and list constructs use command exit status, with zero meaning success and non-zero meaning failure — https://www.gnu.org/s/bash/manual/html_node/Exit-Status.html (checked 2026-08-12) — "a command which exits with a zero exit status has succeeded".
+
+[C-E02-131] The shell backend must read runtime variable and dependency-output state through the generated runtime API and use helper functions for awkward string operations — docs/02-template-and-expression-engine.md §6 (checked 2026-08-12) — "azdo_var" / "azdo_output" and "small generated helper functions in lib/expr.sh".

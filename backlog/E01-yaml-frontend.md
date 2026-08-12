@@ -18,6 +18,20 @@ Acceptance: parse produces DOM+positions; server-divergent YAML features rejecte
   **Do:** diagnostic type `{severity, code, message, file, range, jsonPath, hint}`; renderer for terminal (colored, code-frame excerpt) and `--json`.
   **Ground:** docs/01 §1 requirement; sample real `az pipelines` error output for message-style reference (record one screenshot/paste in research note).
   **Done:** snapshot tests of rendered diagnostics; all subsequent epics use this type.
+- [ ] **E01-S01-T04 — Duplicate-key quirk must exempt template directive keys**
+  *Filed 2026-08-12 by E03-S01-T01, which measured the gap while grounding the walker. T02 is not
+  wrong about anything it probed — its 13 transcripts simply never used a `${{ }}` key.*
+  **Do:** `collectDuplicateKeys` in `packages/engine/src/frontend/quirks.ts` compares raw key text
+  case-insensitively at every nesting level with no exemption, so two byte-identical
+  `${{ if eq(1, 1) }}:` keys in one mapping are rejected at **parse** time — before any walker runs
+  — while the service accepts the document and merges both bodies. Exempt directive keys (reuse
+  `parseDirectiveKey`/`loneExpression` from `template/walk.ts`) and decide the adjacent cells the
+  probe did not cover: two identical `${{ each }}` keys, and a repeated *ordinary* expression key
+  such as `${{ pair.key }}` (the corpus idiom in `06-extends-each-joblist` generates those).
+  **Ground:** `research/experiments/E03-walk/dup-identical-if-keys.md` (C-E03-111) is the grounding
+  for the `if` cell; the other two cells need one preview probe each before coding.
+  **Done:** the accepted-by-service document parses without a `DUPLICATE_KEY` error, a genuine
+  duplicate ordinary key still reports one, and each new cell cites its transcript.
 
 ## E01-S02 — As a pipeline developer, invalid YAML is rejected with readable schema errors before any expansion, so I find typos instantly.
 Acceptance: root-file loose validation + expanded-DOM strict validation, readable messages from the official schema.

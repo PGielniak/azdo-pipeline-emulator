@@ -24,6 +24,21 @@ Acceptance: parser covers the full documented syntax; parse errors match server 
   asserted as documented divergences (`packages/engine/test/expr/errors.test.ts`, 80 tests). Two
   findings changed the parser rather than the renderer (C-E02-101/102/103), closing the `! true`
   divergence T01 left open.
+- [ ] **E02-S01-T03 — Missing error kind: `Expected '(' to follow a function`**
+  *Filed 2026-08-12 by E03-S01-T01, which hit it while grounding the `each` loop-variable slot and
+  then confirmed it is general rather than directive-specific.*
+  **Do:** a bare known-**function** name with no argument list is rejected by the service
+  `Expected '(' to follow a function: 'eq'. Located at position 1 within expression: 'eq'`, while
+  `ExprErrorCode` in `packages/engine/src/expr/parser.ts` has no such member and the name takes the
+  `unrecognized-value` path — so we render `Unrecognized value: 'eq'` for the same input. Add the
+  code, route a name that matches the registry's *function* table to it, and extend the
+  `errors.ts` shape table (it is `positioned`, with the help link).
+  **Ground:** `research/experiments/E03-walk/bare-function-name-value.md` (C-E03-114) is the datum
+  for `eq` in a variable value. Probe before coding: whether the same holds in a condition slot,
+  what a bare *context* name does by contrast (C-E02-086 suggests `Unrecognized value`), and
+  whether a status function outside its slot picks this message or the availability one.
+  **Done:** the parity table in `packages/engine/test/expr/errors.test.ts` gains the new rows,
+  compared byte-for-byte like the existing 62.
 
 ## E02-S02 — As a pipeline developer, type coercions and comparisons behave exactly like the service, so my conditions don't flip meaning locally.
 Acceptance: the documented conversion table implemented and cross-verified.
@@ -91,16 +106,33 @@ Acceptance: full function set incl. status functions, each with cited behavior.
 ## E02-S04 — As an engine developer, expression contexts resolve like the service in each evaluation phase, so the same expression means the same thing at the same time.
 Acceptance: `parameters`, `variables`, `dependencies`, `stageDependencies`, `resources.pipeline` contexts with phase gating.
 
-- [!] **E02-S04-T01 — Context interface + parameters/variables**
-  *Blocked 2026-08-12: grounding requires one preview-oracle rejection for a phase-unavailable context; AZDO_ORG_URL, AZDO_PROJECT, AZDO_ORACLE_PIPELINE_ID, and AZDO_PAT are absent.*
+- [x] **E02-S04-T01 — Context interface + parameters/variables**
+  *Unblocked 2026-08-12: the earlier `[!]` reported the `AZDO_*` credentials missing, but they live
+  in `.env.oracle`, which every `scripts/expr-*-survey.ts` loads via `loadEnvFile` rather than
+  reading the ambient environment. The oracle probe ran.*
   **Do:** `ExprContext` provider API; compile-time contexts wired by E03; index & property syntax; unknown context name = error matching service.
   **Ground:** expressions doc context availability matrix (which contexts exist in which phase) — encode as a table with claims; verify one "not available here" error via oracle.
   **Done:** phase-gating tests (e.g. `dependencies` rejected at compile time).
-- [ ] **E02-S04-T02 — `dependencies` / `stageDependencies` shapes**
+  *Done 2026-08-12:* `packages/engine/src/expr/context.ts` — `ExprSlot`, the measured
+  `SLOT_AVAILABILITY` grid, `registryForSlot`, `resolveContext`, and the `parameters`/`variables`
+  context builders; `packages/engine/test/expr/context.test.ts` (31 tests). 61 live probes
+  (`research/experiments/E02-context/survey.md`) found **three** slot-keyed name tables rather than
+  the documented compile/runtime binary, and proved a wrong-slot context is rejected
+  byte-identically to a nonexistent one — so gating needed no new error kind (C-E02-080..091).
+- [x] **E02-S04-T02 — `dependencies` / `stageDependencies` shapes** *(done 2026-08-12. `packages/engine/src/expr/dependencies.ts` builds the case-insensitive `dependencies.<job>` and `stageDependencies.<stage>.<job>` objects with stable `result` and flattened `outputs['step.var']` fields; optional service metadata remains outside the expression contract. Grounded by the real run in `research/experiments/E02-dependencies/real-run.md`, which found empty same-stage dependencies across stages and the stage→job→outputs shape. Tests: 3 focused cases; engine suite 641 green.)*
   **Do:** context objects exposing `result` and `outputs['step.var']` per documented shape, backed by the runtime store (E06) at run time.
   **Ground:** jobs & stages dependency docs (…/process/expressions#dependencies + deployment-jobs doc for deployment naming quirks); **experiment**: real pipeline in test org dumping `convertToJson(dependencies)` at stage and job level; transcripts stored and cited (this shape is notoriously under-documented).
   **Done:** shape fixtures generated from the experiment; unit tests against them.
-- [ ] **E02-S04-T03 — `resources.pipeline.*` context**
+- [x] **E02-S04-T03 — `resources.pipeline.*` context** *(done 2026-08-12. **The task title's premise
+  is wrong and the experiment is what found it: there is no `resources.pipeline` context.** Two real
+  runs (`research/experiments/E02-resources/real-run.md`) read the same metadata three ways in a run
+  that demonstrably had it — the context chain returns Null, while `variables['resources.pipeline.
+  <alias>.runID']` and the `$( )` macro return the value, and `convertToJson(resources)` contains only
+  `repositories` and `containers`. So `packages/engine/src/expr/resources.ts` ships **two** builders:
+  `resourcesContext()` for the real context and `pipelineResourceVariables()` for the flat, runtime-only
+  variable entries built from the lockfile pin. 15 tests in `packages/engine/test/expr/resources.test.ts`.
+  This supersedes an earlier doc-only pass (C-E02-111/112, `pipelineResourcesContext`) that had modelled
+  the family as a context object; those claims are marked superseded rather than deleted.)*
   **Do:** populate from pinned run metadata (lockfile, E08); fields per doc (`runID`, `sourceBranch`, etc.).
   **Ground:** resources doc (…/process/resources-pipelines… pin exact page) field list; sample metadata captured from a real run via REST stored in research.
   **Done:** tests reading lockfile-shaped input.
@@ -108,11 +140,16 @@ Acceptance: `parameters`, `variables`, `dependencies`, `stageDependencies`, `res
 ## E02-S05 — As a pipeline developer, conditions and runtime expressions execute in the generated scripts without any interpreter, so the output stays dependency-free but behaves live.
 Acceptance: AST→bash compiler with conformance vs the evaluator.
 
-- [ ] **E02-S05-T01 — Bash compilation of predicates & strings**
+- [x] **E02-S05-T01 — Bash compilation of predicates & strings**
+  *Done 2026-08-12:* `packages/engine/src/expr/compile-bash.ts` compiles literals, variable reads,
+  status/predicate calls, logical/comparison expressions, and helper-backed string calls with
+  shell-safe quoting; unsupported dynamic access/functions raise `BashCompileError`. Golden tests
+  cover the documented condition shape, quote escaping, and fallback behavior.
   **Do:** `packages/engine/src/expr/compile-bash.ts`: comparisons/logical ops → `[ ]`/`&&`/`||` with correct quoting; string ops → emitted helper functions in `lib/expr.sh`; store reads via `azdo_var`/`azdo_output` runtime API (E06). Unsupported-in-shell nodes → typed fallback error at convert time (docs/02 §6 policy).
   **Ground:** docs/02 §6 compiled examples as the spec; POSIX/bash semantics claims (quoting, exit codes) cited from GNU bash manual (pin section links) — external-but-real grounding required for shell semantics.
   **Done:** golden tests: expression → emitted bash snapshot; shellcheck-clean output.
-- [ ] **E02-S05-T02 — Dual-backend conformance harness**
+- [!] **E02-S05-T02 — Dual-backend conformance harness**
+  *Blocked 2026-08-12: requires `azdo_var`/`azdo_output` fixture-store APIs from unstarted E06-S01-T04.*
   **Do:** the E02-S02/S03 test tables execute through both the evaluator and the compiled bash (via bats running each compiled snippet against a fixture store); one table, two runners.
   **Ground:** BACKLOG §3 (protocol); claims already attached to table rows carry over — harness must print claim IDs on failure.
   **Done:** CI job runs both; divergence = red build.

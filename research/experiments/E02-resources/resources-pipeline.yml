@@ -1,0 +1,104 @@
+resources:
+  pipelines:
+  - pipeline: probe
+    source: oracle-dependencies-probe
+
+trigger: none
+
+variables:
+  resJson: $[ convertToJson(resources) ]
+  bareResourcesPipeline: $[ convertToJson(resources.pipeline) ]
+  chainRunId: $[ resources.pipeline.probe.runID ]
+  chainRunName: $[ resources.pipeline.probe.runName ]
+  chainRunUri: $[ resources.pipeline.probe.runURI ]
+  chainSourceBranch: $[ resources.pipeline.probe.sourceBranch ]
+  chainSourceCommit: $[ resources.pipeline.probe.sourceCommit ]
+  chainSourceProvider: $[ resources.pipeline.probe.sourceProvider ]
+  chainPipelineId: $[ resources.pipeline.probe.pipelineID ]
+  chainPipelineName: $[ resources.pipeline.probe.pipelineName ]
+  chainProjectId: $[ resources.pipeline.probe.projectID ]
+  chainRequestedFor: $[ resources.pipeline.probe.requestedFor ]
+  chainRequestedForId: $[ resources.pipeline.probe.requestedForID ]
+  projName: $[ resources.pipeline.probe.projectName ]
+  flatVar: $[ variables['resources.pipeline.probe.runID'] ]
+  flatVarProjectName: $[ variables['resources.pipeline.probe.projectName'] ]
+  aliasUpper: $[ resources.pipeline.PROBE.runID ]
+  fieldUpper: $[ resources.pipeline.probe.RUNID ]
+  pluralPath: $[ resources.pipelines.probe.runID ]
+
+jobs:
+- job: Probe
+  pool:
+    vmImage: ubuntu-latest
+  steps:
+  - bash: |
+      echo "P|resJson|${RESJSON}"
+      echo "P|bareResourcesPipeline|[${BARE}]"
+      echo "P|chainRunId|[${CHAIN_RUNID}]"
+      echo "P|chainRunName|[${CHAIN_RUNNAME}]"
+      echo "P|chainRunUri|[${CHAIN_RUNURI}]"
+      echo "P|chainSourceBranch|[${CHAIN_SOURCEBRANCH}]"
+      echo "P|chainSourceCommit|[${CHAIN_SOURCECOMMIT}]"
+      echo "P|chainSourceProvider|[${CHAIN_SOURCEPROVIDER}]"
+      echo "P|chainPipelineId|[${CHAIN_PIPELINEID}]"
+      echo "P|chainPipelineName|[${CHAIN_PIPELINENAME}]"
+      echo "P|chainProjectId|[${CHAIN_PROJECTID}]"
+      echo "P|chainRequestedFor|[${CHAIN_REQUESTEDFOR}]"
+      echo "P|chainRequestedForId|[${CHAIN_REQUESTEDFORID}]"
+      echo "P|projName|[${PROJNAME}]"
+      echo "P|flatVar|[${FLATVAR}]"
+      echo "P|flatVarProjectName|[${FLATVAR_PROJECTNAME}]"
+      echo "P|aliasUpper|[${ALIASUPPER}]"
+      echo "P|fieldUpper|[${FIELDUPPER}]"
+      echo "P|pluralPath|[${PLURALPATH}]"
+      echo "P|macro|[${MACRO}]"
+      printenv | grep -i '^RESOURCES' | sort | sed 's/^/P|env|/' || echo "P|env|<none>"
+    env:
+      RESJSON: $(resJson)
+      BARE: $(bareResourcesPipeline)
+      CHAIN_RUNID: $(chainRunId)
+      CHAIN_RUNNAME: $(chainRunName)
+      CHAIN_RUNURI: $(chainRunUri)
+      CHAIN_SOURCEBRANCH: $(chainSourceBranch)
+      CHAIN_SOURCECOMMIT: $(chainSourceCommit)
+      CHAIN_SOURCEPROVIDER: $(chainSourceProvider)
+      CHAIN_PIPELINEID: $(chainPipelineId)
+      CHAIN_PIPELINENAME: $(chainPipelineName)
+      CHAIN_PROJECTID: $(chainProjectId)
+      CHAIN_REQUESTEDFOR: $(chainRequestedFor)
+      CHAIN_REQUESTEDFORID: $(chainRequestedForId)
+      PROJNAME: $(projName)
+      FLATVAR: $(flatVar)
+      FLATVAR_PROJECTNAME: $(flatVarProjectName)
+      ALIASUPPER: $(aliasUpper)
+      FIELDUPPER: $(fieldUpper)
+      PLURALPATH: $(pluralPath)
+      MACRO: $(resources.pipeline.probe.runID)
+- job: Risky
+  dependsOn: []
+  pool:
+    vmImage: ubuntu-latest
+  variables:
+    missAlias: $[ resources.pipeline.nosuchalias.runID ]
+    missField: $[ resources.pipeline.probe.noSuchField ]
+  steps:
+  - bash: |
+      echo "R|missAlias|[${MISS_ALIAS}]"
+      echo "R|missField|[${MISS_FIELD}]"
+    env:
+      MISS_ALIAS: $(missAlias)
+      MISS_FIELD: $(missField)
+- job: CondFlat
+  dependsOn: []
+  condition: ne(variables['resources.pipeline.probe.runID'], '')
+  pool:
+    vmImage: ubuntu-latest
+  steps:
+  - bash: echo "C|condFlatRan|yes"
+- job: CondFlatControl
+  dependsOn: []
+  condition: eq(variables['resources.pipeline.probe.runID'], 'definitely-not-the-run-id')
+  pool:
+    vmImage: ubuntu-latest
+  steps:
+  - bash: echo "C|condFlatControlRan|yes"
