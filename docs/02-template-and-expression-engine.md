@@ -88,6 +88,12 @@ One implementation, two backends:
 - **Eval backend** (convert time): full evaluator over the typed DOM.
 - **Shell backend** (run time): compiles the same AST to bash (later pwsh) predicates/string builders that read the local state store — used for `condition:`, `$[ ]`, dependency outputs. No interpreter ships in the output.
 
+**Implementation status (2026-08-14):** `evaluateExpression` now walks the parser's AST and composes
+the grounded value, context, access, general, logical, and status evaluators. Filtered-array nodes
+(`.*` / `[*]`) still raise `ExprUnsupportedError`: C-E02-009 establishes the syntax and one result,
+but not the complete traversal contract. E02-S05-T04 owns the required oracle matrix and evaluator
+support; the shell backend can continue to reject Object/Array values explicitly.
+
 ### Types & coercion
 Types: Null, Boolean, Number (double), String, Version, Object/Array. Implement the documented conversion table exactly: comparisons convert the right operand to the left kind; `eq`/`ne` return false/true on conversion failure while ordered comparisons error; strings compare **ordinal ignore-case**; Boolean→String is `'True'/'False'`; String→Number accepts invariant decimal/grouped text. Version **literals** have 3–4 parts, while String/Number conversion can produce 2–4 (corrected 2026-08-12, C-E02-005/021/022). Object/Array equality is reference identity (C-E02-023). Table-driven unit tests + oracle cases back every murky corner.
 

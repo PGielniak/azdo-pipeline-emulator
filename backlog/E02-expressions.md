@@ -165,7 +165,14 @@ Acceptance: AST→bash compiler with conformance vs the evaluator.
   **Do:** the E02-S02/S03 test tables execute through both the evaluator and the compiled bash (via bats running each compiled snippet against a fixture store); one table, two runners.
   **Ground:** BACKLOG §3 (protocol); claims already attached to table rows carry over — harness must print claim IDs on failure.
   **Done:** CI job runs both; divergence = red build.
-- [ ] **E02-S05-T03 — AST evaluator (`evaluateExpression(node, context)`)**
+- [x] **E02-S05-T03 — AST evaluator (`evaluateExpression(node, context)`)**
+  *Done 2026-08-14:* `packages/engine/src/expr/evaluate.ts` recursively evaluates the parser's
+  `ExprNode`, derives status scope from the expression slot, dispatches through the existing
+  logical/general/status evaluators, and preserves their lazy argument thunks. The dual-backend
+  table now supplies evaluator context/state instead of 104 hand-written `evaluate()` callbacks;
+  focused walker tests reassert access errors, injected state, and `and`/`or`/`in`/`notIn`/
+  `coalesce` laziness plus eager `iif`. Filtered arrays raise `ExprUnsupportedError` rather than
+  extrapolating from one measured example; the missing service contract is filed as E02-S05-T04.
   *Filed 2026-08-13 by E02-S05-T02, which needed it and found it absent.* docs/02 §6 promises "one
   implementation, two backends", but only the **shell** backend consumes an `ExprNode`: the eval
   side is a set of per-family entry points (`compareValues`, `evaluateLogicalMembershipFunction`,
@@ -183,3 +190,16 @@ Acceptance: AST→bash compiler with conformance vs the evaluator.
   **Done:** every `evaluate()` thunk in `conformance.table.ts` replaced by `evaluateExpression`, with
   the table's expectations unchanged; laziness cases from `functions.test.ts` re-asserted through the
   walker.
+- [ ] **E02-S05-T04 — Ground and implement filtered-array evaluation**
+  *Filed 2026-08-14 by E02-S05-T03.* The parser accepts `.*` and `[*]`, but C-E02-009 measures only
+  one Array→property result. That is insufficient to define Object inputs, misses/Null, a terminal
+  wildcard, nested filters, or chained indexing, so the AST evaluator refuses the node instead of
+  inventing the remaining contract.
+  **Do:** probe the filtered-array behavior matrix, add the resulting claims, implement the grounded
+  traversal in `evaluateExpression`, and add it to the evaluator conformance rows (the shell backend
+  may remain explicitly unsupported where Object/Array values cannot be represented).
+  **Ground:** extend the E02 grammar oracle corpus with preview expressions covering `.*` and `[*]`
+  over Array/Object/Null/missing values, terminal and chained filters, and nested filters; pin any
+  required official expression-source implementation if the docs remain incomplete.
+  **Done:** claim-linked evaluator tests cover every measured matrix cell and both spellings;
+  filtered-array nodes no longer throw `ExprUnsupportedError`; docs/02 records the resulting rule.
