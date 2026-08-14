@@ -27,6 +27,18 @@ const PROBE = {
   dupKeyStep: 'steps:\n- script: echo one\n  displayName: first\n  displayName: second\n',
   dupKeyCase: 'steps:\n- script: echo one\n  displayName: first\n  displayname: second\n',
   dupKeyCaseUserData: 'variables:\n  a: first\n  A: second\nsteps:\n- script: echo $(a)\n',
+  dupIdenticalIfKeys:
+    "steps:\n- script: echo base\n  env:\n    BASE: '1'\n    ${{ if eq(1, 1) }}:\n" +
+    "      A: '1'\n    ${{ if eq(1, 1) }}:\n      B: '1'\n",
+  dupIdenticalEachKeys:
+    'parameters:\n- name: items\n  type: object\n  default: [one]\nvariables:\n' +
+    '  ${{ each item in parameters.items }}:\n    EACH_A: ${{ item }}\n' +
+    '  ${{ each item in parameters.items }}:\n    EACH_B: ${{ item }}\n' +
+    'steps:\n- script: echo $(EACH_A) $(EACH_B)\n',
+  dupOrdinaryExpressionKeys:
+    'parameters:\n- name: pairs\n  type: object\n  default:\n  - key: PROBE\nsteps:\n' +
+    '- ${{ each pair in parameters.pairs }}:\n  - script: echo probe\n    env:\n' +
+    '      ${{ pair.key }}: first\n      ${{ pair.key }}: second\n',
   controlSingleDoc: 'steps:\n- script: echo one\n',
   multiDoc: 'steps:\n- script: echo one\n---\nsteps:\n- script: echo two\n',
   leadingDocStart: '---\nsteps:\n- script: echo one\n',
@@ -87,6 +99,20 @@ describe('server quirks — duplicate keys (C-E01-023, .../dup-key-*.md)', () =>
     expect(
       parsed.root?.kind === 'mapping' ? parsed.root.entries.map((e) => e.key.value) : [],
     ).toEqual(['a', 'A']);
+  });
+
+  it('accepts identical `if` directive keys and keeps both bodies (C-E01-038/C-E03-111)', () => {
+    expect(errors(PROBE.dupIdenticalIfKeys)).toEqual([]);
+  });
+
+  it('accepts identical `each` directive keys (C-E01-038, dup-identical-each-keys.md)', () => {
+    expect(errors(PROBE.dupIdenticalEachKeys)).toEqual([]);
+  });
+
+  it('still rejects duplicate ordinary expression keys (C-E01-039)', () => {
+    const found = errors(PROBE.dupOrdinaryExpressionKeys);
+    expect(found.map((error) => error.code)).toEqual([DUPLICATE_KEY]);
+    expect(found[0]?.message).toBe("'${{ pair.key }}' is already defined");
   });
 });
 

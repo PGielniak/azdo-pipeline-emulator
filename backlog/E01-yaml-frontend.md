@@ -18,7 +18,8 @@ Acceptance: parse produces DOM+positions; server-divergent YAML features rejecte
   **Do:** diagnostic type `{severity, code, message, file, range, jsonPath, hint}`; renderer for terminal (colored, code-frame excerpt) and `--json`.
   **Ground:** docs/01 §1 requirement; sample real `az pipelines` error output for message-style reference (record one screenshot/paste in research note).
   **Done:** snapshot tests of rendered diagnostics; all subsequent epics use this type.
-- [ ] **E01-S01-T04 — Duplicate-key quirk must exempt template directive keys**
+- [x] **E01-S01-T04 — Duplicate-key quirk must exempt template directive keys**
+  *Done 2026-08-14: recognized directive keys are exempt; duplicate ordinary expression keys remain errors (C-E01-038/039).*
   *Filed 2026-08-12 by E03-S01-T01, which measured the gap while grounding the walker. T02 is not
   wrong about anything it probed — its 13 transcripts simply never used a `${{ }}` key.*
   **Do:** `collectDuplicateKeys` in `packages/engine/src/frontend/quirks.ts` compares raw key text

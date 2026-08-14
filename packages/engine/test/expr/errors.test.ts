@@ -31,6 +31,7 @@ import {
   type ExprErrorCode,
   type ExprParseError,
 } from '../../src/expr/parser.js';
+import { registryForSlot } from '../../src/expr/context.js';
 
 const REGISTRY = makeRegistry(
   [
@@ -127,8 +128,8 @@ function parseServiceMessage(message: string): Parsed {
   };
 }
 
-const rejectionOf = (text: string): ExprParseError => {
-  const result = parseExpression(text, { registry: REGISTRY });
+const rejectionOf = (text: string, registry = REGISTRY): ExprParseError => {
+  const result = parseExpression(text, { registry });
   if (result.ok) throw new Error(`expected a rejection for ${JSON.stringify(text)}`);
   return result.error;
 };
@@ -173,9 +174,13 @@ describe('the experiment corpus itself', () => {
       'unexpected-symbol',
       'empty-expression',
       'expected-property-name',
+      'expected-function-call',
       'unclosed-function',
       'exceeded-max-depth',
     ];
+    // The original E02-errors corpus predates this seventh shape. Its dedicated oracle pair is
+    // part of this table rather than silently claiming a generated corpus contains it (C-E02-132).
+    codes.add(rejectionOf('eq').code);
     expect([...codes].sort()).toEqual(all.sort());
   });
 
@@ -233,6 +238,41 @@ describe('message parity (every row = one live service rejection)', () => {
     const error = rejectionOf('1 == 1');
     expect(error.code).toBe('unexpected-symbol');
     expect(renderExprError(error, '1 == 1', 'runtime')).toContain("Unexpected symbol: '=='");
+  });
+});
+
+describe('bare known-function parity', () => {
+  const EXPECTED_EQ =
+    `Expected '(' to follow a function: 'eq'. Located at position 1 within expression: 'eq'. ` +
+    `For more help, refer to ${EXPRESSION_HELP_URL}`;
+
+  it('matches compile-variable and job-condition oracle messages byte-for-byte (C-E02-132)', () => {
+    for (const registry of [REGISTRY, registryForSlot('job-condition')]) {
+      const error = rejectionOf('eq', registry);
+      expect(error).toMatchObject({
+        code: 'expected-function-call',
+        raw: 'eq',
+        span: { start: 0, end: 2 },
+      });
+      expect(serviceMessageBody(error, 'eq')).toBe(EXPECTED_EQ);
+    }
+  });
+
+  it('keeps bare contexts and unavailable status functions out of the new error kind (C-E02-133/134)', () => {
+    const context = parseExpression('variables', {
+      registry: registryForSlot('template-expression'),
+    });
+    expect(context).toMatchObject({ ok: true, node: { type: 'namedValue', name: 'variables' } });
+
+    const unavailableStatus = rejectionOf('always', registryForSlot('template-expression'));
+    expect(unavailableStatus).toMatchObject({
+      code: 'unrecognized-value',
+      raw: 'always',
+    });
+    expect(serviceMessageBody(unavailableStatus, 'always')).toBe(
+      `Unrecognized value: 'always'. Located at position 1 within expression: 'always'. ` +
+        `For more help, refer to ${EXPRESSION_HELP_URL}`,
+    );
   });
 });
 

@@ -3,8 +3,9 @@
 // Azure Pipelines does not implement all of YAML 1.2 (C-E01-021), so a spec-conformant parse is
 // *not* the behaviour we want: we must fail where the service fails and accept what it accepts.
 // This module is the single place where those divergences live, so re-verifying them later is a
-// matter of re-running `pnpm oracle-quirks` and re-reading one file
-// (transcripts: research/experiments/E01-quirks/, claims C-E01-021..028).
+// matter of re-running `pnpm oracle-quirks` and `pnpm duplicate-key-survey`
+// (transcripts: research/experiments/E01-quirks/ and E01-directive-duplicates/;
+// claims C-E01-021..028 and C-E01-038..039).
 //
 // Rejections mirror the service's *decision* and its message text; positions do not always
 // mirror it — the service reports anchors and multi-document files against the file with no
@@ -12,6 +13,7 @@
 // diagnostic (C-E01-026).
 import { isMap, isScalar, visit } from 'yaml';
 import type { Document, Node as YamlNode } from 'yaml';
+import { parseDirectiveKey } from '../template/walk.js';
 import type { ParseError, Provenance } from './parse.js';
 
 /** An anchor (`&name`) appears anywhere in the document — C-E01-022. */
@@ -33,7 +35,7 @@ export interface ServerQuirk {
   readonly code?: string;
   /** Claim backing the decision. */
   readonly claim: string;
-  /** Transcript proving it, relative to research/experiments/E01-quirks/. */
+  /** Transcript or experiment index proving it, relative to research/experiments/. */
   readonly transcript: string;
 }
 
@@ -48,27 +50,33 @@ export const SERVER_QUIRKS: readonly ServerQuirk[] = [
     accepted: false,
     code: ANCHOR_UNSUPPORTED,
     claim: 'C-E01-022',
-    transcript: 'anchor-only.md',
+    transcript: 'E01-quirks/anchor-only.md',
   },
   {
-    feature: 'duplicate key in one mapping, case-insensitive (any nesting level)',
+    feature: 'duplicate ordinary key in one mapping, case-insensitive (any nesting level)',
     accepted: false,
     code: DUPLICATE_KEY,
     claim: 'C-E01-023',
-    transcript: 'dup-key-mapping.md',
+    transcript: 'E01-quirks/dup-key-mapping.md',
+  },
+  {
+    feature: 'byte-identical recognized template directive keys in one mapping',
+    accepted: true,
+    claim: 'C-E01-038',
+    transcript: 'E01-directive-duplicates/README.md',
   },
   {
     feature: 'more than one YAML document in a file',
     accepted: false,
     code: MULTIPLE_DOCUMENTS,
     claim: 'C-E01-024',
-    transcript: 'multi-doc.md',
+    transcript: 'E01-quirks/multi-doc.md',
   },
   {
     feature: 'single document opened by --- or closed by ...',
     accepted: true,
     claim: 'C-E01-025',
-    transcript: 'leading-doc-start.md',
+    transcript: 'E01-quirks/leading-doc-start.md',
   },
 ];
 
@@ -163,14 +171,20 @@ function anchorTokens(token: unknown): AnchorToken[] {
   return found.sort((a, b) => a.offset - b.offset);
 }
 
-// C-E01-023 — duplicate keys are rejected at every nesting level, and the service points at the
-// *second* occurrence. parse.ts turns the yaml package's own uniqueKeys check off so that both
-// pairs survive to be seen here.
+// C-E01-023/039 — ordinary duplicate keys are rejected at every nesting level, and the service
+// points at the *second* occurrence. parse.ts turns the yaml package's own uniqueKeys check off so
+// that both pairs survive to be seen here.
 //
 // The comparison is **case-insensitive** (C-E01-028): the service rejects `displayName` +
 // `displayname`, and also `a` + `A` under `variables:` — user-chosen names, not schema keywords —
 // so the folding belongs to the mapping layer and applies here, where nothing is known about the
 // schema. The message quotes the second key with its own spelling, as the service does.
+//
+// Recognized template directive keys are the one measured exception (C-E01-038): two identical
+// `if` keys and two identical `each` keys are accepted and both bodies expand. This must use the
+// same classifier as the walker; spelling another directive parser here would let parse-time and
+// expansion-time recognition drift apart. An ordinary expression key is *not* exempt — two
+// `${{ pair.key }}` keys are rejected by the service after resolving to the same key (C-E01-039).
 function collectDuplicateKeys(ctx: QuirkContext, errors: ParseError[]): void {
   visit(ctx.doc, (_key, node) => {
     if (!isMap(node)) return;
@@ -179,6 +193,7 @@ function collectDuplicateKeys(ctx: QuirkContext, errors: ParseError[]): void {
       const key: unknown = pair.key;
       if (!isScalar(key)) continue; // non-scalar keys are parse.ts's NON_SCALAR_KEY
       const name = String(key.value);
+      if (parseDirectiveKey(name).kind === 'directive') continue;
       const folded = name.toLowerCase();
       if (seen.has(folded)) {
         errors.push({

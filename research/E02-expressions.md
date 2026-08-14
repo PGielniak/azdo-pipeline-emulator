@@ -24,7 +24,10 @@ the 2026-08-12 integration merge, because E02-S02-T01/T02/T03 had taken the same
 | 111–112 | E02-S04-T03 doc-only first pass — **superseded by 120–127** (see below) |
 | 113–119 | *free* |
 | 120–127 | E02-S04-T03 `resources` context + pipeline-resource variables (live runs) |
-| 128–199 | *free — reserve in this table before use* |
+| 128–131 | E02-S05-T01 Bash compiler |
+| 132–134 | E02-S01-T03 bare known-function error kind |
+| 135–159 | E02-S05-T02 dual-backend conformance harness (135–147 used) |
+| 160–199 | *free — reserve in this table before use* |
 
 E02-S04-T02 uses claims C-E02-092–095.
 
@@ -1045,3 +1048,45 @@ is set to `ResourceTrigger`".
 [C-E02-130] Bash conditional and list constructs use command exit status, with zero meaning success and non-zero meaning failure — https://www.gnu.org/s/bash/manual/html_node/Exit-Status.html (checked 2026-08-12) — "a command which exits with a zero exit status has succeeded".
 
 [C-E02-131] The shell backend must read runtime variable and dependency-output state through the generated runtime API and use helper functions for awkward string operations — docs/02-template-and-expression-engine.md §6 (checked 2026-08-12) — "azdo_var" / "azdo_output" and "small generated helper functions in lib/expr.sh".
+
+[C-E02-132] A bare non-status function registered in the current slot is rejected as a missing call in both a compile-time variable and a job condition: `Expected '(' to follow a function: 'eq'`; it is a positioned error with the standard help link. — research/experiments/E02-bare-functions/bare-nonstatus-compile.md and research/experiments/E02-bare-functions/bare-nonstatus-job-condition.md (live preview, checked 2026-08-12) — "Expected '(' to follow a function: 'eq'".
+
+[C-E02-133] A status-function spelling is not classified as a function outside its allowed slot: a bare `always` in a compile-time variable is `Unrecognized value: 'always'`, not a missing-parenthesis error. — research/experiments/E02-bare-functions/bare-status-outside-slot.md (live preview, checked 2026-08-12) — "Unrecognized value: 'always'".
+
+[C-E02-134] A legal bare context name remains a named value rather than being mistaken for a function: `${{ variables }}` is evaluated to a mapping, then rejected by variable-schema validation (`A mapping was not expected`) rather than by expression parsing. — research/experiments/E02-bare-functions/bare-context-compile.md (live preview, checked 2026-08-12) — "A mapping was not expected".
+
+## E02-S05-T02 — dual-backend conformance harness (C-E02-135..147)
+
+Two kinds of claim live here. **135–137 and 140 are shell-language facts** with primary sources —
+the compiled backend is real bash, so bash/POSIX are its specification exactly as Learn is the
+specification for the expression language. **138, 139 and 141–146 are properties of the compiled
+backend itself**, settled by running it (BACKLOG §3.3): the transcript is
+`research/experiments/E02-conformance/shell-semantics.md`, regenerate with `pnpm expr-shell-survey`,
+and the row-by-row measurement is `packages/runtime/test/expr-conformance.bats`, generated from
+`packages/engine/test/expr/conformance.table.ts` by `pnpm expr-conformance-bats`.
+
+[C-E02-135] A conditional expression exits 0 when true, 1 when false, and **greater than 1 on an error** — so "non-zero" does not mean False. — https://pubs.opengroup.org/onlinepubs/9799919799/utilities/test.html (checked 2026-08-13) — "0 — expression evaluated to true. 1 — expression evaluated to false or expression was missing. >1 — An error occurred."; measured locally as status 2 for `[ 1 -lt x ]` (shell-semantics.md, probe `test-error`).
+
+[C-E02-136] A command that is not found exits **127** and one that is not executable exits 126, and every non-zero status means failure. A harness that mapped "non-zero" to False would therefore read a missing helper as a legitimate answer. — https://www.gnu.org/software/bash/manual/html_node/Exit-Status.html (checked 2026-08-13) — "If a command is not found, the child process created to execute it returns a status of 127. If a command is found but is not executable, the return status is 126."; probe `command-not-found`.
+
+[C-E02-137] `&&` runs its right operand if and only if the left exited zero, `||` if and only if the left exited **non-zero**, and the list's status is that of the last command executed. This is what makes the compiled `and`/`or` lazy in the same places the evaluator is (C-E02-028) — and, at the same time, what makes `||` unable to distinguish False from an error. — https://www.gnu.org/software/bash/manual/html_node/Lists.html (checked 2026-08-13) — "command2 is executed if, and only if, command1 returns an exit status of zero (success)" / "command2 is executed if, and only if, command1 returns a non-zero exit status."
+
+[C-E02-138] **The shell backend has no Null.** docs/02 §6 specifies a missing store read as the empty String ("Null→empty fallback"), and `azdo_var` implements it (C-E06-003). Equality is unaffected because Null and `''` are already equal (C-E02-021), but an **ordered** comparison diverges: the evaluator raises on `lt(variables.Absent, 'x')` because String→Null conversion fails, while the compiled form compares `''` with `'x'` and answers True. Measured, and pinned as a `diverges` row rather than hidden — `variables-missing-ordered` in expr-conformance.bats. — packages/engine/test/expr/conformance.table.ts + docs/02 §6 — checked 2026-08-13.
+
+[C-E02-139] **The shell backend has no Object or Array.** `split`/`convertToJson` produce one, `join`/`containsValue` consume one, a dynamic index (`variables[variables.x]`) needs the whole table rather than a single `azdo_var` read, and `counter` reads the convert-time state provider. All five are rejected with `BashCompileError` at convert time, which docs/02 §6 already prescribes for constructs the shell cannot express. — packages/engine/src/expr/compile-bash.ts + docs/02 §6 — checked 2026-08-13.
+
+[C-E02-140] Command substitution deletes trailing newlines, so a variable value ending in a newline cannot round-trip through `"$(azdo_var …)"` even though the store holds it byte-for-byte (C-E06-003). — https://pubs.opengroup.org/onlinepubs/9799919799/utilities/V3_chap02.html §2.6.3 (checked 2026-08-13) — "if the output ends with one or more bytes that have the encoded value of a <newline> character, they shall not be included in the replacement."; probe `command-substitution-newline`.
+
+[C-E02-141] `${v^^}` folds ASCII only under `LC_ALL=C`, where .NET's OrdinalIgnoreCase folds the full character set: `é` is returned unchanged. Declared divergence — the conformance table has no non-ASCII row, and gaining one requires deciding this rather than discovering it. — shell-semantics.md probe `upper-non-ascii-c` — checked 2026-08-13.
+
+[C-E02-142] **`[[ < ]]` is locale-collated, not ordinal**, which is the single reason `lib/expr.sh` pins `LC_ALL=C` in every string operation: `[[ alpha < BETA ]]` is **false** under `LC_ALL=C` (byte order) and **true** under `en_US.UTF-8`. Azure Pipelines compares strings OrdinalIgnoreCase, so the C locale plus an explicit upper-case fold is the faithful pair; a compiler emitting a bare `[[ < ]]` would give locale-dependent answers on a developer machine. — shell-semantics.md probes `collate-c` / `collate-utf8` — checked 2026-08-13.
+
+[C-E02-143] **An evaluation error is masked by `||`.** `or(lt(1, 'x'), true)` raises in the evaluator but answers True in the compiled form, because the OR list runs its right operand after *any* non-zero status (C-E02-137) and cannot tell status 2 from status 1. The mirror case is safe: `and(false, …)` short-circuits identically in both backends. Recorded as a `diverges` row (`or-after-conversion-error`) rather than fixed here — a status-preserving condition protocol is E06-S03-T03's subject. — shell-semantics.md probe `or-masks-error`; expr-conformance.bats — checked 2026-08-13.
+
+[C-E02-144] **An evaluation error in *value* position is discarded outright.** A helper such as `azdo_expr_format` reports a bad format string with status 2, but it is invoked inside `"$( … )"`, and command substitution keeps only the output — so `eq(format('{2}', 'a'), 'x')` raises in the evaluator and answers False in the compiled form. Same root cause as C-E02-143 and the same owner (E06-S03-T03); pinned as the `format-missing-index` row. — expr-conformance.bats — checked 2026-08-13.
+
+[C-E02-145] **E02-S05-T01's compiled output could not have executed.** Building the bats runner is what exposed it: status functions compiled to `[ azdo_status_succeeded = True ]` — a bare *word* compared against a string, so the function was never invoked and the condition was False for every run; `not(x)` nested `[ [ … ] != True ]`; comparisons double-wrapped an already-quoted literal (`[ "'a'\''b'" = 'x' ]`, comparing quoting syntax rather than value); dependency reads passed `azdo_output` two arguments where it takes three; and the emitted `azdo_expr_*` helpers had no definitions anywhere, because `packages/runtime/lib/expr.sh` — named in T01's own **Do** — was never written. Every one of these is invisible to a test that asserts the emitted *string*, and every one turns red the moment a row is executed. — packages/engine/test/expr/compile-bash.test.ts (rewritten) — checked 2026-08-13.
+
+[C-E02-146] A Boolean-valued call in value position compiles to `"$(<predicate>; azdo_expr_bool $?)"`, which is the same rendering docs/02 §6 uses to materialize a `$[ ]` variable into the store. This is what lets a predicate nest inside a comparison (`eq(eq(1,1), true)`) without a second compilation mode. — docs/02 §6 + packages/engine/src/expr/compile-bash.ts — checked 2026-08-13.
+
+[C-E02-147] **The runtime library must not use bash 4 case-modification expansions, and the reason is that their failure is *silent agreement*.** macOS runners execute bats under the system bash 3.2, where `${v^^}` / `${v,,}` do not exist; the bad substitution yields the empty string, and because it does so on **both** sides of a comparison, the two empties compare **equal**. On the first CI run that meant `lt('alpha','BETA')` answered "equal" (four of its six operators red) while `eq(lower('AB'), 'ab')` passed — *for the wrong reason*, the helper having returned nothing at all. Fixed by folding case through `LC_ALL=C tr`, which is what `core.sh` already does (C-E06-003), and guarded by `packages/runtime/test/expr.bats`, which asserts the returned **text**: a comparison-only suite cannot distinguish "both correct" from "both empty". — GitHub Actions run 31776027219 (macos-latest, node 22/24); packages/runtime/lib/expr.sh; packages/runtime/test/expr.bats — checked 2026-08-14.
