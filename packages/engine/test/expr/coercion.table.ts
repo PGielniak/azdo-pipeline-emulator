@@ -17,6 +17,14 @@ export interface CoercionRow {
   readonly left: ExprValue;
   readonly right: ExprValue;
   readonly expected: boolean | 'throws';
+  /**
+   * Source spelling of the same comparison, for the dual-backend harness (E02-S05-T02).
+   *
+   * Absent where the scenario has no source spelling at all: Null is an unresolvable *name* rather
+   * than a literal (C-E02-003), Object/Array identity cannot be written down, and a two-part
+   * Version needs 3..4 parts as a literal (C-E02-022). Those rows stay evaluator-only.
+   */
+  readonly source?: string;
 }
 
 type Relation = -1 | 0 | 1 | 'error';
@@ -27,6 +35,9 @@ interface Scenario {
   readonly right: ExprValue;
   readonly relation: Relation;
   readonly orderedError?: boolean;
+  /** Literal spellings of `left`/`right`; both present or both absent. */
+  readonly leftSource?: string;
+  readonly rightSource?: string;
 }
 
 const sharedObject = { key: stringValue('value') };
@@ -35,6 +46,8 @@ const sharedArray = [stringValue('one')];
 const SCENARIOS: readonly Scenario[] = [
   {
     id: 'boolean-order',
+    leftSource: 'false',
+    rightSource: 'true',
     claim: 'C-E02-020',
     left: booleanValue(false),
     right: booleanValue(true),
@@ -43,6 +56,8 @@ const SCENARIOS: readonly Scenario[] = [
   { id: 'null-empty', claim: 'C-E02-021', left: NULL, right: stringValue(''), relation: 0 },
   {
     id: 'decimal-string',
+    leftSource: '0.5',
+    rightSource: "'0.5'",
     claim: 'C-E02-021',
     left: numberValue(0.5),
     right: stringValue('0.5'),
@@ -50,6 +65,8 @@ const SCENARIOS: readonly Scenario[] = [
   },
   {
     id: 'thousands-string',
+    leftSource: '1000',
+    rightSource: "'1,000'",
     claim: 'C-E02-021',
     left: numberValue(1000),
     right: stringValue('1,000'),
@@ -57,6 +74,8 @@ const SCENARIOS: readonly Scenario[] = [
   },
   {
     id: 'string-case',
+    leftSource: "'AbC'",
+    rightSource: "'aBc'",
     claim: 'C-E02-020',
     left: stringValue('AbC'),
     right: stringValue('aBc'),
@@ -64,6 +83,8 @@ const SCENARIOS: readonly Scenario[] = [
   },
   {
     id: 'number-order',
+    leftSource: '-1',
+    rightSource: '2',
     claim: 'C-E02-020',
     left: numberValue(-1),
     right: numberValue(2),
@@ -71,6 +92,8 @@ const SCENARIOS: readonly Scenario[] = [
   },
   {
     id: 'version-order',
+    leftSource: '1.2.3',
+    rightSource: '1.10.0',
     claim: 'C-E02-022',
     left: versionValue([1, 2, 3]),
     right: versionValue([1, 10, 0]),
@@ -85,6 +108,8 @@ const SCENARIOS: readonly Scenario[] = [
   },
   {
     id: 'number-to-version',
+    leftSource: '1.2.0',
+    rightSource: '1.3',
     claim: 'C-E02-022',
     left: versionValue([1, 2, 0]),
     right: numberValue(1.3),
@@ -92,6 +117,8 @@ const SCENARIOS: readonly Scenario[] = [
   },
   {
     id: 'string-to-version',
+    leftSource: '1.2.0',
+    rightSource: "'1.3'",
     claim: 'C-E02-022',
     left: versionValue([1, 2, 0]),
     right: stringValue('1.3'),
@@ -99,6 +126,8 @@ const SCENARIOS: readonly Scenario[] = [
   },
   {
     id: 'failed-number',
+    leftSource: '1',
+    rightSource: "'x'",
     claim: 'C-E02-021',
     left: numberValue(1),
     right: stringValue('x'),
@@ -137,6 +166,8 @@ const SCENARIOS: readonly Scenario[] = [
   { id: 'null-to-number', claim: 'C-E02-020', left: numberValue(0), right: NULL, relation: 0 },
   {
     id: 'boolean-to-string',
+    leftSource: "'True'",
+    rightSource: 'true',
     claim: 'C-E02-020',
     left: stringValue('True'),
     right: booleanValue(true),
@@ -144,6 +175,8 @@ const SCENARIOS: readonly Scenario[] = [
   },
   {
     id: 'boolean-to-number',
+    leftSource: '1',
+    rightSource: 'true',
     claim: 'C-E02-020',
     left: numberValue(1),
     right: booleanValue(true),
@@ -151,6 +184,8 @@ const SCENARIOS: readonly Scenario[] = [
   },
   {
     id: 'string-order',
+    leftSource: "'alpha'",
+    rightSource: "'BETA'",
     claim: 'C-E02-020',
     left: stringValue('alpha'),
     right: stringValue('BETA'),
@@ -199,5 +234,8 @@ export const COERCION_ROWS: readonly CoercionRow[] = SCENARIOS.flatMap((scenario
     left: scenario.left,
     right: scenario.right,
     expected: expectation(operator, scenario.relation, scenario.orderedError),
+    ...(scenario.leftSource !== undefined && scenario.rightSource !== undefined
+      ? { source: `${operator}(${scenario.leftSource}, ${scenario.rightSource})` }
+      : {}),
   })),
 );

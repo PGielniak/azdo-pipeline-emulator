@@ -152,7 +152,34 @@ Acceptance: AST→bash compiler with conformance vs the evaluator.
   **Do:** `packages/engine/src/expr/compile-bash.ts`: comparisons/logical ops → `[ ]`/`&&`/`||` with correct quoting; string ops → emitted helper functions in `lib/expr.sh`; store reads via `azdo_var`/`azdo_output` runtime API (E06). Unsupported-in-shell nodes → typed fallback error at convert time (docs/02 §6 policy).
   **Ground:** docs/02 §6 compiled examples as the spec; POSIX/bash semantics claims (quoting, exit codes) cited from GNU bash manual (pin section links) — external-but-real grounding required for shell semantics.
   **Done:** golden tests: expression → emitted bash snapshot; shellcheck-clean output.
-- [ ] **E02-S05-T02 — Dual-backend conformance harness**
+- [x] **E02-S05-T02 — Dual-backend conformance harness**
+  *Done 2026-08-13:* `packages/engine/test/expr/conformance.table.ts` is the single row set;
+  `conformance.test.ts` runs it through the evaluator entry points, asserts the compiler's
+  disposition per row, and **generates** `packages/runtime/test/expr-conformance.bats` (104 executed
+  rows) as a committed file whose staleness fails the engine suite. Every row carries its claim ID
+  in both test names. Building the runner falsified T01's compiled output (C-E02-145), so
+  `compile-bash.ts` was rewritten around a kind-tagged value model and `packages/runtime/lib/expr.sh`
+  — named in T01's **Do** but never written — now exists. Three divergences are declared as rows
+  with the measured shell answer (C-E02-138/143/144), five constructs are asserted to raise
+  `BashCompileError`, and nothing is skipped. Three mutation checks confirm the gate is real.
   **Do:** the E02-S02/S03 test tables execute through both the evaluator and the compiled bash (via bats running each compiled snippet against a fixture store); one table, two runners.
   **Ground:** BACKLOG §3 (protocol); claims already attached to table rows carry over — harness must print claim IDs on failure.
   **Done:** CI job runs both; divergence = red build.
+- [ ] **E02-S05-T03 — AST evaluator (`evaluateExpression(node, context)`)**
+  *Filed 2026-08-13 by E02-S05-T02, which needed it and found it absent.* docs/02 §6 promises "one
+  implementation, two backends", but only the **shell** backend consumes an `ExprNode`: the eval
+  side is a set of per-family entry points (`compareValues`, `evaluateLogicalMembershipFunction`,
+  `evaluateGeneralFunction`, `evaluateStatusFunction`) that callers must wire together by hand, and
+  no E02 task ever allocated the walker. T02's rows therefore carry an explicit `evaluate()` thunk;
+  once this lands, those thunks collapse into one call and the table gets strictly stronger.
+  **Do:** `packages/engine/src/expr/evaluate.ts`: recursive walk over `ExprNode` threading an
+  `ExprContext` (E02-S04-T01) and a `StatusContext`, dispatching to the existing family evaluators,
+  preserving argument laziness for `and`/`or`/`coalesce`, applying the null-propagating access rules
+  of C-E02-024..027 and the `parameters` miss policy of C-E02-087. Errors are *evaluation* errors
+  (`ExprConversionError`, `ExprKeyNotFoundError`), never parse errors.
+  **Ground:** no new service behavior — every rule is already claimed in `research/E02-expressions.md`
+  (C-E02-020..032, 041..051, 060..072, 080..091). The task is to compose them; cite the claim per
+  dispatch branch. Any behavior *not* covered by an existing claim needs its own oracle probe first.
+  **Done:** every `evaluate()` thunk in `conformance.table.ts` replaced by `evaluateExpression`, with
+  the table's expectations unchanged; laziness cases from `functions.test.ts` re-asserted through the
+  walker.

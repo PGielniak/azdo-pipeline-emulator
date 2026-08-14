@@ -122,7 +122,7 @@ condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main
 ```bash
 # generated into the job's conditions.sh
 cond_step_040() {
-  azdo_status_succeeded && [ "$(azdo_var 'Build.SourceBranch')" = "refs/heads/main" ]
+  azdo_status_succeeded && azdo_expr_cmp eq str "$(azdo_var 'Build.SourceBranch')" str refs/heads/main
 }
 ```
 
@@ -132,12 +132,21 @@ variables:
 ```
 ```bash
 # evaluated once at job start, result written into the job's variable store
-azdo_var_set 'isMain' "$(azdo_expr_bool "$([ "$(azdo_var 'Build.SourceBranch')" = 'refs/heads/main' ] && echo True || echo False)")"
+azdo_var_set 'isMain' "$(azdo_expr_cmp eq str "$(azdo_var 'Build.SourceBranch')" str refs/heads/main; azdo_expr_bool $?)"
 ```
 
-Cross-job output reference `$[ dependencies.A.outputs['setSha.short'] ]` compiles to a read of `.work/state/outputs/<stage>/A/setSha.short` with Null→empty fallback. String functions that are awkward in pure bash (`format`, `split`+index) compile to small generated helper functions in `lib/expr.sh` — still plain bash, just emitted per-need.
+Cross-job output reference `$[ dependencies.A.outputs['setSha.short'] ]` compiles to a read of `.work/state/outputs/<stage>/A/setSha.short` with Null→empty fallback. String functions that are awkward in pure bash (`format`, `replace`, `trim`, …) compile to calls on `packages/runtime/lib/expr.sh` — still plain bash, sourced by the generated project.
 
-Anything the shell backend cannot express (rare: heavy Object manipulation in a runtime expression) falls back to **convert-time evaluation with a `degraded` warning** if inputs are static, else a convert error explaining the construct.
+**Comparisons do not compile to `[ ]` (corrected 2026-08-13, C-E02-145).** The first version of the compiler mapped `eq`/`lt`/… onto `test` operators, which loses the one thing the conversion table needs: the operand's *kind*. `eq(1, true)` is True by Boolean→Number conversion and `[ "1" = True ]` is silently False; `lt('alpha','BETA')` needs ordinal-ignore-case ordering that `-lt` cannot express at all. Every value therefore crosses into the shell as its **String form** carrying a kind tag — `bool | num | str | ver` — and `azdo_expr_cmp <op> <lkind> <l> <rkind> <r>` reproduces `compareValues()` there. Exit status is the datum: **0 True, 1 False, 2 evaluation error**, chosen because `test` itself already reserves >1 for errors and a missing helper exits 127 (C-E02-135/136). String operations pin `LC_ALL=C`, because `[[ < ]]` and `${v^^}` are both locale-collated and would otherwise give different answers on different developer machines (C-E02-142).
+
+**Three declared divergences**, each pinned by a row in the conformance harness so it can neither widen nor silently disappear:
+- **No Null.** A missing store read is the empty String. Equality is unaffected (Null `==` `''`), but an *ordered* comparison against a missing variable answers instead of raising (C-E02-138).
+- **Errors do not propagate across `||` or out of a value position.** `or(<error>, true)` answers True because an OR list cannot tell status 2 from status 1, and a helper's error status inside `"$( … )"` is discarded with the substitution (C-E02-143/144). A status-preserving condition protocol belongs with the runtime's condition evaluation (E06-S03-T03), not with the compiler.
+- **Non-ASCII case folding** differs from .NET OrdinalIgnoreCase under `LC_ALL=C` (C-E02-141).
+
+Anything the shell backend cannot express falls back to **convert-time evaluation with a `degraded` warning** if inputs are static, else a convert error explaining the construct. Measured, that set is: Object/Array values and the functions that produce or consume them (`split`, `join`, `convertToJson`, `containsValue`), a dynamic index, and `counter`, which reads the convert-time state provider (C-E02-139).
+
+**Parity is enforced, not asserted (E02-S05-T02).** One row table — `packages/engine/test/expr/conformance.table.ts` — drives both backends: the evaluator through the E02-S02/S03 entry points, and the compiled bash through `packages/runtime/test/expr-conformance.bats`, which is generated from that table (`pnpm expr-conformance-bats`) and committed. The engine suite fails while the generated file is stale, so a compiler change that is not regenerated is red rather than untested. Each row declares what the shell backend is allowed to do — agree, refuse with `BashCompileError`, or diverge with a claim and the measured answer — and nothing is skipped.
 
 ## 7. Provenance
 
