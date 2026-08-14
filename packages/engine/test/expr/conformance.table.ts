@@ -331,6 +331,21 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     shell: AGREE,
   },
   {
+    // The needle is a literal substring, not a glob — the distinction the shell form must not lose
+    // when it stops using `${var//pat/rep}` (C-E02-147).
+    id: 'replace-treats-search-literally',
+    claim: 'C-E02-046',
+    source: "eq(replace('a*b*c', '*', '-'), 'a-b-c')",
+    slot: 'job-condition',
+    expected: true,
+    evaluate: generalEquals(
+      'replace',
+      [stringValue('a*b*c'), stringValue('*'), stringValue('-')],
+      stringValue('a-b-c'),
+    ),
+    shell: AGREE,
+  },
+  {
     id: 'replace-empty-search-is-identity',
     claim: 'C-E02-046',
     source: "eq(replace('abc', '', '-'), 'abc')",

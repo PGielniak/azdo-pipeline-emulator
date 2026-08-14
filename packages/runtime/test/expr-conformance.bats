@@ -309,6 +309,9 @@ setup() {
 @test "C-E02-046 replace-all-occurrences [agree]: eq(replace('a.b.c', '.', '-'), 'a-b-c')" {
   run -0 azdo_emu_expr_run 'azdo_expr_cmp eq str "$(azdo_expr_replace a.b.c . -)" str a-b-c'
 }
+@test "C-E02-046 replace-treats-search-literally [agree]: eq(replace('a*b*c', '*', '-'), 'a-b-c')" {
+  run -0 azdo_emu_expr_run 'azdo_expr_cmp eq str "$(azdo_expr_replace '\''a*b*c'\'' '\''*'\'' -)" str a-b-c'
+}
 @test "C-E02-046 replace-empty-search-is-identity [agree]: eq(replace('abc', '', '-'), 'abc')" {
   run -0 azdo_emu_expr_run 'azdo_expr_cmp eq str "$(azdo_expr_replace abc '\'''\'' -)" str abc'
 }

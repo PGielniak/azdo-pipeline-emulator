@@ -336,16 +336,34 @@ azdo_expr_length() {
 }
 
 # azdo_expr_replace <text> <search> <replacement> — an empty search leaves the text unchanged.
+#
+# Scanned by index rather than written as `${1//"$2"/"$3"}`, for two reasons that pull the same way
+# (C-E02-147): bash 3.2 does not honour the quotes inside a substitution pattern, so on macOS the
+# expansion searched for the literal text *including* its quote characters and replaced nothing;
+# and dropping the quotes to work around that would make the needle a **glob**, where Azure
+# Pipelines' `replace` takes a literal substring.  `[[ "${text:i:n}" == "$search" ]]` compares
+# literally on every supported shell.
 azdo_expr_replace() {
   (($# == 3)) || {
     printf '%s\n' 'usage: azdo_expr_replace <text> <search> <replacement>' >&2
     return 2
   }
-  if [[ -z "$2" ]]; then
-    printf '%s' "$1"
-  else
-    printf '%s' "${1//"$2"/"$3"}"
+  local text="$1" search="$2" replacement="$3" result='' index=0
+  local length=${#1} span=${#2}
+  if ((span == 0)); then
+    printf '%s' "$text"
+    return 0
   fi
+  while ((index < length)); do
+    if ((index + span <= length)) && [[ "${text:index:span}" == "$search" ]]; then
+      result="$result$replacement"
+      index=$((index + span))
+    else
+      result="$result${text:index:1}"
+      index=$((index + 1))
+    fi
+  done
+  printf '%s' "$result"
 }
 
 # azdo_expr_coalesce <value…> — first value that is neither Null nor the empty String.  Null and
