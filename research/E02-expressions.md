@@ -26,7 +26,7 @@ the 2026-08-12 integration merge, because E02-S02-T01/T02/T03 had taken the same
 | 120–127 | E02-S04-T03 `resources` context + pipeline-resource variables (live runs) |
 | 128–131 | E02-S05-T01 Bash compiler |
 | 132–134 | E02-S01-T03 bare known-function error kind |
-| 135–159 | E02-S05-T02 dual-backend conformance harness (135–146 used) |
+| 135–159 | E02-S05-T02 dual-backend conformance harness (135–147 used) |
 | 160–199 | *free — reserve in this table before use* |
 
 E02-S04-T02 uses claims C-E02-092–095.
@@ -1055,7 +1055,7 @@ is set to `ResourceTrigger`".
 
 [C-E02-134] A legal bare context name remains a named value rather than being mistaken for a function: `${{ variables }}` is evaluated to a mapping, then rejected by variable-schema validation (`A mapping was not expected`) rather than by expression parsing. — research/experiments/E02-bare-functions/bare-context-compile.md (live preview, checked 2026-08-12) — "A mapping was not expected".
 
-## E02-S05-T02 — dual-backend conformance harness (C-E02-135..146)
+## E02-S05-T02 — dual-backend conformance harness (C-E02-135..147)
 
 Two kinds of claim live here. **135–137 and 140 are shell-language facts** with primary sources —
 the compiled backend is real bash, so bash/POSIX are its specification exactly as Learn is the
@@ -1088,3 +1088,5 @@ and the row-by-row measurement is `packages/runtime/test/expr-conformance.bats`,
 [C-E02-145] **E02-S05-T01's compiled output could not have executed.** Building the bats runner is what exposed it: status functions compiled to `[ azdo_status_succeeded = True ]` — a bare *word* compared against a string, so the function was never invoked and the condition was False for every run; `not(x)` nested `[ [ … ] != True ]`; comparisons double-wrapped an already-quoted literal (`[ "'a'\''b'" = 'x' ]`, comparing quoting syntax rather than value); dependency reads passed `azdo_output` two arguments where it takes three; and the emitted `azdo_expr_*` helpers had no definitions anywhere, because `packages/runtime/lib/expr.sh` — named in T01's own **Do** — was never written. Every one of these is invisible to a test that asserts the emitted *string*, and every one turns red the moment a row is executed. — packages/engine/test/expr/compile-bash.test.ts (rewritten) — checked 2026-08-13.
 
 [C-E02-146] A Boolean-valued call in value position compiles to `"$(<predicate>; azdo_expr_bool $?)"`, which is the same rendering docs/02 §6 uses to materialize a `$[ ]` variable into the store. This is what lets a predicate nest inside a comparison (`eq(eq(1,1), true)`) without a second compilation mode. — docs/02 §6 + packages/engine/src/expr/compile-bash.ts — checked 2026-08-13.
+
+[C-E02-147] **The runtime library must not use bash 4 case-modification expansions, and the reason is that their failure is *silent agreement*.** macOS runners execute bats under the system bash 3.2, where `${v^^}` / `${v,,}` do not exist; the bad substitution yields the empty string, and because it does so on **both** sides of a comparison, the two empties compare **equal**. On the first CI run that meant `lt('alpha','BETA')` answered "equal" (four of its six operators red) while `eq(lower('AB'), 'ab')` passed — *for the wrong reason*, the helper having returned nothing at all. Fixed by folding case through `LC_ALL=C tr`, which is what `core.sh` already does (C-E06-003), and guarded by `packages/runtime/test/expr.bats`, which asserts the returned **text**: a comparison-only suite cannot distinguish "both correct" from "both empty". — GitHub Actions run 31776027219 (macos-latest, node 22/24); packages/runtime/lib/expr.sh; packages/runtime/test/expr.bats — checked 2026-08-14.

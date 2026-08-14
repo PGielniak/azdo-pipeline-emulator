@@ -26,13 +26,17 @@ azdo__expr_int32_max=2147483647
 
 # azdo__expr_upper <text> — ordinal (ASCII) upper-casing.
 #
-# Azure Pipelines compares strings OrdinalIgnoreCase.  `${v^^}` and `[[ < ]]` are both
-# locale-sensitive (measured: `alpha < BETA` is false under LC_ALL=C and true under en_US.UTF-8),
-# so every string operation here pins LC_ALL=C to get ordinal behaviour (C-E02-142).  Non-ASCII
-# case folding is a declared divergence from .NET's OrdinalIgnoreCase (C-E02-141).
+# Azure Pipelines compares strings OrdinalIgnoreCase.  `[[ < ]]` is locale-collated (measured:
+# `alpha < BETA` is false under LC_ALL=C and true under en_US.UTF-8), so every string operation
+# here pins LC_ALL=C to get ordinal behaviour (C-E02-142).  Non-ASCII case folding is a declared
+# divergence from .NET's OrdinalIgnoreCase (C-E02-141).
+#
+# `tr`, not `${1^^}`: macOS ships bash 3.2, where the case-modification expansions do not exist —
+# and the failure is *silent agreement*, because a bad substitution yields the empty string on both
+# sides of a comparison, which then compares equal (C-E02-147).  `core.sh` folds case the same way
+# for the same reason.
 azdo__expr_upper() {
-  local LC_ALL=C
-  printf '%s' "${1^^}"
+  LC_ALL=C printf '%s' "$1" | LC_ALL=C tr '[:lower:]' '[:upper:]'
 }
 
 # azdo__expr_to_number <text> — prints the invariant decimal, or fails (status 1).
@@ -312,8 +316,7 @@ azdo_expr_endswith() {
 # ---------------------------------------------------------------------------------------------
 
 azdo_expr_lower() {
-  local LC_ALL=C
-  printf '%s' "${1,,}"
+  LC_ALL=C printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]'
 }
 
 azdo_expr_upper() {
