@@ -34,6 +34,7 @@
     "expr-context-survey": "node scripts/expr-context-survey.ts",
     "expr-resources-realrun": "node scripts/expr-resources-realrun.ts",
     "template-walk-survey": "node scripts/template-walk-survey.ts",
+    "duplicate-key-survey": "node scripts/duplicate-key-survey.ts",
     "expr-shell-survey": "bash scripts/expr-shell-survey.sh",
     "expr-conformance-bats": "vitest run --project engine packages/engine/test/expr/conformance.test.ts -u",
     "lint": "pnpm run lint:es && pnpm run lint:format && pnpm run lint:shell",

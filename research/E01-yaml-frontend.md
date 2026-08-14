@@ -250,10 +250,12 @@ carries no `(Line: N, Col: M)`** and ends with a server-side null-reference arti
   — "/azure-pipelines.yml: Anchors are not currently supported. Remove the anchor 'shared'\n
     Object reference not set to an instance of an object."
 
-[C-E01-023] **Duplicate mapping keys are rejected**, with a positional message naming the key and
-pointing at its **second** occurrence — confirmed at three nesting levels: document root
+[C-E01-023] **Ordinary literal duplicate mapping keys are rejected**, with a positional message
+naming the key and pointing at its **second** occurrence — confirmed at three nesting levels: document root
 (`variables:` twice → `Line: 3, Col: 1`), inside a mapping (`a:` twice → `Line: 3, Col: 3`) and
 inside a step mapping (`displayName:` twice → `Line: 4, Col: 3`).
+This claim records exactly the literal-key cells T02 measured; recognized template directive keys
+are the exception established later by C-E01-038.
   — research/experiments/E01-quirks/dup-key-root.md · dup-key-mapping.md · dup-key-step.md (2026-08-11)
   — "/azure-pipelines.yml (Line: 3, Col: 3): 'a' is already defined"
 
@@ -278,8 +280,9 @@ which read literally would have made us reject the very common `---`-prefixed pi
 doc was corrected (CLAUDE.md rule 5, docs/06 §5 decision 9).
   — research/experiments/E01-quirks/leading-doc-start.md · trailing-doc-end.md (2026-08-11)
 
-[C-E01-026] The service's own YAML front end therefore rejects on: anchors (any), duplicate keys
-(any level), more than one document. Only the duplicate-key rejection is positional; the other two
+[C-E01-026] The service's own YAML front end therefore rejects on: anchors (any), ordinary
+duplicate keys (any level), more than one document. Recognized template directive keys are the
+later-measured exception (C-E01-038). Only the duplicate-key rejection is positional; the other two
 name the file alone, so a diagnostic built from the service's text cannot always be anchored to a
 source range — our own checks do carry ranges, which is a deliberate superset (docs/01 §1 requires
 `file:line:col` on every diagnostic).
@@ -298,6 +301,29 @@ anchor on the document root, where no content-token exists) and positions from t
   — verified locally against yaml@2.9.0: `a: &shared first` → anchor token at offset 5, while the
     scalar node's range starts at `first`; `--- &root` leaves no anchor token under
     `doc.contents.srcToken` but does set `doc.contents.anchor`.
+
+## E01-S01-T04 — duplicate-key directive exception (2026-08-14)
+
+Experiment matrix: `research/experiments/E01-directive-duplicates/README.md`. The `if` cell was
+captured by E03-S01-T01; this task added one live preview probe for each adjacent cell before
+changing the parser.
+
+[C-E01-038] **Recognized template directive keys are exempt from raw YAML duplicate-key
+rejection.** The service accepts two byte-identical `${{ if eq(1, 1) }}` keys in one mapping and
+merges both bodies (`A` and `B` survive), and it likewise accepts two byte-identical
+`${{ each item in parameters.items }}` keys (`EACH_A` and `EACH_B` both survive). The exemption is
+therefore attached to the existing directive classifier, not to key spelling or nesting level.
+  — research/experiments/E03-walk/dup-identical-if-keys.md (live preview, 2026-08-12; C-E03-111)
+  — research/experiments/E01-directive-duplicates/dup-identical-each-keys.md
+    (live preview, 2026-08-14)
+
+[C-E01-039] **An ordinary expression key is not covered by that exemption.** Two byte-identical
+`${{ pair.key }}` keys inside one mapping are both expanded to `PROBE`, then the service rejects
+the result with HTTP 400 `PipelineValidationException`: `'PROBE' is already defined`. Our front
+end can reject the statically identical raw keys earlier, retaining accept/reject parity while
+reporting the user-authored key text and its second source occurrence.
+  — research/experiments/E01-directive-duplicates/dup-ordinary-expression-keys.md
+    (live preview, 2026-08-14)
 
 ## E01-S02-T03 — the per-org YAML schema (`distributedtask/yamlschema`)
 
