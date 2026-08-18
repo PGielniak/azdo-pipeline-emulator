@@ -12,15 +12,14 @@
  *
  * **No new service behavior is claimed here.** Every rule below is already grounded and each
  * dispatch branch cites the claims it composes; the map is in `research/E02-expressions.md`
- * §E02-S05-T03. The one construct with no evaluation claim — the filtered array — raises rather
- * than guessing.
+ * §E02-S05-T03. Filtered-array traversal is grounded separately by C-E02-160..164.
  *
  * **Scope is part of the context, not a separate argument.** `context.slot` decides both which
  * named values resolve (C-E02-080..086) and which status-function table applies (C-E02-060/064/065),
  * so a caller cannot pair a step's function set with a stage's context set — the invariant
  * `registryForSlot` enforces at parse time, kept here at evaluation time.
  */
-import { accessIndex, accessProperty } from './access.js';
+import { accessIndex, accessProperty, accessWildcard } from './access.js';
 import { resolveContext, statusScopeForSlot, type ExprContext } from './context.js';
 import {
   LOGICAL_MEMBERSHIP_FUNCTIONS,
@@ -34,26 +33,7 @@ import {
 } from './general-functions.js';
 import type { ExprNode } from './parser.js';
 import { evaluateStatusFunction, isStatusFunction, type StatusContext } from './status.js';
-import { valueFromLiteral, type ExprValue } from './value.js';
-
-/**
- * An expression that parsed, resolved, and then could not be evaluated *by this evaluator* — as
- * opposed to `ExprConversionError` and `ExprKeyNotFoundError`, which reproduce failures the service
- * itself has.
- *
- * Currently exactly one construct reaches it: the **filtered array**. C-E02-009 measures that both
- * spellings exist and that `parameters.obj.list.*.id` yields `[7, 8]`, and that is the whole of the
- * evidence — what a wildcard does over an Object, over a miss, as the last node of a chain, or
- * nested inside another wildcard is unmeasured, and `access.ts` indexes with a *value*, so there is
- * nothing a wildcard could even be converted to. Inferring the rest from one probe is what the
- * Grounding Protocol forbids, so the node is refused and the gap stays visible.
- */
-export class ExprUnsupportedError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ExprUnsupportedError';
-  }
-}
+import { NULL, valueFromLiteral, type ExprValue } from './value.js';
 
 /**
  * Status state **without** `scope`: the scope comes from the slot, never from the caller
@@ -88,8 +68,8 @@ const GENERAL_NAMES = new Set(GENERAL_FUNCTIONS.map((signature) => signature.nam
  * Evaluate a parsed expression.
  *
  * Errors are *evaluation* errors — `ExprConversionError` (C-E02-020..022), `ExprKeyNotFoundError`
- * (C-E02-087/088), `ExprContextUnavailableError` (C-E02-081) and `ExprUnsupportedError` — never
- * parse errors: by the time a node exists, the text has parsed.
+ * (C-E02-087/088) and `ExprContextUnavailableError` (C-E02-081) — never parse errors: by the time
+ * a node exists, the text has parsed.
  *
  * A `RangeError` from this function means the *caller* built an impossible call — an unknown name,
  * a bad arity, or a status function in a slot that has none, all of which `parseExpression` with
@@ -110,29 +90,25 @@ export function evaluateExpression(node: ExprNode, context: EvaluationContext): 
       // Property and string-index syntax share one lookup after parsing (C-E02-024/027).
       return accessProperty(evaluateExpression(node.target, context), node.name);
     case 'index':
-      if (node.index.type === 'wildcard') return filteredArrayUnsupported();
-      // Every miss and every non-collection target yields Null, so chains stay safe without
-      // special-casing the AST shape — except on `parameters`, the one collection that raises
-      // (C-E02-024/025/087). Both rules live in `access.ts`; the walker only supplies operands, and
-      // it evaluates the index as an ordinary expression because `[ ]` takes one (C-E02-008).
+      if (node.index.type === 'wildcard') {
+        return accessWildcard(evaluateExpression(node.target, context));
+      }
+      // Ordinary misses/non-collections yield Null except on `parameters`, while a filtered target
+      // maps the access and omits unsuccessful children (C-E02-024/025/087/161/164). Those rules
+      // live in `access.ts`; the walker only supplies operands, evaluating the index as an ordinary
+      // expression because `[ ]` takes one (C-E02-008).
       return accessIndex(
         evaluateExpression(node.target, context),
         evaluateExpression(node.index, context),
       );
     case 'wildcard':
       // Unreachable through a parse — `*` is only ever the index of an index node — but the walker
-      // stays total rather than trusting that a hand-built tree obeys that.
-      return filteredArrayUnsupported();
+      // stays total rather than trusting that a hand-built tree obeys that. With no target, it has
+      // the same result as a wildcard over Null/non-collection (C-E02-162).
+      return accessWildcard(NULL);
     case 'call':
       return evaluateCall(node, context);
   }
-}
-
-function filteredArrayUnsupported(): never {
-  throw new ExprUnsupportedError(
-    "filtered arrays ('*') are not implemented: C-E02-009 grounds that they exist and one array " +
-      'result, not the Object/Array filter contract',
-  );
 }
 
 type CallNode = Extract<ExprNode, { type: 'call' }>;

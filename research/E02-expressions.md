@@ -27,7 +27,8 @@ the 2026-08-12 integration merge, because E02-S02-T01/T02/T03 had taken the same
 | 128–131 | E02-S05-T01 Bash compiler |
 | 132–134 | E02-S01-T03 bare known-function error kind |
 | 135–159 | E02-S05-T02 dual-backend conformance harness (135–147 used) |
-| 160–199 | *free — reserve in this table before use* |
+| 160–164 | E02-S05-T04 filtered-array evaluation |
+| 165–199 | *free — reserve in this table before use* |
 
 E02-S04-T02 uses claims C-E02-092–095.
 
@@ -1110,3 +1111,53 @@ Wildcard filtering is deliberately not inferred here: C-E02-009 proves the accep
 one array result, but the task's conformance table and Ground set do not define the complete
 Object/Array filter contract. The evaluator reports that node as unsupported until a dedicated
 behavior task grounds the remaining cells (filed as E02-S05-T04).
+
+## E02-S05-T04 — filtered-array evaluation (2026-08-18)
+
+[C-E02-160] **A wildcard over an Array returns every element, and a wildcard over an Object returns
+every property value, preserving source order; `.*` and `[*]` are evaluation-equivalent.** Terminal
+Array and Object probes retained nested objects, scalars, and empty values without conversion. The
+official page defines this as a filtered array returning all elements regardless of their names;
+the service additionally establishes Object behavior, order, terminal use, and the bracket form.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/expressions#filtered-arrays
+    (checked 2026-08-18) — "A filtered array returns all objects or elements regardless of their
+    names."
+  — https://github.com/MicrosoftDocs/azure-devops-docs/blob/1eeaa8de39f8b7130d8eb45ec907d9e47d6f5a32/docs/pipelines/process/expressions.md#L1012-L1036
+  — `research/experiments/E02-filtered-arrays/README.md` (Array/Object terminal matrix and exact
+    transcript names)
+
+[C-E02-161] **Every postfix access after a wildcard is mapped over the filtered children; only
+successful child lookups are appended.** A missing property and a primitive child are omitted,
+while a property that exists with an empty value is retained: the mixed row probe returns exactly
+`[1, ""]`, not `[1, null, ""]` or `[1, "", null]`. Object property mapping returns `[10,20]`.
+  — https://github.com/actions/runner/blob/258d6c857db3519913f7deb6004b60172f8043ae/src/Sdk/DTExpressions2/Expressions2/Sdk/Operators/Index.cs#L83-L146
+    — the filtered-array branch appends an Object lookup only when `TryGetValue` succeeds and skips
+    children with no collection interface (checked 2026-08-18)
+  — `research/experiments/E02-filtered-arrays/README.md` (Array/Object property rows and
+    `missing-after-filter` control)
+
+[C-E02-162] **Applying a wildcard to Null, a missing member, or any other non-collection produces
+an empty filtered array, not Null and not an error.** A genuine Null from
+`coalesce('', variables.missing)`, a missing nested parameter member, a String, and the YAML-null
+control all serialize as `[]` in both wildcard spellings.
+  — https://github.com/actions/runner/blob/258d6c857db3519913f7deb6004b60172f8043ae/src/Sdk/DTExpressions2/Expressions2/Sdk/Operators/Index.cs#L51-L66
+    — the non-collection wildcard branch returns `new FilteredArray()` (checked 2026-08-18)
+  — `research/experiments/E02-filtered-arrays/README.md` (Null/missing/scalar/YAML-null rows)
+
+[C-E02-163] **A wildcard applied to a filtered child collection flattens exactly one level, in
+encounter order.** Two Array wildcards produce `[100,101,200]`; Object values followed by child
+Arrays produce `["L1","L2","R1"]`. Dot and bracket spellings agree at every level.
+  — https://github.com/actions/runner/blob/258d6c857db3519913f7deb6004b60172f8043ae/src/Sdk/DTExpressions2/Expressions2/Sdk/Operators/Index.cs#L93-L142
+    — wildcard mapping appends every nested Object value or Array item to one result (checked
+    2026-08-18)
+  — `research/experiments/E02-filtered-arrays/README.md` (nested Array and Object→Array rows)
+
+[C-E02-164] **A filtered array remains a mapped traversal for every later postfix; it does not
+become an ordinary indexable Array.** `[0]` after filtering child Arrays selects the first item from
+each child (`[100,200]`), while `[0]` after filtering primitive `id` values maps into each primitive
+and returns `[]` rather than selecting the first id.
+  — https://github.com/actions/runner/blob/258d6c857db3519913f7deb6004b60172f8043ae/src/Sdk/DTExpressions2/Expressions2/Sdk/Operators/Index.cs#L83-L146
+    — `HandleFilteredArray` returns another `FilteredArray` and applies numeric indices only to child
+    Arrays (checked 2026-08-18)
+  — `research/experiments/E02-filtered-arrays/README.md` (mapped numeric row and
+    `index-after-primitive-map` control)
