@@ -12,7 +12,7 @@ time the IDs were load-bearing in code comments and test names) is the reason th
 | `C-E03-001..099` | E03-S05-T01 normalizer | `research/E03-normalizer.md` | 001–003 used |
 | `C-E03-100..119` | **E03-S01-T01 DOM walker with context stack** | this file | 100–117 used |
 | `C-E03-120..139` | E03-S01-T02 conditional insertion chains | this file | free |
-| `C-E03-140..159` | E03-S01-T03 iterative insertion (`each`) | this file | free |
+| `C-E03-140..159` | E03-S01-T03 iterative insertion (`each`) | this file | 140–143 used |
 | `C-E03-160..174` | E03-S01-T04 `${{ insert }}` merge | this file | free |
 | `C-E03-175..194` | E03-S01-T05 scalar interpolation | this file | free |
 | `C-E03-195..229` | E03-S02 template resolution & parameters | this file | free |
@@ -241,3 +241,40 @@ usable, its *directive* handling is not, per C-E03-115.
 `research/experiments/E03-walk/` — 33 transcripts, re-runnable with `pnpm template-walk-survey
 [probe-name]`. Controls (`ctl-*`) come first in the script so that a rejection elsewhere is a
 statement about the variation and not about the harness.
+
+---
+
+## E03-S01-T03 — iterative insertion (`C-E03-140..159`)
+
+Offline grounding completed 2026-08-18 against the live Microsoft Learn page. The task's Ground
+field calls this the templates doc's "Iterative insertion" section; the section currently lives on
+the separate **Template expressions** page. The page settles the public contract below but says
+nothing about mapping enumeration order or an automatically available iteration index. Those two
+rules, nested expansion, and exact splicing therefore still require the task's eight live preview
+fixtures before implementation. The experiment could not run because `AZDO_ORG_URL`,
+`AZDO_PROJECT`, `AZDO_ORACLE_PIPELINE_ID`, and `AZDO_PAT` were all absent and no `.env.oracle`
+existed; setup/recovery instructions are in `research/oracle-setup.md`. No service behavior is
+inferred from the examples beyond the claims they directly demonstrate.
+
+[C-E03-140] **The `each` directive supports iterative insertion over both YAML sequences and YAML
+mappings.**
+  — https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions#iterative-insertion
+    (checked 2026-08-18) — "The `each` directive enables iterative insertion based on a YAML
+    sequence (array) or mapping (key-value pairs)."
+
+[C-E03-141] **During mapping iteration, the bound entry exposes its mapping key as `.key` and its
+mapping value as `.value`.** The official job-wrapping example iterates `pair in job`, filters on
+`pair.key`, and re-emits `${{ pair.key }}: ${{ pair.value }}`.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions#iterative-insertion
+    (checked 2026-08-18) — `${{ each pair in job }}` / `${{ pair.key }}: ${{ pair.value }}`
+
+[C-E03-142] **A `jobList` parameter can be iterated with `each`, with every full job available to
+the body for property re-emission and step wrapping.**
+  — https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions#iterative-insertion
+    (checked 2026-08-18) — `type: jobList` / `${{ each job in parameters.jobs }}`
+
+[C-E03-143] **Template files cannot declare `stringList`; Microsoft directs template authors to
+use an `object` parameter for that list-shaped input instead.**
+  — https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions#iterative-insertion
+    (checked 2026-08-18) — "The `stringList` data type isn't available in templates. Use the
+    `object` data type in templates instead."

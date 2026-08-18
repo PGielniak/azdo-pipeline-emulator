@@ -11,6 +11,9 @@
 
 Format: `YYYY-MM-DD E##-S##-T## <done|blocked|dropped|in-progress> — <one-line summary> (evidence: <research paths / tests>)`
 
+2026-08-18 E03-S01-T03 in-progress — claimed by Codex /root on main (/root/src/azdo-pipeline-emulator) (evidence: pending)
+2026-08-18 E03-S01-T03 blocked — offline grounding established sequence/mapping iteration, `pair.key`/`pair.value`, `jobList` wrapping, and template `object` list inputs, but the mandatory ≥8 oracle fixtures cannot run because all four `AZDO_*` variables and `.env.oracle` are absent; no implementation written (evidence: research/E03-template-engine.md C-E03-140..143; research/REFERENCES.md; research/oracle-setup.md)
+
 - 2026-07-30 — Planning complete: PLAN.md + docs/01–06, BACKLOG.md + backlog/E00–E15 (160 tasks), research/REFERENCES.md seeded, CLAUDE.md + skills created. No implementation tasks started yet. Next: E00-S01-T01.
 - 2026-07-30 E00-S01-T01 done — pnpm monorepo scaffolded: cli/engine/fetch/emit (TS strict, tsup, vitest) + runtime (bash, bats 1.13, shellcheck 0.11) + fixtures/; build/test/lint/typecheck green; TS pinned to 5.x (TS 7 breaks tsup dts + typescript-eslint peers) (evidence: research/E00-foundations.md C-E00-001/002; tests packages/*/test/index.test.ts, packages/runtime/test/core.bats)
 - 2026-07-30 E00-S01-T02 done — GitHub Actions CI: lint+typecheck+build+vitest+bats matrix (ubuntu/macos × node 22/24 per C-E00-002), junit reports uploaded as artifacts, oracle-nightly workflow created disabled (cron commented + ORACLE_ENABLED var guard; E12-S03 enables); engines >=22 added to all packages (evidence: research/E00-foundations.md C-E00-003..005; CI run on PR #1)
