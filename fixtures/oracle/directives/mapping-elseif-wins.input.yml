@@ -1,0 +1,14 @@
+steps:
+- script: echo mapping
+  env:
+    BEFORE: before
+    ${{ if eq(1, 2) }}:
+      PICKED: if
+      IF_ONLY: no
+    ${{ elseif eq(2, 2) }}:
+      PICKED: elseif
+      ELSEIF_ONLY: yes
+    ${{ else }}:
+      PICKED: else
+      ELSE_ONLY: no
+    AFTER: after

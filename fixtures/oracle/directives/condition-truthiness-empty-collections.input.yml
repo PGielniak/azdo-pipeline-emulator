@@ -1,0 +1,16 @@
+parameters:
+- name: items
+  type: object
+  default: []
+- name: payload
+  type: object
+  default: {}
+steps:
+- ${{ if parameters.items }}:
+  - script: echo selected-empty-array
+- ${{ else }}:
+  - script: echo not-empty-array
+- ${{ if parameters.payload }}:
+  - script: echo selected-empty-object
+- ${{ else }}:
+  - script: echo not-empty-object

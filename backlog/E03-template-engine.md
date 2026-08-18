@@ -25,10 +25,15 @@ Acceptance: directive semantics proven by oracle fixture pairs, not by reading a
   (E01-S01-T04, E02-S01-T03). `loneExpression` finds its closing `}}` with a quote-aware scan: the
   documented escape for a literal `${{` is to wrap it in an expression string (C-E03-117), which
   E03-S01-T05 depends on.
-- [ ] **E03-S01-T02 — Conditional insertion chains**
+- [x] **E03-S01-T02 — Conditional insertion chains**
   **Do:** `if/elseif/else` chain grouping in document order; winning branch spliced into parent; nested chains.
   **Ground:** templates doc "Conditional insertion"; **oracle fixtures**: ≥ 6 cases (mapping vs sequence, nested, else-only-missing) — commit input+`finalYaml` pairs under `fixtures/oracle/directives/` with claim IDs.
   **Done:** goldens equal oracle output for all pairs.
+  *Done 2026-08-18:* `expandConditionals` implements per-container chain state, lazy first-winner
+  selection, mapping/sequence structural splices, recursive selected-body expansion, grounded
+  truthiness, and service-shaped orphan/body diagnostics. 23 live preview probes produced 19
+  hash-locked input/`finalYaml` pairs carrying C-E03-120..125; all pairs pass the golden parity
+  test, with C-E03-126/127 rejection controls covered separately.
 - [ ] **E03-S01-T03 — Iterative insertion (`each`)**
   **Do:** sequence iteration, mapping iteration (`pair.key`/`pair.value` semantics), iteration over `object`/`*List` parameters, nested `each`, index availability check.
   **Ground:** templates doc "Iterative insertion"; oracle fixtures ≥ 8 incl. each-over-mapping key order (record observed ordering as a claim) and each wrapping full jobs.

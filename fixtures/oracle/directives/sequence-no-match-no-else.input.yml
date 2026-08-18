@@ -1,0 +1,7 @@
+steps:
+- script: echo before
+- ${{ if eq(1, 2) }}:
+  - script: echo not-if
+- ${{ elseif eq(2, 3) }}:
+  - script: echo not-elseif
+- script: echo after
