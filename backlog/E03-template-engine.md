@@ -25,7 +25,8 @@ Acceptance: directive semantics proven by oracle fixture pairs, not by reading a
   (E01-S01-T04, E02-S01-T03). `loneExpression` finds its closing `}}` with a quote-aware scan: the
   documented escape for a literal `${{` is to wrap it in an expression string (C-E03-117), which
   E03-S01-T05 depends on.
-- [ ] **E03-S01-T02 — Conditional insertion chains**
+- [!] **E03-S01-T02 — Conditional insertion chains**
+  *Blocked 2026-08-18: the required six-case preview-oracle matrix cannot run because `AZDO_ORG_URL`, `AZDO_PROJECT`, `AZDO_ORACLE_PIPELINE_ID`, and `AZDO_PAT` are all unset and `.env.oracle` is absent; official docs leave chain grouping, nesting, and orphan/missing-chain behavior unspecified. Configure `research/oracle-setup.md`, then resume from C-E03-120/121.*
   **Do:** `if/elseif/else` chain grouping in document order; winning branch spliced into parent; nested chains.
   **Ground:** templates doc "Conditional insertion"; **oracle fixtures**: ≥ 6 cases (mapping vs sequence, nested, else-only-missing) — commit input+`finalYaml` pairs under `fixtures/oracle/directives/` with claim IDs.
   **Done:** goldens equal oracle output for all pairs.

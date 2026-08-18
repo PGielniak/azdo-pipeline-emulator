@@ -11,7 +11,7 @@ time the IDs were load-bearing in code comments and test names) is the reason th
 |---|---|---|---|
 | `C-E03-001..099` | E03-S05-T01 normalizer | `research/E03-normalizer.md` | 001–003 used |
 | `C-E03-100..119` | **E03-S01-T01 DOM walker with context stack** | this file | 100–117 used |
-| `C-E03-120..139` | E03-S01-T02 conditional insertion chains | this file | free |
+| `C-E03-120..139` | E03-S01-T02 conditional insertion chains | this file | 120–121 used |
 | `C-E03-140..159` | E03-S01-T03 iterative insertion (`each`) | this file | 140–151 used |
 | `C-E03-160..174` | E03-S01-T04 `${{ insert }}` merge | this file | free |
 | `C-E03-175..194` | E03-S01-T05 scalar interpolation | this file | free |
@@ -241,6 +241,37 @@ usable, its *directive* handling is not, per C-E03-115.
 `research/experiments/E03-walk/` — 33 transcripts, re-runnable with `pnpm template-walk-survey
 [probe-name]`. Controls (`ctl-*`) come first in the script so that a rejection elsewhere is a
 statement about the variation and not about the harness.
+
+---
+
+## E03-S01-T02 — conditional insertion chains (`C-E03-120..139`)
+
+Doc grounding 2026-08-18. The official documentation resolves the public syntax and the two
+supported parent shapes, but it does not specify chain grouping/adjacency, nested-chain behavior,
+or what happens to an `elseif`/`else` without a preceding `if`. Those are the task's mandatory
+oracle-fixture questions, answered live in C-E03-122..133 below.
+
+[C-E03-120] **Conditional insertion is supported in both a sequence and a mapping, and an `if`
+directive may also be used outside a template when written with template syntax.** The official
+page separately gives a `steps` sequence example and an `env` mapping example, so both parent
+shapes are part of the documented contract.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions#conditional-insertion
+    (checked 2026-08-18) — "If you want to conditionally insert into a sequence or a mapping in a
+    template, use insertions and expression evaluation."
+  — https://github.com/MicrosoftDocs/azure-devops-docs/blob/7ba9a9ac7d28a7edbbddf0d9bfd480bce665b55b/docs/pipelines/process/template-expressions.md#L180-L238
+    (source pin checked 2026-08-18)
+
+[C-E03-121] **The documented mapping form permits adjacent `if`, `elseif`, and `else` directive
+keys, with each selected body contributing ordinary keys to the containing mapping.** Microsoft's
+example puts the three directives under one variable entry and gives each body a `value` key. The
+page does not define malformed/orphan-chain behavior; that remains an oracle question.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions#conditional-insertion
+    (checked 2026-08-18) — the `conditionalVar` example uses `if`, `elseif`, and `else` bodies whose
+    values are `bar`, `qux`, and `default`.
+  — https://github.com/MicrosoftDocs/azure-devops-docs/blob/7ba9a9ac7d28a7edbbddf0d9bfd480bce665b55b/docs/pipelines/process/template-expressions.md#L263-L282
+    (source pin checked 2026-08-18)
+
+<!-- live claims C-E03-122.. appended below by the oracle matrix -->
 
 ---
 
