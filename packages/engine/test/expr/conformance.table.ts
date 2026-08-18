@@ -1,10 +1,8 @@
 // E02-S05-T02 — the single row set behind both expression backends.
 //
 // Every row carries one behaviour with its claim ID, three ways of being checked:
-//   * `evaluate()` — the convert-time backend, through the E02-S02/S03 entry points already under
-//     test (`compareValues`, `evaluateLogicalMembershipFunction`, `evaluateGeneralFunction`,
-//     `evaluateStatusFunction`). There is deliberately no AST walker here: E02 has never had one,
-//     and building it inside a harness task would bury a missing story — filed as E02-S05-T03.
+//   * `source` + evaluator state — parsed and executed by `evaluateExpression` against the same
+//     AST the shell backend consumes.
 //   * `source` + `slot` — the run-time backend: parsed, compiled by `compileBash`, executed by
 //     bats against `packages/runtime/lib/{core,expr}.sh`.
 //   * `shell` — what the run-time backend is *allowed* to do with the row. `agree` means it must
@@ -15,18 +13,10 @@
 // Nothing is ever skipped: an unsupported row that starts compiling, and a diverging row that
 // starts agreeing, both turn the build red and have to be re-recorded.
 import {
-  accessProperty,
-  compareValues,
-  evaluateGeneralFunction,
-  evaluateLogicalMembershipFunction,
-  evaluateStatusFunction,
-  booleanValue,
-  numberValue,
-  stringValue,
-  variablesContext,
-  type ExprArgument,
+  type CounterStateProvider,
+  type ExprContextValues,
   type ExprSlot,
-  type ExprValue,
+  type StatusState,
 } from '../../src/index.js';
 import { COERCION_ROWS } from './coercion.table.js';
 
@@ -49,7 +39,12 @@ export interface ConformanceRow {
   readonly slot: ExprSlot;
   /** `throws` = the evaluator raises, and the compiled form exits 2. */
   readonly expected: boolean | 'throws';
-  readonly evaluate: () => ExprValue;
+  /** Context values supplied to the AST evaluator. */
+  readonly values?: ExprContextValues;
+  /** Status state supplied only to rows that call a status function. */
+  readonly status?: StatusState;
+  /** Convert-time counter state supplied only to counter rows. */
+  readonly counters?: CounterStateProvider;
   /** Variables seeded into the fixture store before the compiled form runs. */
   readonly store?: Readonly<Record<string, string>>;
   /** Status-function stubs the generated bats defines, as `name → exit status`. */
@@ -58,17 +53,6 @@ export interface ConformanceRow {
 }
 
 const AGREE: ShellDisposition = { kind: 'agree' };
-const arg =
-  (value: ExprValue): ExprArgument =>
-  () =>
-    value;
-const logical = (name: string, values: readonly ExprValue[]) => () =>
-  evaluateLogicalMembershipFunction(name, values.map(arg));
-const general = (name: string, values: readonly ExprValue[]) => () =>
-  evaluateGeneralFunction(name, values.map(arg));
-/** `eq(<general call>, <literal>)`: keeps every row Boolean-valued while exercising the helper. */
-const generalEquals = (name: string, values: readonly ExprValue[], expected: ExprValue) => () =>
-  booleanValue(compareValues('eq', evaluateGeneralFunction(name, values.map(arg)), expected));
 
 // ------------------------------------------------------------------------------------------
 // S02 — coercion & equality (C-E02-020..023)
@@ -84,7 +68,6 @@ const COERCION_CONFORMANCE: readonly ConformanceRow[] = COERCION_ROWS.flatMap((r
           source: row.source,
           slot: 'job-condition' as ExprSlot,
           expected: row.expected,
-          evaluate: () => booleanValue(compareValues(row.operator, row.left, row.right)),
           shell: AGREE,
         },
       ],
@@ -101,8 +84,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "and(false, lt(1, 'x'))",
     slot: 'job-condition',
     expected: false,
-    // The second operand would raise; `and` never reaches it, and `&&` never runs it either.
-    evaluate: logical('and', [booleanValue(false), booleanValue(true)]),
     shell: AGREE,
   },
   {
@@ -111,7 +92,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "and(eq(1, 1), eq('a', 'A'))",
     slot: 'job-condition',
     expected: true,
-    evaluate: logical('and', [booleanValue(true), booleanValue(true)]),
     shell: AGREE,
   },
   {
@@ -120,7 +100,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "or(true, lt(1, 'x'))",
     slot: 'job-condition',
     expected: true,
-    evaluate: logical('or', [booleanValue(true), booleanValue(false)]),
     shell: AGREE,
   },
   {
@@ -129,7 +108,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "or(lt(1, 'x'), true)",
     slot: 'job-condition',
     expected: 'throws',
-    evaluate: () => booleanValue(compareValues('lt', numberValue(1), stringValue('x'))),
     shell: {
       kind: 'diverges',
       claim: 'C-E02-143',
@@ -144,7 +122,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: 'not(eq(1, 2))',
     slot: 'job-condition',
     expected: true,
-    evaluate: logical('not', [booleanValue(false)]),
     shell: AGREE,
   },
   {
@@ -153,7 +130,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "not('')",
     slot: 'job-condition',
     expected: true,
-    evaluate: logical('not', [stringValue('')]),
     shell: AGREE,
   },
   {
@@ -162,7 +138,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "in('b', 'a', 'B')",
     slot: 'job-condition',
     expected: true,
-    evaluate: logical('in', [stringValue('b'), stringValue('a'), stringValue('B')]),
     shell: AGREE,
   },
   {
@@ -171,7 +146,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "in(1000, 'x', '1,000')",
     slot: 'job-condition',
     expected: true,
-    evaluate: logical('in', [numberValue(1000), stringValue('x'), stringValue('1,000')]),
     shell: AGREE,
   },
   {
@@ -180,7 +154,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "notIn('b', 'a', 'c')",
     slot: 'job-condition',
     expected: true,
-    evaluate: logical('notIn', [stringValue('b'), stringValue('a'), stringValue('c')]),
     shell: AGREE,
   },
   {
@@ -189,7 +162,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "contains('ABCdef', 'cDe')",
     slot: 'job-condition',
     expected: true,
-    evaluate: logical('contains', [stringValue('ABCdef'), stringValue('cDe')]),
     shell: AGREE,
   },
   {
@@ -198,7 +170,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "contains('abc', 'z')",
     slot: 'job-condition',
     expected: false,
-    evaluate: logical('contains', [stringValue('abc'), stringValue('z')]),
     shell: AGREE,
   },
   {
@@ -207,7 +178,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "containsValue('a', 'b')",
     slot: 'job-condition',
     expected: false,
-    evaluate: logical('containsValue', [stringValue('a'), stringValue('b')]),
     shell: {
       kind: 'unsupported',
       reason: 'containsValue consumes an Array/Object, which has no shell representation',
@@ -219,7 +189,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "startsWith('refs/heads/main', 'REFS/')",
     slot: 'job-condition',
     expected: true,
-    evaluate: general('startsWith', [stringValue('refs/heads/main'), stringValue('REFS/')]),
     shell: AGREE,
   },
   {
@@ -228,7 +197,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "endsWith('main', 'AIN')",
     slot: 'job-condition',
     expected: true,
-    evaluate: general('endsWith', [stringValue('main'), stringValue('AIN')]),
     shell: AGREE,
   },
   {
@@ -237,7 +205,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: 'xor(true, false)',
     slot: 'job-condition',
     expected: true,
-    evaluate: general('xor', [booleanValue(true), booleanValue(false)]),
     shell: AGREE,
   },
   {
@@ -246,7 +213,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: 'xor(true, 0)',
     slot: 'job-condition',
     expected: true,
-    evaluate: general('xor', [booleanValue(true), numberValue(0)]),
     shell: AGREE,
   },
   {
@@ -255,11 +221,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "eq(format('{1}/{0}/{1}', 'a', 'b'), 'b/a/b')",
     slot: 'job-condition',
     expected: true,
-    evaluate: generalEquals(
-      'format',
-      [stringValue('{1}/{0}/{1}'), stringValue('a'), stringValue('b')],
-      stringValue('b/a/b'),
-    ),
     shell: AGREE,
   },
   {
@@ -268,11 +229,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "eq(format('{{{0}}}', 'x'), '{x}')",
     slot: 'job-condition',
     expected: true,
-    evaluate: generalEquals(
-      'format',
-      [stringValue('{{{0}}}'), stringValue('x')],
-      stringValue('{x}'),
-    ),
     shell: AGREE,
   },
   {
@@ -281,7 +237,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "eq(format('{2}', 'a'), 'x')",
     slot: 'job-condition',
     expected: 'throws',
-    evaluate: generalEquals('format', [stringValue('{2}'), stringValue('a')], stringValue('x')),
     shell: {
       kind: 'diverges',
       claim: 'C-E02-144',
@@ -296,7 +251,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "eq(lower('AB'), 'ab')",
     slot: 'job-condition',
     expected: true,
-    evaluate: generalEquals('lower', [stringValue('AB')], stringValue('ab')),
     shell: AGREE,
   },
   {
@@ -305,7 +259,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "eq(upper('ab'), 'AB')",
     slot: 'job-condition',
     expected: true,
-    evaluate: generalEquals('upper', [stringValue('ab')], stringValue('AB')),
     shell: AGREE,
   },
   {
@@ -314,7 +267,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "eq(trim('  x  '), 'x')",
     slot: 'job-condition',
     expected: true,
-    evaluate: generalEquals('trim', [stringValue('  x  ')], stringValue('x')),
     shell: AGREE,
   },
   {
@@ -323,11 +275,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "eq(replace('a.b.c', '.', '-'), 'a-b-c')",
     slot: 'job-condition',
     expected: true,
-    evaluate: generalEquals(
-      'replace',
-      [stringValue('a.b.c'), stringValue('.'), stringValue('-')],
-      stringValue('a-b-c'),
-    ),
     shell: AGREE,
   },
   {
@@ -338,11 +285,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "eq(replace('a*b*c', '*', '-'), 'a-b-c')",
     slot: 'job-condition',
     expected: true,
-    evaluate: generalEquals(
-      'replace',
-      [stringValue('a*b*c'), stringValue('*'), stringValue('-')],
-      stringValue('a-b-c'),
-    ),
     shell: AGREE,
   },
   {
@@ -351,11 +293,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "eq(replace('abc', '', '-'), 'abc')",
     slot: 'job-condition',
     expected: true,
-    evaluate: generalEquals(
-      'replace',
-      [stringValue('abc'), stringValue(''), stringValue('-')],
-      stringValue('abc'),
-    ),
     shell: AGREE,
   },
   {
@@ -364,7 +301,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "eq(length('abcd'), 4)",
     slot: 'job-condition',
     expected: true,
-    evaluate: generalEquals('length', [stringValue('abcd')], numberValue(4)),
     shell: AGREE,
   },
   {
@@ -373,7 +309,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "eq(coalesce('', 'z'), 'z')",
     slot: 'job-condition',
     expected: true,
-    evaluate: generalEquals('coalesce', [stringValue(''), stringValue('z')], stringValue('z')),
     shell: AGREE,
   },
   {
@@ -382,11 +317,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "eq(iif(false, 'a', 'b'), 'b')",
     slot: 'job-condition',
     expected: true,
-    evaluate: generalEquals(
-      'iif',
-      [booleanValue(false), stringValue('a'), stringValue('b')],
-      stringValue('b'),
-    ),
     shell: AGREE,
   },
   {
@@ -395,7 +325,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "eq(split('a,b', ','), 'x')",
     slot: 'job-condition',
     expected: false,
-    evaluate: generalEquals('split', [stringValue('a,b'), stringValue(',')], stringValue('x')),
     shell: { kind: 'unsupported', reason: 'split returns an Array, which has no shell form' },
   },
   {
@@ -404,7 +333,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "eq(join(',', 'x'), 'x')",
     slot: 'job-condition',
     expected: true,
-    evaluate: generalEquals('join', [stringValue(','), stringValue('x')], stringValue('x')),
     shell: { kind: 'unsupported', reason: 'join consumes an Array, which has no shell form' },
   },
   {
@@ -413,7 +341,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "eq(convertToJson('a'), '\"a\"')",
     slot: 'job-condition',
     expected: true,
-    evaluate: generalEquals('convertToJson', [stringValue('a')], stringValue('"a"')),
     shell: {
       kind: 'unsupported',
       reason: 'convertToJson serialises Object/Array values the shell backend cannot hold',
@@ -425,16 +352,7 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
     source: "eq(counter('x'), 1)",
     slot: 'runtime-variable',
     expected: true,
-    evaluate: () =>
-      booleanValue(
-        compareValues(
-          'eq',
-          evaluateGeneralFunction('counter', [arg(stringValue('x'))], {
-            counters: { next: () => 1 },
-          }),
-          numberValue(1),
-        ),
-      ),
+    counters: { next: () => 1 },
     shell: {
       kind: 'unsupported',
       reason: 'counter reads the convert-time state provider seam, not the runtime store',
@@ -447,7 +365,6 @@ const FUNCTION_CONFORMANCE: readonly ConformanceRow[] = [
 // ------------------------------------------------------------------------------------------
 
 const BRANCH_STORE = { 'Build.SourceBranch': 'refs/heads/main', BuildId: '42' } as const;
-const branchVariables = variablesContext(BRANCH_STORE);
 
 const CONTEXT_CONFORMANCE: readonly ConformanceRow[] = [
   {
@@ -457,14 +374,6 @@ const CONTEXT_CONFORMANCE: readonly ConformanceRow[] = [
     slot: 'job-condition',
     expected: true,
     store: BRANCH_STORE,
-    evaluate: () =>
-      booleanValue(
-        compareValues(
-          'eq',
-          accessProperty(branchVariables, 'Build.SourceBranch'),
-          stringValue('refs/heads/main'),
-        ),
-      ),
     shell: AGREE,
   },
   {
@@ -474,10 +383,6 @@ const CONTEXT_CONFORMANCE: readonly ConformanceRow[] = [
     slot: 'job-condition',
     expected: true,
     store: BRANCH_STORE,
-    evaluate: () =>
-      booleanValue(
-        compareValues('eq', accessProperty(branchVariables, 'buildid'), numberValue(42)),
-      ),
     shell: AGREE,
   },
   {
@@ -487,8 +392,6 @@ const CONTEXT_CONFORMANCE: readonly ConformanceRow[] = [
     slot: 'job-condition',
     expected: true,
     store: BRANCH_STORE,
-    evaluate: () =>
-      booleanValue(compareValues('eq', accessProperty(branchVariables, 'Absent'), stringValue(''))),
     shell: AGREE,
   },
   {
@@ -498,10 +401,6 @@ const CONTEXT_CONFORMANCE: readonly ConformanceRow[] = [
     slot: 'job-condition',
     expected: 'throws',
     store: BRANCH_STORE,
-    evaluate: () =>
-      booleanValue(
-        compareValues('lt', accessProperty(branchVariables, 'Absent'), stringValue('x')),
-      ),
     shell: {
       kind: 'diverges',
       claim: 'C-E02-138',
@@ -518,22 +417,7 @@ const CONTEXT_CONFORMANCE: readonly ConformanceRow[] = [
     expected: true,
     store: BRANCH_STORE,
     stubs: { succeeded: 0 },
-    evaluate: () =>
-      evaluateLogicalMembershipFunction('and', [
-        () =>
-          evaluateStatusFunction('succeeded', [], {
-            scope: 'job',
-            dependencies: { A: 'Succeeded' },
-          }),
-        () =>
-          booleanValue(
-            compareValues(
-              'eq',
-              accessProperty(branchVariables, 'Build.SourceBranch'),
-              stringValue('refs/heads/main'),
-            ),
-          ),
-      ]),
+    status: { dependencies: { A: 'Succeeded' } },
     shell: AGREE,
   },
   {
@@ -544,19 +428,7 @@ const CONTEXT_CONFORMANCE: readonly ConformanceRow[] = [
     expected: false,
     store: BRANCH_STORE,
     stubs: { succeeded: 1 },
-    evaluate: () =>
-      evaluateLogicalMembershipFunction('and', [
-        () =>
-          evaluateStatusFunction('succeeded', [], { scope: 'job', dependencies: { A: 'Failed' } }),
-        () =>
-          booleanValue(
-            compareValues(
-              'eq',
-              accessProperty(branchVariables, 'Build.SourceBranch'),
-              stringValue('refs/heads/main'),
-            ),
-          ),
-      ]),
+    status: { dependencies: { A: 'Failed' } },
     shell: AGREE,
   },
   {
@@ -565,9 +437,6 @@ const CONTEXT_CONFORMANCE: readonly ConformanceRow[] = [
     source: "eq(variables[variables.BuildId], 'x')",
     slot: 'job-condition',
     expected: false,
-    // variables['42'] is absent, so the chain null-propagates and eq answers False.
-    evaluate: () =>
-      booleanValue(compareValues('eq', accessProperty(branchVariables, '42'), stringValue('x'))),
     shell: {
       kind: 'unsupported',
       reason: 'a dynamic index needs the whole variables table, not a single azdo_var read',

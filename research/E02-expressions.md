@@ -1090,3 +1090,23 @@ and the row-by-row measurement is `packages/runtime/test/expr-conformance.bats`,
 [C-E02-146] A Boolean-valued call in value position compiles to `"$(<predicate>; azdo_expr_bool $?)"`, which is the same rendering docs/02 §6 uses to materialize a `$[ ]` variable into the store. This is what lets a predicate nest inside a comparison (`eq(eq(1,1), true)`) without a second compilation mode. — docs/02 §6 + packages/engine/src/expr/compile-bash.ts — checked 2026-08-13.
 
 [C-E02-147] **The runtime library must not use bash 4 case-modification expansions, and the reason is that their failure is *silent agreement*.** macOS runners execute bats under the system bash 3.2, where `${v^^}` / `${v,,}` do not exist; the bad substitution yields the empty string, and because it does so on **both** sides of a comparison, the two empties compare **equal**. On the first CI run that meant `lt('alpha','BETA')` answered "equal" (four of its six operators red) while `eq(lower('AB'), 'ab')` passed — *for the wrong reason*, the helper having returned nothing at all. Fixed by folding case through `LC_ALL=C tr`, which is what `core.sh` already does (C-E06-003), and guarded by `packages/runtime/test/expr.bats`, which asserts the returned **text**: a comparison-only suite cannot distinguish "both correct" from "both empty". — GitHub Actions run 31776027219 (macos-latest, node 22/24); packages/runtime/lib/expr.sh; packages/runtime/test/expr.bats — checked 2026-08-14.
+
+## E02-S05-T03 — AST evaluator composition map (2026-08-14)
+
+This task introduces no service behavior and therefore allocates no new claim ID. It composes the
+already-grounded evaluator primitives through the parser's `ExprNode`; each dispatch branch carries
+the following existing evidence:
+
+| AST/evaluator branch | Existing claims |
+|---|---|
+| literal → `ExprValue` | C-E02-018..022 |
+| named context resolution | C-E02-080..091 |
+| property/index access and miss policy | C-E02-024..027, C-E02-087/088 |
+| logical/comparison/membership calls | C-E02-020..032 |
+| general calls, including lazy `coalesce` and eager `iif` | C-E02-041..051 |
+| status calls by step/job/stage scope | C-E02-060..072 |
+
+Wildcard filtering is deliberately not inferred here: C-E02-009 proves the accepted syntax and
+one array result, but the task's conformance table and Ground set do not define the complete
+Object/Array filter contract. The evaluator reports that node as unsupported until a dedicated
+behavior task grounds the remaining cells (filed as E02-S05-T04).

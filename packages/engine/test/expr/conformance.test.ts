@@ -1,6 +1,6 @@
 // E02-S05-T02 — one table, two runners.
 //
-// Runner 1 (here): the convert-time backend, through the E02-S02/S03 entry points.
+// Runner 1 (here): the convert-time `ExprNode` backend through `evaluateExpression`.
 // Runner 2: `packages/runtime/test/expr-conformance.bats`, generated at the bottom of this file
 //   and executed by `pnpm test:bats`. It is committed, and the snapshot assertion below is the
 //   freshness guard — editing the compiler without regenerating turns this file red rather than
@@ -10,8 +10,11 @@ import {
   BashCompileError,
   booleanValue,
   compileBash,
+  evaluateExpression,
   parseExpression,
   registryForSlot,
+  variablesContext,
+  type ExprEvaluationContext,
   type ExprNode,
 } from '../../src/index.js';
 import { CONFORMANCE_ROWS, type ConformanceRow } from './conformance.table.js';
@@ -23,6 +26,16 @@ const parse = (row: ConformanceRow): ExprNode => {
 };
 
 const label = (row: ConformanceRow): string => `${row.claim} ${row.id}: ${row.source}`;
+
+const evaluationContext = (row: ConformanceRow): ExprEvaluationContext => ({
+  slot: row.slot,
+  values: {
+    ...row.values,
+    ...(row.store === undefined ? {} : { variables: variablesContext(row.store) }),
+  },
+  status: row.status,
+  counters: row.counters,
+});
 
 describe('conformance table (E02-S05-T02)', () => {
   it('rows have unique ids', () => {
@@ -38,11 +51,12 @@ describe('conformance table (E02-S05-T02)', () => {
 describe('eval backend', () => {
   for (const row of CONFORMANCE_ROWS) {
     it(label(row), () => {
+      const evaluate = () => evaluateExpression(parse(row), evaluationContext(row));
       if (row.expected === 'throws') {
-        expect(row.evaluate).toThrow();
+        expect(evaluate).toThrow();
         return;
       }
-      expect(row.evaluate()).toEqual(booleanValue(row.expected));
+      expect(evaluate()).toEqual(booleanValue(row.expected));
     });
   }
 });
