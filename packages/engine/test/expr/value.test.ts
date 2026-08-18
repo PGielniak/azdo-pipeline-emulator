@@ -5,6 +5,7 @@ import {
   booleanValue,
   decodeExprValue,
   encodeExprValue,
+  filteredArrayValue,
   numberValue,
   objectValue,
   parseExpression,
@@ -83,6 +84,12 @@ describe('expression value model', () => {
     expect(decodeExprValue(encodeExprValue(value))).toEqual(value);
   });
 
+  it('round-trips filtered-array traversal identity (C-E02-164)', () => {
+    const value = filteredArrayValue([numberValue(1), stringValue('two')]);
+    expect(decodeExprValue(encodeExprValue(value))).toEqual(value);
+    expect(encodeExprValue(arrayValue([]))).toEqual({ kind: 'array', value: [] });
+  });
+
   it.each([
     undefined,
     null,
@@ -91,6 +98,7 @@ describe('expression value model', () => {
     { kind: 'number', value: Number.NaN },
     { kind: 'version', segments: [1] },
     { kind: 'array', value: [null] },
+    { kind: 'array', value: [], filtered: false },
     { kind: 'object', value: { bad: { kind: 'boolean', value: 'true' } } },
   ])('rejects malformed tagged input %#', (input) => {
     expect(() => decodeExprValue(input)).toThrow();

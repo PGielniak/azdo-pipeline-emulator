@@ -52,6 +52,12 @@ export type ObjectMissPolicy = 'null' | 'error';
 export interface ExprArray {
   readonly kind: 'array';
   readonly value: readonly ExprValue[];
+  /**
+   * A wildcard result keeps mapped-traversal identity across every later postfix instead of
+   * becoming an ordinary indexable Array (C-E02-164). Optional keeps pre-E02-S05-T04 fixtures and
+   * serialized values byte-compatible.
+   */
+  readonly filtered?: true | undefined;
 }
 
 export const NULL: ExprNull = Object.freeze({ kind: 'null' });
@@ -107,6 +113,15 @@ export function objectValue(
 
 export const arrayValue = (value: readonly ExprValue[]): ExprArray => ({ kind: 'array', value });
 
+/** A wildcard result: Array-shaped to functions, but mapped by later member/index access. */
+export const filteredArrayValue = (value: readonly ExprValue[]): ExprArray => ({
+  kind: 'array',
+  // A wildcard constructs a distinct result collection; sharing the source Array's backing value
+  // would make reference-identity equality confuse the filtered result with its input.
+  value: [...value],
+  filtered: true,
+});
+
 /** Bridge the parser's writable literal kinds into the evaluator's complete value model. */
 export function valueFromLiteral(literal: ExprLiteral): ExprValue {
   switch (literal.kind) {
@@ -133,7 +148,11 @@ export function encodeExprValue(value: ExprValue): unknown {
     case 'version':
       return { kind: 'version', segments: [...value.segments] };
     case 'array':
-      return { kind: 'array', value: value.value.map(encodeExprValue) };
+      return {
+        kind: 'array',
+        value: value.value.map(encodeExprValue),
+        ...(value.filtered === true ? { filtered: true } : {}),
+      };
     case 'object':
       return {
         kind: 'object',
@@ -170,7 +189,13 @@ export function decodeExprValue(input: unknown): ExprValue {
         return versionValue(record.segments as unknown[] as number[]);
       break;
     case 'array':
-      if (Array.isArray(record.value)) return arrayValue(record.value.map(decodeExprValue));
+      if (
+        Array.isArray(record.value) &&
+        (record.filtered === undefined || record.filtered === true)
+      ) {
+        const values = record.value.map(decodeExprValue);
+        return record.filtered === true ? filteredArrayValue(values) : arrayValue(values);
+      }
       break;
     case 'object':
       if (

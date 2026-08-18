@@ -3,8 +3,10 @@ import {
   NULL,
   accessIndex,
   accessProperty,
+  accessWildcard,
   arrayValue,
   booleanValue,
+  filteredArrayValue,
   numberValue,
   objectValue,
   parseExpression,
@@ -92,5 +94,14 @@ describe('array indexing', () => {
     arrayValue([]),
   ])('returns Null for invalid/out-of-range index %# (C-E02-026)', (index) => {
     expect(accessIndex(array, index)).toBe(NULL);
+  });
+});
+
+describe('filtered-array access', () => {
+  it('retains a present Null while omitting misses and primitives (C-E02-161)', () => {
+    const filtered = accessWildcard(
+      arrayValue([objectValue({ present: NULL }), objectValue({}), stringValue('primitive')]),
+    );
+    expect(accessProperty(filtered, 'present')).toEqual(filteredArrayValue([NULL]));
   });
 });

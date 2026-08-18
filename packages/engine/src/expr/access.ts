@@ -1,5 +1,5 @@
 import { ExprConversionError, convertValue } from './coercion.js';
-import { NULL, stringValue, type ExprObject, type ExprValue } from './value.js';
+import { NULL, filteredArrayValue, stringValue, type ExprObject, type ExprValue } from './value.js';
 
 const INT32_MAX = 2_147_483_647;
 
@@ -34,10 +34,38 @@ export function accessProperty(target: ExprValue, name: string): ExprValue {
 }
 
 /**
- * Evaluate one `target[index]` operation. Every miss and every non-collection target yields Null,
- * which makes member chains safe without special-casing the AST shape (C-E02-024/025).
+ * Evaluate either wildcard spelling. Ordinary collections contribute every child; applying a
+ * wildcard to a filtered result contributes every child collection's values into one result, so
+ * each wildcard flattens exactly one level (C-E02-160/162/163).
+ */
+export function accessWildcard(target: ExprValue): ExprValue {
+  if (target.kind === 'object') return filteredArrayValue(Object.values(target.value));
+  if (target.kind !== 'array') return filteredArrayValue([]);
+  if (target.filtered !== true) return filteredArrayValue(target.value);
+
+  const values: ExprValue[] = [];
+  for (const child of target.value) {
+    if (child.kind === 'object') values.push(...Object.values(child.value));
+    else if (child.kind === 'array') values.push(...child.value);
+  }
+  return filteredArrayValue(values);
+}
+
+/**
+ * Evaluate one `target[index]` operation. An ordinary miss/non-collection target yields Null
+ * (C-E02-024/025); a filtered target maps the access and omits unsuccessful children
+ * (C-E02-161/164).
  */
 export function accessIndex(target: ExprValue, index: ExprValue): ExprValue {
+  if (target.kind === 'array' && target.filtered === true) {
+    const values: ExprValue[] = [];
+    for (const child of target.value) {
+      const found = tryAccessFilteredChild(child, index);
+      if (found !== undefined) values.push(found);
+    }
+    return filteredArrayValue(values);
+  }
+
   if (target.kind === 'object') {
     try {
       const converted = convertValue(index, 'string');
@@ -68,4 +96,32 @@ export function accessIndex(target: ExprValue, index: ExprValue): ExprValue {
   }
 
   return NULL;
+}
+
+/**
+ * A later postfix is mapped over a filtered result. Misses and primitive children are omitted,
+ * but a present Null/empty value is retained (C-E02-161/164). `undefined` is only the internal
+ * "not found" sentinel; it is not an expression value.
+ */
+function tryAccessFilteredChild(target: ExprValue, index: ExprValue): ExprValue | undefined {
+  try {
+    if (target.kind === 'object') {
+      const converted = convertValue(index, 'string');
+      if (converted.kind !== 'string') return undefined;
+      const key = objectKey(target, converted.value);
+      return key === undefined ? undefined : target.value[key];
+    }
+
+    if (target.kind === 'array') {
+      const converted = convertValue(index, 'number');
+      if (converted.kind !== 'number') return undefined;
+      const integer = Math.floor(converted.value);
+      if (integer < 0 || integer > INT32_MAX || integer >= target.value.length) return undefined;
+      return target.value[integer];
+    }
+  } catch (error) {
+    if (error instanceof ExprConversionError) return undefined;
+    throw error;
+  }
+  return undefined;
 }

@@ -190,7 +190,7 @@ Acceptance: AST→bash compiler with conformance vs the evaluator.
   **Done:** every `evaluate()` thunk in `conformance.table.ts` replaced by `evaluateExpression`, with
   the table's expectations unchanged; laziness cases from `functions.test.ts` re-asserted through the
   walker.
-- [ ] **E02-S05-T04 — Ground and implement filtered-array evaluation**
+- [x] **E02-S05-T04 — Ground and implement filtered-array evaluation**
   *Filed 2026-08-14 by E02-S05-T03.* The parser accepts `.*` and `[*]`, but C-E02-009 measures only
   one Array→property result. That is insufficient to define Object inputs, misses/Null, a terminal
   wildcard, nested filters, or chained indexing, so the AST evaluator refuses the node instead of
@@ -203,3 +203,10 @@ Acceptance: AST→bash compiler with conformance vs the evaluator.
   required official expression-source implementation if the docs remain incomplete.
   **Done:** claim-linked evaluator tests cover every measured matrix cell and both spellings;
   filtered-array nodes no longer throw `ExprUnsupportedError`; docs/02 records the resulting rule.
+  *Done 2026-08-18:* 24 redacted live-preview probes plus pinned `actions/runner` `Index.cs`
+  established Array/Object terminal results, mapped miss omission, Null/scalar empty results, nested
+  one-level flattening, and mapped numeric indexing (C-E02-160..164). `ExprArray` now preserves
+  filtered traversal identity; `evaluateExpression` evaluates both wildcard spellings; all 24
+  measured cells are permanent evaluator cases, with two dual-backend conformance rows recording
+  the shell backend's explicit collection limitation. Full verification: 1,176 Vitest + 126 Bats,
+  typecheck, build, lint/format/ShellCheck, and VERIFY guard.

@@ -9,7 +9,7 @@
 # `diverges` assert the *measured* shell answer together with the claim that explains why it
 # differs from the evaluator, so the gap can neither widen nor vanish in silence.
 #
-# 6 row(s) are rejected by the compiler and are asserted in the engine suite
+# 8 row(s) are rejected by the compiler and are asserted in the engine suite
 # instead (BashCompileError):
 #   contains-value-array — containsValue consumes an Array/Object, which has no shell representation
 #   split-returns-array — split returns an Array, which has no shell form
@@ -17,6 +17,8 @@
 #   convert-to-json-returns-text — convertToJson serialises Object/Array values the shell backend cannot hold
 #   counter-needs-convert-time-state — counter reads the convert-time state provider seam, not the runtime store
 #   dynamic-index-unsupported — a dynamic index needs the whole variables table, not a single azdo_var read
+#   filtered-array-property-dot — filtered traversal needs Object/Array values, which the shell store cannot represent
+#   filtered-array-nested-bracket — filtered traversal needs Object/Array values, which the shell store cannot represent
 
 bats_require_minimum_version 1.5.0
 

@@ -13,6 +13,11 @@
 // Nothing is ever skipped: an unsupported row that starts compiling, and a diverging row that
 // starts agreeing, both turn the build red and have to be re-recorded.
 import {
+  arrayValue,
+  numberValue,
+  objectValue,
+  parametersContext,
+  stringValue,
   type CounterStateProvider,
   type ExprContextValues,
   type ExprSlot,
@@ -53,6 +58,22 @@ export interface ConformanceRow {
 }
 
 const AGREE: ShellDisposition = { kind: 'agree' };
+
+const FILTERED_ARRAY_VALUES: ExprContextValues = {
+  parameters: parametersContext({
+    data: objectValue({
+      rows: arrayValue([
+        objectValue({ id: numberValue(1) }),
+        objectValue({ name: stringValue('missing') }),
+        objectValue({ id: stringValue('') }),
+      ]),
+      groups: arrayValue([
+        arrayValue([objectValue({ id: numberValue(100) }), objectValue({ id: numberValue(101) })]),
+        arrayValue([objectValue({ id: numberValue(200) })]),
+      ]),
+    }),
+  }),
+};
 
 // ------------------------------------------------------------------------------------------
 // S02 — coercion & equality (C-E02-020..023)
@@ -444,9 +465,43 @@ const CONTEXT_CONFORMANCE: readonly ConformanceRow[] = [
   },
 ];
 
+// ------------------------------------------------------------------------------------------
+// S05 filtered arrays — eval supported; shell has no Object/Array representation (C-E02-160..164)
+// ------------------------------------------------------------------------------------------
+
+const FILTERED_ARRAY_CONFORMANCE: readonly ConformanceRow[] = [
+  {
+    id: 'filtered-array-property-dot',
+    claim: 'C-E02-161',
+    source: 'eq(length(parameters.data.rows.*.id), 2)',
+    slot: 'template-expression',
+    expected: true,
+    values: FILTERED_ARRAY_VALUES,
+    shell: {
+      kind: 'unsupported',
+      reason:
+        'filtered traversal needs Object/Array values, which the shell store cannot represent',
+    },
+  },
+  {
+    id: 'filtered-array-nested-bracket',
+    claim: 'C-E02-163',
+    source: 'eq(length(parameters.data.groups[*][*].id), 3)',
+    slot: 'template-expression',
+    expected: true,
+    values: FILTERED_ARRAY_VALUES,
+    shell: {
+      kind: 'unsupported',
+      reason:
+        'filtered traversal needs Object/Array values, which the shell store cannot represent',
+    },
+  },
+];
+
 /** One table, two runners (E02-S05-T02). */
 export const CONFORMANCE_ROWS: readonly ConformanceRow[] = [
   ...COERCION_CONFORMANCE,
   ...FUNCTION_CONFORMANCE,
   ...CONTEXT_CONFORMANCE,
+  ...FILTERED_ARRAY_CONFORMANCE,
 ];

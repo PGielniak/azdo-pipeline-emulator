@@ -88,11 +88,15 @@ One implementation, two backends:
 - **Eval backend** (convert time): full evaluator over the typed DOM.
 - **Shell backend** (run time): compiles the same AST to bash (later pwsh) predicates/string builders that read the local state store — used for `condition:`, `$[ ]`, dependency outputs. No interpreter ships in the output.
 
-**Implementation status (2026-08-14):** `evaluateExpression` now walks the parser's AST and composes
-the grounded value, context, access, general, logical, and status evaluators. Filtered-array nodes
-(`.*` / `[*]`) still raise `ExprUnsupportedError`: C-E02-009 establishes the syntax and one result,
-but not the complete traversal contract. E02-S05-T04 owns the required oracle matrix and evaluator
-support; the shell backend can continue to reject Object/Array values explicitly.
+**Implementation status (2026-08-18):** `evaluateExpression` walks the parser's AST and composes the
+grounded value, context, access, general, logical, and status evaluators. Filtered arrays (`.*` /
+`[*]`) are supported by the eval backend: a wildcard returns every Array item or Object value in
+order; later postfixes map over the children, omit misses/non-collections, and retain present empty
+values; another wildcard flattens one collection level; and a wildcard over Null, missing, or a
+primitive returns an empty filtered array (C-E02-160..164). The result keeps filtered identity, so
+`groups.*[0]` selects item zero from every child Array rather than item zero from the result. The
+shell backend continues to reject filtered traversal because its scalar store cannot represent
+Object/Array values.
 
 ### Types & coercion
 Types: Null, Boolean, Number (double), String, Version, Object/Array. Implement the documented conversion table exactly: comparisons convert the right operand to the left kind; `eq`/`ne` return false/true on conversion failure while ordered comparisons error; strings compare **ordinal ignore-case**; Boolean→String is `'True'/'False'`; String→Number accepts invariant decimal/grouped text. Version **literals** have 3–4 parts, while String/Number conversion can produce 2–4 (corrected 2026-08-12, C-E02-005/021/022). Object/Array equality is reference identity (C-E02-023). Table-driven unit tests + oracle cases back every murky corner.
