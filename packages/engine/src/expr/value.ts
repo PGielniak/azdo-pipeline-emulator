@@ -33,6 +33,12 @@ export interface ExprVersion {
 export interface ExprObject {
   readonly kind: 'object';
   readonly value: Readonly<Record<string, ExprValue>>;
+  /**
+   * Authored entry order when it cannot be recovered from a JavaScript object's own key order.
+   * JS sorts integer-like keys even when YAML authored them otherwise; Azure `each` preserves the
+   * YAML order (C-E03-145). Absent keeps ordinary programmatic objects compact.
+   */
+  readonly order?: readonly string[] | undefined;
   /** Parameter objects are ordinal; contexts such as variables opt into ignore-case (C-E02-027). */
   readonly keyComparison: ObjectKeyComparison;
   /**
@@ -99,6 +105,7 @@ export function objectValue(
   value: Readonly<Record<string, ExprValue>>,
   keyComparison: ObjectKeyComparison = 'ordinal',
   missPolicy: ObjectMissPolicy = 'null',
+  order?: readonly string[],
 ): ExprObject {
   if (keyComparison === 'ordinalIgnoreCase') {
     const keys = new Set<string>();
@@ -108,7 +115,55 @@ export function objectValue(
       keys.add(folded);
     }
   }
-  return { kind: 'object', value, keyComparison, missPolicy };
+  if (order !== undefined) validateObjectOrder(value, order);
+  return {
+    kind: 'object',
+    value,
+    keyComparison,
+    missPolicy,
+    ...(order === undefined ? {} : { order: [...order] }),
+  };
+}
+
+/** Build an object from YAML-style ordered entries without losing integer-like key order. */
+export function orderedObjectValue(
+  entries: readonly (readonly [string, ExprValue])[],
+  keyComparison: ObjectKeyComparison = 'ordinal',
+  missPolicy: ObjectMissPolicy = 'null',
+): ExprObject {
+  const value: Record<string, ExprValue> = {};
+  const order: string[] = [];
+  for (const [key, child] of entries) {
+    if (Object.hasOwn(value, key)) throw new RangeError(`duplicate object key: ${key}`);
+    value[key] = child;
+    order.push(key);
+  }
+  return objectValue(value, keyComparison, missPolicy, order);
+}
+
+/** Entry/value iteration in source order where one was retained (C-E03-145). */
+export function objectEntries(value: ExprObject): readonly (readonly [string, ExprValue])[] {
+  return value.order === undefined
+    ? Object.entries(value.value)
+    : value.order.map((key) => [key, value.value[key] as ExprValue] as const);
+}
+
+export function objectValues(value: ExprObject): readonly ExprValue[] {
+  return objectEntries(value).map(([, child]) => child);
+}
+
+function validateObjectOrder(
+  value: Readonly<Record<string, ExprValue>>,
+  order: readonly string[],
+): void {
+  const keys = Object.keys(value);
+  if (
+    order.length !== keys.length ||
+    new Set(order).size !== order.length ||
+    order.some((key) => !Object.hasOwn(value, key))
+  ) {
+    throw new RangeError('object order must name every key exactly once');
+  }
 }
 
 export const arrayValue = (value: readonly ExprValue[]): ExprArray => ({ kind: 'array', value });
@@ -161,8 +216,9 @@ export function encodeExprValue(value: ExprValue): unknown {
         // context from raising `Key not found` to returning Null (C-E02-087/088).
         missPolicy: value.missPolicy ?? 'null',
         value: Object.fromEntries(
-          Object.entries(value.value).map(([key, child]) => [key, encodeExprValue(child)]),
+          objectEntries(value).map(([key, child]) => [key, encodeExprValue(child)]),
         ),
+        ...(value.order === undefined ? {} : { order: [...value.order] }),
       };
   }
 }
@@ -209,12 +265,20 @@ export function decodeExprValue(input: unknown): ExprValue {
         // Absent means an encoding written before miss policies existed, i.e. the old default.
         const missPolicy = record.missPolicy ?? 'null';
         if (missPolicy !== 'null' && missPolicy !== 'error') break;
+        const order = record.order;
+        if (
+          order !== undefined &&
+          (!Array.isArray(order) || order.some((key) => typeof key !== 'string'))
+        ) {
+          break;
+        }
         return objectValue(
           Object.fromEntries(
             Object.entries(record.value).map(([key, child]) => [key, decodeExprValue(child)]),
           ),
           record.keyComparison,
           missPolicy,
+          order as string[] | undefined,
         );
       }
       break;

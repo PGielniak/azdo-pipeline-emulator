@@ -1,0 +1,9 @@
+{
+  "$id": "1",
+  "innerException": null,
+  "message": "/azure-pipelines.yml (Line: 13, Col: 21): Unrecognized value: 'index'. Located at position 20 within expression: 'format('echo {0}', index)'. For more help, refer to https://go.microsoft.com/fwlink/?linkid=842996",
+  "typeName": "Microsoft.Azure.Pipelines.WebApi.PipelineValidationException, Microsoft.Azure.Pipelines.WebApi",
+  "typeKey": "PipelineValidationException",
+  "errorCode": 0,
+  "eventId": 3000
+}

@@ -1,0 +1,3 @@
+{
+  "finalYaml": "parameters:\n- name: fruits\n  type: object\n  default:\n  - name: apple\n    colors:\n    - red\n    - green\n  - name: lemon\n    colors:\n    - yellow\nstages:\n- stage: probe\n  jobs:\n  - job: probe\n    steps:\n    - task: CmdLine@2\n      inputs:\n        script: echo apple-red\n    - task: CmdLine@2\n      inputs:\n        script: echo apple-green\n    - task: CmdLine@2\n      inputs:\n        script: echo lemon-yellow\n\n"
+}

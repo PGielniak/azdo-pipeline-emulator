@@ -51,7 +51,14 @@ Server limits enforced identically so we fail where the server would: max distin
 
 **Conditional insertion** — mapping keys / sequence items `${{ if C }}:`, `${{ elseif C }}:`, `${{ else }}:` — chains resolved in document order; contents spliced into the parent on the winning branch. Works in mappings and sequences.
 
-**Iterative insertion** — `${{ each x in seq }}:` splices the body once per element (sequence) or per key (`x` = key; `seq[x]` unavailable — use `${{ each pair in mapping }}` → `pair.key` / `pair.value`). Iteration variables live in the expression context for the body. Nested `each` supported. Loop over `parameters` of type `object`, `jobList`, `stepList` etc. is the bread-and-butter template pattern — first-class tests.
+**Iterative insertion** — `${{ each x in seq }}:` splices the body once per sequence element and
+binds the element itself. Over a mapping it binds a pair object exposing `.key` and `.value`, not
+the key alone. Mapping traversal preserves authored YAML order exactly, including integer-like keys
+(`'10'`, `'2'`, `'01'`) that a plain JavaScript object would reorder. Only the declared loop
+variable enters the expression context; neither a bare `index` nor an `.index` member is
+synthesized. Nested `each` is outer-major/inner-minor and retains both bindings. Looping over
+`object`, `jobList`, `stepList`, and the other `*List` parameter values preserves their structural
+shape (C-E03-140..151; 12 live probes under `research/experiments/E03-each/`).
 
 **`${{ insert }}`** — merge a mapping into the parent mapping (used e.g. to inject extra keys into a job).
 

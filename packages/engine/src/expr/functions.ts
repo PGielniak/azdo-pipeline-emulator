@@ -1,6 +1,6 @@
 import { compareValues, convertValue, type ComparisonOperator } from './coercion.js';
 import type { FunctionSignature } from './parser.js';
-import { booleanValue, type ExprValue } from './value.js';
+import { booleanValue, objectValues, type ExprValue } from './value.js';
 
 export type LogicalMembershipFunctionName =
   'and' | 'or' | 'not' | ComparisonOperator | 'in' | 'notIn' | 'contains' | 'containsValue';
@@ -72,7 +72,7 @@ function containsValue(collection: ExprValue, needle: ExprValue): boolean {
     collection.kind === 'array'
       ? collection.value
       : collection.kind === 'object'
-        ? Object.values(collection.value)
+        ? objectValues(collection)
         : undefined;
   if (candidates === undefined) return false;
 

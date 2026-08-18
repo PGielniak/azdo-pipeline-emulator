@@ -1,0 +1,3 @@
+{
+  "finalYaml": "parameters:\n- name: entries\n  type: object\n  default:\n    Zulu: z\n    alpha: a\n    Middle: m\nstages:\n- stage: probe\n  jobs:\n  - job: probe\n    steps:\n    - task: CmdLine@2\n      inputs:\n        script: echo Zulu=z\n    - task: CmdLine@2\n      inputs:\n        script: echo alpha=a\n    - task: CmdLine@2\n      inputs:\n        script: echo Middle=m\n\n"
+}

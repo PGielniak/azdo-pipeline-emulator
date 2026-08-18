@@ -1,0 +1,22 @@
+parameters:
+- name: entries
+  type: object
+  default:
+    Zulu: z
+    alpha: a
+    Middle: m
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo Zulu=z
+    - task: CmdLine@2
+      inputs:
+        script: echo alpha=a
+    - task: CmdLine@2
+      inputs:
+        script: echo Middle=m
+

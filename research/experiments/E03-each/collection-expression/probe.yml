@@ -1,0 +1,9 @@
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - ${{ each item in split('a in b', ' in ') }}:
+        - task: CmdLine@2
+          inputs:
+            script: echo ${{ item }}

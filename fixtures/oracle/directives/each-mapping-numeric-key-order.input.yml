@@ -1,0 +1,16 @@
+parameters:
+- name: entries
+  type: object
+  default:
+    '10': ten
+    '2': two
+    '01': leading
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - ${{ each pair in parameters.entries }}:
+        - task: CmdLine@2
+          inputs:
+            script: echo ${{ pair.key }}=${{ pair.value }}

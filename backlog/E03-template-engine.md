@@ -29,8 +29,12 @@ Acceptance: directive semantics proven by oracle fixture pairs, not by reading a
   **Do:** `if/elseif/else` chain grouping in document order; winning branch spliced into parent; nested chains.
   **Ground:** templates doc "Conditional insertion"; **oracle fixtures**: ≥ 6 cases (mapping vs sequence, nested, else-only-missing) — commit input+`finalYaml` pairs under `fixtures/oracle/directives/` with claim IDs.
   **Done:** goldens equal oracle output for all pairs.
-- [!] **E03-S01-T03 — Iterative insertion (`each`)**
-  *Blocked 2026-08-18: the required ≥8 live preview fixtures (including mapping key order, index availability, nested `each`, and whole-job wrapping) cannot run because `AZDO_ORG_URL`, `AZDO_PROJECT`, `AZDO_ORACLE_PIPELINE_ID`, and `AZDO_PAT` are absent and no `.env.oracle` exists; restore them per `research/oracle-setup.md`. Offline doc claims C-E03-140..143 are recorded; no implementation was written.*
+- [x] **E03-S01-T03 — Iterative insertion (`each`)**
+  *Done 2026-08-18:* 12 live preview probes recorded C-E03-140..151 and produced 11
+  input/`finalYaml` fixture pairs. `eachVisitor` expands sequences and mappings in authored order,
+  including integer-like keys, recursively supports nested loops and full `stepList`/`jobList`
+  structures, splices mapping/sequence bodies, and creates no implicit index. Oracle golden tests
+  cover every successful pair; the rejected bare-index case is retained as an error transcript.
   **Do:** sequence iteration, mapping iteration (`pair.key`/`pair.value` semantics), iteration over `object`/`*List` parameters, nested `each`, index availability check.
   **Ground:** templates doc "Iterative insertion"; oracle fixtures ≥ 8 incl. each-over-mapping key order (record observed ordering as a claim) and each wrapping full jobs.
   **Done:** goldens vs oracle; ordering claim documented.

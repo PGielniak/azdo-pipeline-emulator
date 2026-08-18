@@ -1,0 +1,13 @@
+parameters:
+- name: items
+  type: object
+  default: [alpha, beta, gamma]
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - ${{ each item in parameters.items }}:
+        - task: CmdLine@2
+          inputs:
+            script: echo ${{ item }}

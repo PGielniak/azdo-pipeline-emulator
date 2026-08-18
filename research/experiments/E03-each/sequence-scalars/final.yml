@@ -1,0 +1,22 @@
+parameters:
+- name: items
+  type: object
+  default:
+  - alpha
+  - beta
+  - gamma
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo alpha
+    - task: CmdLine@2
+      inputs:
+        script: echo beta
+    - task: CmdLine@2
+      inputs:
+        script: echo gamma
+

@@ -12,7 +12,7 @@ time the IDs were load-bearing in code comments and test names) is the reason th
 | `C-E03-001..099` | E03-S05-T01 normalizer | `research/E03-normalizer.md` | 001–003 used |
 | `C-E03-100..119` | **E03-S01-T01 DOM walker with context stack** | this file | 100–117 used |
 | `C-E03-120..139` | E03-S01-T02 conditional insertion chains | this file | free |
-| `C-E03-140..159` | E03-S01-T03 iterative insertion (`each`) | this file | 140–143 used |
+| `C-E03-140..159` | E03-S01-T03 iterative insertion (`each`) | this file | 140–151 used |
 | `C-E03-160..174` | E03-S01-T04 `${{ insert }}` merge | this file | free |
 | `C-E03-175..194` | E03-S01-T05 scalar interpolation | this file | free |
 | `C-E03-195..229` | E03-S02 template resolution & parameters | this file | free |
@@ -278,3 +278,48 @@ use an `object` parameter for that list-shaped input instead.**
   — https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions#iterative-insertion
     (checked 2026-08-18) — "The `stringList` data type isn't available in templates. Use the
     `object` data type in templates instead."
+
+[C-E03-144] **Sequence iteration visits every element exactly once in authored order and binds the
+element itself, retaining object shape for member access.** The scalar control emitted
+`alpha`, `beta`, `gamma`; the object control emitted `first=one`, `second=two`.
+  — research/experiments/E03-each/{sequence-scalars,sequence-objects}/ (live preview, checked
+    2026-08-18)
+
+[C-E03-145] **Mapping iteration visits entries in authored YAML order, without lexical,
+case-folded, or integer-key sorting, and binds an object whose `.key` and `.value` are the entry's
+original key and value.** The input order `Zulu`, `alpha`, `Middle` was retained; a separate input
+with quoted integer-like keys retained `'10'`, `'2'`, `'01'` exactly, which a plain JavaScript
+object would incorrectly reorder to `2`, `10`, `01`.
+  — research/experiments/E03-each/{mapping-pair-order,mapping-numeric-key-order}/ (live preview,
+    checked 2026-08-18)
+
+[C-E03-146] **An `each` directive in mapping position splices every expanded body mapping into the
+parent mapping in iteration order.** `BASE` followed by iterated `FIRST`, `SECOND` became three
+variables in that order.
+  — research/experiments/E03-each/mapping-body/ (live preview, checked 2026-08-18)
+
+[C-E03-147] **Nested loops retain both bindings and enumerate inner items completely before the
+next outer item.** The observed order was `apple-red`, `apple-green`, `lemon-yellow`.
+  — research/experiments/E03-each/nested-each/ (live preview, checked 2026-08-18)
+
+[C-E03-148] **`stepList` and `jobList` elements retain their complete mapping/sequence structure
+when bound, so a lone loop-variable expression inserts the value structurally.** The stepList
+fixture inserted both full task mappings; the jobList fixture wrapped each job with setup and
+teardown while a nested loop inserted its original steps.
+  — research/experiments/E03-each/{step-list,job-list-wrapping}/ (live preview, checked
+    2026-08-18)
+
+[C-E03-149] **Iterating an empty sequence inserts no nodes and preserves the surrounding order.**
+The `before` and `after` tasks became adjacent.
+  — research/experiments/E03-each/empty-sequence/ (live preview, checked 2026-08-18)
+
+[C-E03-150] **The collection operand is evaluated as one complete expression before iteration.**
+`each item in split('a in b', ' in ')` emitted `a` then `b`, corroborating C-E03-104's
+tokenization rule with execution rather than recognition alone.
+  — research/experiments/E03-each/collection-expression/ (live preview, checked 2026-08-18)
+
+[C-E03-151] **Sequence iteration synthesizes no index.** Accessing `.index` on each scalar element
+resolved to Null/empty (`echo alpha:`, `echo beta:`), while a bare `index` named value was rejected
+`Unrecognized value: 'index'`; only the declared loop variable enters scope.
+  — research/experiments/E03-each/{sequence-item-index,implicit-index-name}/ (live preview,
+    checked 2026-08-18)

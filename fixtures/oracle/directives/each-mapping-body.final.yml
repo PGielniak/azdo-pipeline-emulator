@@ -1,0 +1,22 @@
+parameters:
+- name: entries
+  type: object
+  default:
+    FIRST: one
+    SECOND: two
+variables:
+- name: BASE
+  value: base
+- name: FIRST
+  value: one
+- name: SECOND
+  value: two
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo $(BASE)-$(FIRST)-$(SECOND)
+

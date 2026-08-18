@@ -1,0 +1,20 @@
+parameters:
+- name: items
+  type: object
+  default:
+  - name: first
+    value: one
+  - name: second
+    value: two
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo first=one
+    - task: CmdLine@2
+      inputs:
+        script: echo second=two
+

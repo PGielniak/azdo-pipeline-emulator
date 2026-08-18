@@ -7,6 +7,8 @@ import {
   encodeExprValue,
   filteredArrayValue,
   numberValue,
+  objectEntries,
+  orderedObjectValue,
   objectValue,
   parseExpression,
   parseVersionValue,
@@ -88,6 +90,27 @@ describe('expression value model', () => {
     const value = filteredArrayValue([numberValue(1), stringValue('two')]);
     expect(decodeExprValue(encodeExprValue(value))).toEqual(value);
     expect(encodeExprValue(arrayValue([]))).toEqual({ kind: 'array', value: [] });
+  });
+
+  it('C-E03-145 — retains authored order for integer-like mapping keys through serialization', () => {
+    const value = orderedObjectValue([
+      ['10', stringValue('ten')],
+      ['2', stringValue('two')],
+      ['01', stringValue('leading')],
+    ]);
+    expect(objectEntries(value).map(([key]) => key)).toEqual(['10', '2', '01']);
+    const roundTrip = decodeExprValue(encodeExprValue(value));
+    expect(roundTrip.kind).toBe('object');
+    expect(roundTrip.kind === 'object' && objectEntries(roundTrip).map(([key]) => key)).toEqual([
+      '10',
+      '2',
+      '01',
+    ]);
+  });
+
+  it('rejects incomplete or duplicate explicit object orders', () => {
+    expect(() => objectValue({ a: NULL }, 'ordinal', 'null', [])).toThrow(RangeError);
+    expect(() => objectValue({ a: NULL }, 'ordinal', 'null', ['a', 'a'])).toThrow(RangeError);
   });
 
   it.each([

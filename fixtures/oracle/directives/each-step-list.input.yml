@@ -1,0 +1,17 @@
+parameters:
+- name: injected
+  type: stepList
+  default:
+  - task: CmdLine@2
+    inputs:
+      script: echo first
+  - task: CmdLine@2
+    inputs:
+      script: echo second
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - ${{ each step in parameters.injected }}:
+        - ${{ step }}

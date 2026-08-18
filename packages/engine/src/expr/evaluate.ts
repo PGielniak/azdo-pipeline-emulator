@@ -48,6 +48,12 @@ export type StatusState = Omit<StatusContext, 'scope'>;
  */
 export interface EvaluationContext extends ExprContext {
   /**
+   * Template-local named values such as `each` loop variables. Keys are folded lower-case by the
+   * template frame; only the declared variable enters scope, never a synthesized index
+   * (C-E03-107/151).
+   */
+  readonly locals?: Readonly<Record<string, ExprValue>> | undefined;
+  /**
    * Job/stage/step results and run cancellation. Absent state is the empty graph rather than an
    * error, which is what makes a job with no dependencies run by default (C-E02-067).
    */
@@ -85,7 +91,7 @@ export function evaluateExpression(node: ExprNode, context: EvaluationContext): 
       // Availability *is* the name set: a context legal elsewhere but not here is rejected
       // byte-identically to one that exists nowhere, while a legal-but-unsupplied context resolves
       // to an empty collection rather than an error (C-E02-081/086).
-      return resolveContext(context, node.name);
+      return context.locals?.[node.name.toLowerCase()] ?? resolveContext(context, node.name);
     case 'property':
       // Property and string-index syntax share one lookup after parsing (C-E02-024/027).
       return accessProperty(evaluateExpression(node.target, context), node.name);

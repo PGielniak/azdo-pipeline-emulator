@@ -1,5 +1,12 @@
 import { ExprConversionError, convertValue } from './coercion.js';
-import { NULL, filteredArrayValue, stringValue, type ExprObject, type ExprValue } from './value.js';
+import {
+  NULL,
+  filteredArrayValue,
+  objectValues,
+  stringValue,
+  type ExprObject,
+  type ExprValue,
+} from './value.js';
 
 const INT32_MAX = 2_147_483_647;
 
@@ -39,13 +46,13 @@ export function accessProperty(target: ExprValue, name: string): ExprValue {
  * each wildcard flattens exactly one level (C-E02-160/162/163).
  */
 export function accessWildcard(target: ExprValue): ExprValue {
-  if (target.kind === 'object') return filteredArrayValue(Object.values(target.value));
+  if (target.kind === 'object') return filteredArrayValue(objectValues(target));
   if (target.kind !== 'array') return filteredArrayValue([]);
   if (target.filtered !== true) return filteredArrayValue(target.value);
 
   const values: ExprValue[] = [];
   for (const child of target.value) {
-    if (child.kind === 'object') values.push(...Object.values(child.value));
+    if (child.kind === 'object') values.push(...objectValues(child));
     else if (child.kind === 'array') values.push(...child.value);
   }
   return filteredArrayValue(values);

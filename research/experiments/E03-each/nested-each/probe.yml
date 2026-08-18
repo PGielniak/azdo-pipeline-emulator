@@ -1,0 +1,18 @@
+parameters:
+- name: fruits
+  type: object
+  default:
+  - name: apple
+    colors: [red, green]
+  - name: lemon
+    colors: [yellow]
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - ${{ each fruit in parameters.fruits }}:
+        - ${{ each color in fruit.colors }}:
+          - task: CmdLine@2
+            inputs:
+              script: echo ${{ fruit.name }}-${{ color }}

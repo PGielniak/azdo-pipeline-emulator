@@ -1,0 +1,18 @@
+parameters:
+- name: entries
+  type: object
+  default:
+    FIRST: one
+    SECOND: two
+variables:
+  BASE: base
+  ${{ each pair in parameters.entries }}:
+    ${{ pair.key }}: ${{ pair.value }}
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo $(BASE)-$(FIRST)-$(SECOND)

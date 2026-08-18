@@ -33,6 +33,7 @@ import type { Diagnostic } from '../frontend/diagnostics.js';
 import { tokenize, type Span, type Token } from '../expr/lexer.js';
 import { EXPR_CONTEXT_NAMES, type ExprSlot } from '../expr/context.js';
 import { trimExpressionText } from '../expr/errors.js';
+import type { ExprValue } from '../expr/value.js';
 
 /**
  * The five keywords, lower-case. Matched **case-sensitively** — `${{ IF … }}` is not a
@@ -263,24 +264,26 @@ export function parseDirectiveKey(text: string): DirectiveMatch {
  * One file's frame. `depth` and `file` carry the information E03-S02-T01 (reference resolution)
  * and E03-S04-T01 (server limits) hang off; nothing here interprets them.
  *
- * `names` holds the `each` loop variables in scope, keyed **lower-case** (C-E03-107). The
- * *values* are deliberately absent: binding an iteration to its element is E03-S01-T03's, and this
- * module only owns which names exist and whether a new one is legal.
+ * `names` holds the `each` loop variables in scope, keyed **lower-case** (C-E03-107); `bindings`
+ * carries their values for E03-S01-T03. Keeping both lets recognition validate collisions before
+ * an expression actually reads the binding.
  */
 export interface TemplateFrame {
   readonly file: string;
   readonly depth: number;
   readonly slot: ExprSlot;
   readonly names: ReadonlySet<string>;
+  /** Loop values keyed case-insensitively; populated only by E03-S01-T03 iteration. */
+  readonly bindings: Readonly<Record<string, ExprValue>>;
 }
 
 export function rootFrame(file: string): TemplateFrame {
-  return { file, depth: 0, slot: 'template-expression', names: new Set() };
+  return { file, depth: 0, slot: 'template-expression', names: new Set(), bindings: {} };
 }
 
 /** A file entered from `frame` — its own names, one level deeper (docs/02 §5: per-file context). */
 export function childFrame(frame: TemplateFrame, file: string): TemplateFrame {
-  return { file, depth: frame.depth + 1, slot: frame.slot, names: new Set() };
+  return { file, depth: frame.depth + 1, slot: frame.slot, names: new Set(), bindings: {} };
 }
 
 export type BindResult =
@@ -296,7 +299,11 @@ export type BindResult =
  * sentence — including its misspelling of "identifier", which is text we reproduce rather than
  * correct.
  */
-export function bindLoopVariable(frame: TemplateFrame, name: string): BindResult {
+export function bindLoopVariable(
+  frame: TemplateFrame,
+  name: string,
+  value?: ExprValue,
+): BindResult {
   const folded = name.toLowerCase();
   const taken =
     frame.names.has(folded) ||
@@ -307,7 +314,14 @@ export function bindLoopVariable(frame: TemplateFrame, name: string): BindResult
       message: `The idenfifier '${name}' has already been defined within the current scope`,
     };
   }
-  return { ok: true, frame: { ...frame, names: new Set([...frame.names, folded]) } };
+  return {
+    ok: true,
+    frame: {
+      ...frame,
+      names: new Set([...frame.names, folded]),
+      bindings: value === undefined ? frame.bindings : { ...frame.bindings, [folded]: value },
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -347,13 +361,20 @@ export interface TemplateVisitor {
   /** Replacement entries for a directive in mapping position, or `undefined` to leave it. */
   readonly mappingDirective?: (
     site: DirectiveSite & { container: 'mapping' },
+    context: TemplateVisitContext,
   ) => MappingEntry[] | undefined;
   /** Replacement items for a directive in sequence position, or `undefined` to leave it. */
   readonly sequenceDirective?: (
     site: DirectiveSite & { container: 'sequence' },
+    context: TemplateVisitContext,
   ) => PipelineNode[] | undefined;
   /** Every scalar the walk reaches, in document order — T05's interpolation hook. */
   readonly scalar?: (node: ScalarNode, frame: TemplateFrame) => PipelineNode | undefined;
+}
+
+/** Recursive access for directive visitors; replacements join the same accumulated walk. */
+export interface TemplateVisitContext {
+  readonly walk: (node: PipelineNode, frame: TemplateFrame) => PipelineNode;
 }
 
 export interface WalkResult {
@@ -424,7 +445,7 @@ function walkMapping(node: MappingNode, frame: TemplateFrame, state: WalkState):
         parent: node,
       };
       state.directives.push(site);
-      const replacement = state.visitor.mappingDirective?.(site);
+      const replacement = state.visitor.mappingDirective?.(site, visitContext(state));
       if (replacement !== undefined) {
         entries.push(...replacement);
         return;
@@ -458,7 +479,7 @@ function walkSequence(node: SequenceNode, frame: TemplateFrame, state: WalkState
         item: directiveEntry.mapping,
       };
       state.directives.push(site);
-      const replacement = state.visitor.sequenceDirective?.(site);
+      const replacement = state.visitor.sequenceDirective?.(site, visitContext(state));
       if (replacement !== undefined) {
         items.push(...replacement);
         return;
@@ -481,6 +502,10 @@ function walkSequence(node: SequenceNode, frame: TemplateFrame, state: WalkState
     items.push(walkNode(item, frame, state));
   });
   return { kind: 'sequence', items, pos: node.pos };
+}
+
+function visitContext(state: WalkState): TemplateVisitContext {
+  return { walk: (node, frame) => walkNode(node, frame, state) };
 }
 
 /**

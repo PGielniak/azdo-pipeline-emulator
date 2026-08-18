@@ -1,0 +1,19 @@
+parameters:
+- name: items
+  type: object
+  default: []
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo before
+      - ${{ each item in parameters.items }}:
+        - task: CmdLine@2
+          inputs:
+            script: echo ${{ item }}
+      - task: CmdLine@2
+        inputs:
+          script: echo after

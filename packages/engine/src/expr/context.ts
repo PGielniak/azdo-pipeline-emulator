@@ -166,7 +166,10 @@ const SLOT_RESTRICTED_FUNCTIONS: Readonly<Record<string, readonly ExprSlot[]>> =
  * names. Parsing with it produces the service's own rejection for a wrong-slot name, because name
  * resolution happens during the parse (C-E02-011/012).
  */
-export function registryForSlot(slot: ExprSlot): ExprRegistry {
+export function registryForSlot(
+  slot: ExprSlot,
+  additionalNamedValues: readonly string[] = [],
+): ExprRegistry {
   const scope = statusScopeForSlot(slot);
   const functions = [
     ...NON_STATUS_FUNCTIONS.filter((signature) => {
@@ -175,7 +178,7 @@ export function registryForSlot(slot: ExprSlot): ExprRegistry {
     }),
     ...(scope === undefined ? [] : statusFunctionSignatures(scope)),
   ];
-  return makeRegistry(functions, [...contextsForSlot(slot)]);
+  return makeRegistry(functions, [...contextsForSlot(slot), ...additionalNamedValues]);
 }
 
 /** Context objects by canonical name; absent means the caller has no data for that context. */

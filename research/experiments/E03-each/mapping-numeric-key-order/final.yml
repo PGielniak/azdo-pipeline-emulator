@@ -1,0 +1,22 @@
+parameters:
+- name: entries
+  type: object
+  default:
+    '10': ten
+    '2': two
+    '01': leading
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo 10=ten
+    - task: CmdLine@2
+      inputs:
+        script: echo 2=two
+    - task: CmdLine@2
+      inputs:
+        script: echo 01=leading
+

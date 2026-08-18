@@ -1,0 +1,3 @@
+{
+  "finalYaml": "parameters:\n- name: injected\n  type: stepList\n  default:\n  - task: CmdLine@2\n    inputs:\n      script: echo first\n  - task: CmdLine@2\n    inputs:\n      script: echo second\nstages:\n- stage: probe\n  jobs:\n  - job: probe\n    steps:\n    - task: CmdLine@2\n      inputs:\n        script: echo first\n    - task: CmdLine@2\n      inputs:\n        script: echo second\n\n"
+}

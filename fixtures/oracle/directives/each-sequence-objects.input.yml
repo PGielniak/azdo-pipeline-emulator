@@ -1,0 +1,17 @@
+parameters:
+- name: items
+  type: object
+  default:
+  - name: first
+    value: one
+  - name: second
+    value: two
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - ${{ each item in parameters.items }}:
+        - task: CmdLine@2
+          inputs:
+            script: echo ${{ item.name }}=${{ item.value }}

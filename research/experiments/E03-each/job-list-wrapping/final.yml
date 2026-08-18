@@ -1,0 +1,44 @@
+parameters:
+- name: buildJobs
+  type: jobList
+  default:
+  - job: api
+    displayName: API
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo api
+  - job: web
+    displayName: Web
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo web
+stages:
+- stage: probe
+  jobs:
+  - job: api
+    displayName: API
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo setup
+    - task: CmdLine@2
+      inputs:
+        script: echo api
+    - task: CmdLine@2
+      inputs:
+        script: echo teardown
+  - job: web
+    displayName: Web
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo setup
+    - task: CmdLine@2
+      inputs:
+        script: echo web
+    - task: CmdLine@2
+      inputs:
+        script: echo teardown
+

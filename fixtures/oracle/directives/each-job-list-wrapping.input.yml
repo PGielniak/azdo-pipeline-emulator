@@ -1,0 +1,31 @@
+parameters:
+- name: buildJobs
+  type: jobList
+  default:
+  - job: api
+    displayName: API
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo api
+  - job: web
+    displayName: Web
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo web
+stages:
+- stage: probe
+  jobs:
+  - ${{ each job in parameters.buildJobs }}:
+    - job: ${{ job.job }}
+      displayName: ${{ job.displayName }}
+      steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo setup
+      - ${{ each step in job.steps }}:
+        - ${{ step }}
+      - task: CmdLine@2
+        inputs:
+          script: echo teardown
