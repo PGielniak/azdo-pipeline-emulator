@@ -1,0 +1,7 @@
+steps:
+- ${{ if true }}:
+  - script: echo selected-if
+- ${{ elseif lt(1, 'not-a-number') }}:
+  - script: echo not-elseif
+- ${{ else }}:
+  - script: echo not-else

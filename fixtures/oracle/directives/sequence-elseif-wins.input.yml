@@ -1,0 +1,11 @@
+steps:
+- script: echo before
+- ${{ if eq(1, 2) }}:
+  - script: echo not-if
+- ${{ elseif eq(2, 2) }}:
+  - script: echo selected-elseif
+- ${{ elseif eq(3, 3) }}:
+  - script: echo not-second-elseif
+- ${{ else }}:
+  - script: echo not-else
+- script: echo after

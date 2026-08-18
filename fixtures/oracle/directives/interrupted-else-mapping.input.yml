@@ -1,0 +1,9 @@
+steps:
+- script: echo mapping
+  env:
+    ${{ if eq(1, 2) }}:
+      NOT_IF: no
+    BETWEEN: between
+    ${{ else }}:
+      SELECTED_ELSE: yes
+    AFTER: after

@@ -1,0 +1,12 @@
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      env:
+        BEFORE: before
+        AFTER: after
+      inputs:
+        script: echo mapping
+

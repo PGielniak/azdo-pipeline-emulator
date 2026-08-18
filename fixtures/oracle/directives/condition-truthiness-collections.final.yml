@@ -1,0 +1,17 @@
+parameters:
+- name: payload
+  type: object
+  default:
+    key: value
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo selected-array
+    - task: CmdLine@2
+      inputs:
+        script: echo selected-object
+

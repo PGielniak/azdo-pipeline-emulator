@@ -2,12 +2,12 @@
  * The template DOM walker: a depth-first pass over E01's `PipelineNode` tree that **recognizes**
  * directives and maintains the per-file context stack, and executes nothing.
  *
- * That split is deliberate and is the task boundary. `${{ if/elseif/else }}` chain grouping is
- * E03-S01-T02, `${{ each }}` iteration is T03, `${{ insert }}` merging is T04 and scalar
- * interpolation is T05 — each of those has to land committed oracle fixture pairs of its own, so
- * executing them here would ship directive semantics without the grounding they mandate. What this
- * module owns is everything those four tasks would otherwise each re-derive: where a directive can
- * appear, how its text is parsed, and what names are in scope inside its body.
+ * That split is deliberate. `${{ if/elseif/else }}` chain grouping plugs in through
+ * `conditionals.ts`; `${{ each }}` iteration is E03-S01-T03, `${{ insert }}` merging is T04 and
+ * scalar interpolation is T05 — each lands its own grounded pass rather than teaching this walker
+ * execution semantics. What this module owns is everything those passes would otherwise each
+ * re-derive: where a directive can appear, how its text is parsed, and what names are in scope
+ * inside its body.
  *
  * Grounded by 33 live preview probes (`pnpm template-walk-survey`,
  * `research/experiments/E03-walk/`, claims `C-E03-100..115` in `research/E03-template-engine.md`).
