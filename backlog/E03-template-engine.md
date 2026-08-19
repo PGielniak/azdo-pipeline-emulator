@@ -94,7 +94,11 @@ Acceptance: directive semantics proven by oracle fixture pairs, not by reading a
   **Do:** mapping-merge semantics incl. collision behavior (verify: error vs overwrite).
   **Ground:** templates doc "Insertion"; oracle probe for key-collision behavior; claim recorded.
   **Done:** goldens incl. collision case matching service.
-- [ ] **E03-S01-T05 — Scalar interpolation rules**
+- [!] **E03-S01-T05 — Scalar interpolation rules**
+  *In progress 2026-08-19 by Orchestrator (Claude) on worktree `/root/wt-claude`, branch
+  `claude/e03-s01-t04`; do not pick. Inherits from E03-S01-T04: never evaluate a lone
+  `${{ insert }}` (C-E03-173), and replaces the `fixtureScalars` stand-in in
+  `packages/engine/test/template/fixture-harness.ts`. Claim block C-E03-175..194.*
   **Do:** lone-expression structural insertion vs mixed-content stringification; Null→``, Boolean→`True/False`, Number invariant; expression-in-key stringification.
   **Ground:** docs/02 §3 spec + oracle probes for each stringification rule (esp. Boolean casing, float rendering `0.5`/`1.0`); claims per rule.
   **Done:** table-driven goldens vs oracle.
