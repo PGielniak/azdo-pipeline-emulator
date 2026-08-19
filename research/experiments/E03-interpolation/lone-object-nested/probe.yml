@@ -1,0 +1,22 @@
+parameters:
+- name: jobProps
+  type: object
+  default:
+    workspace:
+      clean: all
+    dependsOn: []
+    displayName: Nested
+stages:
+- stage: probe
+  jobs:
+  - job: first
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo one
+  - job: probe
+    ${{ insert }}: ${{ parameters.jobProps }}
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo probe

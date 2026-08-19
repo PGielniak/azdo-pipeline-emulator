@@ -1,0 +1,15 @@
+parameters:
+- name: extraStep
+  type: object
+  default:
+    script: echo from-object
+    displayName: From Object
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - ${{ parameters.extraStep }}
+      - task: CmdLine@2
+        inputs:
+          script: echo probe

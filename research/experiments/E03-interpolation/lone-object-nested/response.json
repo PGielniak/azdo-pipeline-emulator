@@ -1,0 +1,3 @@
+{
+  "finalYaml": "parameters:\n- name: jobProps\n  type: object\n  default:\n    workspace:\n      clean: all\n    dependsOn: []\n    displayName: Nested\nstages:\n- stage: probe\n  jobs:\n  - job: first\n    steps:\n    - task: CmdLine@2\n      inputs:\n        script: echo one\n  - job: probe\n    workspace:\n      clean: all\n    dependsOn: []\n    displayName: Nested\n    steps:\n    - task: CmdLine@2\n      inputs:\n        script: echo probe\n\n"
+}

@@ -1,0 +1,3 @@
+{
+  "finalYaml": "parameters:\n- name: who\n  type: string\n  default: world\nstages:\n- stage: probe\n  jobs:\n  - job: probe\n    steps:\n    - task: CmdLine@2\n      inputs:\n        script: >\n          echo one\n\n          echo world\n\n          echo three\n\n"
+}

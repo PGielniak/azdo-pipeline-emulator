@@ -1,0 +1,3 @@
+{
+  "finalYaml": "parameters:\n- name: extraStep\n  type: object\n  default:\n    script: echo from-object\n    displayName: From Object\nstages:\n- stage: probe\n  jobs:\n  - job: probe\n    steps:\n    - task: CmdLine@2\n      displayName: From Object\n      inputs:\n        script: echo from-object\n    - task: CmdLine@2\n      inputs:\n        script: echo probe\n\n"
+}

@@ -1,0 +1,18 @@
+parameters:
+- name: envVars
+  type: object
+  default:
+    ALPHA: a
+    BETA: b
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo probe
+      env:
+        ALPHA: a
+        BETA: b
+

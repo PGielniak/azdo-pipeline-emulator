@@ -1,0 +1,15 @@
+parameters:
+- name: obj
+  type: object
+  default:
+    A: a
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo probe
+        env:
+          ${{ parameters.obj }}: value

@@ -1,0 +1,15 @@
+parameters:
+- name: preBuild
+  type: stepList
+  default:
+  - script: echo pre-one
+  - script: echo pre-two
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - ${{ parameters.preBuild }}
+      - task: CmdLine@2
+        inputs:
+          script: echo probe

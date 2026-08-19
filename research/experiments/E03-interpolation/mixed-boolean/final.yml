@@ -1,0 +1,12 @@
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo probe
+      env:
+        TRUE_MID: pre-True-post
+        FALSE_MID: pre-False-post
+

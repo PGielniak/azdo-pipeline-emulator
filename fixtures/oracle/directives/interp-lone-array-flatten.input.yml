@@ -1,0 +1,25 @@
+parameters:
+- name: deps
+  type: object
+  default:
+  - alpha
+  - beta
+stages:
+- stage: probe
+  jobs:
+  - job: alpha
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo a
+  - job: beta
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo b
+  - job: probe
+    dependsOn: ${{ parameters.deps }}
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo probe
