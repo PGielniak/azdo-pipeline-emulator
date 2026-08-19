@@ -31,3 +31,36 @@ selection and name conversion; C-E06-009 defines secret exclusion and explicit m
 C-E06-010 defines public-over-explicit precedence; C-E06-012 defines newest-first PATH.
 C-E06-011 is intentionally a non-contract: the implementation may not claim a universal
 winner for two public names that collapse to the same transformed environment key.
+
+[C-E06-013] The generated runner loads its default `.env` first and its optional `--env-file` second, so the optional file supplies the final value for repeated keys; the manifest's `env[].secret` flag controls registration in the variable store. — docs/04-generated-project-and-runtime.md §10 (checked 2026-08-19) — "`run.sh` sources `.env` ... then `--env-file` overlays. Values marked secret in the manifest are masked in logs."
+
+[C-E06-014] A Bash variable assignment has the form `name=[value]`, accepts the empty string, restricts names to letters/numbers/underscores beginning with a letter or underscore, and expands the value using tilde, parameter, command, arithmetic, and quote removal. — https://www.gnu.org/software/bash/manual/html_node/Shell-Parameters.html and https://www.gnu.org/software/bash/manual/html_node/Definitions.html (checked 2026-08-19) — "A variable is assigned to using a statement of the form name=[value]" / "All values undergo tilde expansion, parameter and variable expansion, command substitution, arithmetic expansion, and quote removal."
+
+[C-E06-015] Bash single quotes preserve every enclosed character literally, including embedded newlines, but cannot contain a single quote even when it is preceded by a backslash. — https://www.gnu.org/software/bash/manual/html_node/Single-Quotes.html (checked 2026-08-19) — "Enclosing characters in single quotes ... preserves the literal value of each character within the quotes. A single quote may not occur between single quotes."
+
+[C-E06-016] In Bash double quotes, `$`, backquote, and backslash retain special behavior; a backslash outside quotes preserves the next character, while an unquoted backslash-newline pair is removed as a line continuation. — https://www.gnu.org/software/bash/manual/html_node/Double-Quotes.html and https://www.gnu.org/software/bash/manual/html_node/Escape-Character.html (checked 2026-08-19) — "Enclosing characters in double quotes ... preserves the literal value of all characters ... with the exception of `$`, backquote, `\\`" / "a `\\newline` pair ... is treated as a line continuation."
+
+[C-E06-017] In the non-interactive Bash process used by the loader, `#` starts a comment only at the beginning of a word (start of line, after unquoted whitespace, or after an operator); the rest of that physical line is ignored. — https://www.gnu.org/software/bash/manual/html_node/Comments.html (checked 2026-08-19) — "a word beginning with `#` introduces a comment" / "The comment causes that word and all remaining characters on that line to be ignored."
+
+## E06-S01-T03 grounding composition
+
+C-E06-013 defines base/overlay precedence and secret classification. C-E06-014..017 define the
+documented `KEY=value` syntax delegated to non-interactive Bash: identifier rules, empty values,
+expansions, single/double/backslash quoting, multiline quotes and continuations, and comments.
+
+[C-E06-018] Macro syntax is evaluated at runtime before each task, and a macro with no matching variable remains literal rather than becoming empty. — https://learn.microsoft.com/azure/devops/pipelines/process/variables (checked 2026-08-19) — "Macro syntax variables (`$(var)`) get processed during runtime before a task runs." / "If there's no variable by that name, the macro expression doesn't change."
+
+[C-E06-019] One agent `ExpandValues` pass scans from the first `$(` to the next `)`, performs an exact case-insensitive dictionary lookup, skips over inserted bytes to prevent recursive replacement within that pass, and advances one character after an unmatched opener so a nested inner opener can still be found. — https://github.com/microsoft/azure-pipelines-agent/blob/15ee11cd728d630f9c9905485449e3359da0a493/src/Microsoft.VisualStudio.Services.Agent/Util/VarUtil.cs#L147-L205 (checked 2026-08-19) — "This algorithm does not perform recursive replacement." / "Bump the start index to prevent recursive replacement."
+
+[C-E06-020] End-to-end hosted behavior nevertheless resolves a runtime-created variable chain across tasks: after task one stored `a` as literal `$(b)`, task two rendered `$(a)` as `inner`; the task's required observable "no recursion into substituted values" is therefore false. — research/experiments/E06-macro-expansion/real-run.md (run 541, checked 2026-08-19) — "CASE CHAIN=inner".
+
+[C-E06-021] For nested-looking `$(a$(b))`, hosted run 541 left the unmatched outer candidate, expanded the inner `$(b)`, and did not revisit the newly formed `$(ainner)` even though `ainner=outer`; missing and prefix-related exact-name controls also matched the one-pass scanner. — research/experiments/E06-macro-expansion/real-run.md (run 541, checked 2026-08-19) — "CASE NESTED=$(ainner)" / "CASE UNMATCHED=$(missing)".
+
+## E06-S02-T01 grounding composition and blocker
+
+C-E06-018 establishes the documented timing and unmatched rule. C-E06-019 establishes the
+agent's individual-pass scanner. C-E06-020/021 are the required hosted experiment and distinguish
+the observable cross-task chain behavior from nested text in one input. Run 541 contradicts T01's
+required end-to-end non-recursion, so no macro runtime implementation was written. The subsequent
+source trace stopped when GitHub code search returned HTTP 401, per the session's explicit
+auth-error stop condition.

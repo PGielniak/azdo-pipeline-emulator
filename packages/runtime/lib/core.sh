@@ -225,6 +225,192 @@ azdo_output() {
   fi
 }
 
+# E06-S01-T03 — the generated runner translates manifest.json's env array into shell metadata
+# before loading user values:
+#
+#   AZDO_MANIFEST_ENV=('PUBLIC_NAME=false' 'SECRET_NAME=true')
+#
+# Keeping that tiny, generated projection beside the runner avoids requiring jq (or any other JSON
+# parser) in the dependency-free output project. Unknown names are public by default; every
+# generated `.env.example` name has a manifest entry, so this applies only to user-added values.
+
+azdo__manifest_env_validate() {
+  local declaration entry entry_name entry_flag canonical seen_index
+  local -a seen_names=()
+
+  if ! declaration="$(declare -p AZDO_MANIFEST_ENV 2>/dev/null)"; then
+    return 0
+  fi
+  if [[ "$declaration" != declare\ -*a*\ AZDO_MANIFEST_ENV=* ]]; then
+    printf '%s\n' 'AZDO_MANIFEST_ENV must be an indexed array of NAME=true|false entries' >&2
+    return 2
+  fi
+
+  for entry in "${AZDO_MANIFEST_ENV[@]}"; do
+    entry_name="${entry%=*}"
+    entry_flag="${entry##*=}"
+    if [[ ! "$entry_name" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] ||
+      [[ "$entry_flag" != true && "$entry_flag" != false ]]; then
+      printf 'invalid AZDO_MANIFEST_ENV entry: %s\n' "$entry" >&2
+      return 2
+    fi
+    canonical="$(azdo__canonical_var_name "$entry_name")" || return
+    for ((seen_index = 0; seen_index < ${#seen_names[@]}; seen_index++)); do
+      if [[ "${seen_names[$seen_index]}" = "$canonical" ]]; then
+        printf 'duplicate manifest environment name: %s\n' "$entry_name" >&2
+        return 2
+      fi
+    done
+    seen_names+=("$canonical")
+  done
+}
+
+azdo__manifest_env_secret() {
+  (($# == 2)) || {
+    printf '%s\n' 'usage: azdo__manifest_env_secret <name> <destination-variable>' >&2
+    return 2
+  }
+
+  local wanted entry entry_name entry_flag canonical
+  wanted="$(azdo__canonical_var_name "$1")" || return
+  printf -v "$2" '%s' false
+  declare -p AZDO_MANIFEST_ENV >/dev/null 2>&1 || return 0
+
+  for entry in "${AZDO_MANIFEST_ENV[@]}"; do
+    entry_name="${entry%=*}"
+    entry_flag="${entry##*=}"
+    canonical="$(azdo__canonical_var_name "$entry_name")" || return
+    if [[ "$canonical" = "$wanted" ]]; then
+      printf -v "$2" '%s' "$entry_flag"
+      return 0
+    fi
+  done
+}
+
+azdo__absolute_env_path() {
+  (($# == 2)) || {
+    printf '%s\n' 'usage: azdo__absolute_env_path <path> <destination-variable>' >&2
+    return 2
+  }
+  [[ -f "$1" && -r "$1" ]] || {
+    printf 'environment file is not readable: %s\n' "$1" >&2
+    return 2
+  }
+
+  if [[ "$1" = /* ]]; then
+    printf -v "$2" '%s' "$1"
+  else
+    printf -v "$2" '%s/%s' "$PWD" "$1"
+  fi
+}
+
+# azdo_env_load <base-env-file> [overlay-env-file] [scope]
+#
+# Loads direct Bash NAME=value assignments from the base file and then the optional overlay into
+# the variable store. Both files are sourced by one non-interactive child Bash, so normal assignment
+# quoting/expansion applies and overlay expressions can see base values (C-E06-013..017). The child
+# protects the runner's own shell state; `.env` is still trusted shell input because command and
+# process substitutions can have external side effects. `export NAME=value` is deliberately outside
+# the documented contract and is not registered.
+azdo_env_load() {
+  (($# >= 1 && $# <= 3)) || {
+    printf '%s\n' 'usage: azdo_env_load <base-env-file> [overlay-env-file] [scope]' >&2
+    return 2
+  }
+
+  local base_path overlay_path='' scope="${3:-${AZDO_VAR_SCOPE:-pipeline}}"
+  local state_dir temp_dir trace_file old_umask declarations declaration attributes
+  local declaration_name declaration_rhs parsed_value captured_name secret index status load_status=0
+  local -a declaration_names=() declaration_values=()
+
+  azdo__manifest_env_validate || return
+  azdo__absolute_env_path "$1" base_path || return
+  if [[ -n "${2:-}" ]]; then
+    azdo__absolute_env_path "$2" overlay_path || return
+  fi
+  azdo__valid_store_segment "$scope" || return
+
+  state_dir="$(azdo__state_dir)" || return
+  temp_dir="$state_dir/env-loader"
+  mkdir -p "$temp_dir" || return
+  old_umask="$(umask)"
+  umask 077
+  trace_file="$(mktemp "$temp_dir/.assignments.XXXXXX")" || {
+    umask "$old_umask"
+    return
+  }
+  umask "$old_umask"
+
+  # DEBUG fires once per parsed simple assignment, after Bash has assembled multiline quoted
+  # input but before it executes. It therefore records real assignment keys without mistaking a
+  # `LOOKS_LIKE=value` line inside a multiline string for another variable. `declare -p` is Bash's
+  # own lossless shell quoting of the final values; fd 3 keeps it separate from command-substitution
+  # output, and the parent evaluates only that Bash-generated quoting (C-E06-014..016).
+  if declarations="$({
+    BASH_ENV=/dev/null "$BASH" --noprofile --norc -s -- "$base_path" "$overlay_path" \
+      4>"$trace_file" 3>&1 1>&2 <<'AZDO_ENV_LOADER'
+set -aT
+trap 'if [[ $BASH_COMMAND =~ ^[[:space:]]*([a-zA-Z_][a-zA-Z0-9_]*)= ]]; then printf "%s\0" "${BASH_REMATCH[1]}" >&4; fi' DEBUG
+. "$1" || exit $?
+if [[ -n "$2" ]]; then
+  . "$2" || exit $?
+fi
+trap - DEBUG
+set +T
+declare -p >&3
+AZDO_ENV_LOADER
+  })"; then
+    status=0
+  else
+    status=$?
+  fi
+  if ((status != 0)); then
+    rm -f -- "$trace_file"
+    printf 'failed to load environment file(s) with bash (status %s)\n' "$status" >&2
+    return "$status"
+  fi
+
+  while IFS= read -r declaration || [[ -n "$declaration" ]]; do
+    [[ "$declaration" == declare\ -*\ *=* ]] || continue
+    attributes="${declaration#declare -}"
+    attributes="${attributes%% *}"
+    declaration_name="${declaration%%=*}"
+    declaration_name="${declaration_name##* }"
+    [[ "$declaration_name" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] || continue
+    if [[ "$attributes" = *a* || "$attributes" = *A* ]]; then
+      continue
+    fi
+    declaration_rhs="${declaration#*=}"
+    # shellcheck disable=SC2294 # RHS is emitted by this same Bash's `declare -p`, not user text.
+    eval "parsed_value=$declaration_rhs"
+    declaration_names+=("$declaration_name")
+    declaration_values+=("$parsed_value")
+  done <<<"$declarations"
+
+  while IFS= read -r -d '' captured_name; do
+    for ((index = 0; index < ${#declaration_names[@]}; index++)); do
+      if [[ "${declaration_names[$index]}" = "$captured_name" ]]; then
+        if azdo__manifest_env_secret "$captured_name" secret; then
+          :
+        else
+          load_status=$?
+          break 2
+        fi
+        if azdo_var_set \
+          "$captured_name" "${declaration_values[$index]}" "$secret" false false "$scope"; then
+          :
+        else
+          load_status=$?
+          break 2
+        fi
+        break
+      fi
+    done
+  done <"$trace_file"
+  rm -f -- "$trace_file"
+  return "$load_status"
+}
+
 # E06-S01-T05 — step environments are assembled into AZDO_STEP_ENV as KEY=value arguments for
 # `env`. This avoids eval/sourcing and lets values contain whitespace, quotes, equals signs, and
 # newlines. A future run_step passes the array directly: env -- "${AZDO_STEP_ENV[@]}" <command>.

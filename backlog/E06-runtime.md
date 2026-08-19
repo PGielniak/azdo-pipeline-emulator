@@ -18,7 +18,7 @@ Acceptance: store + env materialization per docs/04 §4–§5 with cited agent b
   **Do:** non-secret vars exported as `UPPER` with `.`/space→`_`; secrets **not** auto-exported; step `env:` overlay (values macro-expanded); PATH assembly from `path.d`.
   **Ground:** variables doc "Environment variables" + "Secret variables" sections — quote both rules (the secret non-export rule is the critical one); verify collision behavior (`A.B` vs `A_B`) via real-run experiment; transcript stored.
   **Done:** bats matrix: transform cases, secret exclusion, env: overlay wins, PATH order.
-- [ ] **E06-S01-T03 — `.env` loader**
+- [x] **E06-S01-T03 — `.env` loader**
   **Do:** documented `KEY=value` parser (quoting rules stated in generated README), `--env-file` overlay, values registered into store with secret flags from manifest.
   **Ground:** docs/04 §10 load rules; POSIX shell quoting claims from GNU bash manual (pin).
   **Done:** bats: quoting/multiline edge cases; overlay precedence.
@@ -34,7 +34,8 @@ Acceptance: store + env materialization per docs/04 §4–§5 with cited agent b
 ## E06-S02 — As a pipeline developer, `$(macro)` expansion is agent-identical (just-in-time, textual, unmatched left literal), so timing bugs reproduce locally.
 Acceptance: macro engine with cited semantics.
 
-- [ ] **E06-S02-T01 — Macro expansion engine**
+- [!] **E06-S02-T01 — Macro expansion engine**
+  *Blocked 2026-08-19: hosted run 541 refutes the required end-to-end "no recursion into substituted values" (`a=$(b)` rendered `inner` in the next task); the follow-up source trace stopped when GitHub code search returned HTTP 401, per the session's explicit auth-error stop condition. No implementation written (C-E06-018..021).*
   **Do:** `azdo_expand_macros <file>`: replace `$(Name)` for names present in store (longest-name-safe scan, no recursion into substituted values — verify), leave unmatched literal, write expanded temp file under `Agent.TempDirectory`.
   **Ground:** variables doc macro-syntax section — quote "processed before the task runs" + "left as is" unmatched rule + verify non-recursive substitution via real-run experiment (`a=$(b)` chains); transcripts stored; pin agent's macro processing code (locate in `Agent.Worker`, likely around task-input variable expansion).
   **Done:** bats: unmatched literal, secret values expand, nested-looking `$(a$(b))` matches observed agent behavior from experiment.

@@ -83,6 +83,106 @@ materialized_env_value() {
   [[ "$output" == *"Overwriting readonly variable 'setSha.short' is not permitted."* ]]
 }
 
+@test ".env loader preserves Bash quoting and multiline assignment values (C-E06-014..017)" {
+  local env_file="$BATS_TEST_TMPDIR/quoting.env"
+  cat >"$env_file" <<'ENV'
+# A comment at the beginning of a word is ignored.
+EMPTY=
+PREFIX=base
+SINGLE='literal $PREFIX # = value'
+DOUBLE="quote:\" slash:\\ dollar:\$ prefix:${PREFIX}"
+ESCAPED=one\ two
+MULTI_SINGLE='first
+LOOKS_LIKE=part-of-the-value
+last'
+MULTI_DOUBLE="alpha
+beta"
+CONTINUED=left\
+right
+HASH=inside#literal
+COMMENTED=outside # ignored
+EQUALS='a=b=c'
+TRAILING='tail
+
+'
+COMMAND="$(printf '%s' generated)"
+ENV
+  AZDO_MANIFEST_ENV=('SINGLE=true' 'MULTI_SINGLE=true' 'TRAILING=true')
+
+  azdo_env_load "$env_file"
+
+  [ "$(azdo_var EMPTY)" = '' ]
+  [ "$(azdo_var PREFIX)" = base ]
+  [ "$(azdo_var SINGLE)" = 'literal $PREFIX # = value' ]
+  [ "$(azdo_var DOUBLE)" = 'quote:" slash:\ dollar:$ prefix:base' ]
+  [ "$(azdo_var ESCAPED)" = 'one two' ]
+  [ "$(azdo_var MULTI_SINGLE)" = $'first\nLOOKS_LIKE=part-of-the-value\nlast' ]
+  [ "$(azdo_var MULTI_DOUBLE)" = $'alpha\nbeta' ]
+  [ "$(azdo_var CONTINUED)" = leftright ]
+  [ "$(azdo_var HASH)" = 'inside#literal' ]
+  [ "$(azdo_var COMMENTED)" = outside ]
+  [ "$(azdo_var EQUALS)" = 'a=b=c' ]
+  cmp <(azdo_var TRAILING) <(printf '%s' $'tail\n\n')
+  [ "$(azdo_var COMMAND)" = generated ]
+  run -0 azdo_var_meta SINGLE
+  [[ "$output" == secret=true$'\n'* ]]
+  run -0 azdo_var_meta PREFIX
+  [[ "$output" == secret=false$'\n'* ]]
+  run -0 azdo_var LOOKS_LIKE
+  [ -z "$output" ]
+}
+
+@test "--env-file overlay wins case-insensitively and can expand base values (C-E06-013)" {
+  local base_file="$BATS_TEST_TMPDIR/base.env" overlay_file="$BATS_TEST_TMPDIR/overlay.env"
+  cat >"$base_file" <<'ENV'
+SAME=base
+CaseKey=base-case
+BASE_ONLY=base-only
+ENV
+  cat >"$overlay_file" <<'ENV'
+SAME=overlay
+casekey=overlay-case
+OVERLAY_ONLY=overlay-only
+DERIVED="${SAME}-derived"
+ENV
+  AZDO_MANIFEST_ENV=('SAME=true' 'casekey=true' 'BASE_ONLY=false' 'OVERLAY_ONLY=false' 'DERIVED=false')
+
+  azdo_env_load "$base_file" "$overlay_file"
+
+  [ "$(azdo_var SAME)" = overlay ]
+  [ "$(azdo_var CASEKEY)" = overlay-case ]
+  [ "$(azdo_var BASE_ONLY)" = base-only ]
+  [ "$(azdo_var OVERLAY_ONLY)" = overlay-only ]
+  [ "$(azdo_var DERIVED)" = overlay-derived ]
+  run -0 azdo_var_meta same
+  [[ "$output" == secret=true$'\n'* ]]
+  run -0 azdo_var_meta casekey
+  [[ "$output" == secret=true$'\n'* ]]
+}
+
+@test ".env loader fails atomically on Bash syntax errors" {
+  local env_file="$BATS_TEST_TMPDIR/invalid.env"
+  printf '%s\n' 'BEFORE=not-written' "BROKEN='unterminated" >"$env_file"
+
+  run ! azdo_env_load "$env_file"
+
+  [[ "$output" == *'failed to load environment file(s) with bash'* ]]
+  run -0 azdo_var BEFORE
+  [ -z "$output" ]
+}
+
+@test ".env loader rejects malformed or duplicate manifest metadata before sourcing" {
+  local env_file="$BATS_TEST_TMPDIR/metadata.env"
+  printf '%s\n' 'VALUE=loaded' >"$env_file"
+  AZDO_MANIFEST_ENV=('VALUE=false' 'value=true')
+
+  run ! azdo_env_load "$env_file"
+
+  [[ "$output" == *'duplicate manifest environment name: value'* ]]
+  run -0 azdo_var VALUE
+  [ -z "$output" ]
+}
+
 @test "environment materialization transforms public names and excludes secrets (C-E06-007..009)" {
   azdo_var_set 'lower.dot' 'dotted'
   azdo_var_set 'Space Name' 'spaced'
