@@ -1,0 +1,16 @@
+parameters:
+- name: flag
+  type: boolean
+  default: true
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo probe
+        env:
+          FROM_PARAM: ${{ parameters.flag }}
+          LITERAL_TRUE: ${{ true }}
+          LITERAL_FALSE: ${{ false }}

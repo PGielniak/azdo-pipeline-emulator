@@ -1,0 +1,11 @@
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo probe
+        env:
+          SEPARATED: ${{ 'a' }} then ${{ 'b' }}
+          ADJACENT: ${{ 'a' }}${{ 'b' }}

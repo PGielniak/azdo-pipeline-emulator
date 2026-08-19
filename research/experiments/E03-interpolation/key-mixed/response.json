@@ -1,0 +1,3 @@
+{
+  "finalYaml": "parameters:\n- name: suffix\n  type: string\n  default: TAIL\nstages:\n- stage: probe\n  jobs:\n  - job: probe\n    steps:\n    - task: CmdLine@2\n      inputs:\n        script: echo probe\n      env:\n        PRE_TAIL: value\n\n"
+}

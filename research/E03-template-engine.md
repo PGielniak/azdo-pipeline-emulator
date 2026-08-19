@@ -14,7 +14,7 @@ time the IDs were load-bearing in code comments and test names) is the reason th
 | `C-E03-120..139` | E03-S01-T02 conditional insertion chains | this file | 120–139 used (block full; 138/139 added by T04) |
 | `C-E03-140..159` | E03-S01-T03 iterative insertion (`each`) | this file | 140–151 used |
 | `C-E03-160..174` | **E03-S01-T04 `${{ insert }}` merge** | this file | 160–174 used (block full) |
-| `C-E03-175..194` | E03-S01-T05 scalar interpolation | this file | free |
+| `C-E03-175..194` | **E03-S01-T05 scalar interpolation** | this file | 175–194 used (block full) |
 | `C-E03-195..229` | E03-S02 template resolution & parameters | this file | free |
 | `C-E03-230..249` | E03-S03 compile-time variable visibility | this file | free |
 | `C-E03-250..279` | E03-S04 limits, emitter, strict validation | this file | free |
@@ -701,3 +701,222 @@ resolved to Null/empty (`echo alpha:`, `echo beta:`), while a bare `index` named
 `Unrecognized value: 'index'`; only the declared loop variable enters scope.
   — research/experiments/E03-each/{sequence-item-index,implicit-index-name}/ (live preview,
     checked 2026-08-18)
+
+---
+
+## E03-S01-T05 — scalar interpolation (`C-E03-175..194`)
+
+Evidence: `research/experiments/E03-interpolation/` — **34 live preview probes**
+(`pnpm interpolation-survey`), of which 27 expanded and 7 were rejected. The task's **Ground** field
+asks for "docs/02 §3 spec + oracle probes for each stringification rule (esp. Boolean casing, float
+rendering `0.5`/`1.0`)". Both docs were read first, and they settle less than the task assumes:
+
+- The **expressions** page does give the three conversion rules by name, so `Null → ''` and
+  `True`/`False` are documented rather than measured (C-E03-175). Its Number rule, however, is the
+  one sentence in the whole table that is *false as written*.
+- The **template-expressions** page never states the lone-expression-vs-mixed-content distinction
+  that this entire task is about, states structural insertion only for the array-into-array case,
+  and never mentions expressions in keys — although its own `each` example is built on
+  `${{ pair.key }}: ${{ pair.value }}` (C-E03-176).
+
+Two results changed the implementation rather than confirming it: the boundary between "lone" and
+"mixed" is **not whitespace-tolerant** (C-E03-180), which makes T01's `loneExpression` wrong as it
+stood; and key position has **two** distinct rejections rather than one (C-E03-191), which is what
+proves keys run through the same split as values instead of having a rule of their own.
+
+[C-E03-175] **The three stringification rules this task names are documented, and one of them is
+wrong.** The conversion table gives Boolean → `'False'`/`'True'` and Null → `''` (the empty string)
+verbatim, so the casing question the task flags is answered by the doc — but only for *values*
+(C-E03-190 is the key half). The Number row reads "To string: Converts the number to a string with
+no thousands separator and no decimal separator", which cannot be right: taken literally `0.5`
+would render `05`. Measured, the separator that is absent is the *thousands* one only; the decimal
+point is kept whenever the value has a fraction (C-E03-182).
+  — https://learn.microsoft.com/azure/devops/pipelines/process/expressions (checked 2026-08-19) —
+    "### Boolean … To string: `False` → `'False'`, `True` → `'True'`"; "### Null … To string: `''`
+    (the empty string)"; "### Number … To string: Converts the number to a string with no thousands
+    separator and no decimal separator"; "### Version … To string: Major.Minor or
+    Major.Minor.Build or Major.Minor.Build.Revision."
+
+[C-E03-176] **Neither doc states the rule this task implements.** The template-expressions page's
+Insertion section shows a lone `${{ parameters.preBuild }}` sequence item and says only "When you
+insert an array into an array, you flatten the nested array" — one sentence, the array case, and
+nothing about a mapping value, about mixed content, or about what makes a scalar "lone". Expressions
+in keys appear only implicitly, inside the `each` example (`${{ pair.key }}: ${{ pair.value }}`),
+with no statement that the result is stringified or how. docs/02 §3 already carried the intended
+rules; this task's job was to check them, and two were wrong (C-E03-180, C-E03-183).
+  — https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions (checked
+    2026-08-19) — §Insertion, §Iterative insertion
+
+[C-E03-177] **A mapping value that is exactly one expression returning an Object is inserted
+structurally.** `env: ${{ parameters.envVars }}` with a two-key object default produced
+`env:` with both keys as a real mapping, not a stringified one — the mapping case the doc never
+states.
+  — research/experiments/E03-interpolation/lone-object-value/ (live preview, checked 2026-08-19)
+
+[C-E03-178] **In sequence position an Array splices and an Object becomes one item.** A `stepList`
+parameter as `- ${{ parameters.preBuild }}` contributed its two steps as siblings of the literal
+step (the doc's own example, and its flattening sentence), and `dependsOn: ${{ parameters.deps }}`
+produced a two-element list. An *Object* in the same position produced exactly one step, keys
+intact — so the two collection kinds behave differently and "flatten" is specifically the array
+rule.
+  — research/experiments/E03-interpolation/{lone-array-sequence-item,lone-array-flatten,
+    lone-object-sequence-item}/ (live preview, checked 2026-08-19)
+
+[C-E03-179] **The inserted structure is kept whole and typed at every depth.** An object carrying a
+nested mapping (`workspace.clean`), an empty sequence (`dependsOn: []`) and a scalar merged into a
+job with all three shapes preserved; nothing was flattened or stringified at any level.
+  — research/experiments/E03-interpolation/lone-object-nested/ (live preview, checked 2026-08-19)
+
+[C-E03-180] **"Exactly one expression" is a property of the raw scalar text and is *not*
+whitespace-tolerant — but it is independent of YAML style.** Two probes separate the two
+possibilities that T01 conflated:
+
+- `env: "${{ parameters.envVars }}"` — double-quoted, no padding — **still inserts structurally**,
+  so quoting alone does not demote a lone expression to mixed content.
+- `env: '  ${{ parameters.envVars }}  '` — the same expression with two spaces either side —
+  **rejects** `Unable to convert from Object to String. Value: Object`, i.e. it was compiled to
+  `format('  {0}  ', …)` and the Object had to be stringified.
+- The positive control settles the direction: `PROBE: "  ${{ 'x' }}  "` yields `'  x  '`. The spaces
+  are *kept*, so the service is not trimming and then failing to re-add them — it never trimmed.
+
+**Consequence for T01:** `loneExpression` began with `text.trim()`, which classifies the second
+probe as lone and would have expanded a document the service rejects. The trim is removed. It was
+invisible until now because YAML strips plain scalars itself, so only a *quoted* host scalar can
+carry the padding into the engine — which is exactly what this probe had to be written as.
+  — research/experiments/E03-interpolation/{lone-object-value-quoted,whitespace-around-lone-object,
+    whitespace-around-lone-string}/ (live preview, checked 2026-08-19)
+
+[C-E03-181] **A lone Boolean renders `True`/`False`**, from a typed `boolean` parameter and from the
+literals alike — the documented casing, surviving into the emitted document rather than being
+lower-cased by the YAML writer. The committed `insert-job-mapping` pair shows the same conversion
+happening to a job's `continueOnError: true` once it passes through the engine.
+  — research/experiments/E03-interpolation/lone-boolean/ (live preview, checked 2026-08-19)
+
+[C-E03-182] **Number rendering is shortest-round-trip invariant, not the doc's sentence.** All four
+measured shapes, in lone position and again inside mixed content: `0.5` → `0.5`, `1.0` → **`1`**
+(the trailing zero is dropped, so the value is a double and not the authored text), `1000000` →
+`1000000` (no grouping, which is the part of the doc's sentence that holds), `-1.25` → `-1.25`.
+JavaScript's `String(number)` reproduces all four, which is why the implementation reuses
+`convertValue(v, 'string')` rather than formatting numbers itself. Exponent-range values are **not**
+measured and are a known divergence risk (`1e21` is `1e+21` in JS and `1E+21` in .NET).
+  — research/experiments/E03-interpolation/{lone-number,mixed-number}/ (live preview, checked
+    2026-08-19)
+
+[C-E03-183] **Null renders as the empty string even in lone position, and is indistinguishable from
+`${{ '' }}` in the output.** `PROBE: ${{ variables.nosuchvariable }}` and `PROBE: ${{ '' }}` both
+came back as `PROBE: ''`, with the key present in both cases. **This is the finding that fixes the
+lone-position value model:** a lone expression does not simply hand its typed result to the emitter,
+or Null would have produced an empty/absent value rather than a String. Every scalar kind is
+converted to its String form; only Object and Array stay structural.
+  — research/experiments/E03-interpolation/{lone-null,lone-empty-string}/ (live preview, checked
+    2026-08-19)
+
+[C-E03-184] **A Version renders dotted, in lone and mixed position, for three and four segments** —
+`${{ 1.2.3 }}` → `1.2.3`, `v${{ 1.2.3.4 }}` → `v1.2.3.4`, matching the documented Major.Minor.Build
+.Revision rule and confirming the literal is a Version rather than a String that happens to contain
+dots.
+  — research/experiments/E03-interpolation/{lone-version,mixed-version}/ (live preview, checked
+    2026-08-19)
+
+[C-E03-185] **The result is not re-parsed as YAML, and the service's own `finalYaml` is lossy about
+it.** `PROBE: "${{ 'a: b' }}"` came back as `PROBE: 'a: b'` — one scalar, quoted by the emitter,
+not a nested mapping. But `${{ '0123' }}` came back as `PROBE: 0123`, **unquoted**: the value is
+still the String `0123` inside the service (its own reader treats every scalar as text, which is
+what makes `finalYaml` a fixpoint, C-E03-001), yet as *text* that document no longer says so. Our
+front end types scalars (`0123` parses to the Number 123, C-E01-020's premise notwithstanding), so
+`normalizeExpandedYaml` reads the service's side as `123` and ours as `0123` and reports drift that
+does not exist. Recorded as C-E03-193 and handed to E03-S05-T03; the `interp-lone-string-numeric`
+pair is therefore asserted against its raw `finalYaml` rather than through the normalizer.
+  The unquoted spelling is not confined to this case — the emitter also wrote `HALF: '0.5'` quoted
+  while writing `NEGATIVE: -1.25` bare in the same mapping, so its quoting is not a signal about the
+  value's kind and must not be read as one.
+  — research/experiments/E03-interpolation/{lone-string-yamlish-quoted,lone-string-numeric,
+    lone-number}/ (live preview, checked 2026-08-19). The unquoted spelling
+    `PROBE: ${{ 'a: b' }}` is *not* valid YAML at all — the `: ` ends the key — and its transcript
+    (`lone-string-yamlish/`) records that rejection, which never reaches the template engine.
+
+[C-E03-186] **Mixed content stringifies every hole and concatenates, literal text verbatim.**
+`pre-${{ true }}-post` → `pre-True-post`; `pre-${{ false }}-post` → `pre-False-post`;
+`pre-${{ variables.nosuchvariable }}-post` → `pre--post` (the two literals end up touching);
+`${{ 'a' }} then ${{ 'b' }}` → `a then b`. **Adjacency is not loneness:**
+`${{ 'a' }}${{ 'b' }}` → `ab`, two holes with an empty literal between them, which is the case a
+"starts with `${{` and ends with `}}`" test gets wrong. This is `format`'s stringification, not a
+second one — C-E02-109 measured the service compiling exactly these scalars into a synthetic
+`format('<literal with {0} holes>', …)` and parsing *that*.
+  — research/experiments/E03-interpolation/{mixed-boolean,mixed-null,mixed-two-expressions}/ (live
+    preview, checked 2026-08-19)
+
+[C-E03-187] **An Object or Array in mixed content is a hard rejection:** `Unable to convert from
+Object to String. Value: Object` / `Unable to convert from Array to String. Value: Array` — file
+coordinates only, **no** "Located at position N within expression" and **no** help link, unlike
+every parse error in the E02 corpus. Two properties matter for the implementation: the sentence
+names the *kind* twice rather than rendering the value, and the failed hole becomes the **empty
+string** and evaluation continues — the whitespace probe returned this sentence *and* a second one,
+`Unexpected value ''`, which is the schema then rejecting `env: ''`. So this is an accumulated
+diagnostic with a substitution, not a throw. E02's `ExprConversionError` composes the same sentence
+without the ` Value: <Kind>` suffix, so T05 appends it rather than reusing the message.
+  — research/experiments/E03-interpolation/{mixed-object,mixed-array,whitespace-around-lone-object}/
+    (live preview, checked 2026-08-19)
+
+[C-E03-188] **The documented `${{` escape works and its result is not re-scanned.**
+`${{ 'my${{value' }}` → `my${{value` and `${{ 'my${{value with a '' single quote too' }}` →
+`my${{value with a ' single quote too`. Both are lone expressions whose *result* contains the
+opening delimiter, so a second interpolation pass over the output would loop or fail; there is
+exactly one pass. This is C-E03-117's quote-aware delimiter scan proven by execution rather than by
+recognition.
+  — research/experiments/E03-interpolation/{escape-literal,escape-literal-quote}/ (live preview,
+    checked 2026-08-19)
+
+[C-E03-189] **A block scalar interpolates as one scalar and keeps its content.** `script: |` with
+three lines and an expression on the middle one came back with the parameter substituted and the
+line structure intact — re-emitted in folded (`>`) style with blank-line separators, which is the
+same string. Consistent with C-E02-109, where the synthetic `format` literal for a block scalar
+carried real newlines.
+  — research/experiments/E03-interpolation/block-scalar-expression/ (live preview, checked
+    2026-08-19)
+
+[C-E03-190] **Expressions in keys stringify, and the Boolean casing is `True`.** In a loose mapping
+(`env:`): `${{ true }}:` → `True:`; `${{ 1.0 }}:` → `1:`; `${{ 0.5 }}:` → `'0.5':`;
+`${{ variables.nosuchvariable }}:` → `'':` — an **empty key**, which the schema accepts there; and
+mixed key content concatenates, `PRE_${{ parameters.suffix }}:` → `PRE_TAIL:`. This closes the
+docs/02 §8 ambiguity list's "Boolean stringification casing in keys" entry: the answer is the same
+`True`/`False` as values, so keys need no separate casing rule — but they *do* need a separate value
+model, because a key is always the String form while a value may stay structural (C-E03-177).
+  — research/experiments/E03-interpolation/{key-boolean,key-number,key-null,key-mixed,key-string}/
+    (live preview, checked 2026-08-19)
+
+[C-E03-191] **Key position has two distinct rejections, and the pair proves keys run through the
+same lone/mixed split as values.** A **lone** Object key rejects `Expected a scalar value` — one
+sentence, no help link, located at the key. The *same* object in **mixed** key content
+(`PRE_${{ parameters.obj }}:`) rejects `Unable to convert from Object to String. Value: Object`
+instead, i.e. C-E03-187's sentence. A single "keys must be scalars" rule cannot produce two
+different sentences for two spellings of the same failure; a shared lone/mixed split with a
+key-specific structural check does.
+  — research/experiments/E03-interpolation/{key-object,key-mixed-object}/ (live preview, checked
+    2026-08-19)
+
+[C-E03-192] **The rendered key text is confirmed independently at the schema layer.** `${{ true }}:`
+written into a *job* — a mapping with a known schema, where an unrecognized key is fatal — rejects
+`Unexpected value 'True'`. The casing is therefore visible in the service's own error text and does
+not depend on how `env:`'s loose mapping or the YAML emitter chose to render it.
+  — research/experiments/E03-interpolation/key-boolean-nonloose/ (live preview, checked 2026-08-19)
+
+[C-E03-193] **`normalizeExpandedYaml` compares scalar leaves *after* typing them, which is one layer
+too late.** Rule N7 is "scalar leaves compared as strings", but it stringifies the values the YAML
+parser already produced, so the service's `PROBE: 0123` becomes `"123"` while our
+`PROBE: "0123"` stays `"0123"` — two spellings of one value reported as drift. The service's reader
+has no such step, which is why its `finalYaml` round-trips (C-E03-001). The fix is to compare a
+scalar's **source text**, and it belongs to the normalizer, not here: added as **E03-S05-T03**. Until
+then the one affected fixture is asserted against its raw `finalYaml`.
+  — research/experiments/E03-interpolation/lone-string-numeric/ + `packages/engine/src/normalize/
+    normalize.ts` `plain()` (checked 2026-08-19)
+
+[C-E03-194] **A lone directive keyword in *value* position is left as literal text and never
+evaluated.** Inherited from C-E03-173 rather than re-measured: `KEY: ${{ insert }}` survives verbatim
+into schema validation as `Unexpected value '${{ insert }}'` with no expression error, so an
+interpolator that evaluates every lone expression would emit `Unrecognized value: 'insert'` — the one
+sentence that probe proves the service does *not* emit. The rule is implemented by classifying the
+lone text with `parseDirectiveKey` first and returning the node untouched when a keyword is
+recognized. It applies to the lone case only, which is all C-E03-173 measured.
+  — research/experiments/E03-insert/{value-position,bare-sequence-item}/ (live preview, checked
+    2026-08-19 against the T04 transcripts)

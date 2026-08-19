@@ -1,0 +1,14 @@
+parameters:
+- name: envVars
+  type: object
+  default:
+    ALPHA: a
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo probe
+        env: '  ${{ parameters.envVars }}  '

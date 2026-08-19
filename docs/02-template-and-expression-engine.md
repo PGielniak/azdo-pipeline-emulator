@@ -41,11 +41,52 @@ Server limits enforced identically so we fail where the server would: max distin
 
 ## 3. Scalar interpolation rules (exact server semantics)
 
-- A scalar that is **exactly one expression** (`${{ parameters.jobs }}`) evaluates to the expression's typed result — if it is a mapping/sequence it is inserted **structurally**, not stringified.
-- Mixed content (`name-${{ parameters.suffix }}`) → each expression stringified and concatenated; Null → empty string, Boolean → `True`/`False` (server casing!), Number → invariant format.
-  - **How the service actually does it (grounded 2026-08-12, C-E02-109):** it compiles the whole scalar into a synthetic `format('<literal with {0} holes>', <expr>, …)` call and parses *that* — a parse error in `prefix ${{ null }} suffix` is reported as `position 29 within expression: 'format('prefix {0} suffix', null)'`, and a block scalar becomes one `format` whose literal carries real newlines. So the concatenation rule above is `format`'s stringification, not a separate one, and E03-S01-T05 can reuse the same code path. Our own diagnostics deliberately report the user's expression rather than the synthetic text, which appears nowhere in their file.
-- Expressions may appear in mapping **keys**; result must stringify.
-- After evaluation the result is **not re-parsed as YAML** (no injection); structural insertion happens on the DOM only.
+Implemented in `packages/engine/src/template/interpolate.ts` (E03-S01-T05) and grounded by 35 live
+preview probes under `research/experiments/E03-interpolation/` (C-E03-175..194). The expressions
+page's conversion table supplies `Null → ''` and Boolean → `True`/`False` outright; everything below
+that distinguishes *positions* is measured, because neither doc states it.
+
+- A scalar that is **exactly one expression** (`${{ parameters.jobs }}`) is replaced by the
+  expression's result. Object and Array are inserted **structurally**, whole and typed at every
+  depth (C-E03-177/179). Every other kind is converted to its **String form** — that is not a
+  simplification: `${{ variables.nosuch }}` alone in a value comes back `''`, byte-identical to
+  `${{ '' }}`, so Null's documented conversion applies in lone position too (C-E03-183).
+- **"Exactly one" is a property of the raw text and is not whitespace-tolerant** (C-E03-180).
+  Padding *inside* the delimiters is trimmed (C-E02-104); padding *outside* them is literal text
+  that makes the scalar mixed content — `'  ${{ obj }}  '` is rejected `Unable to convert from
+  Object to String`, while the unpadded double-quoted spelling inserts structurally, so YAML style
+  is irrelevant and whitespace is not. Adjacency is not loneness either: `${{ 'a' }}${{ 'b' }}` is
+  two holes with an empty literal between them (C-E03-186).
+- Mixed content (`name-${{ parameters.suffix }}`) → each expression stringified and concatenated;
+  Null → empty string, Boolean → `True`/`False` (server casing!), Number → invariant format,
+  Version → dotted. Measured: `0.5` → `0.5`, `1.0` → **`1`**, `1000000` → `1000000`, `-1.25` →
+  `-1.25` — shortest-round-trip invariant, which makes the expressions page's "no thousands
+  separator and **no decimal separator**" false as written (C-E03-182/184). Exponent-range values
+  are unmeasured and a known divergence risk (`1e21` is `1e+21` in JS, `1E+21` in .NET).
+  - **How the service actually does it (grounded 2026-08-12, C-E02-109):** it compiles the whole scalar into a synthetic `format('<literal with {0} holes>', <expr>, …)` call and parses *that* — a parse error in `prefix ${{ null }} suffix` is reported as `position 29 within expression: 'format('prefix {0} suffix', null)'`, and a block scalar becomes one `format` whose literal carries real newlines. So the concatenation rule above is `format`'s stringification, not a separate one, and interpolation reuses that code path (`convertValue(v, 'string')`). Our own diagnostics deliberately report the user's expression rather than the synthetic text, which appears nowhere in their file.
+- **An Object or Array in a string position is a hard rejection**, `Unable to convert from <Kind> to
+  String. Value: <Kind>` — file coordinates only, no expression position, no help link. The failed
+  hole becomes the **empty string** and evaluation continues, which is why the service's response to
+  the padded-object probe carries that sentence *and* the schema's follow-on `Unexpected value ''`
+  (C-E03-187). Accumulated, never thrown, like every other rejection in the walk.
+- Expressions may appear in mapping **keys**, which run through the same lone/mixed split but have
+  no structural option: the result is always the String form, so `${{ true }}:` is the key `True`
+  (confirmed by the service's own `Unexpected value 'True'` in a schema-checked mapping),
+  `${{ 1.0 }}:` is `1`, and a Null key is the **empty key**, accepted in a loose mapping
+  (C-E03-190/192). The two failure modes differ and that is the evidence the split is shared: a
+  *lone* collection key is `Expected a scalar value`, a collection in *mixed* key content gives the
+  conversion sentence (C-E03-191).
+- **In sequence position an Array splices and an Object does not.** `- ${{ parameters.steps }}`
+  contributes its items as siblings (the doc's "insert an array into an array, you flatten the
+  nested array"), while an Object becomes exactly one item (C-E03-178). This is the only place a
+  scalar's replacement splices, and it lives in `walkSequence`.
+- After evaluation the result is **not re-parsed as YAML** (no injection); structural insertion
+  happens on the DOM only. `${{ 'a: b' }}` stays one scalar and the documented `${{` escape
+  (`${{ 'my${{value' }}`) survives verbatim, so there is exactly one interpolation pass
+  (C-E03-185/188).
+- **A lone directive keyword in value position is never evaluated** (C-E03-194/173): `KEY:
+  ${{ insert }}` keeps its text and is rejected by the *schema*, so an interpolator that evaluated
+  it would emit `Unrecognized value: 'insert'`, a sentence the service does not produce.
 
 ## 4. Directives
 
@@ -247,4 +288,4 @@ Three live-verified traps the harness must respect (C-E00-024/025/026, transcrip
 
 - `azdo-emu preview-diff <yaml>`: expands locally, fetches `finalYaml`, normalizes both (key order, insignificant whitespace, server-injected defaults), semantic-diffs, exits non-zero on drift.
 - CI: nightly corpus run (docs/06 §3). Every ambiguity we resolve empirically becomes a permanent fixture pair so regressions in *our* engine — or behavior changes in *their* service — surface immediately.
-- Known ambiguity backlog to resolve via oracle, tracked as fixtures: compile-time variable visibility across template files; declaration-order effects in `variables` lists mixing `group`/`template`/inline; `each` over object parameters key ordering; Boolean stringification casing in keys; `extends` + nested `extends`; empty-`dependsOn` parallelism defaults in conditions context.
+- Known ambiguity backlog to resolve via oracle, tracked as fixtures: compile-time variable visibility across template files; declaration-order effects in `variables` lists mixing `group`/`template`/inline; `extends` + nested `extends`; empty-`dependsOn` parallelism defaults in conditions context. **Closed:** `each` over object parameters key ordering (authored order, unsorted, C-E03-145) and Boolean stringification casing in keys (`True`, C-E03-190/192).

@@ -24,3 +24,4 @@ export * from './template/walk.js';
 export * from './template/each.js';
 export * from './template/conditionals.js';
 export * from './template/insert.js';
+export * from './template/interpolate.js';

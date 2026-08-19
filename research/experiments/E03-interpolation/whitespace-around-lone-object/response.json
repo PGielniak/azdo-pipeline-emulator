@@ -1,0 +1,9 @@
+{
+  "$id": "1",
+  "innerException": null,
+  "message": "/azure-pipelines.yml (Line: 14, Col: 14): Unable to convert from Object to String. Value: Object\n/azure-pipelines.yml (Line: 14, Col: 14): Unexpected value ''",
+  "typeName": "Microsoft.Azure.Pipelines.WebApi.PipelineValidationException, Microsoft.Azure.Pipelines.WebApi",
+  "typeKey": "PipelineValidationException",
+  "errorCode": 0,
+  "eventId": 3000
+}

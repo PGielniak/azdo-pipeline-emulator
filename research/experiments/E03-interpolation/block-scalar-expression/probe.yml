@@ -1,0 +1,15 @@
+parameters:
+- name: who
+  type: string
+  default: world
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: |
+            echo one
+            echo ${{ parameters.who }}
+            echo three

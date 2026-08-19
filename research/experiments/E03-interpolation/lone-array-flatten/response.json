@@ -1,0 +1,3 @@
+{
+  "finalYaml": "parameters:\n- name: deps\n  type: object\n  default:\n  - alpha\n  - beta\nstages:\n- stage: probe\n  jobs:\n  - job: alpha\n    steps:\n    - task: CmdLine@2\n      inputs:\n        script: echo a\n  - job: beta\n    steps:\n    - task: CmdLine@2\n      inputs:\n        script: echo b\n  - job: probe\n    dependsOn:\n    - alpha\n    - beta\n    steps:\n    - task: CmdLine@2\n      inputs:\n        script: echo probe\n\n"
+}

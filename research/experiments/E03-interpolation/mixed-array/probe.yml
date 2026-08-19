@@ -1,0 +1,16 @@
+parameters:
+- name: list
+  type: object
+  default:
+  - a
+  - b
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo probe
+        env:
+          PROBE: pre-${{ parameters.list }}

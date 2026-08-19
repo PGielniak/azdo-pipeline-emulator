@@ -1,0 +1,15 @@
+parameters:
+- name: suffix
+  type: string
+  default: TAIL
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo probe
+      env:
+        PRE_TAIL: value
+

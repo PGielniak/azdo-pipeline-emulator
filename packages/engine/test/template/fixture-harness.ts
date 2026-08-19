@@ -3,11 +3,15 @@
 // Extracted from E03-S01-T03's `each.test.ts` when E03-S01-T02 landed the second directive suite:
 // both drive the same pipeline — parse the committed preview *input*, run one directive visitor
 // over it, serialize, and compare against the committed `finalYaml` through the E03-S05-T01
-// normalizer. Keeping one copy means a fix to the parameter binding or the scalar stand-in cannot
+// normalizer. Keeping one copy means a fix to the parameter binding or to interpolation cannot
 // silently apply to one directive's goldens and not the other's.
 //
-// The scalar adapter here is deliberately minimal: generic interpolation is E03-S01-T05, and these
-// probes contain only simple context/loop references, so it supports no broader syntax.
+// The minimal `fixtureScalars` stand-in that stood here for T02–T04 is **gone**: E03-S01-T05 landed
+// `interpolationVisitor`, so every directive suite now runs the real interpolation pass and the
+// goldens they were already passing are re-checked against it. Two of the stand-in's shortcuts were
+// wrong and are the reason the replacement is worth noting — it trimmed the host scalar before
+// deciding lone-vs-mixed (C-E03-180) and it evaluated a lone `${{ insert }}` in value position
+// (C-E03-194).
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,7 +24,6 @@ import {
   type MappingEntry,
   type MappingNode,
   type PipelineNode,
-  type Provenance,
 } from '../../src/frontend/parse.js';
 import { parametersContext, type ExprContextValues } from '../../src/expr/context.js';
 import {
@@ -28,18 +31,18 @@ import {
   arrayValue,
   booleanValue,
   numberValue,
-  objectEntries,
   orderedObjectValue,
   stringValue,
   type ExprValue,
 } from '../../src/expr/value.js';
 import {
-  loneExpression,
+  composeVisitors,
   rootFrame,
   walkTemplate,
   type TemplateFrame,
   type TemplateVisitor,
 } from '../../src/template/walk.js';
+import { interpolationVisitor } from '../../src/template/interpolate.js';
 
 export const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url));
 const fixtureDir = join(repoRoot, 'fixtures', 'oracle', 'directives');
@@ -114,60 +117,6 @@ export function contexts(root: PipelineNode | undefined): ExprContextValues {
   return { parameters: parametersContext(values) };
 }
 
-function scalar(value: ExprValue, pos: Provenance): PipelineNode {
-  switch (value.kind) {
-    case 'null':
-      return { kind: 'scalar', value: null, style: 'plain', pos };
-    case 'boolean':
-    case 'number':
-    case 'string':
-      return { kind: 'scalar', value: value.value, style: 'plain', pos };
-    case 'version':
-      return { kind: 'scalar', value: value.segments.join('.'), style: 'plain', pos };
-    case 'array':
-      return { kind: 'sequence', items: value.value.map((child) => scalar(child, pos)), pos };
-    case 'object':
-      return {
-        kind: 'mapping',
-        entries: objectEntries(value).map(([key, child]) => ({
-          key: { kind: 'scalar', value: key, style: 'plain', pos },
-          value: scalar(child, pos),
-        })),
-        pos,
-      };
-  }
-}
-
-function rendered(value: ExprValue): string {
-  switch (value.kind) {
-    case 'null':
-      return '';
-    case 'boolean':
-      return value.value ? 'True' : 'False';
-    case 'number':
-    case 'string':
-      return String(value.value);
-    case 'version':
-      return value.segments.join('.');
-    case 'array':
-    case 'object':
-      throw new TypeError('fixture mixed-content expressions are scalar');
-  }
-}
-
-/** Fixture-only scalar adapter standing in for E03-S01-T05. */
-export function fixtureScalars(evaluate: Evaluator): NonNullable<TemplateVisitor['scalar']> {
-  return (node, frame) => {
-    if (typeof node.value !== 'string' || !node.value.includes('${{')) return undefined;
-    const lone = loneExpression(node.value);
-    if (lone !== undefined) return scalar(evaluate(lone.inner, frame), node.pos);
-    const value = node.value.replace(/\$\{\{\s*([^{}]*?)\s*}}/g, (_match, expression: string) =>
-      rendered(evaluate(expression.trim(), frame)),
-    );
-    return { ...node, value };
-  };
-}
-
 export function plain(node: PipelineNode | undefined): unknown {
   if (node === undefined) return null;
   switch (node.kind) {
@@ -207,10 +156,10 @@ export function expandFixture(
 export function walkFixture(
   source: string,
   directive: DirectiveVisitorFactory,
-  // `false` omits the T05 stand-in. C-E03-173 needs that: the service keeps a lone `${{ insert }}`
-  // in value position as literal text, while the stand-in evaluates every lone expression and would
-  // raise `Unrecognized value: 'insert'` — the one sentence that probe proves the service does not
-  // emit. The rule is T05's to implement; here the point is only that the *walker* is unaffected.
+  // `false` omits interpolation entirely, leaving the walker on its own. It exists for the tests
+  // that assert what the *walker* does with a scalar nobody expands — and it no longer has to
+  // exist for C-E03-173/194, which the real interpolator now implements: a lone `${{ insert }}` in
+  // value position is left verbatim rather than evaluated, so those probes pass either way.
   scalars = true,
 ): {
   plain: unknown;
@@ -223,7 +172,7 @@ export function walkFixture(
   const evaluate: Evaluator = (expression, frame) =>
     evaluateTemplateExpression(expression, frame, values);
   const visitor = scalars
-    ? { ...directive(evaluate, values), scalar: fixtureScalars(evaluate) }
+    ? composeVisitors(directive(evaluate, values), interpolationVisitor(evaluate))
     : directive(evaluate, values);
   const result = walkTemplate(parsed.root, rootFrame('azure-pipelines.yml'), visitor);
   return {

@@ -1,0 +1,13 @@
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo probe
+        env:
+          HALF: ${{ 0.5 }}
+          ONE_POINT_ZERO: ${{ 1.0 }}
+          MILLION: ${{ 1000000 }}
+          NEGATIVE: ${{ -1.25 }}

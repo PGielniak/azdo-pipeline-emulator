@@ -1,0 +1,14 @@
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo probe
+      env:
+        HALF: v0.5
+        ONE_POINT_ZERO: v1
+        MILLION: v1000000
+        NEGATIVE: v-1.25
+

@@ -97,20 +97,26 @@ export type DirectiveMatch =
  * The closing `}}` is found by scanning **outside single-quoted strings**, not by `endsWith`,
  * because the documented escape for a literal `${{` is to put it inside one: `${{ 'my${{value' }}`
  * (C-E03-117). A naive scan reports "not a lone expression" for a spelling the docs give as the
- * canonical way to write it — and this function is what E03-S01-T05 will use to make exactly that
+ * canonical way to write it — and this function is what E03-S01-T05 uses to make exactly that
  * distinction, so the bug would land there rather than here.
+ *
+ * **Padding *outside* the delimiters is not tolerated** (C-E03-180). This function used to trim the
+ * host text first; measured, `env: '  ${{ parameters.envVars }}  '` is mixed content and the
+ * service rejects it `Unable to convert from Object to String`, while the unpadded double-quoted
+ * spelling inserts structurally — so loneness is a property of the raw text, not of the YAML style,
+ * and not of the text modulo whitespace. The trim was invisible for four tasks because YAML strips
+ * plain scalars itself; only a *quoted* host scalar can carry padding this far. Padding *inside*
+ * the delimiters is still trimmed, which is a different rule and a measured one (C-E02-104).
  */
 export function loneExpression(
   text: string,
 ): { readonly inner: string; readonly offset: number } | undefined {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith('${{')) return undefined;
-  const end = closingDelimiter(trimmed, 3);
+  if (!text.startsWith('${{')) return undefined;
+  const end = closingDelimiter(text, 3);
   // A `}}` anywhere before the end means the scalar continues past this expression: mixed content.
-  if (end === undefined || end + 2 !== trimmed.length) return undefined;
-  const lead = text.length - text.trimStart().length;
-  const inner = trimExpressionText(trimmed.slice(3, end));
-  return { inner: inner.text, offset: lead + 3 + inner.offset };
+  if (end === undefined || end + 2 !== text.length) return undefined;
+  const inner = trimExpressionText(text.slice(3, end));
+  return { inner: inner.text, offset: 3 + inner.offset };
 }
 
 /**
@@ -369,7 +375,29 @@ export interface TemplateVisitor {
     context: TemplateVisitContext,
   ) => PipelineNode[] | undefined;
   /** Every scalar the walk reaches, in document order — T05's interpolation hook. */
-  readonly scalar?: (node: ScalarNode, frame: TemplateFrame) => PipelineNode | undefined;
+  readonly scalar?: (
+    node: ScalarNode,
+    frame: TemplateFrame,
+    context: TemplateScalarContext,
+  ) => PipelineNode | undefined;
+}
+
+/**
+ * Where a scalar sits, plus the walk's diagnostic list.
+ *
+ * `position` exists because the two are genuinely different operations, not one with a cosmetic
+ * difference: a **value** may keep a structural result (`env: ${{ parameters.envVars }}` becomes a
+ * mapping, C-E03-177) while a **key** is always the String form and rejects a collection outright
+ * with its own sentence, `Expected a scalar value` (C-E03-191). A hook that could not tell them
+ * apart would have to guess, and the walk is the only layer that knows.
+ *
+ * `report` is here for the same reason directive visitors have it: a failed conversion is a
+ * rejection the service *accumulates* — the padded-object probe came back carrying two sentences at
+ * once (C-E03-187) — so interpolation records and carries on rather than throwing.
+ */
+export interface TemplateScalarContext {
+  readonly position: 'key' | 'value';
+  readonly report: (diagnostic: Diagnostic) => void;
 }
 
 /**
@@ -398,9 +426,9 @@ export function composeVisitors(...visitors: readonly TemplateVisitor[]): Templa
       }
       return undefined;
     },
-    scalar: (node, frame) => {
+    scalar: (node, frame, context) => {
       for (const visitor of visitors) {
-        const replacement = visitor.scalar?.(node, frame);
+        const replacement = visitor.scalar?.(node, frame, context);
         if (replacement !== undefined) return replacement;
       }
       return undefined;
@@ -467,7 +495,7 @@ export function walkTemplate(
 function walkNode(node: PipelineNode, frame: TemplateFrame, state: WalkState): PipelineNode {
   switch (node.kind) {
     case 'scalar':
-      return state.visitor.scalar?.(node, frame) ?? node;
+      return state.visitor.scalar?.(node, frame, scalarContext(state, 'value')) ?? node;
     case 'mapping':
       return walkMapping(node, frame, state);
     case 'sequence':
@@ -551,7 +579,7 @@ function walkMapping(node: MappingNode, frame: TemplateFrame, state: WalkState):
       return;
     }
     entries.push({
-      key: (state.visitor.scalar?.(entry.key, frame) as ScalarNode | undefined) ?? entry.key,
+      key: interpolatedKey(entry.key, frame, state),
       value: walkNode(entry.value, frame, state),
     });
   });
@@ -594,7 +622,18 @@ function walkSequence(node: SequenceNode, frame: TemplateFrame, state: WalkState
       });
       return;
     }
-    items.push(walkNode(item, frame, state));
+    const walked = walkNode(item, frame, state);
+    // **Array into array flattens** (C-E03-178) — the template-expressions page's one structural
+    // sentence, and the only place a scalar's replacement is spliced rather than substituted. The
+    // test is "the item *was* a scalar and became a sequence", not "the item is a sequence": a
+    // literal nested sequence is left alone, because nothing expanded it. An Object in the same
+    // position stays one item, which is why this checks the kind rather than splicing every
+    // collection.
+    if (item.kind === 'scalar' && walked.kind === 'sequence') {
+      items.push(...walked.items);
+      return;
+    }
+    items.push(walked);
   });
   return { kind: 'sequence', items, pos: node.pos };
 }
@@ -604,6 +643,21 @@ function visitContext(state: WalkState): TemplateVisitContext {
     walk: (node, frame) => walkNode(node, frame, state),
     report: (diagnostic) => state.diagnostics.push(diagnostic),
   };
+}
+
+function scalarContext(state: WalkState, position: 'key' | 'value'): TemplateScalarContext {
+  return { position, report: (diagnostic) => state.diagnostics.push(diagnostic) };
+}
+
+/**
+ * A key after interpolation. A key must stay a key, so a visitor that answers with anything but a
+ * scalar is ignored rather than cast: the interpolator already reports `Expected a scalar value`
+ * for that case and leaves the raw text (C-E03-191), and the previous version of this line cast
+ * the result to `ScalarNode` unchecked, which would have put a mapping where a key belongs.
+ */
+function interpolatedKey(key: ScalarNode, frame: TemplateFrame, state: WalkState): ScalarNode {
+  const replacement = state.visitor.scalar?.(key, frame, scalarContext(state, 'key'));
+  return replacement?.kind === 'scalar' ? replacement : key;
 }
 
 /**

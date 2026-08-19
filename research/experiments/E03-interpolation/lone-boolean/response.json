@@ -1,0 +1,3 @@
+{
+  "finalYaml": "parameters:\n- name: flag\n  type: boolean\n  default: true\nstages:\n- stage: probe\n  jobs:\n  - job: probe\n    steps:\n    - task: CmdLine@2\n      inputs:\n        script: echo probe\n      env:\n        FROM_PARAM: True\n        LITERAL_TRUE: True\n        LITERAL_FALSE: False\n\n"
+}

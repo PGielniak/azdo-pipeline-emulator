@@ -94,11 +94,7 @@ Acceptance: directive semantics proven by oracle fixture pairs, not by reading a
   **Do:** mapping-merge semantics incl. collision behavior (verify: error vs overwrite).
   **Ground:** templates doc "Insertion"; oracle probe for key-collision behavior; claim recorded.
   **Done:** goldens incl. collision case matching service.
-- [!] **E03-S01-T05 — Scalar interpolation rules**
-  *In progress 2026-08-19 by Orchestrator (Claude) on worktree `/root/wt-claude`, branch
-  `claude/e03-s01-t04`; do not pick. Inherits from E03-S01-T04: never evaluate a lone
-  `${{ insert }}` (C-E03-173), and replaces the `fixtureScalars` stand-in in
-  `packages/engine/test/template/fixture-harness.ts`. Claim block C-E03-175..194.*
+- [x] **E03-S01-T05 — Scalar interpolation rules** *(done 2026-08-19. `packages/engine/src/template/interpolate.ts` — `interpolationVisitor` on T01's scalar seam, grounded by 34 live preview probes (`pnpm interpolation-survey`, `research/experiments/E03-interpolation/`, C-E03-175..194); 27 committed as fixture pairs, 7 asserted against their rejection transcripts. The two documented rules held (`Null → ''`, Boolean → `True`/`False`); three undocumented ones decided the code. **The lone/mixed boundary is whitespace-sensitive** — `'  ${{ obj }}  '` is mixed content and rejects, the unpadded quoted spelling inserts structurally — so `loneExpression` stopped trimming (C-E03-180); it had been wrong since T01 and was invisible because YAML strips plain scalars itself. **Every scalar result is converted to its String form**, proven by Null rendering `''` in lone position (C-E03-183); Number is shortest-round-trip invariant (`1.0` → `1`), making the expressions page's "no decimal separator" false as written (C-E03-182). **Keys share the split but have no structural option** and their spelling is `True` — closing the docs/02 §8 ambiguity entry — with two distinct rejections proving the split is shared: lone collection → `Expected a scalar value`, mixed → `Unable to convert from Object to String. Value: Object` (C-E03-190/191/192). Also landed: `TemplateVisitor.scalar` gained a `TemplateScalarContext` (`position` + `report`), `walkSequence` gained the array-into-array flatten (C-E03-178), and the `fixtureScalars` stand-in is deleted so all four E03-S01 suites run the real pass. Eight mutations turn the suite red. A defect in the **normalizer** was found and filed rather than patched here — it types scalar leaves before comparing them (C-E03-193) — as E03-S05-T03; its two affected pairs are asserted against raw `finalYaml` meanwhile. 70 tests.)*
   **Do:** lone-expression structural insertion vs mixed-content stringification; Null→``, Boolean→`True/False`, Number invariant; expression-in-key stringification.
   **Ground:** docs/02 §3 spec + oracle probes for each stringification rule (esp. Boolean casing, float rendering `0.5`/`1.0`); claims per rule.
   **Done:** table-driven goldens vs oracle.
@@ -169,3 +165,16 @@ Acceptance: normalize-and-diff pipeline usable locally and in CI.
   **Do:** expand locally → fetch `finalYaml` → normalize both → semantic diff (path-based, colored) → exit code; `--update-fixture` writes the pair into `fixtures/oracle/`.
   **Ground:** preview REST page (already pinned E00-S03); diff behavior spec docs/02 §8.
   **Done:** command green on corpus; used by E12-S03 nightly.
+- [ ] **E03-S05-T03 — Normalizer rule N9: compare scalar leaves as source text**
+  *Added 2026-08-19 by E03-S01-T05, which found the gap rather than assuming it (C-E03-193).*
+  **Do:** `normalize.ts`'s `plain()` stringifies the values the YAML parser already typed, so the
+  service's `PROBE: 0123` becomes `"123"` while our `PROBE: "0123"` stays `"0123"` — one value,
+  reported as drift. Rule N7 ("scalar leaves compared as strings") is right and applied one layer
+  too late: read each scalar's **source text** from the CST instead, which is what the service's own
+  reader does and why its `finalYaml` round-trips (C-E03-001). Affects Booleans and numeric-looking
+  strings equally (`True` vs `true`).
+  **Ground:** C-E03-193 + `research/experiments/E03-interpolation/lone-string-numeric/`; no new
+  oracle probes needed — the two divergent pairs are already committed.
+  **Done:** `interp-lone-string-numeric` and `interp-key-boolean` removed from
+  `NORMALIZER_LOSSY` in `packages/engine/test/template/interpolate.test.ts` and passing as ordinary
+  goldens; normalizer idempotence still green.

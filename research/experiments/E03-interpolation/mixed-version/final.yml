@@ -1,0 +1,12 @@
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo probe
+      env:
+        THREE: v1.2.3
+        FOUR: v1.2.3.4
+
