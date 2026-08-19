@@ -1,0 +1,24 @@
+trigger: none
+pr: none
+resources:
+  repositories:
+  - repository: mirror
+    type: git
+    name: <oracle-repository>
+pool:
+  vmImage: ubuntu-latest
+steps:
+- checkout: self
+  path: repo/self
+- checkout: mirror
+  path: repo/workspace
+  workspaceRepo: true
+- bash: |
+    printf 'CASE bash PWD=%s BUILD=%s SYSTEM=%s\n' "$PWD" "$BUILD_SOURCESDIRECTORY" "$SYSTEM_DEFAULTWORKINGDIRECTORY"
+  displayName: Observe bash default cwd
+- script: |
+    printf 'CASE script PWD=%s BUILD=%s SYSTEM=%s\n' "$PWD" "$BUILD_SOURCESDIRECTORY" "$SYSTEM_DEFAULTWORKINGDIRECTORY"
+  displayName: Observe script default cwd
+- pwsh: |
+    Write-Host "CASE pwsh PWD=$((Get-Location).Path) BUILD=$env:BUILD_SOURCESDIRECTORY SYSTEM=$env:SYSTEM_DEFAULTWORKINGDIRECTORY"
+  displayName: Observe pwsh default cwd

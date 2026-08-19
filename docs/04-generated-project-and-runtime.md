@@ -100,6 +100,13 @@ run_step --id 030 --file steps/030-build-solution.sh --cond cond_step_030
          --continue-on-error false --fail-on-stderr false --retries 0 --timeout 3600
 ```
 
+The job runner sets `AZDO_LOG_DIR` to that job's `logs/<stage>/<job>` directory. `--wd` may be
+omitted or empty, in which case the step starts in `System.DefaultWorkingDirectory` (C-E06-026/027;
+hosted run 542 distinguishes it from `Build.SourcesDirectory`). `--timeout` is seconds already
+capped to the smaller of the step limit and the remaining job deadline; the agent likewise binds
+both cancellation sources to execution (C-E06-025/030). The remaining arguments are stable from
+the first `run_step` skeleton even though their condition/result policies land in E06-S03-T02/T03.
+
 1. **Condition**: call compiled `cond_*` fn (sees current job status + vars). False → `Skipped` (logged like ADO: `##[section]Skipping: …`).
 2. **Env materialization**: load step `env:` entries and macro-expand their values, then add predefined vars + all *non-secret* scope vars (name transform `UPPER`, `.`/space→`_`), then assemble `PATH` from `path.d` newest-first. Explicit `env:` is the only way secrets enter the process environment. Counterintuitively, public variables are added *after* the task environment, so an automatic variable whose transformed name collides with an explicit `env:` key overwrites that mapping (C-E06-007..012; hosted run 540). The source exposes no stable ordering contract when two public names such as `A.B` and `A_B` collapse to the same environment key; run 540 observed `A.B` winning in four order variants, so that collision remains an explicit parity risk rather than an invented universal rule.
 3. **Macro pass**: mirror the agent's two phase boundary. Immediately before the step, recursively recalculate stored variable values (exact case-insensitive references, inherited secret status, depth/cycle guards); then read the step file and run the separate non-recursive target scan, substituting `$(Name)` from that expanded view (secrets included), leaving unmatched candidates **literal**, and never revisiting inserted bytes. Write the result as a private file under `$(Agent.TempDirectory)/steps/`. This explains both hosted run-541 observations without contradiction: a runtime-created `a=$(b)` is recalculated to `inner` before the next task, while target text `$(a$(b))` first misses the outer candidate, expands the inner `$(b)`, and remains `$(ainner)` even when `ainner` exists (C-E06-018..024; docs/06 §5 decision 29).

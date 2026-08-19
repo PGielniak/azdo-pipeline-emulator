@@ -73,3 +73,24 @@ by a one-pass target scan, while `NESTED=$(ainner)` is the target scanner advanc
 unmatched outer candidate, expanding the inner `$(b)`, and not revisiting the newly formed outer
 macro. GitHub code search is not part of this evidence path: the trace used the repository tree API
 and commit-pinned raw files at `4571a73531e1ea6342ed46723dd39a115b92843b`.
+
+[C-E06-025] The four inline shell shortcut schemas (`bash`, `script`, `powershell`, and `pwsh`) expose `workingDirectory` and `timeoutInMinutes`; a job-level timeout terminates a running step even when its own timeout is longer. — https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/steps-bash, https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/steps-script, https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/steps-powershell, and https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/steps-pwsh (checked 2026-08-19) — "Start the script with this working directory." / "the running job (including your step) is terminated".
+
+[C-E06-026] The Bash@3, CmdLine@2, and PowerShell@2 reference pages say an omitted working directory uses `Build.SourcesDirectory`, but that sentence is incomplete when `workspaceRepo` retargets the job default directory. — https://learn.microsoft.com/azure/devops/pipelines/tasks/reference/bash-v3, https://learn.microsoft.com/azure/devops/pipelines/tasks/reference/cmd-line-v2, and https://learn.microsoft.com/azure/devops/pipelines/tasks/reference/powershell-v2 (checked 2026-08-19), contradicted by research/experiments/E06-run-step/real-run.md (run 542) — "If you leave it empty, the working directory is $(Build.SourcesDirectory)."
+
+[C-E06-027] With `Build.SourcesDirectory` held at `<workspace>/s` and `System.DefaultWorkingDirectory` retargeted to `<workspace>/repo/workspace`, hosted run 542 started `bash`, `script`, and `pwsh` shortcuts in the latter directory; the effective default is therefore `System.DefaultWorkingDirectory`. — research/experiments/E06-run-step/real-run.md (run 542, checked 2026-08-19) — "CASE bash PWD=/home/vsts/work/1/repo/workspace BUILD=/home/vsts/work/1/s SYSTEM=/home/vsts/work/1/repo/workspace".
+
+[C-E06-028] The agent's sequential step lifecycle starts the step context, recalculates variables, evaluates the condition, invokes the step only when the condition succeeds, merges its result into the job, and completes the step context. — https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/StepsRunner.cs#L84-L123, https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/StepsRunner.cs#L211-L310, and https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/StepsRunner.cs#L349-L485 (checked 2026-08-19) — "beginning sequential step processing" / "Run the step with worker timeout integration." / "Complete the step context."
+
+[C-E06-029] Current Bash@3 and CmdLine@2 implementations write inline text to a unique script beneath `Agent.TempDirectory`, invoke Bash with the selected working directory, and direct both output streams into the live task output to preserve ordering. — https://github.com/microsoft/azure-pipelines-tasks/blob/6485321954dafb296697763c54c30a70840154f8/Tasks/BashV3/bash.ts#L158-L184 and https://github.com/microsoft/azure-pipelines-tasks/blob/6485321954dafb296697763c54c30a70840154f8/Tasks/CmdLineV2/cmdline.ts#L21-L48 (checked 2026-08-19) — "let tempDirectory = tl.getVariable('agent.tempDirectory')" / "Direct all output to STDOUT".
+
+[C-E06-030] Immediately before execution, `StepsRunner` applies the step timeout to its execution-context cancellation source while also passing the job cancellation token into step execution, so either the individual limit or the enclosing job deadline can stop the step. — https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/StepsRunner.cs#L314-L380 and https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/ExecutionContext.cs#L417-L423 (checked 2026-08-19) — "SetTimeout(timeout: step.Timeout)" / "_cancellationTokenSource.CancelAfter(timeout.Value)".
+
+## E06-S03-T01 grounding composition
+
+C-E06-025/030 define the effective timeout cap: the caller passes the job-deadline-adjusted
+remaining seconds as `--timeout`, and `run_step` enforces that limit around the process. C-E06-027
+settles the shell default working directory with a live control that makes the two candidate
+variables unequal; C-E06-026 records why the task-reference prose alone is insufficient.
+C-E06-028 supplies the lifecycle seam, while C-E06-029 grounds private temporary script execution
+and combined live output. Condition/result policy remains intentionally deferred to E06-S03-T02/T03.

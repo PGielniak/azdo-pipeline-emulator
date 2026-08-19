@@ -792,6 +792,7 @@ azdo__refresh_step_env() {
 # Populates AZDO_STEP_ENV. Explicit values support the task's normal macro mapping form, including
 # secrets; secrets are never added by the automatic public-variable pass (C-E06-009). Public
 # variables intentionally run second and overwrite an explicit key on collision (C-E06-010).
+# shellcheck disable=SC2120 # Most callers pass explicit pairs; run_step also needs the empty form.
 azdo_env_materialize() {
   (($# % 2 == 0)) || {
     printf '%s\n' 'usage: azdo_env_materialize [<explicit-name> <explicit-value> ...]' >&2
@@ -811,4 +812,282 @@ azdo_env_materialize() {
   azdo__add_public_vars_to_environment || return
   azdo__add_prepend_path_to_environment || return
   azdo__refresh_step_env
+}
+
+# E06-S03-T01 — the caller passes the effective remaining timeout: the smaller of the step limit
+# and the enclosing job deadline. The agent binds both cancellation sources to step execution
+# (C-E06-025/030); keeping that calculation in the job runner makes `run_step --timeout` a simple,
+# testable seconds contract.
+
+azdo__run_step_usage() {
+  printf '%s\n' \
+    'usage: run_step --id <id> --file <path> --cond <function> --display <text> [--wd <path>] --continue-on-error <true|false> --fail-on-stderr <true|false> --retries <count> --timeout <seconds>' >&2
+}
+
+azdo__run_step_kill_group() {
+  (($# == 2)) || {
+    printf '%s\n' 'usage: azdo__run_step_kill_group <signal> <process-group-id>' >&2
+    return 2
+  }
+
+  # `run_step` creates a distinct process group for the script, so shell children are stopped with
+  # their parent. Fall back to the leader only on a platform whose kill rejects a negative id.
+  kill "-$1" -- "-$2" 2>/dev/null || kill "-$1" "$2" 2>/dev/null
+}
+
+azdo__run_step_process() {
+  (($# == 5)) || {
+    printf '%s\n' \
+      'usage: azdo__run_step_process <script> <working-directory> <log-file> <timeout-seconds> <temp-directory>' >&2
+    return 2
+  }
+
+  local script_file="$1" working_directory="$2" log_file="$3" timeout_seconds="$4" temp_dir="$5"
+  local fifo timeout_marker old_umask child_pid tee_pid watchdog_pid child_status tee_status
+  local monitor_was_enabled=false
+
+  old_umask="$(umask)"
+  umask 077
+  fifo="$(mktemp "$temp_dir/.step-output.XXXXXX")" || {
+    umask "$old_umask"
+    return
+  }
+  timeout_marker="$(mktemp "$temp_dir/.step-timeout.XXXXXX")" || {
+    rm -f -- "$fifo"
+    umask "$old_umask"
+    return
+  }
+  rm -f -- "$fifo" "$timeout_marker"
+  if ! mkfifo "$fifo"; then
+    umask "$old_umask"
+    return 1
+  fi
+  umask "$old_umask"
+
+  # Start the reader before the writer so opening the FIFO cannot deadlock. Both streams enter the
+  # same pipe and are teed live, matching the task implementations' ordered output wiring
+  # (C-E06-029). Secret masking and logging-command parsing are later lifecycle tasks.
+  tee -- "$log_file" <"$fifo" &
+  tee_pid=$!
+
+  [[ "$-" == *m* ]] && monitor_was_enabled=true
+  set -m
+  (
+    cd "$working_directory" || exit
+    exec env -- "${AZDO_STEP_ENV[@]}" "$BASH" "$script_file"
+  ) >"$fifo" 2>&1 &
+  child_pid=$!
+
+  (
+    sleep "$timeout_seconds"
+    if kill -0 "$child_pid" 2>/dev/null; then
+      : >"$timeout_marker"
+      azdo__run_step_kill_group TERM "$child_pid" || :
+      sleep 1
+      if kill -0 "$child_pid" 2>/dev/null; then
+        azdo__run_step_kill_group KILL "$child_pid" || :
+      fi
+    fi
+  ) &
+  watchdog_pid=$!
+  [[ "$monitor_was_enabled" = true ]] || set +m
+
+  if wait "$child_pid"; then
+    child_status=0
+  else
+    child_status=$?
+  fi
+  azdo__run_step_kill_group TERM "$watchdog_pid" || :
+  if wait "$watchdog_pid" 2>/dev/null; then
+    :
+  fi
+  if wait "$tee_pid"; then
+    tee_status=0
+  else
+    tee_status=$?
+  fi
+
+  rm -f -- "$fifo"
+  if [[ -f "$timeout_marker" ]]; then
+    rm -f -- "$timeout_marker"
+    return 124
+  fi
+  rm -f -- "$timeout_marker"
+  ((child_status != 0)) && return "$child_status"
+  return "$tee_status"
+}
+
+# run_step --id <id> --file <path> --cond <function> --display <text>
+#          [--wd <path>] --continue-on-error <bool> --fail-on-stderr <bool>
+#          --retries <count> --timeout <effective-remaining-seconds>
+#
+# This task owns only the execution skeleton. `--cond`, `--continue-on-error`,
+# `--fail-on-stderr`, and `--retries` are parsed and validated now so emitted callers already use
+# the stable docs/04 contract; E06-S03-T02/T03 will activate their semantics. When `--wd` is absent
+# or empty, the live-probed shell default is System.DefaultWorkingDirectory (C-E06-026/027).
+run_step() {
+  local id='' file='' condition='' display='' working_directory=''
+  local continue_on_error='' fail_on_stderr='' retries='' timeout_seconds=''
+  local seen_id=false seen_file=false seen_condition=false seen_display=false seen_wd=false
+  local seen_continue=false seen_fail_on_stderr=false seen_retries=false seen_timeout=false
+  local expanded_file expanded_wd ignored_secret log_file status
+
+  while (($# > 0)); do
+    (($# >= 2)) || {
+      azdo__run_step_usage
+      return 2
+    }
+    case "$1" in
+      --id)
+        [[ "$seen_id" = false ]] || {
+          printf '%s\n' 'duplicate run_step option: --id' >&2
+          return 2
+        }
+        seen_id=true
+        id="$2"
+        ;;
+      --file)
+        [[ "$seen_file" = false ]] || {
+          printf '%s\n' 'duplicate run_step option: --file' >&2
+          return 2
+        }
+        seen_file=true
+        file="$2"
+        ;;
+      --cond)
+        [[ "$seen_condition" = false ]] || {
+          printf '%s\n' 'duplicate run_step option: --cond' >&2
+          return 2
+        }
+        seen_condition=true
+        condition="$2"
+        ;;
+      --display)
+        [[ "$seen_display" = false ]] || {
+          printf '%s\n' 'duplicate run_step option: --display' >&2
+          return 2
+        }
+        seen_display=true
+        display="$2"
+        ;;
+      --wd)
+        [[ "$seen_wd" = false ]] || {
+          printf '%s\n' 'duplicate run_step option: --wd' >&2
+          return 2
+        }
+        seen_wd=true
+        working_directory="$2"
+        ;;
+      --continue-on-error)
+        [[ "$seen_continue" = false ]] || {
+          printf '%s\n' 'duplicate run_step option: --continue-on-error' >&2
+          return 2
+        }
+        seen_continue=true
+        continue_on_error="$2"
+        ;;
+      --fail-on-stderr)
+        [[ "$seen_fail_on_stderr" = false ]] || {
+          printf '%s\n' 'duplicate run_step option: --fail-on-stderr' >&2
+          return 2
+        }
+        seen_fail_on_stderr=true
+        fail_on_stderr="$2"
+        ;;
+      --retries)
+        [[ "$seen_retries" = false ]] || {
+          printf '%s\n' 'duplicate run_step option: --retries' >&2
+          return 2
+        }
+        seen_retries=true
+        retries="$2"
+        ;;
+      --timeout)
+        [[ "$seen_timeout" = false ]] || {
+          printf '%s\n' 'duplicate run_step option: --timeout' >&2
+          return 2
+        }
+        seen_timeout=true
+        timeout_seconds="$2"
+        ;;
+      *)
+        printf 'unknown run_step option: %s\n' "$1" >&2
+        azdo__run_step_usage
+        return 2
+        ;;
+    esac
+    shift 2
+  done
+
+  if [[ "$seen_id" != true || "$seen_file" != true || "$seen_condition" != true ||
+    "$seen_display" != true || "$seen_continue" != true ||
+    "$seen_fail_on_stderr" != true || "$seen_retries" != true || "$seen_timeout" != true ]]; then
+    azdo__run_step_usage
+    return 2
+  fi
+  azdo__valid_store_segment "$id" || return
+  [[ -n "$file" && -f "$file" && -r "$file" ]] || {
+    printf 'step file is not readable: %s\n' "$file" >&2
+    return 2
+  }
+  [[ -n "$condition" ]] || {
+    printf '%s\n' 'run_step --cond must not be empty' >&2
+    return 2
+  }
+  [[ -n "$display" ]] || {
+    printf '%s\n' 'run_step --display must not be empty' >&2
+    return 2
+  }
+  azdo__validate_bool continue-on-error "$continue_on_error" || return
+  azdo__validate_bool fail-on-stderr "$fail_on_stderr" || return
+  [[ "$retries" =~ ^[0-9]+$ ]] || {
+    printf 'run_step --retries must be a non-negative integer, got: %s\n' "$retries" >&2
+    return 2
+  }
+  [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || {
+    printf 'run_step --timeout must be a positive integer, got: %s\n' "$timeout_seconds" >&2
+    return 2
+  }
+  [[ -n "${AZDO_LOG_DIR:-}" ]] || {
+    printf '%s\n' 'AZDO_LOG_DIR must be set before running a step' >&2
+    return 2
+  }
+
+  if [[ -n "$working_directory" ]]; then
+    azdo__expand_value "$working_directory" expanded_wd || return
+  else
+    if ! azdo__macro_preexpanded_value \
+      'System.DefaultWorkingDirectory' expanded_wd ignored_secret "${AZDO_VAR_SCOPE:-pipeline}" ||
+      [[ -z "$expanded_wd" ]]; then
+      printf '%s\n' \
+        'System.DefaultWorkingDirectory must be present and non-empty before running a step' >&2
+      return 2
+    fi
+  fi
+  [[ -d "$expanded_wd" ]] || {
+    printf 'step working directory is not a directory: %s\n' "$expanded_wd" >&2
+    return 2
+  }
+
+  if ! declare -p AZDO_STEP_ENV >/dev/null 2>&1; then
+    # shellcheck disable=SC2119 # The empty form means no explicit step env entries.
+    azdo_env_materialize || return
+  elif [[ "$(declare -p AZDO_STEP_ENV)" != declare\ -*a*\ AZDO_STEP_ENV=* ]]; then
+    printf '%s\n' 'AZDO_STEP_ENV must be an indexed array of NAME=value entries' >&2
+    return 2
+  fi
+
+  expanded_file="$(azdo_expand_macros "$file")" || return
+  mkdir -p "$AZDO_LOG_DIR" || return
+  log_file="$AZDO_LOG_DIR/$id.log"
+  if azdo__run_step_process \
+    "$expanded_file" "$expanded_wd" "$log_file" "$timeout_seconds" "${expanded_file%/*}"; then
+    status=0
+  else
+    status=$?
+  fi
+
+  # Parsed now for the stable call contract; E06-S03-T02/T03 own their behavior.
+  : "$condition" "$display" "$continue_on_error" "$fail_on_stderr" "$retries"
+  return "$status"
 }
