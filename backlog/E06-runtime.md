@@ -50,7 +50,7 @@ Acceptance: `run_step` per docs/04 §5, each numbered behavior grounded.
   **Do:** result state machine `Succeeded/SucceededWithIssues/Failed/Skipped/Canceled`; `failOnStderr` (any stderr output → failure, while still streaming — verify exact trigger: any bytes vs at-exit check); `retryCountOnTaskFailure` re-exec loop; `continueOnError` downgrade.
   **Ground:** yaml-schema steps pages for each field (quote definitions); `failOnStderr` precise semantics from the Bash/PowerShell task sources in `microsoft/azure-pipelines-tasks` (pin the stderr handling code) — task-level, not agent-level, behavior.
   **Done:** bats truth table per combination; claims cited per row.
-- [ ] **E06-S03-T03 — Condition evaluation & skip flow**
+- [x] **E06-S03-T03 — Condition evaluation & skip flow**
   **Do:** compiled `cond_*` invocation with `StatusContext` from results store; default `succeeded()` when absent; `--no-condition` override; skip logging format.
   **Ground:** conditions doc default-condition statement (quote); interplay with `continueOnError` (does `succeeded()` see `SucceededWithIssues`? — quote doc; verify via real run if ambiguous, transcript).
   **Done:** bats: skip on failed predecessor, always() runs after failure, SucceededWithIssues treated per claim.

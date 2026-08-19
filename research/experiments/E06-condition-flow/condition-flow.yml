@@ -1,0 +1,28 @@
+trigger: none
+pr: none
+
+jobs:
+- job: failedFlow
+  pool:
+    vmImage: ubuntu-latest
+  steps:
+  - bash: exit 9
+    displayName: hard failure
+  - bash: echo SHOULD_NOT_RUN
+    displayName: default after failure
+  - bash: echo ALWAYS_RAN
+    displayName: always after failure
+    condition: always()
+
+- job: continuedFlow
+  pool:
+    vmImage: ubuntu-latest
+  steps:
+  - bash: exit 7
+    displayName: continued failure
+    continueOnError: true
+  - bash: echo DEFAULT_AFTER_ISSUES
+    displayName: default after issues
+  - bash: echo EXPLICIT_SUCCEEDED_AFTER_ISSUES
+    displayName: explicit succeeded after issues
+    condition: succeeded()

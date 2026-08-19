@@ -118,3 +118,25 @@ C-E06-036 places `continueOnError` after retries and limits its downgrade to `Fa
 C-E06-037 defines the five persisted result spellings and distinguishes step timeout failure from
 job-driven cancellation. The task and agent sources answer every runtime ambiguity, so no hosted
 experiment is required for this task.
+
+[C-E06-038] A step with no authored condition uses `succeeded()`: it runs only while nothing in its job has failed, and `succeeded()` is true when there is no previous step. — https://learn.microsoft.com/azure/devops/pipelines/process/conditions (checked 2026-08-19) — "By default, a step runs if nothing in its job failed yet" / "This function also returns `true` if there is no previous step."
+
+[C-E06-039] At step scope, `succeeded()` reads `Agent.JobStatus`, defaults an unset status to `Succeeded`, and accepts both `Succeeded` and `SucceededWithIssues`; `always()` is unconditionally true. — https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/ExpressionManager.cs#L24-L45 and https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/ExpressionManager.cs#L99-L150 (checked 2026-08-19) — "parser.CreateTree(condition ... ) ?? new SucceededNode()" / "jobStatus == TaskResult.SucceededWithIssues".
+
+[C-E06-040] A final failed task with `continueOnError: true` becomes `SucceededWithIssues` before its result is merged into `Agent.JobStatus`, so downstream default and explicit `succeeded()` conditions both run. — https://learn.microsoft.com/azure/devops/pipelines/process/tasks#continue-on-error and https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/StepsRunner.cs#L281-L293 plus https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/StepsRunner.cs#L464-L485 (checked 2026-08-19), corroborated by research/experiments/E06-condition-flow/real-run.md (run 543) — "Downstream steps and jobs treat the task result as `success`" / "Result: Failed -> SucceededWithIssues".
+
+[C-E06-041] When a step condition is false, the hosted agent does not invoke the step, records `Skipped`, and writes the plain raw line `Skipping step due to condition evaluation.`; hosted run 543 confirms that exact log text and timeline result after a hard failure. — https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/StepsRunner.cs#L211-L253 (checked 2026-08-19), corroborated by research/experiments/E06-condition-flow/real-run.md (run 543) — "Skipping step due to condition evaluation." / "Complete(TaskResult.Skipped".
+
+[C-E06-042] A condition evaluation error fails the step rather than treating the error status as Boolean false; ordinary false is the separate `Skipped` path. — https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/StepsRunner.cs#L211-L267 (checked 2026-08-19) — "fail the step since there is an evaluate error" / "Complete(TaskResult.Failed)".
+
+[C-E06-043] After each ordinary step, the agent merges only `SucceededWithIssues` or `Failed` into the accumulated job status; `Succeeded` and `Skipped` leave that status unchanged for later step conditions. — https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/StepsRunner.cs#L281-L301 (checked 2026-08-19) — "Update the job result" / "Job result unchanged".
+
+## E06-S03-T03 grounding composition
+
+C-E06-038/039 define the implicit condition and the step-scoped status predicates. C-E06-040/043
+define how persisted step outcomes form the `Agent.JobStatus` seen by the next condition.
+C-E06-041 supplies the false-condition result and exact hosted raw log line. C-E06-042 keeps the
+shell backend's status `2` evaluation errors distinct from status `1` Boolean false; the runtime
+condition boundary must preserve helper errors even when shell `||` or command substitution would
+otherwise discard their status. Run 543 resolves the only log-format ambiguity and corroborates
+the documented `SucceededWithIssues` control flow.

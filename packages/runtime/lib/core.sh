@@ -294,6 +294,92 @@ azdo_step_result() {
   fi
 }
 
+# Step-scoped StatusContext for compiled condition functions. The hosted agent initializes
+# Agent.JobStatus to Succeeded, then changes it only when a prior step is Failed or
+# SucceededWithIssues; a false-condition Skipped result leaves it unchanged (C-E06-039/043).
+# Canceled is accepted for the job-runner cancellation seam even though ordinary step completion
+# does not merge that result into Agent.JobStatus.
+azdo__job_status_from_results() {
+  local result_dir result_path result_name result status=Succeeded
+  result_dir="$(azdo__step_result_dir)" || return
+  [[ -d "$result_dir" ]] || {
+    printf '%s\n' "$status"
+    return 0
+  }
+
+  for result_path in "$result_dir"/*; do
+    [[ -f "$result_path" ]] || continue
+    result_name="${result_path##*/}"
+    # A resumed force-run must not use this step's stale result as its own predecessor status.
+    [[ "$result_name" != "${AZDO_CONDITION_STEP_ID:-}" ]] || continue
+    IFS= read -r result <"$result_path" || [[ -n "$result" ]] || {
+      printf 'empty step result file: %s\n' "$result_path" >&2
+      return 2
+    }
+    azdo__valid_step_result "$result" || return
+    case "$result" in
+      Canceled)
+        status=Canceled
+        break
+        ;;
+      Failed) status=Failed ;;
+      SucceededWithIssues)
+        [[ "$status" = Succeeded ]] && status=SucceededWithIssues
+        ;;
+      Succeeded | Skipped) ;;
+    esac
+  done
+  printf '%s\n' "$status"
+}
+
+azdo_status_always() {
+  (($# == 0)) || {
+    printf '%s\n' 'usage: azdo_status_always' >&2
+    return 2
+  }
+  return 0
+}
+
+azdo_status_canceled() {
+  (($# == 0)) || {
+    printf '%s\n' 'usage: azdo_status_canceled' >&2
+    return 2
+  }
+  local status
+  status="$(azdo__job_status_from_results)" || return
+  [[ "$status" = Canceled ]]
+}
+
+azdo_status_failed() {
+  (($# == 0)) || {
+    printf '%s\n' 'usage: azdo_status_failed' >&2
+    return 2
+  }
+  local status
+  status="$(azdo__job_status_from_results)" || return
+  [[ "$status" = Failed ]]
+}
+
+azdo_status_succeeded() {
+  (($# == 0)) || {
+    printf '%s\n' 'usage: azdo_status_succeeded' >&2
+    return 2
+  }
+  local status
+  status="$(azdo__job_status_from_results)" || return
+  [[ "$status" = Succeeded || "$status" = SucceededWithIssues ]]
+}
+
+azdo_status_succeededorfailed() {
+  (($# == 0)) || {
+    printf '%s\n' 'usage: azdo_status_succeededorfailed' >&2
+    return 2
+  }
+  local status
+  status="$(azdo__job_status_from_results)" || return
+  [[ "$status" = Succeeded || "$status" = SucceededWithIssues || "$status" = Failed ]]
+}
+
 # E06-S01-T03 — the generated runner translates manifest.json's env array into shell metadata
 # before loading user values:
 #
@@ -890,7 +976,7 @@ azdo_env_materialize() {
 
 azdo__run_step_usage() {
   printf '%s\n' \
-    'usage: run_step --id <id> --file <path> --cond <function> --display <text> [--wd <path>] --continue-on-error <true|false> --fail-on-stderr <true|false> --retries <count> --timeout <seconds>' >&2
+    'usage: run_step --id <id> --file <path> [--cond <function>] [--no-condition] --display <text> [--wd <path>] --continue-on-error <true|false> --fail-on-stderr <true|false> --retries <count> --timeout <seconds>' >&2
 }
 
 azdo__run_step_kill_group() {
@@ -1063,23 +1149,36 @@ azdo__run_step_retry_wait() {
   sleep "$delay_seconds"
 }
 
-# run_step --id <id> --file <path> --cond <function> --display <text>
+# run_step --id <id> --file <path> [--cond <function>] [--no-condition] --display <text>
 #          [--wd <path>] --continue-on-error <bool> --fail-on-stderr <bool>
 #          --retries <count> --timeout <effective-remaining-seconds>
 #
-# `--cond` remains a parsed seam for E06-S03-T03. Exit status, failOnStderr, retries, result
-# persistence, and continueOnError follow C-E06-031..037. When `--wd` is absent or empty, the
-# live-probed shell default is System.DefaultWorkingDirectory (C-E06-026/027).
+# An omitted `--cond` is the agent's implicit succeeded(); `--no-condition` is the local force-run
+# override. False, error, and status-context behavior follow C-E06-038..043. Exit status,
+# failOnStderr, retries, result persistence, and continueOnError follow C-E06-031..037. When `--wd`
+# is absent or empty, the live-probed shell default is System.DefaultWorkingDirectory
+# (C-E06-026/027).
 run_step() {
-  local id='' file='' condition='' display='' working_directory=''
+  local id='' file='' condition='azdo_status_succeeded' display='' working_directory=''
   local continue_on_error='' fail_on_stderr='' retries='' timeout_seconds=''
   local seen_id=false seen_file=false seen_condition=false seen_display=false seen_wd=false
   local seen_continue=false seen_fail_on_stderr=false seen_retries=false seen_timeout=false
+  local no_condition=false seen_no_condition=false condition_status=0 condition_error=''
   local expanded_file expanded_wd ignored_secret log_file status result
   local retry_index=0 effective_retries remaining_seconds elapsed_seconds delay_seconds wait_status
-  local start_seconds
+  local start_seconds state_dir condition_error_dir condition_error_file old_umask
 
   while (($# > 0)); do
+    if [[ "$1" = --no-condition ]]; then
+      [[ "$seen_no_condition" = false ]] || {
+        printf '%s\n' 'duplicate run_step option: --no-condition' >&2
+        return 2
+      }
+      seen_no_condition=true
+      no_condition=true
+      shift
+      continue
+    fi
     (($# >= 2)) || {
       azdo__run_step_usage
       return 2
@@ -1166,8 +1265,8 @@ run_step() {
     shift 2
   done
 
-  if [[ "$seen_id" != true || "$seen_file" != true || "$seen_condition" != true ||
-    "$seen_display" != true || "$seen_continue" != true ||
+  if [[ "$seen_id" != true || "$seen_file" != true || "$seen_display" != true ||
+    "$seen_continue" != true ||
     "$seen_fail_on_stderr" != true || "$seen_retries" != true || "$seen_timeout" != true ]]; then
     azdo__run_step_usage
     return 2
@@ -1177,7 +1276,7 @@ run_step() {
     printf 'step file is not readable: %s\n' "$file" >&2
     return 2
   }
-  [[ -n "$condition" ]] || {
+  [[ "$seen_condition" = false || -n "$condition" ]] || {
     printf '%s\n' 'run_step --cond must not be empty' >&2
     return 2
   }
@@ -1199,6 +1298,61 @@ run_step() {
     printf '%s\n' 'AZDO_LOG_DIR must be set before running a step' >&2
     return 2
   }
+
+  mkdir -p "$AZDO_LOG_DIR" || return
+  log_file="$AZDO_LOG_DIR/$id.log"
+  : >"$log_file" || return
+
+  if [[ "$no_condition" = false ]]; then
+    declare -F "$condition" >/dev/null || {
+      printf 'run_step condition is not a function: %s\n' "$condition" >&2
+      return 2
+    }
+    state_dir="$(azdo__state_dir)" || return
+    condition_error_dir="$state_dir/condition-errors"
+    mkdir -p "$condition_error_dir" || return
+    old_umask="$(umask)"
+    umask 077
+    condition_error_file="$(mktemp "$condition_error_dir/.condition.XXXXXX")" || {
+      umask "$old_umask"
+      return
+    }
+    umask "$old_umask"
+
+    # The marker survives command substitutions and shell `||` lists that discard a helper's
+    # status 2. It closes the E02 shell-backend handoff without changing standalone expression
+    # execution: helpers write it only while this private path is exported for a condition.
+    local AZDO_EXPR_ERROR_FILE="$condition_error_file"
+    local AZDO_CONDITION_STEP_ID="$id"
+    export AZDO_EXPR_ERROR_FILE AZDO_CONDITION_STEP_ID
+    if "$condition"; then
+      condition_status=0
+    else
+      condition_status=$?
+    fi
+    if [[ -s "$condition_error_file" ]]; then
+      IFS= read -r condition_error <"$condition_error_file" || :
+      condition_status=2
+    fi
+    rm -f -- "$condition_error_file"
+
+    if ((condition_status == 1)); then
+      printf '%s\n' 'Skipping step due to condition evaluation.' | tee -a -- "$log_file"
+      azdo_step_result_set "$id" Skipped || return
+      return 0
+    fi
+    if ((condition_status != 0)); then
+      if [[ -n "$condition_error" ]]; then
+        printf "##[error]Condition evaluation failed for '%s': %s\n" \
+          "$display" "$condition_error" | tee -a -- "$log_file" >&2
+      else
+        printf "##[error]Condition evaluation failed for '%s' with status %s.\n" \
+          "$display" "$condition_status" | tee -a -- "$log_file" >&2
+      fi
+      azdo_step_result_set "$id" Failed || return
+      return "$condition_status"
+    fi
+  fi
 
   if [[ -n "$working_directory" ]]; then
     azdo__expand_value "$working_directory" expanded_wd || return
@@ -1225,9 +1379,6 @@ run_step() {
   fi
 
   expanded_file="$(azdo_expand_macros "$file")" || return
-  mkdir -p "$AZDO_LOG_DIR" || return
-  log_file="$AZDO_LOG_DIR/$id.log"
-  : >"$log_file" || return
 
   effective_retries="$retries"
   if ((effective_retries > 10)); then
@@ -1295,9 +1446,6 @@ run_step() {
   fi
   azdo_step_result_set "$id" "$result" || return
 
-  # Condition evaluation is activated by E06-S03-T03; retaining the parsed name keeps the stable
-  # call contract while this task owns only post-execution result semantics.
-  : "$condition" "$display"
   case "$result" in
     Succeeded | SucceededWithIssues) return 0 ;;
     *) return "$status" ;;

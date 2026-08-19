@@ -5,10 +5,27 @@ bats_require_minimum_version 1.5.0
 setup() {
   load helpers/fixture-store.bash
   azdo_emu_load_runtime
+  azdo_emu_load_runtime expr.sh
   AZDO_STATE_DIR="$(azdo_emu_scratch_dir state)"
   AZDO_VAR_SCOPE='pipeline'
   export AZDO_STATE_DIR AZDO_VAR_SCOPE
   unset AZDO_OUTPUT_DIR AZDO_STEP_NAME
+}
+
+cond_for_later_task() {
+  azdo_status_succeeded
+}
+
+cond_always() {
+  azdo_status_always
+}
+
+cond_masked_or_error() {
+  azdo_expr_cmp lt num 1 str invalid || true
+}
+
+cond_substitution_error() {
+  azdo_expr_cmp eq str "$(azdo_expr_format '{2}' only-one)" str expected
 }
 
 materialized_env_count() {
@@ -63,7 +80,7 @@ run_result_step() {
   run_step \
     --id "$id" \
     --file "$file" \
-    --cond cond_for_later_task \
+    --cond cond_always \
     --display "Result step $id" \
     --continue-on-error "$continue_on_error" \
     --fail-on-stderr "$fail_on_stderr" \
@@ -546,4 +563,161 @@ TABLE
   [ -f "$AZDO_LOG_DIR/034.log" ]
   run -0 azdo_step_result 034
   [ "$output" = Failed ]
+}
+
+@test "failed predecessor skips the default condition while always runs (C-E06-038/039/041/043)" {
+  local fail_file="$BATS_TEST_TMPDIR/hard-failure.sh"
+  local skipped_file="$BATS_TEST_TMPDIR/default-after-failure.sh"
+  local always_file="$BATS_TEST_TMPDIR/always-after-failure.sh"
+  local forbidden="$BATS_TEST_TMPDIR/should-not-run"
+  prepare_run_step
+  printf '%s\n' 'exit 9' >"$fail_file"
+  printf "touch '%s'\n" "$forbidden" >"$skipped_file"
+  printf '%s\n' "printf 'ALWAYS_RAN\\n'" >"$always_file"
+
+  run run_result_step hard-failure "$fail_file" false false 0 10
+  [ "$status" -eq 9 ]
+  run -0 azdo_step_result hard-failure
+  [ "$output" = Failed ]
+
+  run -0 run_step \
+    --id default-after-failure \
+    --file "$skipped_file" \
+    --display 'default after failure' \
+    --continue-on-error false \
+    --fail-on-stderr false \
+    --retries 0 \
+    --timeout 10
+  [ "$output" = 'Skipping step due to condition evaluation.' ]
+  [ ! -e "$forbidden" ]
+  run -0 azdo_step_result default-after-failure
+  [ "$output" = Skipped ]
+  cmp "$AZDO_LOG_DIR/default-after-failure.log" \
+    <(printf '%s\n' 'Skipping step due to condition evaluation.')
+
+  run -0 run_step \
+    --id always-after-failure \
+    --file "$always_file" \
+    --cond cond_always \
+    --display 'always after failure' \
+    --continue-on-error false \
+    --fail-on-stderr false \
+    --retries 0 \
+    --timeout 10
+  [ "$output" = ALWAYS_RAN ]
+  run -0 azdo_step_result always-after-failure
+  [ "$output" = Succeeded ]
+  run -0 azdo_status_failed
+}
+
+@test "SucceededWithIssues keeps implicit and explicit succeeded conditions true (C-E06-039/040/043)" {
+  local continued_file="$BATS_TEST_TMPDIR/continued-failure.sh"
+  local default_file="$BATS_TEST_TMPDIR/default-after-issues.sh"
+  local explicit_file="$BATS_TEST_TMPDIR/explicit-after-issues.sh"
+  prepare_run_step
+  printf '%s\n' 'exit 7' >"$continued_file"
+  printf '%s\n' "printf 'DEFAULT_AFTER_ISSUES\\n'" >"$default_file"
+  printf '%s\n' "printf 'EXPLICIT_AFTER_ISSUES\\n'" >"$explicit_file"
+
+  run -0 run_result_step continued-failure "$continued_file" true false 0 10
+  run -0 azdo_step_result continued-failure
+  [ "$output" = SucceededWithIssues ]
+  run -0 azdo_status_succeeded
+
+  run -0 run_step \
+    --id default-after-issues \
+    --file "$default_file" \
+    --display 'default after issues' \
+    --continue-on-error false \
+    --fail-on-stderr false \
+    --retries 0 \
+    --timeout 10
+  [ "$output" = DEFAULT_AFTER_ISSUES ]
+
+  run -0 run_step \
+    --id explicit-after-issues \
+    --file "$explicit_file" \
+    --cond cond_for_later_task \
+    --display 'explicit succeeded after issues' \
+    --continue-on-error false \
+    --fail-on-stderr false \
+    --retries 0 \
+    --timeout 10
+  [ "$output" = EXPLICIT_AFTER_ISSUES ]
+}
+
+@test "step status helpers read the accumulated result store (C-E06-039/043)" {
+  local result always_status canceled_status failed_status succeeded_status either_status
+  local result_dir
+  prepare_run_step
+  result_dir="$(azdo__step_result_dir)"
+
+  while IFS='|' read -r \
+    result always_status canceled_status failed_status succeeded_status either_status; do
+    rm -f -- "$result_dir/prior"
+    [[ "$result" = none ]] || azdo_step_result_set prior "$result"
+    run "-$always_status" azdo_status_always
+    run "-$canceled_status" azdo_status_canceled
+    run "-$failed_status" azdo_status_failed
+    run "-$succeeded_status" azdo_status_succeeded
+    run "-$either_status" azdo_status_succeededorfailed
+  done <<'TABLE'
+none|0|1|1|0|0
+Succeeded|0|1|1|0|0
+SucceededWithIssues|0|1|1|0|0
+Failed|0|1|0|1|0
+Skipped|0|1|1|0|0
+Canceled|0|0|1|1|1
+TABLE
+}
+
+@test "--no-condition force-runs without resolving the compiled condition function" {
+  local fail_file="$BATS_TEST_TMPDIR/fail-before-force.sh"
+  local forced_file="$BATS_TEST_TMPDIR/forced.sh"
+  prepare_run_step
+  printf '%s\n' 'exit 4' >"$fail_file"
+  printf '%s\n' "printf 'FORCED\\n'" >"$forced_file"
+
+  run run_result_step fail-before-force "$fail_file" false false 0 10
+  [ "$status" -eq 4 ]
+  run -0 run_step \
+    --id forced \
+    --file "$forced_file" \
+    --cond missing_compiled_condition \
+    --no-condition \
+    --display forced \
+    --continue-on-error false \
+    --fail-on-stderr false \
+    --retries 0 \
+    --timeout 10
+  [ "$output" = FORCED ]
+  run -0 azdo_step_result forced
+  [ "$output" = Succeeded ]
+}
+
+@test "condition errors remain Failed across shell masking contexts (C-E02-143/144, C-E06-042)" {
+  local source_file="$BATS_TEST_TMPDIR/condition-error.sh" condition id forbidden
+  prepare_run_step
+
+  while IFS='|' read -r id condition; do
+    forbidden="$BATS_TEST_TMPDIR/$id-ran"
+    printf "touch '%s'\n" "$forbidden" >"$source_file"
+    run run_step \
+      --id "$id" \
+      --file "$source_file" \
+      --cond "$condition" \
+      --display "$id" \
+      --continue-on-error true \
+      --fail-on-stderr false \
+      --retries 0 \
+      --timeout 10
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"Condition evaluation failed for '$id'"* ]]
+    [ ! -e "$forbidden" ]
+    run -0 azdo_step_result "$id"
+    [ "$output" = Failed ]
+  done <<'TABLE'
+masked-or|cond_masked_or_error
+substitution|cond_substitution_error
+TABLE
 }

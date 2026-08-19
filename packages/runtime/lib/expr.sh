@@ -18,6 +18,19 @@
 # missing helper exits 127 (C-E02-136); a harness reading "non-zero = False" would pass over a
 # backend that never ran at all.
 
+# Record an evaluation error at the run_step condition boundary as well as returning status 2.
+# The optional private marker is necessary because shell `||` lists and command substitutions can
+# discard a helper's status while evaluating a larger compiled condition (C-E06-042). Standalone
+# expression execution leaves AZDO_EXPR_ERROR_FILE unset and retains the original status contract.
+azdo__expr_fail() {
+  local message="$1"
+  if [[ -n "${AZDO_EXPR_ERROR_FILE:-}" && -f "$AZDO_EXPR_ERROR_FILE" ]]; then
+    printf '%s\n' "$message" >>"$AZDO_EXPR_ERROR_FILE"
+  fi
+  printf '%s\n' "$message" >&2
+  return 2
+}
+
 azdo__expr_int32_max=2147483647
 
 # ---------------------------------------------------------------------------------------------
@@ -230,15 +243,15 @@ azdo__expr_same_kind_cmp() {
 # asymmetry the evaluator implements in compareValues().
 azdo_expr_cmp() {
   (($# == 5)) || {
-    printf '%s\n' 'usage: azdo_expr_cmp <op> <left-kind> <left> <right-kind> <right>' >&2
-    return 2
+    azdo__expr_fail 'usage: azdo_expr_cmp <op> <left-kind> <left> <right-kind> <right>'
+    return
   }
   local operator="$1" left_kind="$2" left="$3" right_kind="$4" right="$5" converted order
   case "$operator" in
     eq | ne | lt | le | gt | ge) ;;
     *)
-      printf 'unknown comparison operator: %s\n' "$operator" >&2
-      return 2
+      azdo__expr_fail "unknown comparison operator: $operator"
+      return
       ;;
   esac
 
@@ -247,12 +260,15 @@ azdo_expr_cmp() {
       eq) return 1 ;;
       ne) return 0 ;;
       *)
-        printf 'Unable to convert from %s to %s.\n' "$right_kind" "$left_kind" >&2
-        return 2
+        azdo__expr_fail "Unable to convert from $right_kind to $left_kind."
+        return
         ;;
     esac
   fi
-  order="$(azdo__expr_same_kind_cmp "$left_kind" "$left" "$converted")" || return 2
+  order="$(azdo__expr_same_kind_cmp "$left_kind" "$left" "$converted")" || {
+    azdo__expr_fail "Unable to compare values of kind $left_kind."
+    return
+  }
 
   case "$operator" in
     eq) [[ "$order" == 0 ]] ;;
@@ -268,23 +284,32 @@ azdo_expr_cmp() {
 # and/or/not (e.g. `and(variables.flag, …)`).
 azdo_expr_truthy() {
   (($# == 2)) || {
-    printf '%s\n' 'usage: azdo_expr_truthy <kind> <value>' >&2
-    return 2
+    azdo__expr_fail 'usage: azdo_expr_truthy <kind> <value>'
+    return
   }
   local converted
-  converted="$(azdo__expr_convert bool "$1" "$2")" || return 2
+  converted="$(azdo__expr_convert bool "$1" "$2")" || {
+    azdo__expr_fail "Unable to convert from $1 to bool."
+    return
+  }
   [[ "$converted" == True ]]
 }
 
 # azdo_expr_xor <left-kind> <left> <right-kind> <right> — both operands are always converted.
 azdo_expr_xor() {
   (($# == 4)) || {
-    printf '%s\n' 'usage: azdo_expr_xor <left-kind> <left> <right-kind> <right>' >&2
-    return 2
+    azdo__expr_fail 'usage: azdo_expr_xor <left-kind> <left> <right-kind> <right>'
+    return
   }
   local left right
-  left="$(azdo__expr_convert bool "$1" "$2")" || return 2
-  right="$(azdo__expr_convert bool "$3" "$4")" || return 2
+  left="$(azdo__expr_convert bool "$1" "$2")" || {
+    azdo__expr_fail "Unable to convert from $1 to bool."
+    return
+  }
+  right="$(azdo__expr_convert bool "$3" "$4")" || {
+    azdo__expr_fail "Unable to convert from $3 to bool."
+    return
+  }
   [[ "$left" != "$right" ]]
 }
 
@@ -345,8 +370,8 @@ azdo_expr_length() {
 # literally on every supported shell.
 azdo_expr_replace() {
   (($# == 3)) || {
-    printf '%s\n' 'usage: azdo_expr_replace <text> <search> <replacement>' >&2
-    return 2
+    azdo__expr_fail 'usage: azdo_expr_replace <text> <search> <replacement>'
+    return
   }
   local text="$1" search="$2" replacement="$3" result='' index=0
   local length=${#1} span=${#2}
@@ -384,11 +409,14 @@ azdo_expr_coalesce() {
 # evaluated by the time this is called, which matches the evaluator: iif is eager (C-E02-049).
 azdo_expr_iif() {
   (($# == 4)) || {
-    printf '%s\n' 'usage: azdo_expr_iif <condition-kind> <condition> <when-true> <when-false>' >&2
-    return 2
+    azdo__expr_fail 'usage: azdo_expr_iif <condition-kind> <condition> <when-true> <when-false>'
+    return
   }
   local condition
-  condition="$(azdo__expr_convert bool "$1" "$2")" || return 2
+  condition="$(azdo__expr_convert bool "$1" "$2")" || {
+    azdo__expr_fail "Unable to convert from $1 to bool."
+    return
+  }
   if [[ "$condition" == True ]]; then printf '%s' "$3"; else printf '%s' "$4"; fi
 }
 
@@ -396,8 +424,8 @@ azdo_expr_iif() {
 # pattern or an out-of-range index is an evaluation error, matching the evaluator (C-E02-045).
 azdo_expr_format() {
   (($# >= 1)) || {
-    printf '%s\n' 'usage: azdo_expr_format <pattern> [value…]' >&2
-    return 2
+    azdo__expr_fail 'usage: azdo_expr_format <pattern> [value…]'
+    return
   }
   local pattern="$1" result='' index=0 char next rest placeholder
   shift
@@ -416,23 +444,23 @@ azdo_expr_format() {
       continue
     fi
     if [[ "$char" == '}' ]]; then
-      printf 'The following format string is invalid: %s\n' "$pattern" >&2
-      return 2
+      azdo__expr_fail "The following format string is invalid: $pattern"
+      return
     fi
     rest="${pattern:index+1}"
     if [[ "$rest" != *'}'* ]]; then
-      printf 'The following format string is invalid: %s\n' "$pattern" >&2
-      return 2
+      azdo__expr_fail "The following format string is invalid: $pattern"
+      return
     fi
     placeholder="${rest%%\}*}"
     if [[ ! "$placeholder" =~ ^[0-9]+$ ]]; then
-      printf 'The following format string is invalid: %s\n' "$pattern" >&2
-      return 2
+      azdo__expr_fail "The following format string is invalid: $pattern"
+      return
     fi
     if ((10#$placeholder >= ${#values[@]})); then
-      printf 'The following format string references more arguments than were supplied: {%s}\n' \
-        "$placeholder" >&2
-      return 2
+      azdo__expr_fail \
+        "The following format string references more arguments than were supplied: {$placeholder}"
+      return
     fi
     result+="${values[10#$placeholder]}"
     index=$((index + ${#placeholder} + 2))
