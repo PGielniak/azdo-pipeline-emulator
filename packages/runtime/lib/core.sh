@@ -225,6 +225,75 @@ azdo_output() {
   fi
 }
 
+# azdo_step_result_set <step-id> <result>
+# azdo_step_result <step-id>
+#
+# Result files use the five-state Azure task vocabulary. The job runner may point
+# AZDO_RESULT_DIR at state/results/<stage>/<job>; the scope-based fallback keeps the API usable by
+# standalone generated step scripts and tests (C-E06-037).
+azdo__valid_step_result() {
+  case "$1" in
+    Succeeded | SucceededWithIssues | Failed | Skipped | Canceled) ;;
+    *)
+      printf 'invalid step result: %s\n' "$1" >&2
+      return 2
+      ;;
+  esac
+}
+
+azdo__step_result_dir() {
+  local state_dir scope
+  if [[ -n "${AZDO_RESULT_DIR:-}" ]]; then
+    printf '%s\n' "$AZDO_RESULT_DIR"
+    return 0
+  fi
+  state_dir="$(azdo__state_dir)" || return
+  scope="${AZDO_VAR_SCOPE:-pipeline}"
+  azdo__valid_store_segment "$scope" || return
+  printf '%s/results/%s\n' "$state_dir" "$scope"
+}
+
+azdo_step_result_set() {
+  (($# == 2)) || {
+    printf '%s\n' 'usage: azdo_step_result_set <step-id> <result>' >&2
+    return 2
+  }
+  azdo__valid_store_segment "$1" || return
+  azdo__valid_step_result "$2" || return
+
+  local result_dir result_path result_tmp old_umask
+  result_dir="$(azdo__step_result_dir)" || return
+  mkdir -p "$result_dir" || return
+  result_path="$result_dir/$1"
+  old_umask="$(umask)"
+  umask 077
+  result_tmp="$(mktemp "$result_dir/.result.XXXXXX")" || {
+    umask "$old_umask"
+    return
+  }
+  umask "$old_umask"
+  printf '%s\n' "$2" >"$result_tmp" || {
+    rm -f -- "$result_tmp"
+    return
+  }
+  mv -f -- "$result_tmp" "$result_path"
+}
+
+azdo_step_result() {
+  (($# == 1)) || {
+    printf '%s\n' 'usage: azdo_step_result <step-id>' >&2
+    return 2
+  }
+  azdo__valid_store_segment "$1" || return
+
+  local result_dir result_path
+  result_dir="$(azdo__step_result_dir)" || return
+  result_path="$result_dir/$1"
+  if [[ -f "$result_path" ]]; then
+    cat -- "$result_path"
+  fi
+}
+
 # E06-S01-T03 — the generated runner translates manifest.json's env array into shell metadata
 # before loading user values:
 #
@@ -836,15 +905,18 @@ azdo__run_step_kill_group() {
 }
 
 azdo__run_step_process() {
-  (($# == 5)) || {
+  (($# == 6)) || {
     printf '%s\n' \
-      'usage: azdo__run_step_process <script> <working-directory> <log-file> <timeout-seconds> <temp-directory>' >&2
+      'usage: azdo__run_step_process <script> <working-directory> <log-file> <timeout-seconds> <temp-directory> <fail-on-stderr>' >&2
     return 2
   }
 
   local script_file="$1" working_directory="$2" log_file="$3" timeout_seconds="$4" temp_dir="$5"
-  local fifo timeout_marker old_umask child_pid tee_pid watchdog_pid child_status tee_status
+  local fail_on_stderr="$6" fifo timeout_marker stderr_fifo='' stderr_capture='' old_umask
+  local child_pid tee_pid stderr_tee_pid='' watchdog_pid child_status tee_status stderr_tee_status=0
   local monitor_was_enabled=false
+  AZDO_RUN_STEP_STDERR_DETECTED=false
+  AZDO_RUN_STEP_TIMED_OUT=false
 
   old_umask="$(umask)"
   umask 077
@@ -862,20 +934,51 @@ azdo__run_step_process() {
     umask "$old_umask"
     return 1
   fi
+  if [[ "$fail_on_stderr" = true ]]; then
+    stderr_fifo="$(mktemp "$temp_dir/.step-stderr-fifo.XXXXXX")" || {
+      rm -f -- "$fifo"
+      umask "$old_umask"
+      return
+    }
+    stderr_capture="$(mktemp "$temp_dir/.step-stderr.XXXXXX")" || {
+      rm -f -- "$fifo" "$stderr_fifo"
+      umask "$old_umask"
+      return
+    }
+    rm -f -- "$stderr_fifo"
+    if ! mkfifo "$stderr_fifo"; then
+      rm -f -- "$fifo" "$stderr_capture"
+      umask "$old_umask"
+      return 1
+    fi
+  fi
   umask "$old_umask"
 
   # Start the reader before the writer so opening the FIFO cannot deadlock. Both streams enter the
   # same pipe and are teed live, matching the task implementations' ordered output wiring
-  # (C-E06-029). Secret masking and logging-command parsing are later lifecycle tasks.
-  tee -- "$log_file" <"$fifo" &
+  # (C-E06-029). With failOnStderr enabled, a second tee records any stderr bytes while forwarding
+  # them immediately into the same live stream (C-E06-033). Secret masking and logging-command
+  # parsing are later lifecycle tasks.
+  tee -a -- "$log_file" <"$fifo" &
   tee_pid=$!
+  if [[ "$fail_on_stderr" = true ]]; then
+    tee -- "$stderr_capture" <"$stderr_fifo" >"$fifo" &
+    stderr_tee_pid=$!
+  fi
 
   [[ "$-" == *m* ]] && monitor_was_enabled=true
   set -m
-  (
-    cd "$working_directory" || exit
-    exec env -- "${AZDO_STEP_ENV[@]}" "$BASH" "$script_file"
-  ) >"$fifo" 2>&1 &
+  if [[ "$fail_on_stderr" = true ]]; then
+    (
+      cd "$working_directory" || exit
+      exec env -- "${AZDO_STEP_ENV[@]}" "$BASH" "$script_file"
+    ) >"$fifo" 2>"$stderr_fifo" &
+  else
+    (
+      cd "$working_directory" || exit
+      exec env -- "${AZDO_STEP_ENV[@]}" "$BASH" "$script_file"
+    ) >"$fifo" 2>&1 &
+  fi
   child_pid=$!
 
   (
@@ -901,36 +1004,80 @@ azdo__run_step_process() {
   if wait "$watchdog_pid" 2>/dev/null; then
     :
   fi
+  if [[ -n "$stderr_tee_pid" ]]; then
+    if wait "$stderr_tee_pid"; then
+      stderr_tee_status=0
+    else
+      stderr_tee_status=$?
+    fi
+  fi
   if wait "$tee_pid"; then
     tee_status=0
   else
     tee_status=$?
   fi
 
+  if [[ -n "$stderr_capture" && -s "$stderr_capture" ]]; then
+    AZDO_RUN_STEP_STDERR_DETECTED=true
+  fi
   rm -f -- "$fifo"
+  [[ -z "$stderr_fifo" ]] || rm -f -- "$stderr_fifo"
+  [[ -z "$stderr_capture" ]] || rm -f -- "$stderr_capture"
   if [[ -f "$timeout_marker" ]]; then
+    AZDO_RUN_STEP_TIMED_OUT=true
     rm -f -- "$timeout_marker"
     return 124
   fi
   rm -f -- "$timeout_marker"
   ((child_status != 0)) && return "$child_status"
+  ((stderr_tee_status != 0)) && return "$stderr_tee_status"
+  [[ "$AZDO_RUN_STEP_STDERR_DETECTED" = true ]] && return 1
   return "$tee_status"
+}
+
+azdo__run_step_retry_delay_seconds() {
+  (($# == 1)) || {
+    printf '%s\n' 'usage: azdo__run_step_retry_delay_seconds <zero-based-retry-index>' >&2
+    return 2
+  }
+  [[ "$1" =~ ^[0-9]+$ ]] || {
+    printf 'retry index must be a non-negative integer, got: %s\n' "$1" >&2
+    return 2
+  }
+  printf '%s\n' "$((($1 + 1) * ($1 + 1)))"
+}
+
+# Kept as a function so bats can replace only the wall-clock wait while still exercising the
+# production retry state machine. The enclosing step timeout also covers retry backoff.
+azdo__run_step_retry_wait() {
+  (($# == 2)) || {
+    printf '%s\n' 'usage: azdo__run_step_retry_wait <zero-based-retry-index> <remaining-seconds>' >&2
+    return 2
+  }
+  local delay_seconds remaining_seconds="$2"
+  delay_seconds="$(azdo__run_step_retry_delay_seconds "$1")" || return
+  if ((delay_seconds >= remaining_seconds)); then
+    sleep "$remaining_seconds"
+    return 124
+  fi
+  sleep "$delay_seconds"
 }
 
 # run_step --id <id> --file <path> --cond <function> --display <text>
 #          [--wd <path>] --continue-on-error <bool> --fail-on-stderr <bool>
 #          --retries <count> --timeout <effective-remaining-seconds>
 #
-# This task owns only the execution skeleton. `--cond`, `--continue-on-error`,
-# `--fail-on-stderr`, and `--retries` are parsed and validated now so emitted callers already use
-# the stable docs/04 contract; E06-S03-T02/T03 will activate their semantics. When `--wd` is absent
-# or empty, the live-probed shell default is System.DefaultWorkingDirectory (C-E06-026/027).
+# `--cond` remains a parsed seam for E06-S03-T03. Exit status, failOnStderr, retries, result
+# persistence, and continueOnError follow C-E06-031..037. When `--wd` is absent or empty, the
+# live-probed shell default is System.DefaultWorkingDirectory (C-E06-026/027).
 run_step() {
   local id='' file='' condition='' display='' working_directory=''
   local continue_on_error='' fail_on_stderr='' retries='' timeout_seconds=''
   local seen_id=false seen_file=false seen_condition=false seen_display=false seen_wd=false
   local seen_continue=false seen_fail_on_stderr=false seen_retries=false seen_timeout=false
-  local expanded_file expanded_wd ignored_secret log_file status
+  local expanded_file expanded_wd ignored_secret log_file status result
+  local retry_index=0 effective_retries remaining_seconds elapsed_seconds delay_seconds wait_status
+  local start_seconds
 
   while (($# > 0)); do
     (($# >= 2)) || {
@@ -1080,14 +1227,79 @@ run_step() {
   expanded_file="$(azdo_expand_macros "$file")" || return
   mkdir -p "$AZDO_LOG_DIR" || return
   log_file="$AZDO_LOG_DIR/$id.log"
-  if azdo__run_step_process \
-    "$expanded_file" "$expanded_wd" "$log_file" "$timeout_seconds" "${expanded_file%/*}"; then
-    status=0
-  else
-    status=$?
+  : >"$log_file" || return
+
+  effective_retries="$retries"
+  if ((effective_retries > 10)); then
+    printf '##[warning]retryCountOnTaskFailure is limited to 10; requested %s.\n' "$retries" |
+      tee -a -- "$log_file"
+    effective_retries=10
   fi
 
-  # Parsed now for the stable call contract; E06-S03-T02/T03 own their behavior.
-  : "$condition" "$display" "$continue_on_error" "$fail_on_stderr" "$retries"
-  return "$status"
+  start_seconds=$SECONDS
+  while :; do
+    elapsed_seconds=$((SECONDS - start_seconds))
+    remaining_seconds=$((timeout_seconds - elapsed_seconds))
+    if ((remaining_seconds <= 0)); then
+      status=124
+      break
+    fi
+
+    if azdo__run_step_process \
+      "$expanded_file" "$expanded_wd" "$log_file" "$remaining_seconds" "${expanded_file%/*}" \
+      "$fail_on_stderr"; then
+      status=0
+    else
+      status=$?
+    fi
+
+    if [[ "$AZDO_RUN_STEP_STDERR_DETECTED" = true ]]; then
+      printf '%s\n' '##[error]Bash wrote one or more lines to the standard error stream.' |
+        tee -a -- "$log_file"
+    fi
+    ((status == 0)) && break
+    [[ "$AZDO_RUN_STEP_TIMED_OUT" = true ]] && break
+    ((retry_index >= effective_retries)) && break
+
+    delay_seconds="$(azdo__run_step_retry_delay_seconds "$retry_index")" || return
+    printf \
+      '##[warning]RetryHelper encountered task failure, will retry (attempt #: %s out of %s) after %s000 ms\n' \
+      "$((retry_index + 1))" "$effective_retries" "$delay_seconds" | tee -a -- "$log_file"
+
+    elapsed_seconds=$((SECONDS - start_seconds))
+    remaining_seconds=$((timeout_seconds - elapsed_seconds))
+    if ((remaining_seconds <= 0)); then
+      status=124
+      break
+    fi
+    if azdo__run_step_retry_wait "$retry_index" "$remaining_seconds"; then
+      :
+    else
+      wait_status=$?
+      if ((wait_status == 124)); then
+        status=124
+        break
+      fi
+      return "$wait_status"
+    fi
+    ((retry_index += 1))
+  done
+
+  if ((status == 0)); then
+    result=Succeeded
+  else
+    result=Failed
+  fi
+  if [[ "$result" = Failed && "$continue_on_error" = true ]]; then
+    result=SucceededWithIssues
+  fi
+  azdo_step_result_set "$id" "$result" || return
+
+  # Condition evaluation is activated by E06-S03-T03; retaining the parsed name keeps the stable
+  # call contract while this task owns only post-execution result semantics.
+  : "$condition" "$display"
+  case "$result" in
+    Succeeded | SucceededWithIssues) return 0 ;;
+    *) return "$status" ;;
+  esac
 }
