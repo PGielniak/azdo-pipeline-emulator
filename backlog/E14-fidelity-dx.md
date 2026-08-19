@@ -36,7 +36,7 @@ Acceptance: Node task host per docs/03 §6, opt-in per task via config.
   **Done:** bats: diamond graph timing test; logs readable; failure propagation per claims.
 - [ ] **E14-S03-T02 — `--shell-at <step>`**
   **Do:** materialize the exact step env (vars, PATH, cwd, masked-secret handling choice documented) and exec `$SHELL`; banner shows step context.
-  **Ground:** env-materialization claims from E06-S01-T02 (cite — same code path, no divergence allowed: guard test).
+  **Ground:** env-materialization claims from corrected task E06-S01-T05 (cite — same code path, no divergence allowed: guard test).
   **Done:** manual walkthrough + automated env-diff test (shell env ≡ step env).
 - [ ] **E14-S03-T03 — Masking & UX hardening pass**
   **Do:** masker perf on large logs, multi-secret overlap ordering, `##[group]` folding renderer, `--verbose`/`System.Debug` polish.
