@@ -109,7 +109,10 @@ Acceptance: directive semantics proven by oracle fixture pairs, not by reading a
 ## E03-S02 — As a pipeline developer, includes/`extends` with typed parameters resolve like the service, so multi-file pipelines just work.
 Acceptance: reference forms, parameter typing, and `extends` restrictions all enforced with service-matching errors.
 
-- [ ] **E03-S02-T01 — Reference resolution (`relative`, `/root`, `@alias`, `@self`)**
+- [!] **E03-S02-T01 — Reference resolution (`relative`, `/root`, `@alias`, `@self`)**
+  *In progress 2026-08-19 by Orchestrator (Claude) on worktree `/root/wt-claude`, branch
+  `claude/e03-s01-t04`; do not pick. Builds on T01's `childFrame`/`depth` seam in `walk.ts`.
+  Claim block C-E03-195..229.*
   **Do:** resolver with per-file base dir, repo-context switching on `@alias` (fetcher interface injected; local-FS impl now, remote in E08), cycle detection on (repo, commit, path).
   **Ground:** templates doc "Use other repositories" + resources doc `repositories`; oracle can't exercise cross-repo without setup — add a two-repo fixture in the test org and capture `finalYaml` proving path resolution + `@self` semantics.
   **Done:** unit tests for path math; oracle fixture for cross-repo include.
