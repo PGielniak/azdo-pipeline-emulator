@@ -26,28 +26,23 @@ Acceptance: directive semantics proven by oracle fixture pairs, not by reading a
   documented escape for a literal `${{` is to wrap it in an expression string (C-E03-117), which
   E03-S01-T05 depends on.
 - [x] **E03-S01-T02 — Conditional insertion chains**
-  *Done 2026-08-19:* `packages/engine/src/template/conditional.ts` — `conditionalVisitor` plugged
-  into T01's directive seam; 22 live preview probes (`pnpm if-survey`,
-  `research/experiments/E03-if/`, C-E03-120..134) yielding **18** committed input/`finalYaml` pairs
-  against the six the task asks for, plus 4 rejections asserted against their error transcripts.
-  *The 2026-08-18 `[!]` is lifted*: it reported the four `AZDO_*` values absent, but `.env.oracle`
-  was merely missing from that worktree — the doc-only grounding commit `7459ab3` is integrated here
-  and its C-E03-120/121 stand.
-  **Two findings inverted this task's own `Do` field**, and both are mutation-checked rather than
-  only asserted. Chain membership is **not adjacency-gated** — an ordinary sibling between
-  `${{ if }}` and `${{ else }}` breaks nothing, in both parent shapes — and the winner splices at
-  the **winning directive's own position**, so a false `if` emits the intervening step *first*;
-  grouping forwards from the head and emitting at the head's index reorders that document
-  (C-E03-128). And chain conditions evaluate in **document order**, stopping at the first winner, so
-  `if(true) / elseif parameters.missing / else` expands where a backwards nearest-first scan would
-  reject it (C-E03-132). Three shapes stay distinct: a losing `else` (silent), an orphan (hard 400,
-  two newline-joined sentences, no help link — C-E03-129), and an `elseif` after an `else`
-  (C-E03-130). Conditions are converted to Boolean, not required to be one (C-E03-131). Open
-  question filed rather than guessed: an `each`/`insert` sibling between two chain members is
-  unmeasured — **E03-S01-T04** to settle while it holds the `insert` oracle budget.
   **Do:** `if/elseif/else` chain grouping in document order; winning branch spliced into parent; nested chains.
   **Ground:** templates doc "Conditional insertion"; **oracle fixtures**: ≥ 6 cases (mapping vs sequence, nested, else-only-missing) — commit input+`finalYaml` pairs under `fixtures/oracle/directives/` with claim IDs.
   **Done:** goldens equal oracle output for all pairs.
+  *Done/reconciled 2026-08-19:* `packages/engine/src/template/conditionals.ts` implements lazy,
+  per-container selection and recursive structural splicing. The union of two independent live
+  surveys is retained: 45 preview probes, 37 successful input/`finalYaml` pairs, and 8 rejection
+  controls under `research/experiments/E03-conditionals/`, `research/experiments/E03-if/`, and
+  `fixtures/oracle/directives/` (C-E03-120..137). The original Side A implementation matched all
+  37 successful pairs; the parallel Side B implementation matched 34, rejecting the service's two
+  collection-truthiness fixtures and its mapping-body-in-sequence fixture, so Side A survived.
+  **Two mutation-checked findings invert the natural forward-grouping reading of `Do`:** chain
+  membership is not adjacency-gated and the winner splices at its own directive position
+  (C-E03-128); conditions evaluate in document order and stop at the first winner (C-E03-132).
+  Conditions span all value kinds, including truthy empty collections (C-E03-135), and body shape
+  controls flatten/merge/item insertion (C-E03-136). Orphans, members after `else`, and duplicate
+  `else` clauses remain distinct measured rejections (C-E03-129/130/137). An `each`/`insert` sibling
+  between chain members remains unmeasured and is handed to E03-S01-T04.
 - [x] **E03-S01-T03 — Iterative insertion (`each`)**
   *Done 2026-08-18:* 12 live preview probes recorded C-E03-140..151 and produced 11
   input/`finalYaml` fixture pairs. `eachVisitor` expands sequences and mappings in authored order,

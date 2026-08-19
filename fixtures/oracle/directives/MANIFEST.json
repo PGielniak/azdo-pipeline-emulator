@@ -1,0 +1,201 @@
+{
+  "fixtures": {
+    "adjacent-independent-if": {
+      "inputSha256": "ceaf48179f9a9c8b197a440f0eee410836a152e3084548ae822a1c358e00c2f0",
+      "finalYamlSha256": "9a8850c28872297632cc6b558b34c05564ce3edfcf457e900c6043904cdd3c5d",
+      "fetchedAt": "2026-08-18",
+      "taskId": "E03-S01-T02",
+      "claimIds": [
+        "C-E03-120",
+        "C-E03-127"
+      ]
+    },
+    "condition-short-circuit-after-elseif": {
+      "inputSha256": "964a01014dc2b6e4710aef29640651972d0501028cd515f08f85a1f4973eb557",
+      "finalYamlSha256": "f2f59c579b0158646803246d8998604fca8ae829a542fca469db79bf2d57e714",
+      "fetchedAt": "2026-08-18",
+      "taskId": "E03-S01-T02",
+      "claimIds": [
+        "C-E03-120",
+        "C-E03-132"
+      ]
+    },
+    "condition-short-circuit-after-if": {
+      "taskId": "E03-S01-T02",
+      "claimIds": [
+        "C-E03-120",
+        "C-E03-132"
+      ],
+      "inputSha256": "64c590ea87206e10c7cdc2210c87324813a66fd3d7bc48f1f29c33b7d6851a0a",
+      "finalYamlSha256": "fddfa9f3136033ac739b40a70865d02d4f083c2c890441ec74be52e26c709f89",
+      "fetchedAt": "2026-08-18"
+    },
+    "condition-truthiness-collections": {
+      "inputSha256": "3863caa40395f014a99c5c0324fd06634fee45ea3a1a6ca3cad5e40d03330c2f",
+      "finalYamlSha256": "880098ca6ab299144f9d4b3aacdbca7acf6d2577300e9736c6821891f730c93f",
+      "fetchedAt": "2026-08-18",
+      "taskId": "E03-S01-T02",
+      "claimIds": [
+        "C-E03-120",
+        "C-E03-135"
+      ]
+    },
+    "condition-truthiness-empty-collections": {
+      "inputSha256": "9c0a2e917639c3f16f43c1d82fec060804d96963a03c9185193d7177c85324ae",
+      "finalYamlSha256": "286adc50fae83982ffea97685e4855d386d48551bb10e6448272987288cd99e4",
+      "fetchedAt": "2026-08-18",
+      "taskId": "E03-S01-T02",
+      "claimIds": [
+        "C-E03-120",
+        "C-E03-135"
+      ]
+    },
+    "condition-truthiness-primitives": {
+      "inputSha256": "3084c12cc1ff50029ef0cffa79918f17fa3bb612b8cfb817651ea4a207ccc36b",
+      "finalYamlSha256": "80d5dc73b3d4b67bcf030df840d5b1c46fe83b7e875aaff192cb3eab2e192e85",
+      "fetchedAt": "2026-08-18",
+      "taskId": "E03-S01-T02",
+      "claimIds": [
+        "C-E03-120",
+        "C-E03-131",
+        "C-E03-135"
+      ]
+    },
+    "interrupted-else-after-true": {
+      "inputSha256": "83a196c6cf908a8ccba0dcc265f2f03e42fe86fbf9ea84d71ae4ea54a2af9609",
+      "finalYamlSha256": "e1516929304a56c7d1d8a921216fb749d56741faf69098408f61a940be26915a",
+      "fetchedAt": "2026-08-18",
+      "taskId": "E03-S01-T02",
+      "claimIds": [
+        "C-E03-120",
+        "C-E03-128"
+      ]
+    },
+    "interrupted-else-mapping": {
+      "inputSha256": "fb55f3dfc2479a5c86058188edd2d8f37746875de1ffd6bfc95aca6b49f11daa",
+      "finalYamlSha256": "cc1a50226413cad05c828e8e3de854699c7e3a00d87e2cd4defef11c41d12e16",
+      "fetchedAt": "2026-08-18",
+      "taskId": "E03-S01-T02",
+      "claimIds": [
+        "C-E03-120",
+        "C-E03-128"
+      ]
+    },
+    "interrupted-else-sequence": {
+      "inputSha256": "841cbca792f6ef42e7692757bf93b612c469702e4594d9cf52b4d2aabe42a6cb",
+      "finalYamlSha256": "697251f0f2fb39767e57ba0d9ac251ccac9e135d78f40a71b81ebc9301ab36e3",
+      "fetchedAt": "2026-08-18",
+      "taskId": "E03-S01-T02",
+      "claimIds": [
+        "C-E03-120",
+        "C-E03-128"
+      ]
+    },
+    "interrupted-elseif-sequence": {
+      "inputSha256": "133eb815a1cf7d59b6a6233914163e6060d278da4666c7aa9f7d4535e7172404",
+      "finalYamlSha256": "0c7461b21bb8a43f2081097cc1cedca5de0bfd8b5cca0772f34c8e73a8358a9f",
+      "fetchedAt": "2026-08-18",
+      "taskId": "E03-S01-T02",
+      "claimIds": [
+        "C-E03-120",
+        "C-E03-128"
+      ]
+    },
+    "mapping-elseif-wins": {
+      "inputSha256": "ca4e7e835ec7367f0136fe33339565b6c0cc94bac3b8f0f966060b0cc27c9a94",
+      "finalYamlSha256": "7de84b4ec5fb3e5e07ceaeca83f318afe7a95942be5cc877509c1947ea22e3ae",
+      "fetchedAt": "2026-08-18",
+      "taskId": "E03-S01-T02",
+      "claimIds": [
+        "C-E03-120",
+        "C-E03-123",
+        "C-E03-124"
+      ]
+    },
+    "mapping-no-match-no-else": {
+      "inputSha256": "a01d7351b4c2ccf4651e1384b2b6728a17ad689a5ca52a18d7ae0d445b84a7c6",
+      "finalYamlSha256": "511b30abda62ee2c27d3cf4f7e30af726ebaba436022629f968759de1d3f62db",
+      "fetchedAt": "2026-08-18",
+      "taskId": "E03-S01-T02",
+      "claimIds": [
+        "C-E03-120",
+        "C-E03-123",
+        "C-E03-125"
+      ]
+    },
+    "nested-mapping-chain": {
+      "inputSha256": "a8c61f2a6e702bc70fc169c78852f45c04b96151b3d7b7bff3b7e89331fb7722",
+      "finalYamlSha256": "bb473340cce4fe52d7458492c241888152bf173984bcf523a32af8bdf24b8c7c",
+      "fetchedAt": "2026-08-18",
+      "taskId": "E03-S01-T02",
+      "claimIds": [
+        "C-E03-120",
+        "C-E03-126"
+      ]
+    },
+    "nested-sequence-chain": {
+      "inputSha256": "6d2e77347c26a2e2d82b9ce84e0c204db753b1192ebdb3874a2e23e9a79bfee8",
+      "finalYamlSha256": "55b52df888c0913516fe631557657fc31dc8bd44131b62a48deca29e38c23b04",
+      "fetchedAt": "2026-08-18",
+      "taskId": "E03-S01-T02",
+      "claimIds": [
+        "C-E03-120",
+        "C-E03-126"
+      ]
+    },
+    "sequence-else-wins": {
+      "inputSha256": "31e4b47659b1961f75225624eab7b4ebb7a3e082c116f6dfa1ed687d49f56bdb",
+      "finalYamlSha256": "5d4eb263161d989ff340fe771659cbe89f3bca3a8f69cbbfff10a352c179c127",
+      "fetchedAt": "2026-08-18",
+      "taskId": "E03-S01-T02",
+      "claimIds": [
+        "C-E03-120",
+        "C-E03-122",
+        "C-E03-124"
+      ]
+    },
+    "sequence-elseif-wins": {
+      "inputSha256": "fda2fd3b0b13e2cbaf325924e012608efa21689c6b58fe70bed78e8a2d4448bf",
+      "finalYamlSha256": "2325c79812d044bad0a483b5fd34cfa22fbde526a449c49abd8052350f1334c8",
+      "fetchedAt": "2026-08-18",
+      "taskId": "E03-S01-T02",
+      "claimIds": [
+        "C-E03-120",
+        "C-E03-122",
+        "C-E03-124"
+      ]
+    },
+    "sequence-if-wins": {
+      "inputSha256": "da85463ad15d9de24c6d371035b1aa0b4090362d948e476988739ebc4f0cf840",
+      "finalYamlSha256": "0a78f3c209c88d62b925df17a914b341a3f11871cc74cd49d8cd39a6a0477274",
+      "fetchedAt": "2026-08-18",
+      "taskId": "E03-S01-T02",
+      "claimIds": [
+        "C-E03-120",
+        "C-E03-122",
+        "C-E03-124"
+      ]
+    },
+    "sequence-mapping-body": {
+      "inputSha256": "8d7f3054017ec9a933bcf54c4c53041e684a75d4c5acbad81d0dbd9e272fb35d",
+      "finalYamlSha256": "1defcaacd0b30680901ebce7c4cb3dc1e03579012a4e0fb5a4027ceaf2761946",
+      "fetchedAt": "2026-08-18",
+      "taskId": "E03-S01-T02",
+      "claimIds": [
+        "C-E03-120",
+        "C-E03-136"
+      ]
+    },
+    "sequence-no-match-no-else": {
+      "inputSha256": "e82ef535c5a5f34313130ddfe87a0b2ab3313810615b97ad67edbf3334120d9e",
+      "finalYamlSha256": "20b53ec089082b5e541612e0190224885f777fbeed8d4759bd6616d9a8e82e00",
+      "fetchedAt": "2026-08-18",
+      "taskId": "E03-S01-T02",
+      "claimIds": [
+        "C-E03-120",
+        "C-E03-122",
+        "C-E03-125"
+      ]
+    }
+  }
+}

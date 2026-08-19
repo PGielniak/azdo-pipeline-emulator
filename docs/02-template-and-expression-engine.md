@@ -51,9 +51,9 @@ Server limits enforced identically so we fail where the server would: max distin
 
 **Conditional insertion** — mapping keys / sequence items `${{ if C }}:`, `${{ elseif C }}:`,
 `${{ else }}:`. Chains resolve in document order and the winning branch's body is spliced into the
-parent; both parent shapes behave identically. The rest is measured, and two of the rules invert the
-natural reading (C-E03-122..134; 22 live probes under `research/experiments/E03-if/`, 18 committed
-as fixture pairs):
+parent. The service contract below is grounded by the union of 45 live preview probes and 37
+successful input/`finalYaml` pairs under `research/experiments/E03-conditionals/`,
+`research/experiments/E03-if/`, and `fixtures/oracle/directives/` (C-E03-120..137):
 
 - **A chain is not a contiguous run, and the winner splices at its *own* position** — not at the
   `if`'s. An ordinary sibling written between `${{ if }}` and `${{ else }}` breaks nothing: with a
@@ -72,8 +72,13 @@ as fixture pairs):
   newline-joined sentences with no help link — `The expression directive '<kw>' is not supported in
   this context` then `Unexpected value '<raw key>'` (C-E03-129). A chain with no `else` whose
   conditions are all false is *not* an error and contributes nothing (C-E03-125).
-- **The condition is converted to Boolean, not required to be one** — `${{ if 'text' }}` is taken,
-  `${{ if '' }}` is not, by the same String→Boolean rule as C-E02-020 (C-E03-131).
+- **Conditions use expression truthiness rather than requiring a Boolean.** Null, false, zero, and
+  empty String are false; nonzero Numbers, nonempty Strings, Version, Array, and Object are true.
+  Arrays and Objects remain true when empty, a rule outside the primitive conversion table
+  (C-E03-131/135).
+- **Body shape controls the structural splice.** A sequence body in sequence position is flattened;
+  a mapping body becomes one sequence item. A mapping body in mapping position has its entries
+  merged, while a sequence body there is rejected `Expected a mapping` (C-E03-122/123/136).
 - Chains nest, and a losing outer branch discards the whole nested structure unevaluated
   (C-E03-126).
 

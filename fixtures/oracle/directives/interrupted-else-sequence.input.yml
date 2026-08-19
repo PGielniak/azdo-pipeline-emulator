@@ -1,0 +1,6 @@
+steps:
+- ${{ if eq(1, 2) }}:
+  - script: echo not-if
+- script: echo interruption
+- ${{ else }}:
+  - script: echo orphan

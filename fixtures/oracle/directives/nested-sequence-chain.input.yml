@@ -1,0 +1,12 @@
+steps:
+- ${{ if eq(1, 1) }}:
+  - script: echo outer-before
+  - ${{ if eq(1, 2) }}:
+    - script: echo nested-not-if
+  - ${{ elseif eq(2, 2) }}:
+    - script: echo nested-selected-elseif
+  - ${{ else }}:
+    - script: echo nested-not-else
+  - script: echo outer-after
+- ${{ else }}:
+  - script: echo outer-not-else

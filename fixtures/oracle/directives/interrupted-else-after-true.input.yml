@@ -1,0 +1,6 @@
+steps:
+- ${{ if eq(1, 1) }}:
+  - script: echo selected-if
+- script: echo interruption
+- ${{ else }}:
+  - script: echo not-else

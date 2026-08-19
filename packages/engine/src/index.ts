@@ -22,3 +22,4 @@ export * from './expr/evaluate.js';
 export * from './expr/compile-bash.js';
 export * from './template/walk.js';
 export * from './template/each.js';
+export * from './template/conditionals.js';

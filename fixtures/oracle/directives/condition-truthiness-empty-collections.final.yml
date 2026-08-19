@@ -1,0 +1,19 @@
+parameters:
+- name: items
+  type: object
+  default: []
+- name: payload
+  type: object
+  default: {}
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo selected-empty-array
+    - task: CmdLine@2
+      inputs:
+        script: echo selected-empty-object
+
