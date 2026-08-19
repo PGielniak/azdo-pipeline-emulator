@@ -1,0 +1,21 @@
+parameters:
+- name: groups
+  type: object
+  default:
+  - name: alpha
+    vars:
+      G: alpha-var
+  - name: beta
+    vars:
+      G: beta-var
+stages:
+- ${{ each group in parameters.groups }}:
+  - stage: ${{ group.name }}
+    variables:
+      ${{ insert }}: ${{ group.vars }}
+    jobs:
+    - job: probe
+      steps:
+        - task: CmdLine@2
+          inputs:
+            script: echo $(G)

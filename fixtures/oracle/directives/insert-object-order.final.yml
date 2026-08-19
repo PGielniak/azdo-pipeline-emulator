@@ -1,0 +1,25 @@
+parameters:
+- name: extra
+  type: object
+  default:
+    ZETA: z
+    ALPHA: a
+    MIDDLE: m
+variables:
+- name: BASE
+  value: base
+- name: ZETA
+  value: z
+- name: ALPHA
+  value: a
+- name: MIDDLE
+  value: m
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo probe
+

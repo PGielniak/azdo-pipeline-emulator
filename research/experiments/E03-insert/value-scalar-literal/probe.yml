@@ -1,0 +1,11 @@
+variables:
+  BEFORE: before
+  ${{ insert }}: plain-text
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo probe

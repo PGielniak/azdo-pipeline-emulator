@@ -1,0 +1,3 @@
+{
+  "finalYaml": "variables:\n- name: BEFORE\n  value: before\n- name: LIT_A\n  value: a\n- name: LIT_B\n  value: b\n- name: AFTER\n  value: after\nstages:\n- stage: probe\n  jobs:\n  - job: probe\n    steps:\n    - task: CmdLine@2\n      inputs:\n        script: echo probe\n\n"
+}

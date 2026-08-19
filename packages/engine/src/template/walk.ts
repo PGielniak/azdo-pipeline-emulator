@@ -372,9 +372,53 @@ export interface TemplateVisitor {
   readonly scalar?: (node: ScalarNode, frame: TemplateFrame) => PipelineNode | undefined;
 }
 
+/**
+ * Combine directive visitors into one, first non-`undefined` answer winning.
+ *
+ * Each of `conditionals.ts`, `each.ts` and `insert.ts` returns `undefined` for directives it does not
+ * own, so composition is just "ask each in turn". The reason this is a function rather than an
+ * object spread is that spreading `{...a, ...b}` silently drops `a`'s hooks wherever `b` defines
+ * the same one, and every one of these visitors defines both directive hooks. Composing must also
+ * reuse **one** instance per visitor: `conditionalVisitor` memoizes its condition results per key
+ * node, and rebuilding it per call would re-evaluate conditions the service evaluates once.
+ */
+export function composeVisitors(...visitors: readonly TemplateVisitor[]): TemplateVisitor {
+  return {
+    mappingDirective: (site, context) => {
+      for (const visitor of visitors) {
+        const replacement = visitor.mappingDirective?.(site, context);
+        if (replacement !== undefined) return replacement;
+      }
+      return undefined;
+    },
+    sequenceDirective: (site, context) => {
+      for (const visitor of visitors) {
+        const replacement = visitor.sequenceDirective?.(site, context);
+        if (replacement !== undefined) return replacement;
+      }
+      return undefined;
+    },
+    scalar: (node, frame) => {
+      for (const visitor of visitors) {
+        const replacement = visitor.scalar?.(node, frame);
+        if (replacement !== undefined) return replacement;
+      }
+      return undefined;
+    },
+  };
+}
+
 /** Recursive access for directive visitors; replacements join the same accumulated walk. */
 export interface TemplateVisitContext {
   readonly walk: (node: PipelineNode, frame: TemplateFrame) => PipelineNode;
+  /**
+   * Record a rejection without aborting, joining the walk's own accumulated list in document order.
+   *
+   * Directive passes that reproduce a *rejection* rather than a value error need this: the service
+   * reports every bad expression in one response (C-E02-110), so `conditionals.ts` reports an
+   * orphan clause and carries on, exactly as the walker does for a malformed directive key.
+   */
+  readonly report: (diagnostic: Diagnostic) => void;
 }
 
 export interface WalkResult {
@@ -390,6 +434,7 @@ export interface WalkResult {
 }
 
 const MALFORMED_DIRECTIVE = 'template-directive-malformed';
+const DUPLICATE_KEY = 'template-mapping-key-duplicate';
 
 interface WalkState {
   readonly visitor: TemplateVisitor;
@@ -430,6 +475,56 @@ function walkNode(node: PipelineNode, frame: TemplateFrame, state: WalkState): P
   }
 }
 
+/**
+ * Drop entries whose key repeats one already present, recording the service's sentence for each.
+ *
+ * This lives on the **mapping rebuild** rather than in any one directive because that is where the
+ * service puts it: `${{ insert }}` supplying a key a literal already has, a literal repeating an
+ * inserted key, two inserts colliding, and an `each`-produced key colliding with a literal all
+ * reject identically with `'<key>' is already defined` (C-E03-169/171). Three properties are
+ * measured rather than chosen: the comparison folds case (a literal `FOO` and an inserted `foo`
+ * collide), the message echoes the **later** key as it was written, and the later entry is the one
+ * dropped (C-E03-170).
+ *
+ * Directive keys are exempt. Two byte-identical `${{ if }}` or `${{ insert }}` keys are accepted by
+ * the service and both bodies are used (C-E03-111/168), so a duplicate check that looked at raw key
+ * text would reject documents the service expands. This is the same exemption E01-S01-T04 already
+ * made in the parse-time duplicate rule (C-E01-038/039); the two have to agree, or a document would
+ * pass one layer and fail the other.
+ *
+ * Accumulated, never thrown, like every other diagnostic here: a single response carried three of
+ * these sentences at once (C-E02-110, and `chain-insert-between-true`'s transcript).
+ */
+function deduplicateKeys(
+  entries: readonly MappingEntry[],
+  frame: TemplateFrame,
+  state: WalkState,
+): MappingEntry[] {
+  const seen = new Set<string>();
+  const kept: MappingEntry[] = [];
+  for (const entry of entries) {
+    const key = entry.key;
+    if (typeof key.value !== 'string' || parseDirectiveKey(key.value).kind === 'directive') {
+      kept.push(entry);
+      continue;
+    }
+    const folded = key.value.toLowerCase();
+    if (seen.has(folded)) {
+      state.diagnostics.push({
+        severity: 'error',
+        code: DUPLICATE_KEY,
+        message: `'${key.value}' is already defined`,
+        file: frame.file,
+        range: key.pos.range,
+      });
+      continue;
+    }
+    seen.add(folded);
+    kept.push(entry);
+  }
+  return kept;
+}
+
 function walkMapping(node: MappingNode, frame: TemplateFrame, state: WalkState): MappingNode {
   const entries: MappingEntry[] = [];
   node.entries.forEach((entry, index) => {
@@ -460,7 +555,7 @@ function walkMapping(node: MappingNode, frame: TemplateFrame, state: WalkState):
       value: walkNode(entry.value, frame, state),
     });
   });
-  return { kind: 'mapping', entries, pos: node.pos };
+  return { kind: 'mapping', entries: deduplicateKeys(entries, frame, state), pos: node.pos };
 }
 
 function walkSequence(node: SequenceNode, frame: TemplateFrame, state: WalkState): SequenceNode {
@@ -505,7 +600,10 @@ function walkSequence(node: SequenceNode, frame: TemplateFrame, state: WalkState
 }
 
 function visitContext(state: WalkState): TemplateVisitContext {
-  return { walk: (node, frame) => walkNode(node, frame, state) };
+  return {
+    walk: (node, frame) => walkNode(node, frame, state),
+    report: (diagnostic) => state.diagnostics.push(diagnostic),
+  };
 }
 
 /**

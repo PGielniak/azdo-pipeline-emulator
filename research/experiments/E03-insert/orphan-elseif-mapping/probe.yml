@@ -1,0 +1,16 @@
+parameters:
+- name: a
+  type: boolean
+  default: true
+variables:
+  BEFORE: before
+  ${{ elseif parameters.a }}:
+    PICK: from-elseif
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo probe

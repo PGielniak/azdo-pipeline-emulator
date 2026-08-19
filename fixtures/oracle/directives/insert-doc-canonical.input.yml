@@ -1,0 +1,17 @@
+parameters:
+- name: additionalVariables
+  type: object
+  default:
+    TEST_SUITE: L0,L1
+variables:
+  configuration: debug
+  arch: x86
+  ${{ insert }}: ${{ parameters.additionalVariables }}
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo probe

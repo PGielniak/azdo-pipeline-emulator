@@ -1,0 +1,16 @@
+parameters:
+- name: extra
+  type: object
+  default:
+    FOO: from-insert
+variables:
+  ${{ insert }}: ${{ parameters.extra }}
+  FOO: from-literal
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo probe

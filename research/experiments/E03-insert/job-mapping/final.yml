@@ -1,0 +1,21 @@
+parameters:
+- name: jobProps
+  type: object
+  default:
+    displayName: Inserted Display Name
+    continueOnError: true
+    workspace:
+      clean: all
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    displayName: Inserted Display Name
+    continueOnError: True
+    workspace:
+      clean: all
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo probe
+

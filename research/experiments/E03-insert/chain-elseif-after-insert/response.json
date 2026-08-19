@@ -1,0 +1,9 @@
+{
+  "$id": "1",
+  "innerException": null,
+  "message": "/azure-pipelines.yml (Line: 16, Col: 3): The expression directive 'elseif' is not supported in this context\n/azure-pipelines.yml (Line: 17, Col: 5): A mapping was not expected\n/azure-pipelines.yml: Expected end of template object. State:\r\n\r\nLiteralState\r\n\r\nMappingState:\r\n  IsStart: False\r\n  Index: 2\r\n  IsKey: True\r\n  IsEnd: False\r\n\r\n",
+  "typeName": "Microsoft.Azure.Pipelines.WebApi.PipelineValidationException, Microsoft.Azure.Pipelines.WebApi",
+  "typeKey": "PipelineValidationException",
+  "errorCode": 0,
+  "eventId": 3000
+}

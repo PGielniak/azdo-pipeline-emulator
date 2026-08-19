@@ -1,0 +1,24 @@
+parameters:
+- name: extra
+  type: object
+  default:
+    MID_A: a
+    MID_B: b
+variables:
+- name: BEFORE
+  value: before
+- name: MID_A
+  value: a
+- name: MID_B
+  value: b
+- name: AFTER
+  value: after
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo probe
+

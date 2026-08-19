@@ -67,6 +67,17 @@ export function oracleFixtures(prefix: string): readonly OracleFixture[] {
 
 export type Evaluator = (expression: string, frame: TemplateFrame) => ExprValue;
 
+/**
+ * How a suite names the visitor under test. `each`/`insert` take an injected evaluator, while
+ * `conditionalVisitor` parses conditions itself so it can turn a parse failure into the service's
+ * own diagnostic — so the harness offers both the evaluator and the raw context values, and each
+ * factory takes the one it needs.
+ */
+export type DirectiveVisitorFactory = (
+  evaluate: Evaluator,
+  values: ExprContextValues,
+) => TemplateVisitor;
+
 const entry = (mapping: MappingNode, key: string): MappingEntry | undefined =>
   mapping.entries.find((candidate) => String(candidate.key.value) === key);
 
@@ -177,18 +188,47 @@ export function plain(node: PipelineNode | undefined): unknown {
  */
 export function expandFixture(
   source: string,
-  directive: (evaluate: Evaluator) => TemplateVisitor,
+  directive: DirectiveVisitorFactory,
 ): { yaml: string; directives: readonly string[] } {
+  const result = walkFixture(source, directive);
+  expect(result.diagnostics).toEqual([]);
+  return {
+    yaml: stringify(result.plain, { lineWidth: 0 }),
+    directives: result.directives,
+  };
+}
+
+/**
+ * `expandFixture` without the "no diagnostics" assertion, for the cases where the diagnostics *are*
+ * the behavior under test — E03-S01-T04's key collisions, which the walker accumulates rather than
+ * throwing (C-E03-169..171), and the two positions where `${{ insert }}` is not a directive at all
+ * (C-E03-173), where the interesting assertion is that nothing was reported.
+ */
+export function walkFixture(
+  source: string,
+  directive: DirectiveVisitorFactory,
+  // `false` omits the T05 stand-in. C-E03-173 needs that: the service keeps a lone `${{ insert }}`
+  // in value position as literal text, while the stand-in evaluates every lone expression and would
+  // raise `Unrecognized value: 'insert'` — the one sentence that probe proves the service does not
+  // emit. The rule is T05's to implement; here the point is only that the *walker* is unaffected.
+  scalars = true,
+): {
+  plain: unknown;
+  directives: readonly string[];
+  diagnostics: readonly { message: string }[];
+} {
   const parsed = parsePipelineYaml(source, 'azure-pipelines.yml');
   expect(parsed.errors).toEqual([]);
   const values = contexts(parsed.root);
   const evaluate: Evaluator = (expression, frame) =>
     evaluateTemplateExpression(expression, frame, values);
-  const visitor = { ...directive(evaluate), scalar: fixtureScalars(evaluate) };
+  const visitor = scalars
+    ? { ...directive(evaluate, values), scalar: fixtureScalars(evaluate) }
+    : directive(evaluate, values);
   const result = walkTemplate(parsed.root, rootFrame('azure-pipelines.yml'), visitor);
-  expect(result.diagnostics).toEqual([]);
   return {
-    yaml: stringify(plain(result.node), { lineWidth: 0 }),
+    plain: plain(result.node),
     directives: result.directives.map((site) => site.directive.keyword),
+    diagnostics: result.diagnostics,
   };
 }

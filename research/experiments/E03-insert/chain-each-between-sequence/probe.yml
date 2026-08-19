@@ -1,0 +1,26 @@
+parameters:
+- name: a
+  type: boolean
+  default: false
+- name: scripts
+  type: object
+  default:
+  - mid-one
+  - mid-two
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - ${{ if parameters.a }}:
+        - task: CmdLine@2
+          inputs:
+            script: echo from-if
+      - ${{ each s in parameters.scripts }}:
+        - task: CmdLine@2
+          inputs:
+            script: echo ${{ s }}
+      - ${{ else }}:
+        - task: CmdLine@2
+          inputs:
+            script: echo from-else

@@ -1,0 +1,22 @@
+parameters:
+- name: a
+  type: boolean
+  default: false
+- name: extra
+  type: object
+  default:
+    MID: mid
+variables:
+- name: MID
+  value: mid
+- name: PICK
+  value: from-else
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo probe
+

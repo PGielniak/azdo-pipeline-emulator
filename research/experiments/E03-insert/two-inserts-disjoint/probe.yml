@@ -1,0 +1,21 @@
+parameters:
+- name: first
+  type: object
+  default:
+    ONE: one
+- name: second
+  type: object
+  default:
+    TWO: two
+variables:
+  BASE: base
+  ${{ insert }}: ${{ parameters.first }}
+  ${{ insert }}: ${{ parameters.second }}
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo probe

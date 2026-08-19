@@ -1,0 +1,3 @@
+{
+  "finalYaml": "parameters:\n- name: jobProps\n  type: object\n  default:\n    displayName: Inserted Display Name\n    continueOnError: true\n    workspace:\n      clean: all\nstages:\n- stage: probe\n  jobs:\n  - job: probe\n    displayName: Inserted Display Name\n    continueOnError: True\n    workspace:\n      clean: all\n    steps:\n    - task: CmdLine@2\n      inputs:\n        script: echo probe\n\n"
+}

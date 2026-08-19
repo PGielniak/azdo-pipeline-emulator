@@ -1,0 +1,3 @@
+{
+  "finalYaml": "parameters:\n- name: groups\n  type: object\n  default:\n  - name: alpha\n    vars:\n      G: alpha-var\n  - name: beta\n    vars:\n      G: beta-var\nstages:\n- stage: alpha\n  variables:\n  - name: G\n    value: alpha-var\n  jobs:\n  - job: probe\n    steps:\n    - task: CmdLine@2\n      inputs:\n        script: echo $(G)\n- stage: beta\n  variables:\n  - name: G\n    value: beta-var\n  jobs:\n  - job: probe\n    steps:\n    - task: CmdLine@2\n      inputs:\n        script: echo $(G)\n\n"
+}
