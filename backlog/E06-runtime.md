@@ -42,7 +42,7 @@ Acceptance: macro engine with cited semantics.
 ## E06-S03 — As a pipeline developer, each step runs through the full agent lifecycle (condition → env → exec → result), so control flow matches cloud runs.
 Acceptance: `run_step` per docs/04 §5, each numbered behavior grounded.
 
-- [ ] **E06-S03-T01 — `run_step` skeleton & exec**
+- [x] **E06-S03-T01 — `run_step` skeleton & exec**
   **Do:** argument contract per docs/04 §5; temp-script write, cwd default = `System.DefaultWorkingDirectory` (verify per-shell-task default), `timeout` wrapper honoring job deadline; log tee to `logs/…`.
   **Ground:** yaml-schema `steps-*` pages for `workingDirectory` defaults per step type (quote each); agent StepsRunner flow (pin) as lifecycle reference.
   **Done:** bats: exec, cwd, timeout kill, log file exists.

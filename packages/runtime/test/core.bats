@@ -30,6 +30,32 @@ materialized_env_value() {
   return 1
 }
 
+prepare_run_step() {
+  local workspace="$BATS_TEST_TMPDIR/workspace" agent_temp="$BATS_TEST_TMPDIR/agent-temp"
+  AZDO_LOG_DIR="$BATS_TEST_TMPDIR/logs"
+  export AZDO_LOG_DIR
+  mkdir -p "$workspace" "$agent_temp" "$AZDO_LOG_DIR"
+  azdo_var_set 'System.DefaultWorkingDirectory' "$workspace"
+  azdo_var_set 'Build.SourcesDirectory' "$BATS_TEST_TMPDIR/different-sources"
+  azdo_var_set 'Agent.TempDirectory' "$agent_temp"
+  azdo_env_materialize
+}
+
+run_test_step() {
+  local id="$1" file="$2" timeout_seconds="${3:-10}"
+  shift 3
+  run_step \
+    --id "$id" \
+    --file "$file" \
+    --cond cond_for_later_task \
+    --display "Test step $id" \
+    "$@" \
+    --continue-on-error false \
+    --fail-on-stderr false \
+    --retries 0 \
+    --timeout "$timeout_seconds"
+}
+
 @test "core.sh exposes the runtime version" {
   run -0 azdo_emu_runtime_version
   [ "$output" = "0.0.0" ]
@@ -289,4 +315,63 @@ ENV
   local collision_value
   collision_value="$(materialized_env_value A_B)"
   [[ "$collision_value" = dot-value || "$collision_value" = underscore-value ]]
+}
+
+@test "run_step executes the macro-expanded temp script with its materialized environment (C-E06-028/029)" {
+  local source_file="$BATS_TEST_TMPDIR/exec-step.sh"
+  azdo_var_set greeting hello
+  prepare_run_step
+  azdo_env_materialize EXPLICIT mapped
+  printf '%s\n' 'printf "EXEC=%s:%s\\n" "$(greeting)" "$EXPLICIT"' >"$source_file"
+
+  run -0 run_test_step 030 "$source_file" 10
+
+  [ "$output" = 'EXEC=hello:mapped' ]
+  [ "$(find "$BATS_TEST_TMPDIR/agent-temp/steps" -type f -name '.expanded.*' | wc -l)" -eq 1 ]
+}
+
+@test "run_step defaults cwd to System.DefaultWorkingDirectory and expands an explicit cwd (C-E06-026/027)" {
+  local source_file="$BATS_TEST_TMPDIR/cwd-step.sh" explicit_wd="$BATS_TEST_TMPDIR/explicit-wd"
+  prepare_run_step
+  mkdir -p "$explicit_wd"
+  azdo_var_set explicit.wd "$explicit_wd"
+  printf '%s\n' 'pwd' >"$source_file"
+
+  run -0 run_test_step 031 "$source_file" 10
+  [ "$output" = "$BATS_TEST_TMPDIR/workspace" ]
+
+  run -0 run_test_step 032 "$source_file" 10 --wd '$(explicit.wd)'
+  [ "$output" = "$explicit_wd" ]
+}
+
+@test "run_step tees combined stdout and stderr to the step log (C-E06-029)" {
+  local source_file="$BATS_TEST_TMPDIR/log-step.sh"
+  prepare_run_step
+  printf '%s\n' "printf 'OUT\\n'" "printf 'ERR\\n' >&2" >"$source_file"
+
+  run -0 run_test_step 033 "$source_file" 10
+
+  [ "$output" = $'OUT\nERR' ]
+  cmp "$AZDO_LOG_DIR/033.log" <(printf '%s\n' OUT ERR)
+}
+
+@test "run_step timeout kills the script process group and returns 124 (C-E06-025/030)" {
+  local source_file="$BATS_TEST_TMPDIR/timeout-step.sh" child_pid
+  local pid_file="$BATS_TEST_TMPDIR/timeout-child.pid" late_file="$BATS_TEST_TMPDIR/late"
+  prepare_run_step
+  printf '%s\n' \
+    'sleep 30 &' \
+    'child=$!' \
+    "printf '%s' \"\$child\" >'$pid_file'" \
+    'wait "$child"' \
+    "printf late >'$late_file'" >"$source_file"
+
+  run run_test_step 034 "$source_file" 1
+
+  [ "$status" -eq 124 ]
+  [ -f "$pid_file" ]
+  child_pid="$(cat "$pid_file")"
+  run ! kill -0 "$child_pid"
+  [ ! -e "$late_file" ]
+  [ -f "$AZDO_LOG_DIR/034.log" ]
 }
