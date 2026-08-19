@@ -420,6 +420,102 @@ STREAM
     $'##[warning]Malformed Azure Pipelines logging command; passing through unchanged.\n##vso[task.setvariable variable=broken\n;]value' ]
 }
 
+@test "task.setvariable is unavailable to its current task and visible to the next (C-E06-050/051)" {
+  local setter="$BATS_TEST_TMPDIR/set-current.sh" observer="$BATS_TEST_TMPDIR/observe-later.sh"
+  prepare_run_step
+  printf '%s\n' \
+    "printf '%s\\n' '##vso[task.setvariable variable=late]later-value'" \
+    "printf 'CURRENT_MACRO=%s\\n' '\$(late)'" \
+    'printf "CURRENT_ENV=%s\n" "${LATE-unset}"' >"$setter"
+
+  run -0 run_test_step set-current "$setter" 10
+  [ "$output" = $'CURRENT_MACRO=$(late)\nCURRENT_ENV=unset' ]
+
+  # The runner rematerializes each task environment after the prior command has persisted.
+  azdo_env_materialize
+  printf '%s\n' 'printf "LATER=%s:%s\n" "$(late)" "$LATE"' >"$observer"
+  run -0 run_test_step observe-later "$observer" 10
+  [ "$output" = 'LATER=later-value:later-value' ]
+}
+
+@test "task.setvariable output writes same-job alias and cross-job store (C-E06-005/052)" {
+  local setter="$BATS_TEST_TMPDIR/set-output.sh"
+  prepare_run_step
+  AZDO_STEP_NAME='publish'
+  AZDO_OUTPUT_DIR="$AZDO_STATE_DIR/outputs/Build/build"
+  export AZDO_STEP_NAME AZDO_OUTPUT_DIR
+  printf '%s\n' \
+    "printf '%s\\n' '##vso[task.setvariable variable=sha;isOutput=TrUe]abc123'" >"$setter"
+
+  run -0 run_test_step set-output "$setter" 10
+  [ -z "$output" ]
+  run -0 azdo_var 'publish.sha'
+  [ "$output" = abc123 ]
+  run -0 azdo_output Build build 'publish.sha'
+  [ "$output" = abc123 ]
+  run -0 azdo_var sha
+  [ -z "$output" ]
+  run -0 azdo_var_meta 'publish.sha'
+  [ "$output" = $'secret=false\noutput=true\nreadonly=true\nname=publish.sha' ]
+}
+
+@test "task.setvariable honors isReadOnly and Boolean.TryParse defaults (C-E06-006/054)" {
+  azdo_logging_parse_line \
+    '##vso[task.setvariable variable=locked;isReadOnly= TRUE ;isSecret=not-a-bool;]first'
+  azdo_logging_dispatch
+
+  run -0 azdo_var_meta locked
+  [ "$output" = $'secret=false\noutput=false\nreadonly=true\nname=locked' ]
+
+  azdo_logging_parse_line '##vso[task.setvariable variable=LOCKED;]second'
+  run ! azdo_logging_dispatch
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"Overwriting readonly variable 'LOCKED' is not permitted."* ]]
+  run -0 azdo_var locked
+  [ "$output" = first ]
+}
+
+@test "task.setvariable secrets are masked immediately and in later step logs (C-E06-053)" {
+  local setter="$BATS_TEST_TMPDIR/set-secret.sh" observer="$BATS_TEST_TMPDIR/observe-secret.sh"
+  local marker='synthetic[*]?mask-value'
+  prepare_run_step
+  printf '%s\n' \
+    "printf '%s\\n' '##vso[task.setvariable variable=masked;isSecret=true]$marker'" \
+    "printf 'CURRENT_SECRET=%s\\n' '$marker'" >"$setter"
+
+  run -0 run_test_step set-secret "$setter" 10
+  [ "$output" = 'CURRENT_SECRET=***' ]
+  ! grep -F "$marker" "$AZDO_LOG_DIR/set-secret.log"
+  run -0 azdo_var_meta masked
+  [ "$output" = $'secret=true\noutput=false\nreadonly=false\nname=masked' ]
+
+  printf '%s\n' 'printf "LATER_SECRET=%s\n" "$(masked)"' >"$observer"
+  run -0 run_test_step observe-secret "$observer" 10
+  [ "$output" = 'LATER_SECRET=***' ]
+  ! grep -F "$marker" "$AZDO_LOG_DIR/observe-secret.log"
+}
+
+@test "task.setvariable rejects multiline secrets and prevents secret downgrade (C-E06-055/056)" {
+  local masked_line
+  azdo_logging_parse_line \
+    '##vso[task.setvariable variable=sticky;isSecret=true]first-synthetic-value'
+  azdo_logging_dispatch
+  azdo_logging_parse_line '##vso[task.setvariable variable=sticky]replacement-synthetic-value'
+  azdo_logging_dispatch
+
+  run -0 azdo_var_meta sticky
+  [ "$output" = $'secret=true\noutput=false\nreadonly=false\nname=sticky' ]
+  azdo__mask_line 'value=replacement-synthetic-value' masked_line
+  [ "$masked_line" = 'value=***' ]
+
+  azdo_logging_parse_line \
+    '##vso[task.setvariable variable=multiline;isSecret=true]first%0Asecond'
+  run ! azdo_logging_dispatch
+  [ "$status" -eq 1 ]
+  [ "$output" = 'Secrets cannot contain multiple lines' ]
+  run ! azdo_var_meta multiline
+}
+
 @test "run_step routes live output through the logging parser (C-E06-044/049)" {
   local source_file="$BATS_TEST_TMPDIR/logging-step.sh"
   prepare_run_step

@@ -62,7 +62,7 @@ Acceptance: parser + handlers for the docs/04 §6 table, grounded command-by-com
   **Do:** streaming line parser: `##vso[area.action prop=val;…]message` grammar incl. escaping rules; unknown command → warning passthrough.
   **Ground:** logging-commands doc "Command format"/escaping section (quote); cross-check emission side in task-lib `node/taskcommand.ts` (pin — shows exact escaping the parser must invert).
   **Done:** bats: parse table incl. escaped `;`/`%`/newlines per claims.
-- [ ] **E06-S04-T02 — `task.setvariable` (+`isoutput`, `issecret`, `isreadonly`)**
+- [x] **E06-S04-T02 — `task.setvariable` (+`isoutput`, `issecret`, `isreadonly`)**
   **Do:** store writes; output vars additionally to `outputs/<stage>/<job>/<step>.<var>`; within-job `$(step.var)` availability; secret registration to masker.
   **Ground:** set-variables-scripts doc (quote availability rules: subsequent steps only, not current; output-var reference forms) — each rule a claim; verify "not current step" via bats-replicated experiment matching a real-run transcript.
   **Done:** bats: subsequent-step visibility, output cross-job read via store, secret masked in logs.

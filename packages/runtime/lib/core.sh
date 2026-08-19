@@ -83,6 +83,12 @@ azdo__write_var() {
     return 1
   fi
 
+  # A secret variable cannot be downgraded by a later non-secret write; the replacement value must
+  # remain out of automatic environments and be registered with the masker (C-E06-056).
+  if azdo__meta_flag_is_true "$meta_path" secret; then
+    secret=true
+  fi
+
   value_tmp="$(mktemp "$var_dir/.value.XXXXXX")" || return
   meta_tmp="$(mktemp "$var_dir/.meta.XXXXXX")" || {
     rm -f -- "$value_tmp"
@@ -969,9 +975,9 @@ azdo_env_materialize() {
   azdo__refresh_step_env
 }
 
-# E06-S04-T01 — logging commands are parsed from physical output lines. The globals below form the
-# dispatch seam for the command handlers added by E06-S04-T02..T04. Indexed key/value arrays keep
-# the generated runtime compatible with the same Bash versions as the rest of this file.
+# E06-S04-T01/T02 — logging commands are parsed from physical output lines. The globals below form
+# the dispatch seam for command handlers. Indexed key/value arrays keep the generated runtime
+# compatible with the same Bash versions as the rest of this file.
 
 azdo__logging_fold() {
   (($# == 2)) || {
@@ -1098,10 +1104,147 @@ azdo_logging_property() {
   return 1
 }
 
-# Command handlers replace/extend this seam in E06-S04-T02..T04. Status 127 means the command is
-# unknown to the local runtime; other non-zero statuses are handler failures.
+# azdo_mask_register <value>
+#
+# Store masker inputs outside shell variables so registration in the logging-parser subprocess is
+# visible to the downstream mask filter and to later steps. Empty values are ignored exactly as in
+# TaskCommandHelper.AddSecret (C-E06-053). E06-S06-T01 owns the broader initial-secret and
+# cross-line hardening pass; this seam provides the immediate task.setvariable behavior required
+# here.
+azdo_mask_register() {
+  (($# == 1)) || {
+    printf '%s\n' 'usage: azdo_mask_register <value>' >&2
+    return 2
+  }
+  [[ -n "$1" ]] || return 0
+
+  local state_dir mask_dir mask_tmp mask_path old_umask
+  state_dir="$(azdo__state_dir)" || return
+  mask_dir="$state_dir/masks"
+  mkdir -p "$mask_dir" || return
+  old_umask="$(umask)"
+  umask 077
+  mask_tmp="$(mktemp "$mask_dir/.mask.XXXXXX")" || {
+    umask "$old_umask"
+    return
+  }
+  umask "$old_umask"
+  printf '%s' "$1" >"$mask_tmp" || {
+    rm -f -- "$mask_tmp"
+    return
+  }
+  mask_path="$mask_dir/mask.${mask_tmp##*.}"
+  mv -- "$mask_tmp" "$mask_path"
+}
+
+azdo__mask_line() {
+  (($# == 2)) || {
+    printf '%s\n' 'usage: azdo__mask_line <line> <destination-variable>' >&2
+    return 2
+  }
+
+  local state_dir mask_dir mask_file secret mask_result="$1" index other swap
+  local -a mask_files=() secrets=()
+  state_dir="$(azdo__state_dir)" || return
+  mask_dir="$state_dir/masks"
+  if [[ -d "$mask_dir" ]]; then
+    shopt -s nullglob
+    mask_files=("$mask_dir"/mask.*)
+    shopt -u nullglob
+  fi
+  for mask_file in "${mask_files[@]}"; do
+    secret=''
+    IFS= read -r secret <"$mask_file" || [[ -n "$secret" ]] || continue
+    [[ -n "$secret" ]] && secrets+=("$secret")
+  done
+
+  # Mask longer registered values first so an overlapping shorter value cannot expose the suffix
+  # of a longer secret. Each replacement still matches only the complete registered value.
+  for ((index = 0; index < ${#secrets[@]}; index++)); do
+    for ((other = index + 1; other < ${#secrets[@]}; other++)); do
+      if ((${#secrets[$other]} > ${#secrets[$index]})); then
+        swap="${secrets[$index]}"
+        secrets[index]="${secrets[$other]}"
+        secrets[other]="$swap"
+      fi
+    done
+    mask_result="${mask_result//"${secrets[$index]}"/***}"
+  done
+  printf -v "$2" '%s' "$mask_result"
+}
+
+# shellcheck disable=SC2120 # This stream filter intentionally accepts no arguments.
+azdo_mask_stream() {
+  (($# == 0)) || {
+    printf '%s\n' 'usage: azdo_mask_stream' >&2
+    return 2
+  }
+
+  local line masked
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    azdo__mask_line "$line" masked || return
+    printf '%s\n' "$masked"
+  done
+}
+
+azdo__logging_bool_property() {
+  (($# == 2)) || {
+    printf '%s\n' 'usage: azdo__logging_bool_property <name> <destination-variable>' >&2
+    return 2
+  }
+
+  local value
+  if ! azdo_logging_property "$1" value; then
+    printf -v "$2" '%s' false
+    return 0
+  fi
+  if [[ "$value" =~ ^[[:space:]]*[Tt][Rr][Uu][Ee][[:space:]]*$ ]]; then
+    printf -v "$2" '%s' true
+  else
+    # Boolean.TryParse also leaves the flag false for `false` and unparseable input (C-E06-054).
+    printf -v "$2" '%s' false
+  fi
+}
+
+azdo__logging_task_setvariable() {
+  local name secret output readonly_flag stored_name var_path
+  if ! azdo_logging_property variable name || [[ -z "$name" ]]; then
+    printf "%s\n" "Required field 'variable' is missing in ##vso[task.setvariable] command." >&2
+    return 1
+  fi
+  azdo__logging_bool_property issecret secret || return
+  azdo__logging_bool_property isoutput output || return
+  azdo__logging_bool_property isreadonly readonly_flag || return
+
+  if [[ "$secret" = true && "$AZDO_LOGGING_MESSAGE" = *$'\n'* ]]; then
+    printf '%s\n' 'Secrets cannot contain multiple lines' >&2
+    return 1
+  fi
+
+  # The file-backed write becomes visible only after macro/env materialization for the current
+  # process, reproducing the current-versus-following-task boundary (C-E06-050/051). Output writes
+  # reuse the step-qualified same-job and cross-job paths from C-E06-005/052; the store enforces
+  # the strict read-only policy established by C-E06-006.
+  azdo_var_set \
+    "$name" "$AZDO_LOGGING_MESSAGE" "$secret" "$output" "$readonly_flag" \
+    "${AZDO_VAR_SCOPE:-pipeline}" || return
+  stored_name="$name"
+  if [[ "$output" = true ]]; then
+    stored_name="${AZDO_STEP_NAME:-}.$name"
+  fi
+  var_path="$(azdo__var_path "$stored_name" "${AZDO_VAR_SCOPE:-pipeline}")" || return
+  if azdo__meta_flag_is_true "$var_path.meta" secret; then
+    azdo_mask_register "$AZDO_LOGGING_MESSAGE" || return
+  fi
+}
+
+# Status 127 means the command is unknown to the local runtime; other non-zero statuses are handler
+# failures. E06-S04-T03/T04 extend this case statement with their command families.
 azdo_logging_dispatch() {
-  return 127
+  case "$AZDO_LOGGING_AREA.$AZDO_LOGGING_ACTION" in
+    task.setvariable) azdo__logging_task_setvariable ;;
+    *) return 127 ;;
+  esac
 }
 
 azdo__logging_process_line() {
@@ -1244,7 +1387,7 @@ azdo__run_step_process() {
   (
     set -o pipefail
     # shellcheck disable=SC2119 # The stream filter intentionally accepts no arguments.
-    azdo_logging_stream <"$fifo" | tee -a -- "$log_file"
+    azdo_logging_stream <"$fifo" 2>&1 | azdo_mask_stream | tee -a -- "$log_file"
   ) &
   tee_pid=$!
   if [[ "$fail_on_stderr" = true ]]; then
