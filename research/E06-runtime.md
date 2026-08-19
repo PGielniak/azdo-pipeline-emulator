@@ -23,3 +23,11 @@
 [C-E06-011] When distinct variable names collapse to one environment name, the agent source specifies only last dictionary assignment, not a stable collision precedence; hosted run 540 observed `A.B` winning over `A_B` in all four declaration/runtime-write order cases — https://github.com/microsoft/azure-pipelines-agent/blob/15ee11cd728d630f9c9905485449e3359da0a493/src/Agent.Worker/Variables.cs#L44-L77 and https://github.com/microsoft/azure-pipelines-agent/blob/15ee11cd728d630f9c9905485449e3359da0a493/src/Agent.Worker/Handlers/Handler.cs#L188-L240 (checked 2026-08-19), research/experiments/E06-env-materialization/real-run.md (run 540, checked 2026-08-19) — "return _expanded.Values" / "Environment[key] = value".
 
 [C-E06-012] Each `task.prependpath` moves its path to the newest position, and the handler reverses the recorded list before prefixing PATH; two commands therefore materialize as `second:first:base` in the next task — https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#prependpath-prepend-a-path-to-the-path-environment-variable and https://github.com/microsoft/azure-pipelines-agent/blob/15ee11cd728d630f9c9905485449e3359da0a493/src/Agent.Worker/TaskCommandExtension.cs#L845-L866 plus https://github.com/microsoft/azure-pipelines-agent/blob/15ee11cd728d630f9c9905485449e3359da0a493/src/Agent.Worker/Handlers/Handler.cs#L269-L302 (checked 2026-08-19), corroborated by research/experiments/E06-env-materialization/real-run.md (run 540) — "The updated environment variable will be reflected in subsequent tasks." / "ExecutionContext.PrependPath.Reverse<string>()".
+
+## E06-S01-T05 grounding composition
+
+Re-checked 2026-08-19 before implementation: C-E06-007/008 define public-variable
+selection and name conversion; C-E06-009 defines secret exclusion and explicit mapping;
+C-E06-010 defines public-over-explicit precedence; C-E06-012 defines newest-first PATH.
+C-E06-011 is intentionally a non-contract: the implementation may not claim a universal
+winner for two public names that collapse to the same transformed environment key.

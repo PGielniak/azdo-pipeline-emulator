@@ -11,6 +11,25 @@ setup() {
   unset AZDO_OUTPUT_DIR AZDO_STEP_NAME
 }
 
+materialized_env_count() {
+  local expected="$1" entry count=0
+  for entry in "${AZDO_STEP_ENV[@]}"; do
+    [[ "${entry%%=*}" = "$expected" ]] && ((count += 1))
+  done
+  printf '%s\n' "$count"
+}
+
+materialized_env_value() {
+  local expected="$1" entry
+  for entry in "${AZDO_STEP_ENV[@]}"; do
+    if [[ "${entry%%=*}" = "$expected" ]]; then
+      printf '%s' "${entry#*=}"
+      return 0
+    fi
+  done
+  return 1
+}
+
 @test "core.sh exposes the runtime version" {
   run -0 azdo_emu_runtime_version
   [ "$output" = "0.0.0" ]
@@ -62,4 +81,60 @@ setup() {
   [ -z "$output" ]
   run ! azdo_var_set short 'mutated' false true false
   [[ "$output" == *"Overwriting readonly variable 'setSha.short' is not permitted."* ]]
+}
+
+@test "environment materialization transforms public names and excludes secrets (C-E06-007..009)" {
+  azdo_var_set 'lower.dot' 'dotted'
+  azdo_var_set 'Space Name' 'spaced'
+  azdo_var_set 'dash-name' 'hyphenated'
+  azdo_var_set 'Hidden.Value' 'not-automatic' true
+
+  azdo_env_materialize
+
+  [ "$(materialized_env_value LOWER_DOT)" = 'dotted' ]
+  [ "$(materialized_env_value SPACE_NAME)" = 'spaced' ]
+  [ "$(materialized_env_value DASH-NAME)" = 'hyphenated' ]
+  [ "$(materialized_env_count HIDDEN_VALUE)" -eq 0 ]
+  run -0 env -i "${AZDO_STEP_ENV[@]}" /usr/bin/printenv DASH-NAME
+  [ "$output" = 'hyphenated' ]
+}
+
+@test "public variables overwrite explicit env after explicit macros map secrets (C-E06-009/010)" {
+  local secret_value=$'top secret\nwith trailing newline\n'
+  azdo_var_set 'OVERLAY_NAME' 'automatic'
+  azdo_var_set 'overlay.source' 'macro'
+  azdo_var_set 'Hidden.Value' "$secret_value" true
+
+  azdo_env_materialize \
+    OVERLAY_NAME 'explicit-$(overlay.source)' \
+    EXPLICIT_SECRET '$(Hidden.Value)'
+
+  [ "$(materialized_env_value OVERLAY_NAME)" = 'automatic' ]
+  local mapped_secret
+  azdo__env_value EXPLICIT_SECRET mapped_secret
+  [ "$mapped_secret" = "$secret_value" ]
+  [ "$(materialized_env_count HIDDEN_VALUE)" -eq 0 ]
+}
+
+@test "PATH prepends are newest-first and repeated entries move to newest (C-E06-012)" {
+  mkdir -p "$AZDO_STATE_DIR/path.d"
+  printf '%s' '/first-e06' >"$AZDO_STATE_DIR/path.d/001-first"
+  printf '%s' '/second-e06' >"$AZDO_STATE_DIR/path.d/002-second"
+  printf '%s' '/first-e06' >"$AZDO_STATE_DIR/path.d/003-first-again"
+
+  azdo_env_materialize PATH '/explicit/base'
+
+  [ "$(materialized_env_value PATH)" = '/first-e06:/second-e06:/explicit/base' ]
+}
+
+@test "colliding public transforms produce one key without promising its winner (C-E06-011)" {
+  azdo_var_set 'A.B' 'dot-value'
+  azdo_var_set 'A_B' 'underscore-value'
+
+  azdo_env_materialize
+
+  [ "$(materialized_env_count A_B)" -eq 1 ]
+  local collision_value
+  collision_value="$(materialized_env_value A_B)"
+  [[ "$collision_value" = dot-value || "$collision_value" = underscore-value ]]
 }

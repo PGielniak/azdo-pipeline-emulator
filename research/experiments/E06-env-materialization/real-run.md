@@ -1,4 +1,4 @@
-# E06-S01-T02 — environment materialization (real run)
+# E06-S01-T02/T05 — environment materialization (real run)
 
 This hosted-agent probe measures collisions after variable-name conversion and cross-checks
 explicit step `env`, secret exclusion/mapping, the space transform, and prepend-PATH order.

@@ -13,8 +13,8 @@ Acceptance: store + env materialization per docs/04 §4–§5 with cited agent b
   **Do:** file-per-value store (`state/vars/<scope>/<NAME>` + `.meta` flags secret/output/readonly); scope copy at job start; API `azdo_var`, `azdo_var_set`, `azdo_var_meta`.
   **Ground:** docs/04 §4 spec; job-isolation claim (setvariable never crosses jobs except outputs) from set-variables-scripts doc — quote; pin agent `Variables` handling reference.
   **Done:** bats: newline/quote/unicode values survive; readonly write → warning + ignored (behavior per logging-commands doc — quote exact wording).
-- [!] **E06-S01-T02 — Env materialization & name transform**
-  *Blocked 2026-08-19: hosted run 540 refutes the Done criterion "env: overlay wins" — the automatically mapped public variable overwrote the same-named explicit step mapping. Agent source also exposes no stable precedence for `A.B`/`A_B` collisions, although `A.B` won all four run-540 variants. Grounding is complete (C-E06-007..012); no runtime implementation was written pending a corrected task contract.*
+- [~] **E06-S01-T02 — Env materialization & name transform**
+  *Superseded 2026-08-19 by E06-S01-T05: hosted run 540 refutes the Done criterion "env: overlay wins" — the automatically mapped public variable overwrote the same-named explicit step mapping. Agent source also exposes no stable precedence for `A.B`/`A_B` collisions, although `A.B` won all four run-540 variants (C-E06-007..012).*
   **Do:** non-secret vars exported as `UPPER` with `.`/space→`_`; secrets **not** auto-exported; step `env:` overlay (values macro-expanded); PATH assembly from `path.d`.
   **Ground:** variables doc "Environment variables" + "Secret variables" sections — quote both rules (the secret non-export rule is the critical one); verify collision behavior (`A.B` vs `A_B`) via real-run experiment; transcript stored.
   **Done:** bats matrix: transform cases, secret exclusion, env: overlay wins, PATH order.
@@ -26,6 +26,10 @@ Acceptance: store + env materialization per docs/04 §4–§5 with cited agent b
   **Do:** file-per-value store (`state/vars/<scope>/<NAME>` + `.meta` flags secret/output/readonly); scope copy at job start; APIs `azdo_var`, `azdo_var_set`, and `azdo_var_meta`. An attempt to overwrite an existing readonly name emits the grounded error and retains the original value.
   **Ground:** docs/04 §4 spec; job-isolation and output-reference claims from set-variables-scripts/variables docs; pinned agent variable handling; real-run transcript `research/experiments/E06-readonly-variables/real-run.md` (C-E06-001..006).
   **Done:** bats: newline/quote/unicode values survive; readonly overwrite errors and retains the first value; output variable fixture covers same-job and cross-job storage paths.
+- [x] **E06-S01-T05 — Env materialization & name transform (public-over-explicit correction)**
+  **Do:** materialize step `env:` entries with macro-expanded values, then overwrite collisions with non-secret variables exported as `UPPER` with `.`/space→`_`; secrets are not auto-exported; assemble PATH from `path.d` newest-first. Do not promise a winner when distinct public names collapse to one environment key.
+  **Ground:** variables doc "Environment variables" + "Secret variables" sections; pinned agent `TaskRunner`, `Handler`, `VarUtil`, and prepend-path handling; hosted run transcript `research/experiments/E06-env-materialization/real-run.md` (C-E06-007..012).
+  **Done:** bats matrix: transform cases, secret exclusion with explicit secret mapping, public variable overwrites colliding explicit `env:`, PATH order; transformed-public collision behavior is documented without asserting a universal winner; shellcheck clean.
 
 ## E06-S02 — As a pipeline developer, `$(macro)` expansion is agent-identical (just-in-time, textual, unmatched left literal), so timing bugs reproduce locally.
 Acceptance: macro engine with cited semantics.
