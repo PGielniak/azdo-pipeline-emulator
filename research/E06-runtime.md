@@ -94,3 +94,27 @@ settles the shell default working directory with a live control that makes the t
 variables unequal; C-E06-026 records why the task-reference prose alone is insufficient.
 C-E06-028 supplies the lifecycle seam, while C-E06-029 grounds private temporary script execution
 and combined live output. Condition/result policy remains intentionally deferred to E06-S03-T02/T03.
+
+[C-E06-031] The common task/step schema exposes `continueOnError` and `retryCountOnTaskFailure`, while Bash and PowerShell shortcut schemas additionally expose `failOnStderr`; retries default to zero and are capped at ten. — https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/steps-task, https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/steps-bash, https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/steps-powershell, and https://learn.microsoft.com/azure/devops/pipelines/process/tasks (checked 2026-08-19) — "Continue running even on failure?" / "The maximum number of retries allowed is 10."
+
+[C-E06-032] Bash@3 begins with a `Succeeded` result and changes it to `Failed` when the shell exits nonzero, including its separately messaged exit-137 case. — https://github.com/microsoft/azure-pipelines-tasks/blob/6485321954dafb296697763c54c30a70840154f8/Tasks/BashV3/bash.ts#L203-L228 (checked 2026-08-19) — "let result = tl.TaskResult.Succeeded" / "if (exitCode !== 0) ... result = tl.TaskResult.Failed".
+
+[C-E06-033] With `failOnStderr` enabled, Bash@3 and PowerShell@2 set a failure flag on every emitted stderr `Buffer`, keep both streams directed to the live task output, and mark the task failed after process exit when that flag was set; the trigger is therefore any stderr bytes, not a newline or a nonempty stream checked only at exit. — https://github.com/microsoft/azure-pipelines-tasks/blob/6485321954dafb296697763c54c30a70840154f8/Tasks/BashV3/bash.ts#L179-L225 and https://github.com/microsoft/azure-pipelines-tasks/blob/6485321954dafb296697763c54c30a70840154f8/Tasks/PowerShellV2/powershell.ts#L154-L184 (checked 2026-08-19) — "bash.on('stderr', (data: Buffer) => { stderrFailure = true" / "Direct all output to STDOUT".
+
+[C-E06-034] Task retries are capped at ten and wait `(retry index + 1)^2` seconds before re-execution, yielding the documented 1-second first retry, 4-second second retry, and 100-second tenth retry. — https://learn.microsoft.com/azure/devops/pipelines/process/tasks and https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskRunner.cs#L458-L478 plus https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/RetryHelper.cs#L9-L18 (checked 2026-08-19) — "The first retry happens after 1 second, the second retry after 4 seconds, and the tenth retry after 100 seconds." / "Math.Pow(retryNumber + 1, 2) * 1000".
+
+[C-E06-035] The agent retries only while the attempt result is exactly `Failed`, clears that failure before the next attempt, emits a warning, and stops immediately after a non-failed attempt or after exhausting the configured retry count. — https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/RetryHelper.cs#L71-L125 (checked 2026-08-19) — "ExecutionContext.Result != TaskResult.Failed || ExhaustedRetryCount" / "Task result ... will retry".
+
+[C-E06-036] After task execution and retries finish, `continueOnError` converts only a final `Failed` step to `SucceededWithIssues`; a canceled step is not downgraded. — https://learn.microsoft.com/azure/devops/pipelines/process/tasks and https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/StepsRunner.cs#L464-L485 (checked 2026-08-19) — "ignore a `failed` status and continue running" / "Result: Failed -> SucceededWithIssues".
+
+[C-E06-037] The agent result state machine records a false condition as `Skipped`, a step-local timeout or exception as `Failed`, job-driven cancellation as `Canceled`, and merges only `Failed` or `SucceededWithIssues` into ordinary job failure state. — https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/StepsRunner.cs#L211-L288 and https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/StepsRunner.cs#L349-L485 (checked 2026-08-19) — "Complete(TaskResult.Skipped" / "Result = TaskResult.Canceled".
+
+## E06-S03-T02 grounding composition
+
+C-E06-031 defines the supported YAML controls and retry bound. C-E06-032 maps shell exit status
+to the initial attempt result; C-E06-033 adds the task-level stderr failure signal without delaying
+live output. C-E06-034/035 define retry count, eligibility, warning, and square-second backoff.
+C-E06-036 places `continueOnError` after retries and limits its downgrade to `Failed`.
+C-E06-037 defines the five persisted result spellings and distinguishes step timeout failure from
+job-driven cancellation. The task and agent sources answer every runtime ambiguity, so no hosted
+experiment is required for this task.

@@ -33,8 +33,9 @@ materialized_env_value() {
 prepare_run_step() {
   local workspace="$BATS_TEST_TMPDIR/workspace" agent_temp="$BATS_TEST_TMPDIR/agent-temp"
   AZDO_LOG_DIR="$BATS_TEST_TMPDIR/logs"
-  export AZDO_LOG_DIR
-  mkdir -p "$workspace" "$agent_temp" "$AZDO_LOG_DIR"
+  AZDO_RESULT_DIR="$AZDO_STATE_DIR/results/Build/build"
+  export AZDO_LOG_DIR AZDO_RESULT_DIR
+  mkdir -p "$workspace" "$agent_temp" "$AZDO_LOG_DIR" "$AZDO_RESULT_DIR"
   azdo_var_set 'System.DefaultWorkingDirectory' "$workspace"
   azdo_var_set 'Build.SourcesDirectory' "$BATS_TEST_TMPDIR/different-sources"
   azdo_var_set 'Agent.TempDirectory' "$agent_temp"
@@ -53,6 +54,20 @@ run_test_step() {
     --continue-on-error false \
     --fail-on-stderr false \
     --retries 0 \
+    --timeout "$timeout_seconds"
+}
+
+run_result_step() {
+  local id="$1" file="$2" continue_on_error="$3" fail_on_stderr="$4" retries="$5"
+  local timeout_seconds="$6"
+  run_step \
+    --id "$id" \
+    --file "$file" \
+    --cond cond_for_later_task \
+    --display "Result step $id" \
+    --continue-on-error "$continue_on_error" \
+    --fail-on-stderr "$fail_on_stderr" \
+    --retries "$retries" \
     --timeout "$timeout_seconds"
 }
 
@@ -355,23 +370,180 @@ ENV
   cmp "$AZDO_LOG_DIR/033.log" <(printf '%s\n' OUT ERR)
 }
 
-@test "run_step timeout kills the script process group and returns 124 (C-E06-025/030)" {
+@test "step result storage accepts exactly the five grounded states (C-E06-037)" {
+  local result
+  prepare_run_step
+
+  for result in Succeeded SucceededWithIssues Failed Skipped Canceled; do
+    azdo_step_result_set state-machine "$result"
+    run -0 azdo_step_result state-machine
+    [ "$output" = "$result" ]
+  done
+
+  run ! azdo_step_result_set state-machine Abandoned
+  [ "$status" -eq 2 ]
+  [[ "$output" == *'invalid step result: Abandoned'* ]]
+  run -0 azdo_step_result state-machine
+  [ "$output" = Canceled ]
+}
+
+@test "exit, stderr, and continueOnError combinations produce grounded results (C-E06-032/033/036)" {
+  local claim_ids row_id outcome continue_on_error fail_on_stderr expected_status expected_result
+  local source_file
+  prepare_run_step
+
+  while IFS='|' read -r claim_ids row_id outcome continue_on_error fail_on_stderr expected_status expected_result; do
+    : "$claim_ids"
+    source_file="$BATS_TEST_TMPDIR/$row_id.sh"
+    case "$outcome" in
+      success) printf '%s\n' "printf 'success\\n'" >"$source_file" ;;
+      stderr) printf '%s\n' "printf 'stderr-without-newline' >&2" >"$source_file" ;;
+      exit) printf '%s\n' 'exit 7' >"$source_file" ;;
+      both) printf '%s\n' "printf 'stderr-without-newline' >&2" 'exit 7' >"$source_file" ;;
+    esac
+
+    run run_result_step \
+      "$row_id" "$source_file" "$continue_on_error" "$fail_on_stderr" 0 10
+    [ "$status" -eq "$expected_status" ]
+    if [[ "$outcome" = stderr || "$outcome" = both ]]; then
+      [[ "$output" == *stderr-without-newline* ]]
+    fi
+    run -0 azdo_step_result "$row_id"
+    [ "$output" = "$expected_result" ]
+  done <<'TABLE'
+C-E06-032|success|success|false|false|0|Succeeded
+C-E06-033|stderr-ignored|stderr|false|false|0|Succeeded
+C-E06-033|stderr-fails|stderr|false|true|1|Failed
+C-E06-032|exit-fails|exit|false|false|7|Failed
+C-E06-032/036|exit-continues|exit|true|false|0|SucceededWithIssues
+C-E06-033/036|stderr-continues|stderr|true|true|0|SucceededWithIssues
+C-E06-032/033|exit-and-stderr|both|false|true|7|Failed
+TABLE
+}
+
+@test "failed attempts retry until success in one log node (C-E06-034/035)" {
+  local source_file="$BATS_TEST_TMPDIR/retry-success.sh"
+  local count_file="$BATS_TEST_TMPDIR/retry-success.count"
+  local line retry_warning_count=0 attempt_line_count=0
+  prepare_run_step
+  azdo__run_step_retry_wait() { return 0; }
+  printf '%s\n' \
+    'count=0' \
+    "[[ ! -f '$count_file' ]] || IFS= read -r count <'$count_file'" \
+    'count=$((count + 1))' \
+    "printf '%s\\n' \"\$count\" >'$count_file'" \
+    'printf "ATTEMPT=%s\\n" "$count"' \
+    '((count >= 3)) || exit 9' >"$source_file"
+
+  run -0 run_result_step retry-success "$source_file" false false 2 10
+
+  [ "$(cat "$count_file")" -eq 3 ]
+  run -0 azdo_step_result retry-success
+  [ "$output" = Succeeded ]
+  while IFS= read -r line; do
+    [[ "$line" != *'RetryHelper encountered task failure'* ]] || ((retry_warning_count += 1))
+    [[ "$line" != ATTEMPT=* ]] || ((attempt_line_count += 1))
+  done <"$AZDO_LOG_DIR/retry-success.log"
+  [ "$retry_warning_count" -eq 2 ]
+  [ "$attempt_line_count" -eq 3 ]
+}
+
+@test "failOnStderr failure is retryable and a clean retry succeeds (C-E06-033/035)" {
+  local source_file="$BATS_TEST_TMPDIR/retry-stderr.sh"
+  local count_file="$BATS_TEST_TMPDIR/retry-stderr.count"
+  prepare_run_step
+  azdo__run_step_retry_wait() { return 0; }
+  printf '%s\n' \
+    'count=0' \
+    "[[ ! -f '$count_file' ]] || IFS= read -r count <'$count_file'" \
+    'count=$((count + 1))' \
+    "printf '%s\\n' \"\$count\" >'$count_file'" \
+    'if ((count == 1)); then printf stderr-byte >&2; else printf clean-retry; fi' >"$source_file"
+
+  run -0 run_result_step retry-stderr "$source_file" false true 1 10
+
+  [ "$(cat "$count_file")" -eq 2 ]
+  [[ "$output" == *stderr-byte*clean-retry* ]]
+  run -0 azdo_step_result retry-stderr
+  [ "$output" = Succeeded ]
+}
+
+@test "exhausted retries preserve Failed before continueOnError downgrade (C-E06-035/036)" {
+  local continue_on_error expected_status expected_result row_id source_file count_file
+  prepare_run_step
+  azdo__run_step_retry_wait() { return 0; }
+
+  while IFS='|' read -r row_id continue_on_error expected_status expected_result; do
+    source_file="$BATS_TEST_TMPDIR/$row_id.sh"
+    count_file="$BATS_TEST_TMPDIR/$row_id.count"
+    printf '%s\n' \
+      'count=0' \
+      "[[ ! -f '$count_file' ]] || IFS= read -r count <'$count_file'" \
+      'count=$((count + 1))' \
+      "printf '%s\\n' \"\$count\" >'$count_file'" \
+      'exit 9' >"$source_file"
+
+    run run_result_step "$row_id" "$source_file" "$continue_on_error" false 2 10
+    [ "$status" -eq "$expected_status" ]
+    [ "$(cat "$count_file")" -eq 3 ]
+    run -0 azdo_step_result "$row_id"
+    [ "$output" = "$expected_result" ]
+  done <<'TABLE'
+retry-failed|false|9|Failed
+retry-continued|true|0|SucceededWithIssues
+TABLE
+}
+
+@test "retry delay and ten-retry cap match the agent policy (C-E06-031/034)" {
+  local source_file="$BATS_TEST_TMPDIR/retry-cap.sh" count_file="$BATS_TEST_TMPDIR/retry-cap.count"
+  prepare_run_step
+
+  run -0 azdo__run_step_retry_delay_seconds 0
+  [ "$output" -eq 1 ]
+  run -0 azdo__run_step_retry_delay_seconds 1
+  [ "$output" -eq 4 ]
+  run -0 azdo__run_step_retry_delay_seconds 9
+  [ "$output" -eq 100 ]
+
+  azdo__run_step_retry_wait() { return 0; }
+  printf '%s\n' \
+    'count=0' \
+    "[[ ! -f '$count_file' ]] || IFS= read -r count <'$count_file'" \
+    'count=$((count + 1))' \
+    "printf '%s\\n' \"\$count\" >'$count_file'" \
+    'exit 5' >"$source_file"
+
+  run run_result_step retry-cap "$source_file" false false 12 30
+
+  [ "$status" -eq 5 ]
+  [ "$(cat "$count_file")" -eq 11 ]
+  [[ "$output" == *'retryCountOnTaskFailure is limited to 10; requested 12.'* ]]
+  run -0 azdo_step_result retry-cap
+  [ "$output" = Failed ]
+}
+
+@test "run_step timeout kills the process group, records Failed, and does not retry (C-E06-030/035/037)" {
   local source_file="$BATS_TEST_TMPDIR/timeout-step.sh" child_pid
   local pid_file="$BATS_TEST_TMPDIR/timeout-child.pid" late_file="$BATS_TEST_TMPDIR/late"
+  local count_file="$BATS_TEST_TMPDIR/timeout.count"
   prepare_run_step
   printf '%s\n' \
+    "printf attempt >'$count_file'" \
     'sleep 30 &' \
     'child=$!' \
     "printf '%s' \"\$child\" >'$pid_file'" \
     'wait "$child"' \
     "printf late >'$late_file'" >"$source_file"
 
-  run run_test_step 034 "$source_file" 1
+  run run_result_step 034 "$source_file" false false 3 1
 
   [ "$status" -eq 124 ]
+  [ "$(cat "$count_file")" = attempt ]
   [ -f "$pid_file" ]
   child_pid="$(cat "$pid_file")"
   run ! kill -0 "$child_pid"
   [ ! -e "$late_file" ]
   [ -f "$AZDO_LOG_DIR/034.log" ]
+  run -0 azdo_step_result 034
+  [ "$output" = Failed ]
 }

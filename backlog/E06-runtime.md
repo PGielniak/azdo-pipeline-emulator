@@ -46,7 +46,7 @@ Acceptance: `run_step` per docs/04 §5, each numbered behavior grounded.
   **Do:** argument contract per docs/04 §5; temp-script write, cwd default = `System.DefaultWorkingDirectory` (verify per-shell-task default), `timeout` wrapper honoring job deadline; log tee to `logs/…`.
   **Ground:** yaml-schema `steps-*` pages for `workingDirectory` defaults per step type (quote each); agent StepsRunner flow (pin) as lifecycle reference.
   **Done:** bats: exec, cwd, timeout kill, log file exists.
-- [ ] **E06-S03-T02 — Result semantics: exit codes, `continueOnError`, `failOnStderr`, retries**
+- [x] **E06-S03-T02 — Result semantics: exit codes, `continueOnError`, `failOnStderr`, retries**
   **Do:** result state machine `Succeeded/SucceededWithIssues/Failed/Skipped/Canceled`; `failOnStderr` (any stderr output → failure, while still streaming — verify exact trigger: any bytes vs at-exit check); `retryCountOnTaskFailure` re-exec loop; `continueOnError` downgrade.
   **Ground:** yaml-schema steps pages for each field (quote definitions); `failOnStderr` precise semantics from the Bash/PowerShell task sources in `microsoft/azure-pipelines-tasks` (pin the stderr handling code) — task-level, not agent-level, behavior.
   **Done:** bats truth table per combination; claims cited per row.
