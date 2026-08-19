@@ -47,3 +47,20 @@ winner for two public names that collapse to the same transformed environment ke
 C-E06-013 defines base/overlay precedence and secret classification. C-E06-014..017 define the
 documented `KEY=value` syntax delegated to non-interactive Bash: identifier rules, empty values,
 expansions, single/double/backslash quoting, multiline quotes and continuations, and comments.
+
+[C-E06-018] Macro syntax is evaluated at runtime before each task, and a macro with no matching variable remains literal rather than becoming empty. — https://learn.microsoft.com/azure/devops/pipelines/process/variables (checked 2026-08-19) — "Macro syntax variables (`$(var)`) get processed during runtime before a task runs." / "If there's no variable by that name, the macro expression doesn't change."
+
+[C-E06-019] One agent `ExpandValues` pass scans from the first `$(` to the next `)`, performs an exact case-insensitive dictionary lookup, skips over inserted bytes to prevent recursive replacement within that pass, and advances one character after an unmatched opener so a nested inner opener can still be found. — https://github.com/microsoft/azure-pipelines-agent/blob/15ee11cd728d630f9c9905485449e3359da0a493/src/Microsoft.VisualStudio.Services.Agent/Util/VarUtil.cs#L147-L205 (checked 2026-08-19) — "This algorithm does not perform recursive replacement." / "Bump the start index to prevent recursive replacement."
+
+[C-E06-020] End-to-end hosted behavior nevertheless resolves a runtime-created variable chain across tasks: after task one stored `a` as literal `$(b)`, task two rendered `$(a)` as `inner`; the task's required observable "no recursion into substituted values" is therefore false. — research/experiments/E06-macro-expansion/real-run.md (run 541, checked 2026-08-19) — "CASE CHAIN=inner".
+
+[C-E06-021] For nested-looking `$(a$(b))`, hosted run 541 left the unmatched outer candidate, expanded the inner `$(b)`, and did not revisit the newly formed `$(ainner)` even though `ainner=outer`; missing and prefix-related exact-name controls also matched the one-pass scanner. — research/experiments/E06-macro-expansion/real-run.md (run 541, checked 2026-08-19) — "CASE NESTED=$(ainner)" / "CASE UNMATCHED=$(missing)".
+
+## E06-S02-T01 grounding composition and blocker
+
+C-E06-018 establishes the documented timing and unmatched rule. C-E06-019 establishes the
+agent's individual-pass scanner. C-E06-020/021 are the required hosted experiment and distinguish
+the observable cross-task chain behavior from nested text in one input. Run 541 contradicts T01's
+required end-to-end non-recursion, so no macro runtime implementation was written. The subsequent
+source trace stopped when GitHub code search returned HTTP 401, per the session's explicit
+auth-error stop condition.
