@@ -250,3 +250,80 @@ storage/reference paths; C-E06-053 defines immediate secret registration and mas
 defines handler property validation and defaults. C-E06-055/056 prevent multiline and downgrade
 leaks. Existing C-E06-005/006 supply output-alias read-only storage and strict `isReadOnly`
 overwrite enforcement. No source contradicts docs/04.
+
+[C-E06-057] `task.setsecret` registers a nonempty value as a job-duration secret, masks later log
+occurrences from the command onward, and does not retroactively mask earlier output. —
+https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#setsecret-register-a-value-as-a-secret and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L39-L53 plus
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L566-L579
+(checked 2026-08-19) — "registered as a secret for the duration of the job" / "from this point
+forward."
+
+[C-E06-058] `task.prependpath` requires a nonempty path, removes an existing identical entry before
+adding the new one, and changes `PATH` only for subsequent tasks. —
+https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#prependpath-prepend-a-path-to-the--path-environment-variable and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L844-L866
+(checked 2026-08-19) — "The updated environment variable will be reflected in subsequent tasks." /
+"PrependPath.RemoveAll".
+
+[C-E06-059] `task.logissue` requires `type=error` or `type=warning`, renders the corresponding
+tagged line, and increments the matching timeline issue counter. —
+https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#logissue-log-an-error-or-warning,
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L360-L429, and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/ExecutionContext.cs#L438-L479
+(checked 2026-08-19) — "Log an error or warning message in the timeline record" / "ErrorCount++".
+
+[C-E06-060] Error and warning issue counters do not determine task result: hosted run 545 recorded
+one of each on an otherwise zero-exit task whose timeline result remained `succeeded`. —
+research/experiments/E06-logging-commands/real-run.md (run 545, checked 2026-08-19) — "Log warning
+and error issues | succeeded | 1 | 1".
+
+[C-E06-061] The public `task.complete` contract exposes `Succeeded`, `SucceededWithIssues`, and
+`Failed`; the current agent requires a nonempty parseable result, merges it with the current result
+rather than improving a worse result, and does not stop the task unless the separate `done=true`
+property is supplied. Hosted run 545 observed post-command shell lines and the documented result
+merges. —
+https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#complete-finish-timeline,
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L502-L534, and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Microsoft.VisualStudio.Services.Agent/Util/TaskResultUtil.cs#L37-L64 plus
+research/experiments/E06-logging-commands/real-run.md (run 545, checked 2026-08-19) — "set task
+result" / "MergeTaskResults".
+
+[C-E06-062] Raw `##[group]`, `##[endgroup]`, `##[section]`, `##[command]`, `##[warning]`,
+`##[error]`, and `##[debug]` lines are formatting messages that mark warnings, errors, collapsible
+sections, and other log presentation without acting as `##vso` worker commands. —
+https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#formatting-commands
+(checked 2026-08-19) — "messages to the log formatter" / "mark specific log lines as errors,
+warnings, collapsible sections, and so on."
+
+[C-E06-063] A raw `##[debug]` formatting line is retained even when `System.Debug` is unset;
+hosted run 545 recorded `FORMAT DEBUG OFF`, so gating raw formatting would be a divergence. —
+research/experiments/E06-logging-commands/real-run.md (run 545, checked 2026-08-19) —
+"##[debug]FORMAT DEBUG OFF".
+
+[C-E06-064] The distinct `##vso[task.debug]` worker command is gated by `System.Debug`: the agent
+copies that variable into `WriteDebug`, writes task debug data only when it is true, and hosted run
+545 omitted the off message while retaining the on message. —
+https://learn.microsoft.com/azure/devops/pipelines/build/variables#systemdebug,
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L666-L679,
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/ExecutionContext.cs#L735-L748,
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/ExecutionContext.cs#L1342-L1355, and
+research/experiments/E06-logging-commands/real-run.md (run 545, checked 2026-08-19) — "For more
+detailed logs ... set it to `true`" / "if (context.WriteDebug)".
+
+[C-E06-065] The emulator deliberately renders recognized formatting markers with terminal ANSI
+styling while preserving their message text; collapsible UI state is unavailable in a plain Bash
+terminal, so group boundaries are visible colored delimiters. — backlog/E06-runtime.md corrected
+E06-S04-T05 and docs/04-generated-project-and-runtime.md §6 (checked 2026-08-19) — "ANSI-colored
+rendering" / "plain Bash terminal".
+
+## E06-S04-T03 grounding correction / E06-S04-T05 grounding composition
+
+C-E06-057/058 define the two stateful commands and their current-task/subsequent-task boundaries.
+C-E06-059 records issue validation, rendering, and counters; run 545 supplies C-E06-060, which
+refutes T03's assertion that those counters feed result computation. C-E06-061 defines result
+merging and demonstrates that `task.complete` does not normally stop the shell. C-E06-062 defines
+the raw formatting family, while run 545 separates always-retained raw `##[debug]` (C-E06-063)
+from the genuinely `System.Debug`-gated `task.debug` command (C-E06-064). C-E06-065 records the
+terminal-only ANSI presentation policy. These contradictions require a corrected replacement task
+and docs/04/docs/06 updates before implementation.

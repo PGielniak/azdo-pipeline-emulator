@@ -516,6 +516,110 @@ STREAM
   run ! azdo_var_meta multiline
 }
 
+@test "task.setsecret masks only later output in the job (C-E06-057)" {
+  local source_file="$BATS_TEST_TMPDIR/setsecret.sh" marker='synthetic-derived-secret'
+  prepare_run_step
+  printf '%s\n' \
+    "printf 'BEFORE=%s\\n' '$marker'" \
+    "printf '%s\\n' '##vso[task.setsecret]$marker'" \
+    "printf 'AFTER=%s\\n' '$marker'" >"$source_file"
+
+  run -0 run_test_step setsecret "$source_file" 10
+
+  [ "$output" = $'BEFORE=synthetic-derived-secret\nAFTER=***' ]
+  grep -F 'BEFORE=synthetic-derived-secret' "$AZDO_LOG_DIR/setsecret.log"
+  ! grep -F 'AFTER=synthetic-derived-secret' "$AZDO_LOG_DIR/setsecret.log"
+}
+
+@test "task.prependpath de-duplicates entries for subsequent tasks only (C-E06-058)" {
+  local source_file="$BATS_TEST_TMPDIR/prependpath.sh"
+  prepare_run_step
+  printf '%s\n' \
+    "printf 'CURRENT_HAS_FIRST=%s\\n' \"\${PATH//*\/first-e06*/yes}\"" \
+    "printf '%s\\n' '##vso[task.prependpath]/first-e06'" \
+    "printf '%s\\n' '##vso[task.prependpath]/second-e06'" \
+    "printf '%s\\n' '##vso[task.prependpath]/first-e06'" >"$source_file"
+
+  run -0 run_test_step prependpath "$source_file" 10
+  [ "$output" != 'CURRENT_HAS_FIRST=yes' ]
+
+  azdo_env_materialize PATH '/explicit/base'
+  [ "$(materialized_env_value PATH)" = '/first-e06:/second-e06:/explicit/base' ]
+  [ "$(find "$AZDO_STATE_DIR/path.d" -type f ! -name '.next' | wc -l)" -eq 2 ]
+}
+
+@test "task.logissue renders and persists result-neutral counters (C-E06-059/060)" {
+  local source_file="$BATS_TEST_TMPDIR/logissue.sh"
+  prepare_run_step
+  printf '%s\n' \
+    "printf '%s\\n' '##vso[task.logissue type=warning]synthetic warning'" \
+    "printf '%s\\n' '##vso[task.logissue type=ERROR]synthetic error'" \
+    "printf '%s\\n' 'ISSUE_STEP_CONTINUED=yes'" >"$source_file"
+
+  run -0 run_test_step logissue "$source_file" 10
+
+  [[ "$output" == *$'\033[1;33m##[warning]synthetic warning\033[0m'* ]]
+  [[ "$output" == *$'\033[1;31m##[error]synthetic error\033[0m'* ]]
+  [[ "$output" == *'ISSUE_STEP_CONTINUED=yes'* ]]
+  run -0 azdo_step_issue_count logissue warning
+  [ "$output" -eq 1 ]
+  run -0 azdo_step_issue_count logissue error
+  [ "$output" -eq 1 ]
+  run -0 azdo_step_result logissue
+  [ "$output" = Succeeded ]
+}
+
+@test "task.complete merges with shell status without stopping the task (C-E06-061)" {
+  local row_id command_lines exit_line expected_status expected_result source_file
+  prepare_run_step
+
+  while IFS='|' read -r row_id command_lines exit_line expected_status expected_result; do
+    source_file="$BATS_TEST_TMPDIR/$row_id.sh"
+    printf '%b\n' "$command_lines" "printf 'AFTER_COMPLETE=%s\\n' '$row_id'" "$exit_line" \
+      >"$source_file"
+
+    run run_result_step "$row_id" "$source_file" false false 0 10
+    [ "$status" -eq "$expected_status" ]
+    [[ "$output" == *"AFTER_COMPLETE=$row_id"* ]]
+    run -0 azdo_step_result "$row_id"
+    [ "$output" = "$expected_result" ]
+  done <<'TABLE'
+complete-partial|printf '%s\n' '##vso[task.complete result=SucceededWithIssues;]partial'|:|0|SucceededWithIssues
+complete-failed|printf '%s\n' '##vso[task.complete result=Failed;]failed'|:|1|Failed
+complete-exit|printf '%s\n' '##vso[task.complete result=Succeeded;]success'|exit 7|7|Failed
+complete-worst|printf '%s\n' '##vso[task.complete result=Failed;]failed' '##vso[task.complete result=Succeeded;]success'|:|1|Failed
+TABLE
+}
+
+@test "raw formatting always renders while task.debug follows System.Debug (C-E06-062..065)" {
+  local source_file="$BATS_TEST_TMPDIR/formatting.sh"
+  prepare_run_step
+  printf '%s\n' \
+    "printf '%s\\n' '##[group]group' '##[section]section' '##[command]command'" \
+    "printf '%s\\n' '##[warning]warning' '##[error]error' '##[debug]raw debug' '##[endgroup]'" \
+    "printf '%s\\n' '##vso[task.debug]task debug off'" >"$source_file"
+
+  run -0 run_test_step formatting-off "$source_file" 10
+
+  [[ "$output" == *$'\033[1;36m##[group]group\033[0m'* ]]
+  [[ "$output" == *$'\033[1;35m##[section]section\033[0m'* ]]
+  [[ "$output" == *$'\033[1;34m##[command]command\033[0m'* ]]
+  [[ "$output" == *$'\033[1;33m##[warning]warning\033[0m'* ]]
+  [[ "$output" == *$'\033[1;31m##[error]error\033[0m'* ]]
+  [[ "$output" == *$'\033[2;37m##[debug]raw debug\033[0m'* ]]
+  [[ "$output" == *$'\033[1;36m##[endgroup]\033[0m'* ]]
+  [[ "$output" != *'task debug off'* ]]
+  run -0 azdo_step_issue_count formatting-off error
+  [ "$output" -eq 0 ]
+  run -0 azdo_step_result formatting-off
+  [ "$output" = Succeeded ]
+
+  azdo_var_set 'System.Debug' true
+  printf '%s\n' "printf '%s\\n' '##vso[task.debug]task debug on'" >"$source_file"
+  run -0 run_test_step formatting-on "$source_file" 10
+  [[ "$output" == *$'\033[2;37m##[debug]task debug on\033[0m'* ]]
+}
+
 @test "run_step routes live output through the logging parser (C-E06-044/049)" {
   local source_file="$BATS_TEST_TMPDIR/logging-step.sh"
   prepare_run_step
