@@ -1,0 +1,16 @@
+parameters:
+- name: a
+  type: boolean
+  default: true
+- name: b
+  type: boolean
+  default: false
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - ${{ else }}:
+        - task: CmdLine@2
+          inputs:
+            script: echo orphan

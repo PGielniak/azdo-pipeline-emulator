@@ -1,0 +1,21 @@
+variables:
+  ${{ if parameters.a }}:
+    PICK: from-if
+  MIDDLE: middle
+  ${{ else }}:
+    PICK: from-else
+parameters:
+- name: a
+  type: boolean
+  default: false
+- name: b
+  type: boolean
+  default: false
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo $(MIDDLE)-$(PICK)

@@ -1,0 +1,9 @@
+{
+  "$id": "1",
+  "innerException": null,
+  "message": "/azure-pipelines.yml (Line: 21, Col: 9): The expression directive 'elseif' is not supported in this context\n/azure-pipelines.yml (Line: 21, Col: 9): Unexpected value '${{ elseif parameters.b }}'",
+  "typeName": "Microsoft.Azure.Pipelines.WebApi.PipelineValidationException, Microsoft.Azure.Pipelines.WebApi",
+  "typeKey": "PipelineValidationException",
+  "errorCode": 0,
+  "eventId": 3000
+}

@@ -1,0 +1,21 @@
+variables:
+- name: BASE
+  value: base
+- name: PICK
+  value: from-if
+parameters:
+- name: a
+  type: boolean
+  default: true
+- name: b
+  type: boolean
+  default: true
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo $(BASE)-$(PICK)
+

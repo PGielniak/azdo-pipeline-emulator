@@ -1,0 +1,19 @@
+parameters:
+- name: a
+  type: boolean
+  default: false
+- name: b
+  type: boolean
+  default: false
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo before
+    - task: CmdLine@2
+      inputs:
+        script: echo after
+

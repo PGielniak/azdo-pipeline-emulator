@@ -1,0 +1,21 @@
+parameters:
+- name: a
+  type: boolean
+  default: true
+- name: b
+  type: boolean
+  default: false
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - ${{ if parameters.a }}:
+        - ${{ if parameters.b }}:
+          - task: CmdLine@2
+            inputs:
+              script: echo inner-if
+        - ${{ else }}:
+          - task: CmdLine@2
+            inputs:
+              script: echo inner-else
