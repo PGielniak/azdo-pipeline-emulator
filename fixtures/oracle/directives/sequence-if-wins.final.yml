@@ -1,0 +1,15 @@
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo before
+    - task: CmdLine@2
+      inputs:
+        script: echo selected-if
+    - task: CmdLine@2
+      inputs:
+        script: echo after
+

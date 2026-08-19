@@ -1,0 +1,15 @@
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo outer-before
+    - task: CmdLine@2
+      inputs:
+        script: echo nested-selected-elseif
+    - task: CmdLine@2
+      inputs:
+        script: echo outer-after
+

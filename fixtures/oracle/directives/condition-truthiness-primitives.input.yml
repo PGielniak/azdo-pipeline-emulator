@@ -1,0 +1,21 @@
+steps:
+- ${{ if 'text' }}:
+  - script: echo selected-nonempty-string
+- ${{ else }}:
+  - script: echo not-nonempty-string
+- ${{ if '' }}:
+  - script: echo not-empty-string
+- ${{ else }}:
+  - script: echo selected-empty-string-else
+- ${{ if 1 }}:
+  - script: echo selected-nonzero-number
+- ${{ else }}:
+  - script: echo not-nonzero-number
+- ${{ if 0 }}:
+  - script: echo not-zero
+- ${{ else }}:
+  - script: echo selected-zero-else
+- ${{ if variables.absent }}:
+  - script: echo not-null
+- ${{ else }}:
+  - script: echo selected-null-else

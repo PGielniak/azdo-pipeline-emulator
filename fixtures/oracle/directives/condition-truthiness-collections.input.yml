@@ -1,0 +1,14 @@
+parameters:
+- name: payload
+  type: object
+  default:
+    key: value
+steps:
+- ${{ if split('a,b', ',') }}:
+  - script: echo selected-array
+- ${{ else }}:
+  - script: echo not-array
+- ${{ if parameters.payload }}:
+  - script: echo selected-object
+- ${{ else }}:
+  - script: echo not-object

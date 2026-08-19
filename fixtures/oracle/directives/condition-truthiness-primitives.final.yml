@@ -1,0 +1,21 @@
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo selected-nonempty-string
+    - task: CmdLine@2
+      inputs:
+        script: echo selected-empty-string-else
+    - task: CmdLine@2
+      inputs:
+        script: echo selected-nonzero-number
+    - task: CmdLine@2
+      inputs:
+        script: echo selected-zero-else
+    - task: CmdLine@2
+      inputs:
+        script: echo selected-null-else
+
