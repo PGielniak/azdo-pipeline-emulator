@@ -474,33 +474,208 @@ azdo__env_value() {
   return 1
 }
 
+# E06-S02-T01 has two deliberately separate expansion phases. Before each step the agent
+# recursively recalculates the variable dictionary; it then applies VarUtil's non-recursive scan to
+# each task value (C-E06-022..024). The recursive helpers below model the first phase lazily for a
+# matched variable. The scanner skips inserted bytes, but after an unmatched opener it advances only
+# past the '$', which allows an inner opener in text such as $(a$(b)) to be found.
+
+azdo__macro_variable_recursive() {
+  (($# == 6)) || {
+    printf '%s\n' \
+      'usage: azdo__macro_variable_recursive <name> <value-variable> <secret-variable> <scope> <stack> <depth>' >&2
+    return 2
+  }
+
+  local name="$1" value_destination="$2" secret_destination="$3" scope="$4" stack="$5" depth="$6"
+  local canonical var_path raw_value next_stack nested_text nested_has_secret own_secret=false
+  if ! canonical="$(azdo__canonical_var_name "$name" 2>/dev/null)"; then
+    return 1
+  fi
+  if ! var_path="$(azdo__var_path "$name" "$scope" 2>/dev/null)" || [[ ! -f "$var_path" ]]; then
+    return 1
+  fi
+
+  # Variables.RecalculateExpanded keeps the original top-level value when a graph contains a cycle
+  # or exceeds the agent's 50-level limit. Status 3/4 lets the top-level lookup make that choice.
+  [[ "$stack" != *$'\n'"$canonical"$'\n'* ]] || return 3
+  ((depth < 50)) || return 4
+
+  azdo__read_file_exact "$var_path" raw_value || return
+  if azdo__meta_flag_is_true "$var_path.meta" secret; then
+    own_secret=true
+  fi
+  next_stack="$stack$canonical"$'\n'
+  azdo__macro_scan \
+    "$raw_value" nested_text nested_has_secret "$scope" "$next_stack" "$((depth + 1))" recursive || return
+  if [[ "$nested_has_secret" = true ]]; then
+    own_secret=true
+  fi
+  printf -v "$value_destination" '%s' "$nested_text"
+  printf -v "$secret_destination" '%s' "$own_secret"
+}
+
+azdo__macro_preexpanded_value() {
+  (($# == 4)) || {
+    printf '%s\n' \
+      'usage: azdo__macro_preexpanded_value <name> <value-variable> <secret-variable> <scope>' >&2
+    return 2
+  }
+
+  local name="$1" value_destination="$2" secret_destination="$3" scope="$4"
+  local var_path raw_value resolved_text resolved_has_secret status raw_is_secret=false
+  if ! var_path="$(azdo__var_path "$name" "$scope" 2>/dev/null)" || [[ ! -f "$var_path" ]]; then
+    return 1
+  fi
+  azdo__read_file_exact "$var_path" raw_value || return
+  if azdo__meta_flag_is_true "$var_path.meta" secret; then
+    raw_is_secret=true
+  fi
+
+  if azdo__macro_variable_recursive \
+    "$name" resolved_text resolved_has_secret "$scope" $'\n' 0; then
+    printf -v "$value_destination" '%s' "$resolved_text"
+    printf -v "$secret_destination" '%s' "$resolved_has_secret"
+    return 0
+  else
+    status=$?
+  fi
+
+  case "$status" in
+    3)
+      printf "##[warning]Unable to expand variable '%s'. A cyclical reference was detected.\n" "$name" >&2
+      ;;
+    4)
+      printf "##[warning]Unable to expand variable '%s'. The max expansion depth (50) was exceeded.\n" \
+        "$name" >&2
+      ;;
+    *) return "$status" ;;
+  esac
+  printf -v "$value_destination" '%s' "$raw_value"
+  printf -v "$secret_destination" '%s' "$raw_is_secret"
+}
+
+azdo__macro_scan() {
+  (($# >= 6 && $# <= 7)) || {
+    printf '%s\n' \
+      'usage: azdo__macro_scan <value> <value-variable> <secret-variable> <scope> <stack> <depth> [lookup-mode]' >&2
+    return 2
+  }
+
+  local remaining="$1" value_destination="$2" secret_destination="$3" scope="$4" stack="$5" depth="$6"
+  local lookup_mode="${7:-recursive}" assembled='' aggregate_secret=false
+  local before after_open macro_name after_close replacement replacement_has_secret status
+  # shellcheck disable=SC2016 # This is the literal Azure macro opener, not shell substitution.
+  local macro_open='$('
+
+  while [[ "$remaining" == *"$macro_open"*')'* ]]; do
+    before="${remaining%%"$macro_open"*}"
+    after_open="${remaining#*"$macro_open"}"
+    macro_name="${after_open%%)*}"
+    after_close="${after_open#*)}"
+
+    if [[ "$lookup_mode" = preexpanded ]]; then
+      if azdo__macro_preexpanded_value \
+        "$macro_name" replacement replacement_has_secret "$scope"; then
+        status=0
+      else
+        status=$?
+      fi
+    else
+      if azdo__macro_variable_recursive \
+        "$macro_name" replacement replacement_has_secret "$scope" "$stack" "$depth"; then
+        status=0
+      else
+        status=$?
+      fi
+    fi
+    if ((status == 0)); then
+      assembled+="$before$replacement"
+      if [[ "$replacement_has_secret" = true ]]; then
+        aggregate_secret=true
+      fi
+      remaining="$after_close"
+      continue
+    fi
+    if ((status != 1)); then
+      return "$status"
+    fi
+
+    # Preserve the unmatched candidate, but advance by one character from the opener exactly as
+    # VarUtil does. Keeping the '(' in `remaining` lets a later nested '$(' still be discovered.
+    assembled+="$before\$"
+    remaining="($after_open"
+  done
+
+  assembled+="$remaining"
+  printf -v "$value_destination" '%s' "$assembled"
+  printf -v "$secret_destination" '%s' "$aggregate_secret"
+}
+
+azdo__expand_value() {
+  (($# >= 2 && $# <= 3)) || {
+    printf '%s\n' 'usage: azdo__expand_value <value> <destination-variable> [scope]' >&2
+    return 2
+  }
+
+  local input="$1" destination="$2" scope="${3:-${AZDO_VAR_SCOPE:-pipeline}}"
+  local expanded_result ignored_secret
+  azdo__valid_store_segment "$scope" || return
+
+  # The target scan uses the already-expanded variable view but does not recurse into bytes inserted
+  # into the target itself (C-E06-019/022). Each successful lookup below supplies that expanded view.
+  azdo__macro_scan "$input" expanded_result ignored_secret "$scope" $'\n' 0 preexpanded || return
+  [[ "$ignored_secret" = true || "$ignored_secret" = false ]] || return 2
+  printf -v "$destination" '%s' "$expanded_result"
+}
+
 azdo__expand_env_value() {
   (($# == 2)) || {
     printf '%s\n' 'usage: azdo__expand_env_value <value> <destination-variable>' >&2
     return 2
   }
+  azdo__expand_value "$1" "$2"
+}
 
-  local remaining="$1" expanded='' before after_open macro_name macro_value var_path
-  # shellcheck disable=SC2016 # This is the literal Azure macro opener, not shell substitution.
-  local macro_open='$('
-  while [[ "$remaining" == *"$macro_open"*')'* ]]; do
-    before="${remaining%%"$macro_open"*}"
-    after_open="${remaining#*"$macro_open"}"
-    macro_name="${after_open%%)*}"
-    remaining="${after_open#*)}"
-    expanded+="$before"
+# azdo_expand_macros <file>
+#
+# Expands a step file just before execution and prints the private temporary file path. Secret
+# variables participate in replacement, so mktemp's mode and a restrictive umask are intentional.
+azdo_expand_macros() {
+  (($# == 1)) || {
+    printf '%s\n' 'usage: azdo_expand_macros <file>' >&2
+    return 2
+  }
+  [[ -f "$1" && -r "$1" ]] || {
+    printf 'step file is not readable: %s\n' "$1" >&2
+    return 2
+  }
 
-    # The variable-store lookup is case-insensitive. Run 540 grounds direct task-environment
-    # replacement (C-E06-010); E06-S02 owns the remaining macro-parser edge cases.
-    if var_path="$(azdo__var_path "$macro_name" 2>/dev/null)" && [[ -f "$var_path" ]]; then
-      azdo__read_file_exact "$var_path" macro_value || return
-      expanded+="$macro_value"
-    else
-      expanded+="$macro_open$macro_name)"
-    fi
-  done
-  expanded+="$remaining"
-  printf -v "$2" '%s' "$expanded"
+  local scope="${AZDO_VAR_SCOPE:-pipeline}" source_value expanded_value agent_temp agent_temp_secret steps_dir
+  local expanded_file old_umask
+  azdo__read_file_exact "$1" source_value || return
+  azdo__expand_value "$source_value" expanded_value "$scope" || return
+  if ! azdo__macro_preexpanded_value \
+    'Agent.TempDirectory' agent_temp agent_temp_secret "$scope" || [[ -z "$agent_temp" ]]; then
+    printf '%s\n' 'Agent.TempDirectory must be present and non-empty before expanding a step file' >&2
+    return 2
+  fi
+  [[ "$agent_temp_secret" = true || "$agent_temp_secret" = false ]] || return 2
+
+  steps_dir="$agent_temp/steps"
+  mkdir -p "$steps_dir" || return
+  old_umask="$(umask)"
+  umask 077
+  expanded_file="$(mktemp "$steps_dir/.expanded.XXXXXX")" || {
+    umask "$old_umask"
+    return
+  }
+  umask "$old_umask"
+  if ! printf '%s' "$expanded_value" >"$expanded_file"; then
+    rm -f -- "$expanded_file"
+    return 1
+  fi
+  printf '%s\n' "$expanded_file"
 }
 
 azdo__var_environment_metadata() {
@@ -537,7 +712,7 @@ azdo__env_name() {
 }
 
 azdo__add_public_vars_to_environment() {
-  local scope_dir var_path meta_path stored_name stored_secret env_name value
+  local scope_dir var_path meta_path stored_name stored_secret env_name value recalculated_secret
   scope_dir="$(azdo__scope_dir)" || return
   [[ -d "$scope_dir" ]] || return 0
 
@@ -554,7 +729,12 @@ azdo__add_public_vars_to_environment() {
     azdo__var_environment_metadata "$meta_path" stored_name stored_secret || return
     [[ "$stored_secret" = false ]] || continue
     azdo__env_name "$stored_name" env_name || return
-    azdo__read_file_exact "$var_path" value || return
+    azdo__macro_preexpanded_value \
+      "$stored_name" value recalculated_secret "${AZDO_VAR_SCOPE:-pipeline}" || return
+    # RecalculateExpanded propagates secrecy through a matched variable reference. This prevents a
+    # nominally public `derived=$(secret)` variable from leaking the secret into the automatic task
+    # environment while still permitting an explicit env mapping (C-E06-009/023).
+    [[ "$recalculated_secret" = false ]] || continue
     azdo__env_assign "$env_name" "$value" || return
   done
 }

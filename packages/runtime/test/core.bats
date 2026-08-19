@@ -203,17 +203,69 @@ ENV
   local secret_value=$'top secret\nwith trailing newline\n'
   azdo_var_set 'OVERLAY_NAME' 'automatic'
   azdo_var_set 'overlay.source' 'macro'
+  azdo_var_set 'overlay.chain' '$(overlay.source)'
   azdo_var_set 'Hidden.Value' "$secret_value" true
+  azdo_var_set 'public.chain' '$(overlay.source)'
+  azdo_var_set 'derived.secret' '$(Hidden.Value)'
 
   azdo_env_materialize \
     OVERLAY_NAME 'explicit-$(overlay.source)' \
+    CHAINED '$(overlay.chain)' \
     EXPLICIT_SECRET '$(Hidden.Value)'
 
   [ "$(materialized_env_value OVERLAY_NAME)" = 'automatic' ]
+  [ "$(materialized_env_value CHAINED)" = 'macro' ]
+  [ "$(materialized_env_value PUBLIC_CHAIN)" = 'macro' ]
   local mapped_secret
   azdo__env_value EXPLICIT_SECRET mapped_secret
   [ "$mapped_secret" = "$secret_value" ]
   [ "$(materialized_env_count HIDDEN_VALUE)" -eq 0 ]
+  [ "$(materialized_env_count DERIVED_SECRET)" -eq 0 ]
+}
+
+@test "macro expansion performs step-time variable recalculation then a one-pass file scan (C-E06-018..024)" {
+  local agent_temp="$BATS_TEST_TMPDIR/agent-temp" source_file="$BATS_TEST_TMPDIR/step.sh"
+  local secret_value=$'top secret\nsecond line' expanded_file
+  azdo_var_set 'Agent.TempDirectory' "$agent_temp"
+  azdo_var_set b inner
+  azdo_var_set a '$(b)'
+  azdo_var_set ainner outer
+  azdo_var_set short short-value
+  azdo_var_set shorter longer-name-value
+  azdo_var_set 'Hidden.Value' "$secret_value" true
+  printf '%s' $'CHAIN=$(a)\nNESTED=$(a$(b))\nUNMATCHED=$(missing)\nEXACT=$(short)|$(shorter)\nSECRET=[$(HIDDEN.VALUE)]\n' >"$source_file"
+
+  run -0 azdo_expand_macros "$source_file"
+  expanded_file="$output"
+
+  [[ "$expanded_file" = "$agent_temp/steps/"* ]]
+  [ -f "$expanded_file" ]
+  cmp <(cat "$expanded_file") \
+    <(printf '%s' $'CHAIN=inner\nNESTED=$(ainner)\nUNMATCHED=$(missing)\nEXACT=short-value|longer-name-value\nSECRET=[top secret\nsecond line]\n')
+}
+
+@test "macro variable recalculation preserves the raw top-level value on cycles and depth overflow (C-E06-023)" {
+  local expanded warning_file="$BATS_TEST_TMPDIR/macro-warning.log" index next_value
+  azdo_var_set cycle_a '$(cycle_b)'
+  azdo_var_set cycle_b '$(cycle_a)'
+
+  azdo__expand_value '$(cycle_a)' expanded 2>"$warning_file"
+
+  [ "$expanded" = '$(cycle_b)' ]
+  [ "$(cat "$warning_file")" = \
+    "##[warning]Unable to expand variable 'cycle_a'. A cyclical reference was detected." ]
+
+  for ((index = 0; index < 50; index++)); do
+    printf -v next_value '$(depth_%s)' "$((index + 1))"
+    azdo_var_set "depth_$index" "$next_value"
+  done
+  azdo_var_set depth_50 final
+
+  azdo__expand_value '$(depth_0)' expanded 2>"$warning_file"
+
+  [ "$expanded" = '$(depth_1)' ]
+  [ "$(cat "$warning_file")" = \
+    "##[warning]Unable to expand variable 'depth_0'. The max expansion depth (50) was exceeded." ]
 }
 
 @test "PATH prepends are newest-first and repeated entries move to newest (C-E06-012)" {
