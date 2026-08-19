@@ -34,11 +34,10 @@ Acceptance: store + env materialization per docs/04 §4–§5 with cited agent b
 ## E06-S02 — As a pipeline developer, `$(macro)` expansion is agent-identical (just-in-time, textual, unmatched left literal), so timing bugs reproduce locally.
 Acceptance: macro engine with cited semantics.
 
-- [!] **E06-S02-T01 — Macro expansion engine**
-  *Blocked 2026-08-19: hosted run 541 refutes the required end-to-end "no recursion into substituted values" (`a=$(b)` rendered `inner` in the next task); the follow-up source trace stopped when GitHub code search returned HTTP 401, per the session's explicit auth-error stop condition. No implementation written (C-E06-018..021).*
-  **Do:** `azdo_expand_macros <file>`: replace `$(Name)` for names present in store (longest-name-safe scan, no recursion into substituted values — verify), leave unmatched literal, write expanded temp file under `Agent.TempDirectory`.
-  **Ground:** variables doc macro-syntax section — quote "processed before the task runs" + "left as is" unmatched rule + verify non-recursive substitution via real-run experiment (`a=$(b)` chains); transcripts stored; pin agent's macro processing code (locate in `Agent.Worker`, likely around task-input variable expansion).
-  **Done:** bats: unmatched literal, secret values expand, nested-looking `$(a$(b))` matches observed agent behavior from experiment.
+- [x] **E06-S02-T01 — Macro expansion engine**
+  **Do:** `azdo_expand_macros <file>`: model the agent's two phases — recursively recalculate stored variable values before the step, then scan the file once using exact case-insensitive `$(Name)` candidates without revisiting inserted bytes. Leave unmatched candidates literal, advance through nested-looking misses as `VarUtil` does, and write the result as a private temp file under `Agent.TempDirectory`.
+  **Ground:** variables doc macro-syntax section for before-task timing and literal unmatched macros; hosted run 541 for runtime-created chains and nested-looking input; commit-pinned agent trace through `TaskCommandExtension` → `ExecutionContext.SetVariable` → `Variables.Set` → `StepsRunner.RecalculateExpanded` → `TaskRunner`/`VarUtil.ExpandValues` (C-E06-018..024).
+  **Done:** bats: runtime-created `a=$(b)` chain resolves at the next step; unmatched literal; secret values expand; exact prefix-related names remain distinct; nested-looking `$(a$(b))` becomes the run-541 result `$(ainner)`; temp file is under `Agent.TempDirectory`; shellcheck clean.
 
 ## E06-S03 — As a pipeline developer, each step runs through the full agent lifecycle (condition → env → exec → result), so control flow matches cloud runs.
 Acceptance: `run_step` per docs/04 §5, each numbered behavior grounded.

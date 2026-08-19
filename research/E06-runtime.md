@@ -56,11 +56,20 @@ expansions, single/double/backslash quoting, multiline quotes and continuations,
 
 [C-E06-021] For nested-looking `$(a$(b))`, hosted run 541 left the unmatched outer candidate, expanded the inner `$(b)`, and did not revisit the newly formed `$(ainner)` even though `ainner=outer`; missing and prefix-related exact-name controls also matched the one-pass scanner. — research/experiments/E06-macro-expansion/real-run.md (run 541, checked 2026-08-19) — "CASE NESTED=$(ainner)" / "CASE UNMATCHED=$(missing)".
 
-## E06-S02-T01 grounding composition and blocker
+[C-E06-022] A logging-command variable write is stored as-is in both the agent's expanded and non-expanded dictionaries, but immediately before every following step `StepsRunner` invokes `RecalculateExpanded`; this phase boundary explains why a runtime-created `a=$(b)` becomes `a=inner` for the next task. — https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L587-L662, https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/ExecutionContext.cs#L395-L414, https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Variables.cs#L416-L452, and https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/StepsRunner.cs#L118-L123 (checked 2026-08-19) — "Store the value as-is to the expanded dictionary and the non-expanded dictionary." / "Variable expansion."
 
-C-E06-018 establishes the documented timing and unmatched rule. C-E06-019 establishes the
-agent's individual-pass scanner. C-E06-020/021 are the required hosted experiment and distinguish
-the observable cross-task chain behavior from nested text in one input. Run 541 contradicts T01's
-required end-to-end non-recursion, so no macro runtime implementation was written. The subsequent
-source trace stopped when GitHub code search returned HTTP 401, per the session's explicit
-auth-error stop condition.
+[C-E06-023] The agent's pre-step variable recalculation recursively follows exact, case-insensitive macro references through the non-expanded dictionary, propagates secret status from referenced variables, caps the stack at 50 levels, detects cycles, and leaves the original top-level value unchanged when either guard fires. — https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Variables.cs#L481-L630 (checked 2026-08-19) — "This algorithm handles recursive replacement using a stack." / "No replacement is performed if something went wrong."
+
+[C-E06-024] After pre-step recalculation, `TaskRunner` expands task inputs and environment values from the expanded variable dictionary by calling the separate non-recursive `VarUtil.ExpandValues` scanner; it uses the first `)` after each `$(`, performs an exact case-insensitive candidate lookup, skips inserted bytes, and advances one character after a miss. — https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Variables.cs#L287-L314, https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskRunner.cs#L222-L297, and https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Microsoft.VisualStudio.Services.Agent/Util/VarUtil.cs#L147-L205 (checked 2026-08-19) — "This algorithm does not perform recursive replacement." / "Bump the start index to prevent recursive replacement."
+
+## E06-S02-T01 completed source trace
+
+C-E06-018 establishes before-each-task timing and literal preservation for a missing name.
+C-E06-019 and C-E06-024 establish the individual target scanner. C-E06-022/023 supply the missing
+phase boundary: `task.setvariable` stores raw text, then the next step recursively recalculates the
+variable dictionary before `TaskRunner` scans the step's values. C-E06-020/021 are the hosted
+cross-check. Thus run 541's `CHAIN=inner` is recursive *variable-dictionary recalculation* followed
+by a one-pass target scan, while `NESTED=$(ainner)` is the target scanner advancing after the
+unmatched outer candidate, expanding the inner `$(b)`, and not revisiting the newly formed outer
+macro. GitHub code search is not part of this evidence path: the trace used the repository tree API
+and commit-pinned raw files at `4571a73531e1ea6342ed46723dd39a115b92843b`.
