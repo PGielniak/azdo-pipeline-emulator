@@ -1,0 +1,18 @@
+variables:
+- name: BEFORE
+  value: before
+- name: LIT_A
+  value: a
+- name: LIT_B
+  value: b
+- name: AFTER
+  value: after
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo probe
+

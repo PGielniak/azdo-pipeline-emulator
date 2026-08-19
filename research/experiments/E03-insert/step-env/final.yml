@@ -1,0 +1,17 @@
+parameters:
+- name: envVars
+  type: object
+  default:
+    FROM_INSERT: inserted
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo probe
+      env:
+        LITERAL: lit
+        FROM_INSERT: inserted
+

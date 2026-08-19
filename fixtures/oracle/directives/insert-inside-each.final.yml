@@ -1,0 +1,32 @@
+parameters:
+- name: groups
+  type: object
+  default:
+  - name: alpha
+    vars:
+      G: alpha-var
+  - name: beta
+    vars:
+      G: beta-var
+stages:
+- stage: alpha
+  variables:
+  - name: G
+    value: alpha-var
+  jobs:
+  - job: probe
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo $(G)
+- stage: beta
+  variables:
+  - name: G
+    value: beta-var
+  jobs:
+  - job: probe
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo $(G)
+

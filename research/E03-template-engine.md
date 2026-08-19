@@ -11,9 +11,9 @@ time the IDs were load-bearing in code comments and test names) is the reason th
 |---|---|---|---|
 | `C-E03-001..099` | E03-S05-T01 normalizer | `research/E03-normalizer.md` | 001–003 used |
 | `C-E03-100..119` | **E03-S01-T01 DOM walker with context stack** | this file | 100–117 used |
-| `C-E03-120..139` | E03-S01-T02 conditional insertion chains | this file | 120–137 used |
+| `C-E03-120..139` | E03-S01-T02 conditional insertion chains | this file | 120–139 used (block full; 138/139 added by T04) |
 | `C-E03-140..159` | E03-S01-T03 iterative insertion (`each`) | this file | 140–151 used |
-| `C-E03-160..174` | E03-S01-T04 `${{ insert }}` merge | this file | free |
+| `C-E03-160..174` | **E03-S01-T04 `${{ insert }}` merge** | this file | 160–174 used (block full) |
 | `C-E03-175..194` | E03-S01-T05 scalar interpolation | this file | free |
 | `C-E03-195..229` | E03-S02 template resolution & parameters | this file | free |
 | `C-E03-230..249` | E03-S03 compile-time variable visibility | this file | free |
@@ -406,11 +406,219 @@ context` and `Unexpected value '${{ else }}'`.
   — research/experiments/E03-conditionals/duplicate-else-sequence.md (live preview, HTTP 400,
     checked 2026-08-18)
 
-**Open question, deliberately not claimed.** No probe placed an `each` or `insert` directive between
-two members of a chain, so whether *those* siblings break a chain is unmeasured.
-`packages/engine/src/template/conditionals.ts` skips them, which is the reading consistent with
-C-E03-128, and says so at the point where it does. E03-S01-T04 should settle it while it holds the
-`insert` oracle budget.
+**Open question — settled 2026-08-19 by E03-S01-T04, and the answer was the opposite of the
+reading T02 shipped.** See C-E03-138/139 below.
+(They were probed as C-E03-135/136; the ids were reassigned on the 2026-08-19 rebase onto
+`main`, where the reconciled E03-S01-T02 survey had already claimed 135..137.)
+
+[C-E03-138] **A *directive* sibling between two chain members breaks the chain, although an
+ordinary sibling does not.** This is the question T02 filed. Placing `${{ insert }}` or
+`${{ each }}` between `${{ if }}` and its `${{ else }}` makes the trailing member an **orphan**:
+the service answers with C-E03-129's own sentence, `The expression directive 'else' is not
+supported in this context`. Measured in both parent shapes (mapping via `variables:`, sequence via
+`steps:`), for both intervening directives, and for a trailing `elseif` as well as a trailing
+`else` — and with both truth values of the `if`, so it is not an artifact of the branch that won.
+Two controls put the rule precisely at *between*: the same `${{ insert }}` placed **before** the
+chain head expands (`MID` then `PICK: from-else`), and placed **after** the `else` it also expands
+(`PICK: from-else` then `MID`). Contrast C-E03-128, where an ordinary `MIDDLE: middle` key in
+exactly that position leaves the chain intact. So a chain survives an ordinary sibling and is
+**ended** by any directive that is not `if`/`elseif` — the same treatment `else` already gets under
+C-E03-130.
+  — research/experiments/E03-insert/{chain-insert-between,chain-insert-between-true,
+    chain-each-between,chain-each-between-sequence,chain-elseif-after-insert}/ vs the controls
+    {chain-insert-before,chain-insert-after}/ and research/experiments/E03-if/
+    if-mapping-interrupted-chain (live preview, checked 2026-08-19)
+
+[C-E03-139] **The orphan rejection's wording is position-dependent, and T02 measured only one of
+the two.** In *sequence* position it is the two sentences C-E03-129 recorded: `The expression
+directive 'else' is not supported in this context` then `Unexpected value '${{ else }}'`, both
+located at the key. In *mapping* position the second sentence is instead `A mapping was not
+expected`, located at the branch **body** rather than the key, and a third sentence follows —
+`Expected end of template object. State:` plus a dump of the engine's internal reader stack
+(`LiteralState` / `MappingState` with `IsStart`/`Index`/`IsKey`/`IsEnd`). The state dump is a
+service internal with no user-facing meaning; we reproduce the first two sentences per position and
+deliberately not the third (docs/06 §5 decision 33).
+  — research/experiments/E03-insert/{orphan-else-mapping,orphan-elseif-mapping}/ vs
+    research/experiments/E03-if/{orphan-else,orphan-elseif}/ (live preview, checked 2026-08-19)
+
+---
+
+## E03-S01-T04 — the `insert` merge directive (`C-E03-160..174`)
+
+Evidence: `research/experiments/E03-insert/` — **32 live preview probes** (`pnpm insert-survey`).
+13 expanded and are committed as input/`finalYaml` fixture pairs under
+`fixtures/oracle/directives/insert-*`; the other **19 were rejected**, and are asserted against
+their committed error transcripts instead — for this task the rejections carry most of the claims,
+because "error, not overwrite" and "a directive sibling breaks a chain" are both answers the service
+gives by refusing a document.
+
+Two notes on the Ground field before the claims:
+
+- **The named source does not exist.** The task says "templates doc *Insertion*". The templates
+  page has no such section — its "Insert a template" section is about `- template:` file includes,
+  a different mechanism entirely (E03-S02). `${{ insert }}` is documented on
+  **template-expressions**, under "Insertion", and that is one paragraph and one example
+  (C-E03-160). It answers none of this task's questions.
+- **Unlike T02 and T03, the `actions/runner` fork is a real second source here**, because `insert`
+  is the one directive it implements (C-E03-115). It was read and pinned, and it predicted the
+  collision answer correctly — but it also predicted the *non-key position* answer wrongly
+  (C-E03-173), so every branch it suggested was still submitted to the oracle.
+
+### What the sources say
+
+[C-E03-160] **`${{ insert }}` is the documented way to merge a mapping into a mapping**, and it is
+documented on the template-expressions page, not the templates page the Ground field names.
+"To insert into a mapping (a collection of key-value pairs, similar to a dictionary or object in
+YAML), use the special property `${{ insert }}`." The example places it inside a job's `variables:`
+alongside two literal keys, fed by an `object` parameter:
+`configuration: debug` / `arch: x86` / `${{ insert }}: ${{ parameters.additionalVariables }}`.
+The page says nothing about collisions, ordering, non-mapping values, position restrictions, or
+more than one insert per mapping.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/template-expressions
+    §Insertion (checked 2026-08-19, page `ms.date` 2026-01-12)
+
+[C-E03-161] **Sequence insertion is a different mechanism and is not this directive.** The same
+section inserts into a sequence with a bare lone expression — `- ${{ parameters.preBuild }}` — and
+states "When you insert an array into an array, you flatten the nested array." That is
+lone-expression structural insertion and belongs to E03-S01-T05; `${{ insert }}` itself is
+mapping-only (C-E03-173/174).
+  — same page, §Insertion (checked 2026-08-19)
+
+[C-E03-162] **The fork implements `insert` as a mapping-key-only, streamed, in-place merge whose
+value must be a mapping.** `TemplateUnraveler.StartMappingInsertion` is entered only when the
+insert token's parent is a `MappingState` with `IsKey`; it takes the sibling value, uses it
+directly if it is a `MappingToken`, evaluates it via `EvaluateMappingToken` if it is an expression,
+and otherwise raises `ExpectedMapping()` — "Expected a mapping". A nested mapping with zero entries
+skips straight to the expression end, i.e. contributes nothing. Duplicate keys are caught one layer
+up in `TemplateEvaluator`, against a `HashSet<String>(StringComparer.OrdinalIgnoreCase)`, raising
+`ValueAlreadyDefined` — "'{0}' is already defined" — and skipping the later value. Azure agrees
+with all of this (C-E03-163/165/168/169/172) and disagrees about non-key positions (C-E03-173).
+  — https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTObjectTemplating/ObjectTemplating/TemplateUnraveler.cs#L434-L466
+  — https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTObjectTemplating/ObjectTemplating/TemplateUnraveler.cs#L640-L703
+  — https://github.com/actions/runner/blob/34ef7f24/src/Sdk/DTObjectTemplating/ObjectTemplating/TemplateEvaluator.cs#L193-L219
+  — https://github.com/actions/runner/blob/34ef7f24/src/Sdk/Resources/TemplateStrings.g.cs#L25-L29
+    and #L127-L131 (read 2026-08-19)
+
+### The merge
+
+[C-E03-163] **The merged keys land at the directive's own position, in the source object's
+authored order.** `BEFORE` / `${{ insert }}` / `AFTER` around a `{MID_A, MID_B}` object produced
+`BEFORE, MID_A, MID_B, AFTER` — not appended at the end. And an object authored `ZETA, ALPHA,
+MIDDLE` inserted in exactly that order, so the merge neither sorts nor re-orders, matching the
+authored-order rule `each` follows over a mapping (C-E03-145).
+  — research/experiments/E03-insert/{position,object-order,doc-canonical}/ (live preview,
+    checked 2026-08-19)
+
+[C-E03-164] **The value may be written as a literal mapping, not only as an expression.** Every
+example in the docs uses `${{ parameters.x }}`; a directly authored two-key mapping merged
+identically.
+  — research/experiments/E03-insert/literal-mapping-value/ (live preview, checked 2026-08-19)
+
+[C-E03-165] **An empty object contributes nothing and leaves no trace.** `default: {}` between
+`BEFORE` and `AFTER` produced exactly those two keys, adjacent.
+  — research/experiments/E03-insert/empty-object/ (live preview, checked 2026-08-19)
+
+[C-E03-166] **The directive works in mappings with well-known schema keys, not only loose ones, and
+nested values survive whole.** Inserting `{displayName, continueOnError, workspace: {clean: all}}`
+into a **job** mapping produced all three beside the job's own `job:` and `steps:` keys, with the
+nested `workspace` mapping intact. It also works in a step's `env:` mapping beside a literal key.
+  — research/experiments/E03-insert/{job-mapping,step-env}/ (live preview, checked 2026-08-19)
+
+[C-E03-167] **The source object may be a loop binding rather than a parameter.** Inside
+`${{ each group in parameters.groups }}`, `${{ insert }}: ${{ group.vars }}` merged each group's
+own variables into that group's stage.
+  — research/experiments/E03-insert/inside-each/ (live preview, checked 2026-08-19)
+
+[C-E03-168] **Two `${{ insert }}` keys in one mapping are accepted and both merge**, in document
+order. The two keys are byte-identical, so this corroborates C-E03-111 for a second directive: the
+service does not apply YAML duplicate-key rules to directive keys. *Our front end still rejects
+this at parse time* (C-E01-023 / the gap filed as **E01-S01-T04**), so this probe has a committed
+oracle pair but no local golden; the fixture test skips it by name and says why.
+  — research/experiments/E03-insert/two-inserts-disjoint/ (live preview, checked 2026-08-19)
+
+### Collision — the behavior the task flagged as unknown
+
+[C-E03-169] **A key collision is a hard error, not an overwrite.** The task's **Do** field asks
+"error vs overwrite"; it is **error**. HTTP 400, one sentence, `'FOO' is already defined` — the
+fork's `ValueAlreadyDefined` string byte for byte. Neither value wins and no merge happens. Both
+orders reject: a literal `FOO` followed by an insert supplying `FOO`, and an insert supplying `FOO`
+followed by a literal `FOO`. The error is located at the **later** of the two occurrences — column
+18 (the insert's value) in the first case, column 3 (the literal key) in the second — so the rule
+is positional and streamed, exactly as C-E03-162 describes, rather than "the explicit key wins".
+  — research/experiments/E03-insert/{collision-literal-before,collision-literal-after}/ (live
+    preview, checked 2026-08-19)
+
+[C-E03-170] **The collision comparison is case-insensitive, and the message echoes the later key as
+it was written.** A literal `FOO` and an inserted `foo` collide, and the message is
+`'foo' is already defined` — the inserted spelling, not the one already present. This matches the
+fork's `StringComparer.OrdinalIgnoreCase` and is consistent with the case-folding of every other
+name in the language (C-E02-011/012, C-E03-107).
+  — research/experiments/E03-insert/collision-case/ (live preview, checked 2026-08-19)
+
+[C-E03-171] **The collision rule belongs to the mapping, not to `insert`.** Two `${{ insert }}`
+keys whose payloads share `FOO` reject identically, and so does a key produced by
+`${{ each pair in … }}` colliding with a literal key — no `insert` involved at all. So the check
+must live where a mapping is rebuilt after expansion, not inside the insert visitor, or the same
+document would be accepted or rejected depending on which directive produced the duplicate.
+  — research/experiments/E03-insert/{two-inserts-collision,collision-from-each}/ (live preview,
+    checked 2026-08-19)
+
+### Rejections
+
+[C-E03-172] **A non-mapping value is rejected `Expected a mapping`**, one sentence, for all four
+shapes probed: a `string` parameter, an `object` parameter whose default is a sequence, a plain
+scalar written literally, and an empty (YAML null) value. The sentence is the fork's
+`ExpectedMapping()` byte for byte and carries no help link, like every other directive rejection
+(C-E03-129).
+  — research/experiments/E03-insert/{value-string,value-array,value-scalar-literal,value-empty}/
+    (live preview, checked 2026-08-19)
+
+[C-E03-173] **Outside mapping-key position the keyword is still *recognized* but cannot act, and
+its delimited text survives verbatim into schema validation.** As a bare sequence item
+(`- ${{ insert }}`) and as a mapping *value* (`KEY: ${{ insert }}`), the service answers with the
+single sentence `Unexpected value '${{ insert }}'` — one sentence, no help link, and the raw
+`${{ insert }}` text quoted back.
+
+The control that makes this precise is C-E03-151's: a bare *unknown name* in value position is an
+ordinary expression failure, `Unrecognized value: 'index'. Located at position 20 within
+expression: … For more help, refer to <link>`. `insert` in the same position produces neither that
+sentence nor that shape, so it is not being parsed as an expression and failing to resolve — the
+keyword is recognized, the directive is simply not permitted there, and the token degrades to its
+own literal text. **This refines C-E03-112**, which reads "a directive keyword in value position is
+not a directive": for `insert` it *is* still the directive token, it merely has nowhere to go.
+
+Two consequences. Our walker is unaffected — it only ever classifies keys, so it must leave such a
+scalar alone. But **E03-S01-T05 must not evaluate a lone `${{ insert }}` as an expression**: doing
+so raises `Unrecognized value: 'insert'`, which is the sentence this probe proves the service does
+*not* emit. Handed to T05 with the transcript.
+
+Azure also diverges from the fork here: `TemplateUnraveler` would additionally raise
+`DirectiveNotAllowed` ("The expression directive 'insert' is not supported in this context") before
+falling back to a string token (C-E03-162); Azure emits no such sentence.
+  — research/experiments/E03-insert/{bare-sequence-item,value-position}/ vs
+    research/experiments/E03-each/implicit-index-name/ (live preview, checked 2026-08-19)
+
+[C-E03-174] **`- ${{ insert }}: <object>` in a sequence is still a mapping-key insertion**, into
+the one-key mapping the sequence *item* is — not an insertion into the parent sequence, and not a
+rejection. So the sequence-position handler must return **one replacement item** holding the merged
+mapping, where `if`/`each` splice their body's items into the parent.
+
+Two probes, and the second exists because the first cannot carry the claim. `sequence-position`
+merged `{A: a}` and then failed schema validation on the result, `Unexpected value 'A'` — a
+step-schema complaint about the merged key, not about the directive. But its object has **one**
+key, so merging and splicing produce the identical document; a test written on it passes under
+either implementation, which mutation testing confirmed (swapping the visitor to splice left the
+whole suite green). `sequence-position-valid` supplies two keys that together form one valid step,
+`{script, displayName}`, and the service returned **one** step carrying both — `task: CmdLine@2`
+with `displayName: Merged` and `inputs.script: echo merged`. Splicing would have produced a second
+item holding a bare `displayName`, which is not a step.
+
+That desugaring of `script:` into `task: CmdLine@2` is also why this pair is committed but is not a
+byte-golden: the E03-S05-T01 normalizer deliberately does not desugar shortcuts (doing so there
+would let a broken expander pass `preview-diff`), so the fixture is asserted structurally instead
+and the test says which layer owes the rest.
+  — research/experiments/E03-insert/{sequence-position,sequence-position-valid}/ (live preview,
+    checked 2026-08-19)
 
 ---
 

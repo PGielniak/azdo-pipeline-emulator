@@ -38,6 +38,7 @@
     "each-survey": "node scripts/each-survey.ts",
     "if-survey": "node scripts/if-survey.ts",
     "template-conditionals-survey": "node scripts/template-conditionals-survey.ts",
+    "insert-survey": "node scripts/insert-survey.ts",
     "duplicate-key-survey": "node scripts/duplicate-key-survey.ts",
     "expr-shell-survey": "bash scripts/expr-shell-survey.sh",
     "expr-conformance-bats": "vitest run --project engine packages/engine/test/expr/conformance.test.ts -u",

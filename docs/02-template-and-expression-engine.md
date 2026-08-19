@@ -68,10 +68,19 @@ successful input/`finalYaml` pairs under `research/experiments/E03-conditionals/
   merely that it short-circuits.
 - **A new `if` starts a new chain** (a trailing `else` binds to the nearest preceding `if`), and
   **`else` terminates one** — an `elseif` after the `else` is rejected (C-E03-127/130).
+- **An ordinary sibling is invisible to a chain, but a *directive* sibling terminates it.** An
+  `${{ each }}` or `${{ insert }}` written between two members orphans the member that follows —
+  measured in both parent shapes, for both directives, and for a trailing `elseif` as well as a
+  trailing `else`, against controls placing the same `insert` immediately before and immediately
+  after the chain, where the document expands (C-E03-138). E03-S01-T02 shipped the opposite reading
+  as an explicit guess and E03-S01-T04 refuted it.
 - **An orphan `elseif`/`else` is a hard error**, distinct from one that merely loses: two
-  newline-joined sentences with no help link — `The expression directive '<kw>' is not supported in
-  this context` then `Unexpected value '<raw key>'` (C-E03-129). A chain with no `else` whose
-  conditions are all false is *not* an error and contributes nothing (C-E03-125).
+  newline-joined sentences with no help link (C-E03-129). The first is always `The expression
+  directive '<kw>' is not supported in this context`; **the second depends on the parent shape** —
+  `Unexpected value '<raw key>'` in a sequence, but `A mapping was not expected` in a mapping,
+  located at the branch *body*, followed by a third sentence dumping the engine's internal reader
+  stack that we deliberately do not reproduce (C-E03-139). A chain with no `else` whose conditions
+  are all false is *not* an error and contributes nothing (C-E03-125).
 - **Conditions use expression truthiness rather than requiring a Boolean.** Null, false, zero, and
   empty String are false; nonzero Numbers, nonempty Strings, Version, Array, and Object are true.
   Arrays and Objects remain true when empty, a rule outside the primitive conversion table
@@ -91,7 +100,37 @@ synthesized. Nested `each` is outer-major/inner-minor and retains both bindings.
 `object`, `jobList`, `stepList`, and the other `*List` parameter values preserves their structural
 shape (C-E03-140..151; 12 live probes under `research/experiments/E03-each/`).
 
-**`${{ insert }}`** — merge a mapping into the parent mapping (used e.g. to inject extra keys into a job).
+**`${{ insert }}`** — merge a mapping into the parent mapping (used e.g. to inject extra keys into a
+job). That one sentence was all this section said; the rules below were measured by 32 preview
+probes (E03-S01-T04, C-E03-160..174, `research/experiments/E03-insert/`). The directive is
+documented on the **template-expressions** page under "Insertion" — the templates page has no such
+section, and its "Insert a template" is the unrelated `- template:` file include (E03-S02). Unlike
+the other directives, `actions/runner` implements this one, and it predicted the collision rule
+correctly and the position rule wrongly (C-E03-162).
+
+- **Mapping-key only.** As a bare sequence item or as a mapping *value* the directive cannot act and
+  its delimited text survives verbatim into schema validation: `Unexpected value '${{ insert }}'`,
+  one sentence, no help link. That is *not* an expression failure — a bare unknown name in the same
+  position gives `Unrecognized value: 'index'` with a position and a help link (C-E03-151), so the
+  keyword is still recognized; it simply has nowhere to go (C-E03-173). **Consequence for
+  E03-S01-T05:** a lone `${{ insert }}` scalar must be left as literal text, never evaluated.
+- **`- ${{ insert }}: <object>` is still a mapping-key insertion** — into the one-key mapping the
+  sequence *item* is. It merges into that item and does **not** splice into the parent sequence, so
+  two inserted keys forming one valid step produce one step, not two items (C-E03-174).
+- **The merge is in place and order-preserving.** Merged keys land at the directive's own position,
+  not appended, in the source object's authored order — unsorted, like `each` over a mapping
+  (C-E03-163). The value may be a literal mapping as well as an expression (C-E03-164); an empty
+  object contributes nothing (C-E03-165); it works in loose mappings and in ones with well-known
+  schema keys, nested values intact (C-E03-166); the source may be a loop binding (C-E03-167); two
+  `${{ insert }}` keys in one mapping both merge, in document order (C-E03-168).
+- **A key collision is an error, not an overwrite** — `'<key>' is already defined`, HTTP 400,
+  reported at the **later** occurrence, comparison folding case, message echoing the later spelling
+  (C-E03-169/170). Neither value wins. **The rule belongs to the mapping, not to `insert`:** two
+  colliding inserts, and an `each`-produced key colliding with a literal, reject identically, so the
+  check lives where a mapping is rebuilt after expansion (C-E03-171). Directive keys are exempt,
+  matching the parse-time exemption of C-E01-038/039.
+- **A non-mapping value is `Expected a mapping`**, one sentence, for a string, a sequence, a bare
+  scalar and an empty value alike (C-E03-172).
 
 **Recognition rules (measured 2026-08-12, E03-S01-T01, C-E03-100..113; 33 preview probes in `research/experiments/E03-walk/`).** The four paragraphs above describe what the directives *do*; none of the rules below is stated by either doc, and three of them are the opposite of the natural guess:
 

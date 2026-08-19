@@ -1,0 +1,14 @@
+variables:
+  BEFORE: before
+  ${{ insert }}:
+    LIT_A: a
+    LIT_B: b
+  AFTER: after
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo probe

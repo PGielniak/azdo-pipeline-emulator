@@ -1,0 +1,12 @@
+variables:
+  BEFORE: before
+  ${{ else }}:
+    PICK: from-else
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo probe

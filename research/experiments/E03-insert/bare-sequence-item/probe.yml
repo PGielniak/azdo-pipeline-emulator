@@ -1,0 +1,9 @@
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - ${{ insert }}
+      - task: CmdLine@2
+        inputs:
+          script: echo probe

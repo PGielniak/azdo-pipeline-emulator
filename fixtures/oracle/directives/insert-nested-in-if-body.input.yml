@@ -1,0 +1,21 @@
+parameters:
+- name: a
+  type: boolean
+  default: true
+- name: extra
+  type: object
+  default:
+    MID: mid
+variables:
+  BASE: base
+  ${{ if parameters.a }}:
+    PICK: from-if
+    ${{ insert }}: ${{ parameters.extra }}
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo probe

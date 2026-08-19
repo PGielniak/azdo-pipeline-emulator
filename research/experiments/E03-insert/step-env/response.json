@@ -1,0 +1,3 @@
+{
+  "finalYaml": "parameters:\n- name: envVars\n  type: object\n  default:\n    FROM_INSERT: inserted\nstages:\n- stage: probe\n  jobs:\n  - job: probe\n    steps:\n    - task: CmdLine@2\n      inputs:\n        script: echo probe\n      env:\n        LITERAL: lit\n        FROM_INSERT: inserted\n\n"
+}

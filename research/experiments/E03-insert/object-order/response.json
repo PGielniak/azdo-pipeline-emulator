@@ -1,0 +1,3 @@
+{
+  "finalYaml": "parameters:\n- name: extra\n  type: object\n  default:\n    ZETA: z\n    ALPHA: a\n    MIDDLE: m\nvariables:\n- name: BASE\n  value: base\n- name: ZETA\n  value: z\n- name: ALPHA\n  value: a\n- name: MIDDLE\n  value: m\nstages:\n- stage: probe\n  jobs:\n  - job: probe\n    steps:\n    - task: CmdLine@2\n      inputs:\n        script: echo probe\n\n"
+}

@@ -42,7 +42,8 @@ Acceptance: directive semantics proven by oracle fixture pairs, not by reading a
   Conditions span all value kinds, including truthy empty collections (C-E03-135), and body shape
   controls flatten/merge/item insertion (C-E03-136). Orphans, members after `else`, and duplicate
   `else` clauses remain distinct measured rejections (C-E03-129/130/137). An `each`/`insert` sibling
-  between chain members remains unmeasured and is handed to E03-S01-T04.
+  between chain members was unmeasured here and is settled the other way by E03-S01-T04
+  (C-E03-138/139).
 - [x] **E03-S01-T03 — Iterative insertion (`each`)**
   *Done 2026-08-18:* 12 live preview probes recorded C-E03-140..151 and produced 11
   input/`finalYaml` fixture pairs. `eachVisitor` expands sequences and mappings in authored order,
@@ -52,7 +53,44 @@ Acceptance: directive semantics proven by oracle fixture pairs, not by reading a
   **Do:** sequence iteration, mapping iteration (`pair.key`/`pair.value` semantics), iteration over `object`/`*List` parameters, nested `each`, index availability check.
   **Ground:** templates doc "Iterative insertion"; oracle fixtures ≥ 8 incl. each-over-mapping key order (record observed ordering as a claim) and each wrapping full jobs.
   **Done:** goldens vs oracle; ordering claim documented.
-- [ ] **E03-S01-T04 — `${{ insert }}` merge**
+- [x] **E03-S01-T04 — `${{ insert }}` merge**
+  *Done 2026-08-19:* `packages/engine/src/template/insert.ts` (`insertVisitor`, `InsertValueError`)
+  on T01's directive seam, plus `scripts/insert-survey.ts` (`pnpm insert-survey`) and
+  `composeVisitors` in `walk.ts`. 32 live probes (`research/experiments/E03-insert/`,
+  C-E03-160..174): 13 expanded into committed input/`finalYaml` pairs and **19 were rejected** and
+  are asserted against their committed error transcripts — for this task the rejections carry most
+  of the claims, since both headline answers are ones the service gives by refusing a document. **The Ground field's source does not exist**: the templates page has no
+  "Insertion" section — `${{ insert }}` is documented on **template-expressions**, in one paragraph
+  with one example, and the templates page's "Insert a template" is the unrelated `- template:`
+  include (C-E03-160). Unlike T02/T03, the `actions/runner` fork *does* implement this directive, so
+  it is a real second source; it predicted the collision rule correctly and the position rule
+  wrongly (C-E03-162/173).
+  **The flagged unknown is settled: collision is an *error*, not an overwrite** — `'<key>' is
+  already defined`, HTTP 400, at the **later** occurrence, folding case, echoing the later spelling
+  (C-E03-169/170). And the rule is **the mapping's, not the directive's**: two colliding inserts and
+  an `each`-produced key colliding with a literal reject identically, so the check lives on the
+  mapping rebuild in `walk.ts` (C-E03-171), accumulating a diagnostic and dropping the later entry,
+  with directive keys exempt to agree with E01-S01-T04's parse-time exemption.
+  **The T02 open question is settled the opposite way to T02's guess** (C-E03-138): an `each`/
+  `insert` sibling **between** two chain members orphans the trailing member — both parent shapes,
+  both directives, `elseif` as well as `else`, against controls placing the same insert immediately
+  before and after the chain, where it expands. `conditionals.ts` now ends the containing chain at
+  any directive it does not own, which is why `conditionalVisitor` composes **first**. That also
+  exposed a second T02 defect: the orphan rejection hard-coded the *sequence* wording, but in a
+  mapping the second sentence is `A mapping was not expected` (C-E03-139); the diagnostics are now
+  position-aware, and the service's third sentence — an internal reader-stack dump — is deliberately
+  not reproduced. (Both claims were probed as C-E03-135/136 and renumbered on the rebase onto
+  `main`, where the reconciled T02 survey already held 135..137.)
+  Also measured: the merge is in-place and preserves the source object's authored order
+  (C-E03-163); literal-mapping values (164), empty objects (165), well-known-key mappings with
+  nested values (166), loop-binding sources (167) and two inserts in one mapping (168); non-mapping
+  values are `Expected a mapping` (172); outside key position the keyword is still recognized but
+  cannot act and its text survives verbatim (173 — **handed to T05: never evaluate a lone
+  `${{ insert }}`**); and `- ${{ insert }}: <obj>` merges into the *item*, not the parent sequence
+  (174). Six mutations turn the suite red, including one that initially did **not** — the
+  merge-vs-splice distinction was unobservable on a single-key object, which is why
+  `sequence-position-valid` exists. Docs updated per rule 5: docs/02 §4, docs/06 §5 decision 33
+  (and decision 27's open question marked settled), REFERENCES.md.
   **Do:** mapping-merge semantics incl. collision behavior (verify: error vs overwrite).
   **Ground:** templates doc "Insertion"; oracle probe for key-collision behavior; claim recorded.
   **Done:** goldens incl. collision case matching service.

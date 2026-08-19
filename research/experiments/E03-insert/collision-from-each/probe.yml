@@ -1,0 +1,17 @@
+parameters:
+- name: extra
+  type: object
+  default:
+    FOO: from-each
+variables:
+  FOO: from-literal
+  ${{ each pair in parameters.extra }}:
+    ${{ pair.key }}: ${{ pair.value }}
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo probe

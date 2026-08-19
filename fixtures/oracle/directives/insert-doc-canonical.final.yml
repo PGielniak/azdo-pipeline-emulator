@@ -1,0 +1,21 @@
+parameters:
+- name: additionalVariables
+  type: object
+  default:
+    TEST_SUITE: L0,L1
+variables:
+- name: configuration
+  value: debug
+- name: arch
+  value: x86
+- name: TEST_SUITE
+  value: L0,L1
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo probe
+

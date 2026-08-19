@@ -1,0 +1,15 @@
+parameters:
+- name: extra
+  type: object
+  default:
+    script: echo merged
+    displayName: Merged
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - ${{ insert }}: ${{ parameters.extra }}
+      - task: CmdLine@2
+        inputs:
+          script: echo probe

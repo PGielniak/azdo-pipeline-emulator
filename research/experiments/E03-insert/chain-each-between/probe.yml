@@ -1,0 +1,23 @@
+parameters:
+- name: a
+  type: boolean
+  default: false
+- name: extra
+  type: object
+  default:
+    MID: mid
+variables:
+  ${{ if parameters.a }}:
+    PICK: from-if
+  ${{ each pair in parameters.extra }}:
+    ${{ pair.key }}: ${{ pair.value }}
+  ${{ else }}:
+    PICK: from-else
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo probe

@@ -1,0 +1,3 @@
+{
+  "finalYaml": "parameters:\n- name: additionalVariables\n  type: object\n  default:\n    TEST_SUITE: L0,L1\nvariables:\n- name: configuration\n  value: debug\n- name: arch\n  value: x86\n- name: TEST_SUITE\n  value: L0,L1\nstages:\n- stage: probe\n  jobs:\n  - job: probe\n    steps:\n    - task: CmdLine@2\n      inputs:\n        script: echo probe\n\n"
+}
