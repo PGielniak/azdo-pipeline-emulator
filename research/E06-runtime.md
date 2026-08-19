@@ -31,3 +31,19 @@ selection and name conversion; C-E06-009 defines secret exclusion and explicit m
 C-E06-010 defines public-over-explicit precedence; C-E06-012 defines newest-first PATH.
 C-E06-011 is intentionally a non-contract: the implementation may not claim a universal
 winner for two public names that collapse to the same transformed environment key.
+
+[C-E06-013] The generated runner loads its default `.env` first and its optional `--env-file` second, so the optional file supplies the final value for repeated keys; the manifest's `env[].secret` flag controls registration in the variable store. — docs/04-generated-project-and-runtime.md §10 (checked 2026-08-19) — "`run.sh` sources `.env` ... then `--env-file` overlays. Values marked secret in the manifest are masked in logs."
+
+[C-E06-014] A Bash variable assignment has the form `name=[value]`, accepts the empty string, restricts names to letters/numbers/underscores beginning with a letter or underscore, and expands the value using tilde, parameter, command, arithmetic, and quote removal. — https://www.gnu.org/software/bash/manual/html_node/Shell-Parameters.html and https://www.gnu.org/software/bash/manual/html_node/Definitions.html (checked 2026-08-19) — "A variable is assigned to using a statement of the form name=[value]" / "All values undergo tilde expansion, parameter and variable expansion, command substitution, arithmetic expansion, and quote removal."
+
+[C-E06-015] Bash single quotes preserve every enclosed character literally, including embedded newlines, but cannot contain a single quote even when it is preceded by a backslash. — https://www.gnu.org/software/bash/manual/html_node/Single-Quotes.html (checked 2026-08-19) — "Enclosing characters in single quotes ... preserves the literal value of each character within the quotes. A single quote may not occur between single quotes."
+
+[C-E06-016] In Bash double quotes, `$`, backquote, and backslash retain special behavior; a backslash outside quotes preserves the next character, while an unquoted backslash-newline pair is removed as a line continuation. — https://www.gnu.org/software/bash/manual/html_node/Double-Quotes.html and https://www.gnu.org/software/bash/manual/html_node/Escape-Character.html (checked 2026-08-19) — "Enclosing characters in double quotes ... preserves the literal value of all characters ... with the exception of `$`, backquote, `\\`" / "a `\\newline` pair ... is treated as a line continuation."
+
+[C-E06-017] In the non-interactive Bash process used by the loader, `#` starts a comment only at the beginning of a word (start of line, after unquoted whitespace, or after an operator); the rest of that physical line is ignored. — https://www.gnu.org/software/bash/manual/html_node/Comments.html (checked 2026-08-19) — "a word beginning with `#` introduces a comment" / "The comment causes that word and all remaining characters on that line to be ignored."
+
+## E06-S01-T03 grounding composition
+
+C-E06-013 defines base/overlay precedence and secret classification. C-E06-014..017 define the
+documented `KEY=value` syntax delegated to non-interactive Bash: identifier rules, empty values,
+expansions, single/double/backslash quoting, multiline quotes and continuations, and comments.

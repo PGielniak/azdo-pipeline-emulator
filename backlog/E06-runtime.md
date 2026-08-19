@@ -18,7 +18,7 @@ Acceptance: store + env materialization per docs/04 §4–§5 with cited agent b
   **Do:** non-secret vars exported as `UPPER` with `.`/space→`_`; secrets **not** auto-exported; step `env:` overlay (values macro-expanded); PATH assembly from `path.d`.
   **Ground:** variables doc "Environment variables" + "Secret variables" sections — quote both rules (the secret non-export rule is the critical one); verify collision behavior (`A.B` vs `A_B`) via real-run experiment; transcript stored.
   **Done:** bats matrix: transform cases, secret exclusion, env: overlay wins, PATH order.
-- [ ] **E06-S01-T03 — `.env` loader**
+- [x] **E06-S01-T03 — `.env` loader**
   **Do:** documented `KEY=value` parser (quoting rules stated in generated README), `--env-file` overlay, values registered into store with secret flags from manifest.
   **Ground:** docs/04 §10 load rules; POSIX shell quoting claims from GNU bash manual (pin).
   **Done:** bats: quoting/multiline edge cases; overlay precedence.

@@ -164,7 +164,28 @@ One entry per unresolved input, each with provenance comments; sections in order
 5. Service connections — structured blocks (docs/03 §5).
 6. Secure files — `SECUREFILE_<name>=` local path.
 
-Load rules: `run.sh` sources `.env` (documented `KEY=value`, shell-quoting rules), then `--env-file` overlays. Values marked secret in the manifest are masked in logs.
+Load rules: `run.sh` loads `.env`, then loads `--env-file` (when supplied) in the same
+non-interactive Bash process, so the latter wins repeated names and can reference a value assigned
+by the former. The loader registers each final value in the case-insensitive variable store; the
+generated runner projects `manifest.json`'s `env` entries into `AZDO_MANIFEST_ENV=(NAME=secret …)`,
+and those flags mark secret store values for later masking (C-E06-013).
+
+The generated README must state this `.env` contract verbatim in substance:
+
+- This is a **trusted Bash assignment file**, not a generic dotenv dialect. Use direct
+  `NAME=value` statements; a name contains only letters, digits, and underscores and cannot begin
+  with a digit. `export NAME=value` is not part of the loader contract (C-E06-014).
+- Empty and unquoted values are accepted. Bash performs tilde, parameter, command, and arithmetic
+  expansion plus quote removal on assignment values. Consequently, command/process substitutions
+  can have external side effects: never load an `.env` obtained from an untrusted source
+  (C-E06-014).
+- Single quotes preserve every character literally and may span lines, but cannot contain a single
+  quote. Double quotes may span lines and still expand `$`, backquotes, and the documented
+  backslash escapes. Outside quotes, backslash escapes the next character and backslash-newline is
+  removed as a continuation (C-E06-015/016).
+- A `#` begins a comment only at the beginning of a shell word (start of line or after unquoted
+  whitespace/operator). Thus `NAME=value#part` includes `#part`, while `NAME=value # comment` does
+  not (C-E06-017).
 
 ## 11. `manifest.json` (drives `doctor`, `--list`, tooling)
 
