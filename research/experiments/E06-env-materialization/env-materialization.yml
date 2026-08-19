@@ -1,0 +1,86 @@
+trigger: none
+pr: none
+jobs:
+- job: declared_dot_then_under
+  pool:
+    vmImage: ubuntu-latest
+  variables:
+  - name: A.B
+    value: dot-first
+  - name: A_B
+    value: under-second
+  steps:
+  - bash: |
+      printf 'CASE declared_dot_then_under ENV=%s DOT_MACRO=%s UNDER_MACRO=%s\n' "$A_B" '$(A.B)' '$(A_B)'
+
+- job: declared_under_then_dot
+  pool:
+    vmImage: ubuntu-latest
+  variables:
+  - name: A_B
+    value: under-first
+  - name: A.B
+    value: dot-second
+  steps:
+  - bash: |
+      printf 'CASE declared_under_then_dot ENV=%s DOT_MACRO=%s UNDER_MACRO=%s\n' "$A_B" '$(A.B)' '$(A_B)'
+
+- job: runtime_dot_then_under
+  pool:
+    vmImage: ubuntu-latest
+  steps:
+  - bash: |
+      echo '##vso[task.setvariable variable=A.B]dot-first'
+      echo '##vso[task.setvariable variable=A_B]under-second'
+  - bash: |
+      printf 'CASE runtime_dot_then_under ENV=%s DOT_MACRO=%s UNDER_MACRO=%s\n' "$A_B" '$(A.B)' '$(A_B)'
+
+- job: runtime_under_then_dot
+  pool:
+    vmImage: ubuntu-latest
+  steps:
+  - bash: |
+      echo '##vso[task.setvariable variable=A_B]under-first'
+      echo '##vso[task.setvariable variable=A.B]dot-second'
+  - bash: |
+      printf 'CASE runtime_under_then_dot ENV=%s DOT_MACRO=%s UNDER_MACRO=%s\n' "$A_B" '$(A.B)' '$(A_B)'
+
+- job: transform_overlay_secret_path
+  pool:
+    vmImage: ubuntu-latest
+  variables:
+  - name: lower.dot
+    value: dotted
+  - name: Space Name
+    value: spaced
+  - name: OVERLAY_NAME
+    value: automatic
+  - name: overlay.source
+    value: macro
+  steps:
+  - bash: |
+      generated="runtime-$RANDOM-$RANDOM"
+      echo "##vso[task.setvariable variable=Hidden.Value;issecret=true]$generated"
+      echo '##vso[task.prependpath]/first-e06'
+      echo '##vso[task.prependpath]/second-e06'
+  - bash: |
+      if printenv HIDDEN_VALUE >/dev/null; then auto_secret=present; else auto_secret=absent; fi
+      macro_literal='$'
+      macro_literal+='(Hidden.Value)'
+      if [[ -n "${EXPLICIT_SECRET+x}" && "$EXPLICIT_SECRET" != "$macro_literal" ]]; then
+        mapped_secret=present
+      else
+        mapped_secret=absent
+      fi
+      case "$PATH" in
+        /second-e06:/first-e06:*) path_order=second-first-base ;;
+        /first-e06:/second-e06:*) path_order=first-second-base ;;
+        *) path_order=other ;;
+      esac
+      printf 'CASE transform LOWER_DOT=%s SPACE_NAME=%s\n' "$LOWER_DOT" "$SPACE_NAME"
+      printf 'CASE overlay OVERLAY_NAME=%s\n' "$OVERLAY_NAME"
+      printf 'CASE secret AUTO=%s EXPLICIT=%s\n' "$auto_secret" "$mapped_secret"
+      printf 'CASE path ORDER=%s\n' "$path_order"
+    env:
+      OVERLAY_NAME: explicit-$(overlay.source)
+      EXPLICIT_SECRET: $(Hidden.Value)
