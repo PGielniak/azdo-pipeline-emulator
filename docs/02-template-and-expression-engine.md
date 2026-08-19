@@ -49,7 +49,33 @@ Server limits enforced identically so we fail where the server would: max distin
 
 ## 4. Directives
 
-**Conditional insertion** — mapping keys / sequence items `${{ if C }}:`, `${{ elseif C }}:`, `${{ else }}:` — chains resolved in document order; contents spliced into the parent on the winning branch. Works in mappings and sequences.
+**Conditional insertion** — mapping keys / sequence items `${{ if C }}:`, `${{ elseif C }}:`,
+`${{ else }}:`. Chains resolve in document order and the winning branch's body is spliced into the
+parent; both parent shapes behave identically. The rest is measured, and two of the rules invert the
+natural reading (C-E03-122..134; 22 live probes under `research/experiments/E03-if/`, 18 committed
+as fixture pairs):
+
+- **A chain is not a contiguous run, and the winner splices at its *own* position** — not at the
+  `if`'s. An ordinary sibling written between `${{ if }}` and `${{ else }}` breaks nothing: with a
+  false `if`, the intervening step is emitted **first** and the `else` body lands where the `else`
+  was written. Each directive therefore expands in place and merely consults the members before it;
+  grouping a chain forwards from its head and emitting the winner at the head's index reorders that
+  document (C-E03-128).
+- **Conditions evaluate in document order and stop at the first winner.** A losing branch's
+  condition and body are never evaluated at all — `if(true) / elseif parameters.missing / else`
+  expands, while the same `parameters.missing` read in a position that *is* reached is a hard
+  rejection (C-E03-132/133/134). This fixes the *order* an implementation may scan a chain in, not
+  merely that it short-circuits.
+- **A new `if` starts a new chain** (a trailing `else` binds to the nearest preceding `if`), and
+  **`else` terminates one** — an `elseif` after the `else` is rejected (C-E03-127/130).
+- **An orphan `elseif`/`else` is a hard error**, distinct from one that merely loses: two
+  newline-joined sentences with no help link — `The expression directive '<kw>' is not supported in
+  this context` then `Unexpected value '<raw key>'` (C-E03-129). A chain with no `else` whose
+  conditions are all false is *not* an error and contributes nothing (C-E03-125).
+- **The condition is converted to Boolean, not required to be one** — `${{ if 'text' }}` is taken,
+  `${{ if '' }}` is not, by the same String→Boolean rule as C-E02-020 (C-E03-131).
+- Chains nest, and a losing outer branch discards the whole nested structure unevaluated
+  (C-E03-126).
 
 **Iterative insertion** — `${{ each x in seq }}:` splices the body once per sequence element and
 binds the element itself. Over a mapping it binds a pair object exposing `.key` and `.value`, not

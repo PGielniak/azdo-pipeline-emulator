@@ -1,0 +1,3 @@
+{
+  "finalYaml": "stages:\n- stage: probe\n  jobs:\n  - job: probe\n    steps:\n    - task: CmdLine@2\n      inputs:\n        script: echo before\n\n"
+}

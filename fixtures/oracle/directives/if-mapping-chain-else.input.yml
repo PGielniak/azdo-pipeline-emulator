@@ -1,0 +1,23 @@
+variables:
+  BASE: base
+  ${{ if parameters.a }}:
+    PICK: from-if
+  ${{ elseif parameters.b }}:
+    PICK: from-elseif
+  ${{ else }}:
+    PICK: from-else
+parameters:
+- name: a
+  type: boolean
+  default: false
+- name: b
+  type: boolean
+  default: false
+stages:
+- stage: probe
+  jobs:
+  - job: probe
+    steps:
+      - task: CmdLine@2
+        inputs:
+          script: echo $(BASE)-$(PICK)
