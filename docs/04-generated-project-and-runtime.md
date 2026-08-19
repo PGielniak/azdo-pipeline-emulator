@@ -132,6 +132,11 @@ the first `run_step` skeleton even though their condition/result policies land i
 | `build.uploadlog`, `release.*` | Ignored with debug note |
 | Formatting `##[group]/[endgroup]/[section]/[command]/[warning]/[error]/[debug]` | ANSI-colored rendering; `##[debug]` shown only when `System.Debug=true` |
 
+The runtime parses logging commands as physical UTF-8 output lines and reverses task-lib escaping
+before dispatch. Unknown or malformed `##vso` lines produce a warning and remain visible unchanged;
+the hosted agent consumes a successfully parsed unknown-area command after warning, but local
+passthrough is intentional so unsupported task output is never silently lost (C-E06-044..049).
+
 ## 7. Artifacts
 
 - **Publish** → `rsync` into `<out>/.artifacts/<name>/` (build-artifact container semantics preserved for `PublishBuildArtifacts`).

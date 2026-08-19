@@ -58,7 +58,7 @@ Acceptance: `run_step` per docs/04 §5, each numbered behavior grounded.
 ## E06-S04 — As a pipeline developer, `##vso` logging commands work, so scripts that set variables/paths/artifacts behave identically.
 Acceptance: parser + handlers for the docs/04 §6 table, grounded command-by-command.
 
-- [ ] **E06-S04-T01 — `##vso` line parser**
+- [x] **E06-S04-T01 — `##vso` line parser**
   **Do:** streaming line parser: `##vso[area.action prop=val;…]message` grammar incl. escaping rules; unknown command → warning passthrough.
   **Ground:** logging-commands doc "Command format"/escaping section (quote); cross-check emission side in task-lib `node/taskcommand.ts` (pin — shows exact escaping the parser must invert).
   **Done:** bats: parse table incl. escaped `;`/`%`/newlines per claims.

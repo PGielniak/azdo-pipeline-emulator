@@ -969,6 +969,202 @@ azdo_env_materialize() {
   azdo__refresh_step_env
 }
 
+# E06-S04-T01 — logging commands are parsed from physical output lines. The globals below form the
+# dispatch seam for the command handlers added by E06-S04-T02..T04. Indexed key/value arrays keep
+# the generated runtime compatible with the same Bash versions as the rest of this file.
+
+azdo__logging_fold() {
+  (($# == 2)) || {
+    printf '%s\n' 'usage: azdo__logging_fold <value> <destination-variable>' >&2
+    return 2
+  }
+  local folded
+  folded="$(LC_ALL=C printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')" || return
+  printf -v "$2" '%s' "$folded"
+}
+
+azdo__logging_unescape() {
+  (($# == 2)) || {
+    printf '%s\n' 'usage: azdo__logging_unescape <value> <destination-variable>' >&2
+    return 2
+  }
+
+  local decoded="$1"
+  # Decode the structural tokens before percent. This is deliberately one pass: decoding percent
+  # first would turn `%AZP253B` into `%3B` and then incorrectly decode it a second time (C-E06-047).
+  decoded="${decoded//%3B/;}"
+  decoded="${decoded//%0D/$'\r'}"
+  decoded="${decoded//%0A/$'\n'}"
+  decoded="${decoded//%5D/]}"
+  decoded="${decoded//%AZP25/%}"
+  printf -v "$2" '%s' "$decoded"
+}
+
+# azdo_logging_parse_line <line>
+#
+# Returns 0 for a parsed command, 1 for an ordinary line, and 2 for malformed text containing the
+# logging-command prefix. On success it populates AZDO_LOGGING_{RAW_LINE,PREFIX,AREA,ACTION,MESSAGE}
+# plus parallel AZDO_LOGGING_PROPERTY_KEYS/VALUES arrays. Area/action and property lookup are
+# case-insensitive, matching the agent dictionaries (C-E06-046).
+azdo_logging_parse_line() {
+  (($# == 1)) || {
+    printf '%s\n' 'usage: azdo_logging_parse_line <line>' >&2
+    return 2
+  }
+
+  # shellcheck disable=SC2034 # Public parse result consumed by generated/future command handlers.
+  AZDO_LOGGING_RAW_LINE="$1"
+  # shellcheck disable=SC2034 # Public parse result consumed by generated/future command handlers.
+  AZDO_LOGGING_PREFIX=''
+  AZDO_LOGGING_AREA=''
+  AZDO_LOGGING_ACTION=''
+  # shellcheck disable=SC2034 # Public parse result consumed by generated/future command handlers.
+  AZDO_LOGGING_MESSAGE=''
+  AZDO_LOGGING_PROPERTY_KEYS=()
+  AZDO_LOGGING_PROPERTY_VALUES=()
+
+  local marker='##vso[' remainder command_info command_name properties area action
+  local property_fragment property_key property_value decoded_value more_properties
+  [[ "$1" = *"$marker"* ]] || return 1
+
+  # shellcheck disable=SC2034 # Public parse result consumed by generated/future command handlers.
+  AZDO_LOGGING_PREFIX="${1%%"$marker"*}"
+  remainder="${1#*"$marker"}"
+  [[ "$remainder" = *']'* ]] || return 2
+  command_info="${remainder%%]*}"
+  remainder="${remainder#*]}"
+
+  if [[ "$command_info" = *' '* ]]; then
+    command_name="${command_info%% *}"
+    properties="${command_info#* }"
+  else
+    command_name="$command_info"
+    properties=''
+  fi
+  [[ "$command_name" = *.* ]] || return 2
+  area="${command_name%%.*}"
+  action="${command_name#*.}"
+  [[ -n "$area" && -n "$action" && "$action" != *.* ]] || return 2
+  azdo__logging_fold "$area" AZDO_LOGGING_AREA || return
+  azdo__logging_fold "$action" AZDO_LOGGING_ACTION || return
+  azdo__logging_unescape "$remainder" AZDO_LOGGING_MESSAGE || return
+
+  while [[ -n "$properties" ]]; do
+    if [[ "$properties" = *';'* ]]; then
+      property_fragment="${properties%%;*}"
+      properties="${properties#*;}"
+      more_properties=true
+    else
+      property_fragment="$properties"
+      properties=''
+      more_properties=false
+    fi
+
+    # The agent ignores empty/malformed property fragments instead of rejecting the whole command.
+    # A valid task-lib producer always writes non-empty `key=value;` fragments (C-E06-045/046).
+    if [[ -n "$property_fragment" && "$property_fragment" = *'='* ]]; then
+      property_key="${property_fragment%%=*}"
+      property_value="${property_fragment#*=}"
+      if [[ -n "$property_key" && -n "$property_value" ]]; then
+        azdo__logging_unescape "$property_value" decoded_value || return
+        AZDO_LOGGING_PROPERTY_KEYS+=("$property_key")
+        AZDO_LOGGING_PROPERTY_VALUES+=("$decoded_value")
+      fi
+    fi
+    [[ "$more_properties" = true ]] || break
+  done
+}
+
+# azdo_logging_property <name> <destination-variable>
+#
+# Returns the last property with this case-insensitive name. Last-write lookup reproduces the
+# agent dictionary when a producer repeats a property under the same or different casing.
+azdo_logging_property() {
+  (($# == 2)) || {
+    printf '%s\n' 'usage: azdo_logging_property <name> <destination-variable>' >&2
+    return 2
+  }
+
+  local wanted candidate index
+  azdo__logging_fold "$1" wanted || return
+  for ((index = ${#AZDO_LOGGING_PROPERTY_KEYS[@]} - 1; index >= 0; index--)); do
+    azdo__logging_fold "${AZDO_LOGGING_PROPERTY_KEYS[$index]}" candidate || return
+    if [[ "$candidate" = "$wanted" ]]; then
+      printf -v "$2" '%s' "${AZDO_LOGGING_PROPERTY_VALUES[$index]}"
+      return 0
+    fi
+  done
+  printf -v "$2" '%s' ''
+  return 1
+}
+
+# Command handlers replace/extend this seam in E06-S04-T02..T04. Status 127 means the command is
+# unknown to the local runtime; other non-zero statuses are handler failures.
+azdo_logging_dispatch() {
+  return 127
+}
+
+azdo__logging_process_line() {
+  (($# == 1)) || {
+    printf '%s\n' 'usage: azdo__logging_process_line <line>' >&2
+    return 2
+  }
+
+  local parse_status dispatch_status
+  if azdo_logging_parse_line "$1"; then
+    parse_status=0
+  else
+    parse_status=$?
+  fi
+
+  case "$parse_status" in
+    0)
+      if azdo_logging_dispatch; then
+        return 0
+      else
+        dispatch_status=$?
+      fi
+      if ((dispatch_status == 127)); then
+        # The local-debug passthrough is intentional even though the hosted agent consumes a parsed
+        # unknown-area line after warning (C-E06-048/049).
+        printf "##[warning]Unknown Azure Pipelines logging command '%s.%s'; passing through unchanged.\n" \
+          "$AZDO_LOGGING_AREA" "$AZDO_LOGGING_ACTION"
+        printf '%s\n' "$1"
+        return 0
+      fi
+      printf "##[error]Azure Pipelines logging command '%s.%s' failed with status %s.\n" \
+        "$AZDO_LOGGING_AREA" "$AZDO_LOGGING_ACTION" "$dispatch_status"
+      return "$dispatch_status"
+      ;;
+    1)
+      printf '%s\n' "$1"
+      ;;
+    2)
+      printf '%s\n' \
+        '##[warning]Malformed Azure Pipelines logging command; passing through unchanged.'
+      printf '%s\n' "$1"
+      ;;
+    *) return "$parse_status" ;;
+  esac
+}
+
+# azdo_logging_stream
+#
+# Reads physical lines without trimming whitespace or interpreting backslashes. Decoded `%0A` data
+# stays inside the parsed command value; a literal newline remains a command boundary (C-E06-044).
+# shellcheck disable=SC2120 # This stream filter intentionally accepts no arguments.
+azdo_logging_stream() {
+  (($# == 0)) || {
+    printf '%s\n' 'usage: azdo_logging_stream' >&2
+    return 2
+  }
+
+  local line
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    azdo__logging_process_line "$line" || return
+  done
+}
+
 # E06-S03-T01 — the caller passes the effective remaining timeout: the smaller of the step limit
 # and the enclosing job deadline. The agent binds both cancellation sources to step execution
 # (C-E06-025/030); keeping that calculation in the job runner makes `run_step --timeout` a simple,
@@ -1043,9 +1239,13 @@ azdo__run_step_process() {
   # Start the reader before the writer so opening the FIFO cannot deadlock. Both streams enter the
   # same pipe and are teed live, matching the task implementations' ordered output wiring
   # (C-E06-029). With failOnStderr enabled, a second tee records any stderr bytes while forwarding
-  # them immediately into the same live stream (C-E06-033). Secret masking and logging-command
-  # parsing are later lifecycle tasks.
-  tee -a -- "$log_file" <"$fifo" &
+  # them immediately into the same live stream (C-E06-033). The logging-command parser consumes
+  # that stream before it is teed to the console and log (C-E06-044).
+  (
+    set -o pipefail
+    # shellcheck disable=SC2119 # The stream filter intentionally accepts no arguments.
+    azdo_logging_stream <"$fifo" | tee -a -- "$log_file"
+  ) &
   tee_pid=$!
   if [[ "$fail_on_stderr" = true ]]; then
     tee -- "$stderr_capture" <"$stderr_fifo" >"$fifo" &
