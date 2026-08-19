@@ -140,3 +140,52 @@ shell backend's status `2` evaluation errors distinct from status `1` Boolean fa
 condition boundary must preserve helper errors even when shell `||` or command substitution would
 otherwise discard their status. Run 543 resolves the only log-format ambiguity and corroborates
 the documented `SucceededWithIssues` control flow.
+
+[C-E06-044] The agent scans each physical UTF-8 stdout line as it arrives, recognizes the
+`##vso[area.action property=value;...]message` form, and does not recognize a command containing
+an unescaped literal newline as one command. —
+https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands (checked 2026-08-19)
+— "scanning standard output (stdout) ... in real time" / "Each logging command must be on a
+single line."
+
+[C-E06-045] The Node task library emits property values by escaping percent, carriage return,
+newline, close bracket, and semicolon, while message data escapes only percent, carriage return,
+and newline; `%AZP25`, `%0D`, `%0A`, `%5D`, and `%3B` are the corresponding wire tokens. —
+https://github.com/microsoft/azure-pipelines-task-lib/blob/c377a1115fdc0e5aea896df36219b59c181d9bc4/node/taskcommand.ts#L26-L48 and
+https://github.com/microsoft/azure-pipelines-task-lib/blob/c377a1115fdc0e5aea896df36219b59c181d9bc4/node/taskcommand.ts#L93-L118
+(checked 2026-08-19) — "replace(/%/g, '%AZP25')" / "replace(/;/g, '%3B')".
+
+[C-E06-046] The agent finds the first `##vso[` anywhere in a line and the first following `]`,
+requires an area/event pair, splits properties on semicolons and each accepted pair at its first
+equals sign, stores property names case-insensitively, and treats the suffix after `]` as data. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Microsoft.VisualStudio.Services.Agent/Command.cs#L11-L103
+(checked 2026-08-19) — "message.IndexOf(LoggingCommandPrefix)" / "StringComparer.OrdinalIgnoreCase".
+
+[C-E06-047] Agent unescaping replaces `%3B`, `%0D`, `%0A`, and `%5D` before optionally replacing
+`%AZP25`, whose current default is enabled; this order prevents a double-encoded token such as
+`%AZP253B` from being decoded twice. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Sdk/CommandStringConvertor.cs#L32-L60 and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Sdk/Knob/AgentKnobs.cs#L482-L487
+(checked 2026-08-19) — "unescaped.Replace(mapping.Replacement, mapping.Token)" /
+"new BuiltInDefaultKnobSource(\"true\")".
+
+[C-E06-048] The hosted agent warns for malformed text containing `##vso` and for an unknown
+command area; a successfully parsed unknown-area command is considered processed and is not
+written again as ordinary output. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/WorkerCommandManager.cs#L69-L148 and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Handlers/ProcessHandler/ProcessHandler.cs#L326-L373
+(checked 2026-08-19) — "print warning with DOC link" / "Cannot find command extension".
+
+[C-E06-049] The emulator deliberately keeps an unknown or malformed logging-command line visible
+after its warning so local debugging never silently discards output; this is the backlog's
+`warning passthrough` policy and a documented delta from C-E06-048. — backlog/E06-runtime.md
+E06-S04-T01 and docs/04-generated-project-and-runtime.md §6 (checked 2026-08-19) — "unknown
+command → warning passthrough."
+
+## E06-S04-T01 grounding composition
+
+C-E06-044 defines the streaming, physical-line boundary and public wire format. C-E06-045 defines
+the task-lib producer contract the parser must invert. C-E06-046 defines command discovery,
+property splitting, and case-insensitive lookup. C-E06-047 fixes the one-pass decode order,
+including percent escaping. C-E06-048 records hosted malformed/unknown behavior; C-E06-049 makes
+the task's explicit warning-and-passthrough policy visible as a deliberate local-debug delta.

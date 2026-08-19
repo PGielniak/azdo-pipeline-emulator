@@ -349,6 +349,90 @@ ENV
   [[ "$collision_value" = dot-value || "$collision_value" = underscore-value ]]
 }
 
+@test "logging parser finds and normalizes area, action, properties, and message (C-E06-044/046)" {
+  local property missing='sentinel'
+
+  azdo_logging_parse_line \
+    'prefix ##vso[TaSk.SetVariable variable=first;VARIABLE=last;expression=a=b=c;]value'
+
+  [ "$AZDO_LOGGING_PREFIX" = 'prefix ' ]
+  [ "$AZDO_LOGGING_AREA" = task ]
+  [ "$AZDO_LOGGING_ACTION" = setvariable ]
+  [ "$AZDO_LOGGING_MESSAGE" = value ]
+  azdo_logging_property variable property
+  [ "$property" = last ]
+  azdo_logging_property expression property
+  [ "$property" = 'a=b=c' ]
+  if azdo_logging_property absent missing; then
+    false
+  fi
+  [ "$missing" = '' ]
+}
+
+@test "logging parser decodes task-lib escapes once and in wire order (C-E06-045/047)" {
+  local property
+
+  azdo_logging_parse_line \
+    '##vso[task.echo value=semi%3Bpercent%AZP25close%5Dline%0Acarriage%0D;double=%AZP253B;]body%3B%5D%0A%AZP25'
+
+  azdo_logging_property value property
+  [ "$property" = $'semi;percent%close]line\ncarriage\r' ]
+  azdo_logging_property double property
+  [ "$property" = '%3B' ]
+  [ "$AZDO_LOGGING_MESSAGE" = $'body;]\n%' ]
+}
+
+@test "logging stream dispatches recognized commands and suppresses their wire line (C-E06-046)" {
+  azdo_logging_dispatch() {
+    local variable
+    [[ "$AZDO_LOGGING_AREA.$AZDO_LOGGING_ACTION" = task.echo ]] || return 127
+    azdo_logging_property variable variable || return
+    printf 'handled:%s:%s\n' "$variable" "$AZDO_LOGGING_MESSAGE"
+  }
+
+  run -0 azdo_logging_stream <<'STREAM'
+plain-before
+trace ##vso[TASK.ECHO variable=name;]hello%0Aworld
+plain-after
+STREAM
+
+  [ "$output" = $'plain-before\nhandled:name:hello\nworld\nplain-after' ]
+}
+
+@test "logging stream warns and preserves unknown or malformed command lines (C-E06-048/049)" {
+  run -0 azdo_logging_stream <<'STREAM'
+##vso[future.command key=value;]payload%0Aencoded
+##vso[missing-close
+ordinary
+STREAM
+
+  [ "$output" = \
+    $'##[warning]Unknown Azure Pipelines logging command \'future.command\'; passing through unchanged.\n##vso[future.command key=value;]payload%0Aencoded\n##[warning]Malformed Azure Pipelines logging command; passing through unchanged.\n##vso[missing-close\nordinary' ]
+}
+
+@test "literal newlines remain streaming command boundaries (C-E06-044)" {
+  run -0 azdo_logging_stream <<'STREAM'
+##vso[task.setvariable variable=broken
+;]value
+STREAM
+
+  [ "$output" = \
+    $'##[warning]Malformed Azure Pipelines logging command; passing through unchanged.\n##vso[task.setvariable variable=broken\n;]value' ]
+}
+
+@test "run_step routes live output through the logging parser (C-E06-044/049)" {
+  local source_file="$BATS_TEST_TMPDIR/logging-step.sh"
+  prepare_run_step
+  printf '%s\n' \
+    "printf '%s\\n' '##vso[future.command key=value;]payload' 'after-command'" >"$source_file"
+
+  run -0 run_test_step logging-parser "$source_file" 10
+
+  [ "$output" = \
+    $'##[warning]Unknown Azure Pipelines logging command \'future.command\'; passing through unchanged.\n##vso[future.command key=value;]payload\nafter-command' ]
+  [ "$(cat "$AZDO_LOG_DIR/logging-parser.log")" = "$output" ]
+}
+
 @test "run_step executes the macro-expanded temp script with its materialized environment (C-E06-028/029)" {
   local source_file="$BATS_TEST_TMPDIR/exec-step.sh"
   azdo_var_set greeting hello
