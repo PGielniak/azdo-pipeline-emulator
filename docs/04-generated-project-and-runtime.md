@@ -86,11 +86,14 @@ state/vars/<scope>/<NAME>          # value file; .meta sidecar: secret,output,re
 state/outputs/<stage>/<job>/<step>.<var>
 state/results/<stage>[/<job>[/<step>]]   # Succeeded|SucceededWithIssues|Failed|Skipped|Canceled
 state/path.d/NNN-<step>            # PATH prepends, applied in order to subsequent steps
+state/masks/mask.*                 # private exact values registered for streaming log masking
 ```
 File-per-value dodges quoting/newline pitfalls entirely. Variable keys are case-insensitive, matching the agent dictionary (C-E06-003). Job variable scope is copied at job start — `setvariable` never leaks across jobs except through `outputs/` (agent-faithful).
 
 The runner exports `AZDO_STATE_DIR` and the current `AZDO_VAR_SCOPE` before it sources the runtime.
 `azdo_var <name> [scope]` reads a value (missing → empty); `azdo_var_set <name> <value> [secret] [output] [readonly] [scope]` writes it; and `azdo_var_meta <name> [scope]` prints the flags sidecar. `azdo_var_scope_copy <source> <target>` seeds a fresh job scope. An output write requires `AZDO_STEP_NAME` and `AZDO_OUTPUT_DIR`; it is stored as `<step>.<name>` in the current job and in `outputs/`, read cross-job by `azdo_output <stage> <job> <step.variable>`. Read-only overwrites emit an error and preserve the first value (C-E06-005/006).
+Once a name is secret, later writes preserve that status and register the replacement value with
+the masker rather than allowing a secret-to-public downgrade (C-E06-056).
 
 ## 5. `run_step` lifecycle (the heart of parity)
 
@@ -111,7 +114,7 @@ the first `run_step` skeleton even though their condition/result policies land i
 2. **Env materialization**: load step `env:` entries and macro-expand their values, then add predefined vars + all *non-secret* scope vars (name transform `UPPER`, `.`/space→`_`), then assemble `PATH` from `path.d` newest-first. Explicit `env:` is the only way secrets enter the process environment. Counterintuitively, public variables are added *after* the task environment, so an automatic variable whose transformed name collides with an explicit `env:` key overwrites that mapping (C-E06-007..012; hosted run 540). The source exposes no stable ordering contract when two public names such as `A.B` and `A_B` collapse to the same environment key; run 540 observed `A.B` winning in four order variants, so that collision remains an explicit parity risk rather than an invented universal rule.
 3. **Macro pass**: mirror the agent's two phase boundary. Immediately before the step, recursively recalculate stored variable values (exact case-insensitive references, inherited secret status, depth/cycle guards); then read the step file and run the separate non-recursive target scan, substituting `$(Name)` from that expanded view (secrets included), leaving unmatched candidates **literal**, and never revisiting inserted bytes. Write the result as a private file under `$(Agent.TempDirectory)/steps/`. This explains both hosted run-541 observations without contradiction: a runtime-created `a=$(b)` is recalculated to `inner` before the next task, while target text `$(a$(b))` first misses the outer candidate, expands the inner `$(b)`, and remains `$(ainner)` even when `ainner` exists (C-E06-018..024; docs/06 §5 decision 29).
 4. **Execute**: `timeout <remaining>` bash (or pwsh) on the expanded file, cwd = workingDirectory, stdout+stderr streamed.
-5. **Stream processing** (line-wise): parse `##vso[…]` (§6) and `##[…]` formatting; apply **secret masking** (all values flagged secret + `task.setsecret` additions → `***`); tee to `logs/<stage>/<job>/030.log`.
+5. **Stream processing** (line-wise): parse `##vso[…]` (§6) and `##[…]` formatting; apply **secret masking** (all values flagged secret + `task.setsecret` additions → `***`); tee to `logs/<stage>/<job>/030.log`. A successful secret `task.setvariable` registration affects the very next physical output line in the same step and every later step (C-E06-053; hosted run 544).
 6. **Result**: exit code + `task.complete` override + error-issue count + `failOnStderr` ⇒ `Succeeded/SucceededWithIssues/Failed`; `retryCountOnTaskFailure` loops step re-exec; `continueOnError` downgrades `Failed`→`SucceededWithIssues` for control flow.
 7. **Persist**: variable/PATH/output deltas become visible to subsequent steps.
 
@@ -119,7 +122,7 @@ the first `run_step` skeleton even though their condition/result policies land i
 
 | Command | Behavior |
 |---|---|
-| `task.setvariable` (`variable`, `isSecret`, `isOutput`, `isReadOnly`) | Store write; output vars additionally to `outputs/`; a read-only overwrite emits an error and retains the original value (grounded real run; docs/06 §5 decision 21) |
+| `task.setvariable` (`variable`, `isSecret`, `isOutput`, `isReadOnly`) | Required name + Boolean flags feed the store; plain values become visible to following tasks only, output vars additionally use the read-only `<step>.<var>` alias and `outputs/`, secrets register immediately with the masker, and read-only overwrites retain the original value (C-E06-005/006, C-E06-050..056; hosted runs 539/544) |
 | `task.setsecret` | Add value to the masker |
 | `task.prependpath` | Append to `path.d` → subsequent steps |
 | `task.uploadartifact` / `artifact.upload` | Copy into `.artifacts/<artifactname>/` |
@@ -136,6 +139,10 @@ The runtime parses logging commands as physical UTF-8 output lines and reverses 
 before dispatch. Unknown or malformed `##vso` lines produce a warning and remain visible unchanged;
 the hosted agent consumes a successfully parsed unknown-area command after warning, but local
 passthrough is intentional so unsupported task output is never silently lost (C-E06-044..049).
+Because macro expansion and environment materialization occur before execution, a set-variable
+command cannot change either view inside its emitting process. The next step sees a plain name as
+`$(name)` and its public environment mapping, or an output as `$(step.name)`; dependent jobs read
+the same output through the persisted dependency path (C-E06-050..052; hosted run 544).
 
 ## 7. Artifacts
 

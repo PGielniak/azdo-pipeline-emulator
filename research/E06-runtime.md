@@ -189,3 +189,64 @@ the task-lib producer contract the parser must invert. C-E06-046 defines command
 property splitting, and case-insensitive lookup. C-E06-047 fixes the one-pass decode order,
 including percent escaping. C-E06-048 records hosted malformed/unknown behavior; C-E06-049 makes
 the task's explicit warning-and-passthrough policy visible as a deliberate local-debug delta.
+
+[C-E06-050] A variable created by `task.setvariable` is unavailable to the task that emits the
+command: macro substitution has already happened and the running process environment is unchanged;
+hosted run 544 retained literal `$(plain)` and reported no `PLAIN` entry in that task. —
+https://learn.microsoft.com/azure/devops/pipelines/process/set-variables-scripts and
+research/experiments/E06-setvariable/real-run.md (run 544, checked 2026-08-19) — "Newly set
+variables aren't available in the same task."
+
+[C-E06-051] A non-output variable created by `task.setvariable` is available to following tasks in
+the same job through both `$(name)` macro syntax and its automatic environment mapping; hosted run
+544 rendered `later-value` through both forms. —
+https://learn.microsoft.com/azure/devops/pipelines/process/set-variables-scripts and
+https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands plus
+research/experiments/E06-setvariable/real-run.md (run 544, checked 2026-08-19) — "following tasks
+can use the variable using macro syntax" / "exposed to the following tasks as an environment
+variable."
+
+[C-E06-052] An `isOutput=true` write is available in the following same-job task as
+`$(stepName.variable)` and in a dependent job through
+`dependencies.JOB.outputs['stepName.variable']`; hosted run 544 rendered `output-value` through
+both paths. — https://learn.microsoft.com/azure/devops/pipelines/process/set-variables-scripts and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/ExecutionContext.cs#L395-L414 plus
+research/experiments/E06-setvariable/real-run.md (run 544, checked 2026-08-19) — "include the task
+name" / "reference them with `dependencies`."
+
+[C-E06-053] `isSecret=true` registers the nonempty value with the agent masker before later output
+is processed: hosted run 544 masked both a line later in the emitting task and a macro-expanded
+line in the following task. —
+https://learn.microsoft.com/azure/devops/pipelines/process/set-variables-scripts,
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L39-L53,
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L643-L661, and
+research/experiments/E06-setvariable/real-run.md (run 544, checked 2026-08-19) — "saved as secret
+and masked out from logs" / "SecretMasker.AddValue".
+
+[C-E06-054] The agent requires a nonempty `variable` property and parses `isSecret`, `isOutput`,
+and `isReadOnly` with Boolean `TryParse`, leaving each flag false when absent or unparseable. —
+https://learn.microsoft.com/azure/devops/pipelines/process/set-variables-scripts and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L582-L620
+(checked 2026-08-19) — "`variable` = variable name (Required)" / "Boolean.TryParse".
+
+[C-E06-055] A secret logging-command value containing a newline is rejected by default; the agent
+permits it only through the explicitly unsafe `SYSTEM_UNSAFEALLOWMULTILINESECRET` knob, whose
+built-in default is false. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L643-L655 and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Sdk/Knob/AgentKnobs.cs#L406-L412
+(checked 2026-08-19) — "Secrets cannot contain multiple lines" / "We recommend leaving this
+option off."
+
+[C-E06-056] Once a variable is secret, later writes preserve its secret status even when the new
+command omits `isSecret`; the agent also registers the replacement value with its masker. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Variables.cs#L416-L451
+(checked 2026-08-19) — "secret = secret || ... _expanded[name].Secret" / "Register the secret."
+
+## E06-S04-T02 grounding composition
+
+C-E06-050/051 define the current-task boundary and following-task visibility, with run 544 serving
+as the required hosted counterpart to the Bats lifecycle test. C-E06-052 defines both output
+storage/reference paths; C-E06-053 defines immediate secret registration and masking; C-E06-054
+defines handler property validation and defaults. C-E06-055/056 prevent multiline and downgrade
+leaks. Existing C-E06-005/006 supply output-alias read-only storage and strict `isReadOnly`
+overwrite enforcement. No source contradicts docs/04.
