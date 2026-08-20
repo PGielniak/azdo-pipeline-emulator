@@ -119,7 +119,11 @@ Acceptance: reference forms, parameter typing, and `extends` restrictions all en
   **Do:** resolver with per-file base dir, repo-context switching on `@alias` (fetcher interface injected; local-FS impl now, remote in E08), cycle detection on (repo, commit, path).
   **Ground:** templates doc "Use other repositories" + resources doc `repositories`; oracle can't exercise cross-repo without setup — add a two-repo fixture in the test org and capture `finalYaml` proving path resolution + `@self` semantics.
   **Done:** unit tests for path math; oracle fixture for cross-repo include.
-- [ ] **E03-S02-T02 — Typed parameter binding**
+- [!] **E03-S02-T02 — Typed parameter binding**
+  *In progress 2026-08-20 by worker `claude` on worktree `/root/wt-claude`, branch
+  `claude/e03-s01-t04`; do not pick. Builds on E03-S02-T01's `reference.ts` resolver and
+  E03-S01-T01's `TemplateFrame` parameter seam in `walk.ts`. Claim block C-E03-300..339
+  (E03-S02's original 195..229 block has only 219..229 left, which T03/T04 need).*
   **Do:** all documented types (`string number boolean object step stepList job jobList deployment deploymentList stage stageList`), `values:` restriction, `default`, required-missing error, extra-parameter error; runtime parameters at root bound from CLI/config.
   **Ground:** template-parameters + runtime-parameters docs (quote type list and coercion notes); oracle probes for: passing number to string, boolean literals accepted (`true`/`True`?), object deep shape — transcripts + claims.
   **Done:** binding test matrix per type × (default/provided/missing/wrong-type); errors snapshot-compared to service phrasing collected via oracle.
