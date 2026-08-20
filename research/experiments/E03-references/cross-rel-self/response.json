@@ -1,0 +1,9 @@
+{
+  "$id": "1",
+  "innerException": null,
+  "message": "/cross/rel-self.yml@templates: The file path /../e03-refs/leaf.yml is invalid",
+  "typeName": "Microsoft.Azure.Pipelines.WebApi.PipelineValidationException, Microsoft.Azure.Pipelines.WebApi",
+  "typeKey": "PipelineValidationException",
+  "errorCode": 0,
+  "eventId": 3000
+}

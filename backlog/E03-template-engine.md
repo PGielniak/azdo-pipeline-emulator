@@ -109,10 +109,13 @@ Acceptance: directive semantics proven by oracle fixture pairs, not by reading a
 ## E03-S02 — As a pipeline developer, includes/`extends` with typed parameters resolve like the service, so multi-file pipelines just work.
 Acceptance: reference forms, parameter typing, and `extends` restrictions all enforced with service-matching errors.
 
-- [!] **E03-S02-T01 — Reference resolution (`relative`, `/root`, `@alias`, `@self`)**
-  *In progress 2026-08-19 by Orchestrator (Claude) on worktree `/root/wt-claude`, branch
-  `claude/e03-s01-t04`; do not pick. Builds on T01's `childFrame`/`depth` seam in `walk.ts`.
-  Claim block C-E03-195..229.*
+- [x] **E03-S02-T01 — Reference resolution (`relative`, `/root`, `@alias`, `@self`)**
+  *Note (2026-08-20, C-E03-195..218): the **Do** field's "cycle detection on (repo, commit, path)"
+  is ours, not the service's — a cycle there is not detected at all, it recurses until
+  `Maximum object depth exceeded` (C-E03-208). We detect the repeat over the active stack and emit
+  that sentence at the file the service attributes it to. Also measured and not implied by the task
+  text: a **repository switch resets the base directory** to the target repo's root (C-E03-215), so
+  "per-file base dir" holds only within one repository.*
   **Do:** resolver with per-file base dir, repo-context switching on `@alias` (fetcher interface injected; local-FS impl now, remote in E08), cycle detection on (repo, commit, path).
   **Ground:** templates doc "Use other repositories" + resources doc `repositories`; oracle can't exercise cross-repo without setup — add a two-repo fixture in the test org and capture `finalYaml` proving path resolution + `@self` semantics.
   **Done:** unit tests for path math; oracle fixture for cross-repo include.

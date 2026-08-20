@@ -1,0 +1,9 @@
+{
+  "$id": "1",
+  "innerException": null,
+  "message": "The repository no-such-repo in project 2f2cfc9d-71d5-48f9-a438-b27f90d2d343 could not be retrieved. Verify the name and credentials being used and permissions.",
+  "typeName": "Microsoft.Azure.Pipelines.WebApi.PipelineValidationException, Microsoft.Azure.Pipelines.WebApi",
+  "typeKey": "PipelineValidationException",
+  "errorCode": 0,
+  "eventId": 3000
+}

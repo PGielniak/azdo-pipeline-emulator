@@ -1,0 +1,9 @@
+{
+  "$id": "1",
+  "innerException": null,
+  "message": "/azure-pipelines.yml: File /E03-REFS/LEAF.YML not found in repository https://dev.azure.com/{org}/oracle/_git/oracle branch refs/heads/main version da8a30415992863300af195c2fffa777f9b1b394.",
+  "typeName": "Microsoft.Azure.Pipelines.WebApi.PipelineValidationException, Microsoft.Azure.Pipelines.WebApi",
+  "typeKey": "PipelineValidationException",
+  "errorCode": 0,
+  "eventId": 3000
+}

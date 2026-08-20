@@ -1,0 +1,2 @@
+steps:
+- template: self-cycle.yml

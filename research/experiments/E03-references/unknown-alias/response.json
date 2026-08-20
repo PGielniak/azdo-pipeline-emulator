@@ -1,0 +1,9 @@
+{
+  "$id": "1",
+  "innerException": null,
+  "message": "/azure-pipelines.yml: No repository found by name nosuchalias",
+  "typeName": "Microsoft.Azure.Pipelines.WebApi.PipelineValidationException, Microsoft.Azure.Pipelines.WebApi",
+  "typeKey": "PipelineValidationException",
+  "errorCode": 0,
+  "eventId": 3000
+}

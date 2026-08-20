@@ -1,0 +1,7 @@
+resources:
+  repositories:
+  - repository: ghost
+    type: git
+    name: no-such-repo
+steps:
+- template: /cross/leaf.yml@ghost

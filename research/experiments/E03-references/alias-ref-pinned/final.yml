@@ -1,0 +1,15 @@
+resources:
+  repositories:
+  - repository: templates
+    type: git
+    name: azdo-emu-templates
+    ref: refs/heads/main
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo cross-leaf
+

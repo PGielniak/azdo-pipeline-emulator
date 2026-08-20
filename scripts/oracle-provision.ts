@@ -25,6 +25,13 @@ import { loadEnvFile } from './oracle-transcript.ts';
 const ENVIRONMENTS = ['corpus-staging', 'corpus-production'];
 /** Variable group referenced by fixtures/corpus/04-variable-layers. Names only — never values. */
 const VARIABLE_GROUP = 'azdo-emu-corpus-group';
+/**
+ * Second Azure Repos Git repository, so E03-S02-T01 can exercise a cross-repo `@alias` template
+ * reference. The oracle cannot answer the `@alias`/`@self` half of reference resolution with one
+ * repo: the whole question is which repository a path is read from. Seeded with a single
+ * placeholder file so the branch exists; `scripts/reference-survey.ts` pushes the probe tree.
+ */
+const TEMPLATE_REPO = 'azdo-emu-templates';
 
 const env = await loadEnvFile('.env.oracle');
 const config = configFromEnv(env);
@@ -150,5 +157,80 @@ async function ensureVariableGroup(name: string): Promise<void> {
   );
 }
 
+/**
+ * Create the template repository if absent, give it a first commit if it is still empty (a repo
+ * with no default branch cannot be pushed to with a normal `oldObjectId`), and authorize it for
+ * the anchor pipeline. A repository resource the pipeline may not read is rejected the same way
+ * an unauthorized environment is, so the authorize call is not optional.
+ */
+async function ensureTemplateRepository(name: string): Promise<void> {
+  const list = await api(`${org}/${project}/_apis/git/repositories?api-version=7.1`);
+  require2xx('list repositories', list);
+  const repos = (list.body as { value?: { id: string; name: string; defaultBranch?: string }[] })
+    .value;
+  let repo = (repos ?? []).find((r) => r.name === name);
+
+  const created = repo === undefined;
+  if (repo === undefined) {
+    const res = await api(`${org}/${project}/_apis/git/repositories?api-version=7.1`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+    require2xx(`create repository ${name}`, res);
+    repo = res.body as { id: string; name: string; defaultBranch?: string };
+  }
+
+  // An empty repo reports no defaultBranch. The push API creates the branch when oldObjectId is
+  // the all-zero object id, which is also how the first commit is made through the REST layer.
+  let seeded = false;
+  if (repo.defaultBranch === undefined) {
+    const res = await api(
+      `${org}/${project}/_apis/git/repositories/${repo.id}/pushes?api-version=7.1`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          refUpdates: [{ name: 'refs/heads/main', oldObjectId: '0'.repeat(40) }],
+          commits: [
+            {
+              comment: 'azdo-emu: seed template repository (E03-S02-T01)',
+              changes: [
+                {
+                  changeType: 'add',
+                  item: { path: '/README.md' },
+                  newContent: {
+                    content:
+                      '# azdo-emu template fixtures\n\n' +
+                      'Cross-repo template fixtures for E03-S02-T01. Contains no secrets.\n',
+                    contentType: 'rawtext',
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+      },
+    );
+    require2xx(`seed repository ${name}`, res);
+    seeded = true;
+  }
+
+  await authorize('repository', `${(await projectId()).id}.${repo.id}`);
+  console.log(
+    `repository ${name.padEnd(21)} ${created ? 'created' : 'present'}` +
+      `${seeded ? ' + seeded' : ''} (id ${repo.id}), authorized`,
+  );
+}
+
+let cachedProject: { id: string } | undefined;
+async function projectId(): Promise<{ id: string }> {
+  if (cachedProject === undefined) {
+    const res = await api(`${org}/_apis/projects/${project}?api-version=7.1`);
+    require2xx('read project', res);
+    cachedProject = { id: (res.body as { id: string }).id };
+  }
+  return cachedProject;
+}
+
 for (const name of ENVIRONMENTS) await ensureEnvironment(name, config);
 await ensureVariableGroup(VARIABLE_GROUP);
+await ensureTemplateRepository(TEMPLATE_REPO);

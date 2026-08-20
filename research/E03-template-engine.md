@@ -920,3 +920,217 @@ lone text with `parseDirectiveKey` first and returning the node untouched when a
 recognized. It applies to the lone case only, which is all C-E03-173 measured.
   — research/experiments/E03-insert/{value-position,bare-sequence-item}/ (live preview, checked
     2026-08-19 against the T04 transcripts)
+
+## E03-S02-T01 — reference resolution (`C-E03-195..218`)
+
+Evidence: `research/experiments/E03-references/` — **34 live preview probes** (`pnpm
+reference-survey`), of which 21 expanded and 13 were rejected, run against a **two-repository**
+fixture in the oracle project: the anchor repo `oracle` (tree under `/e03-refs/`) and a second
+Azure Repos Git repo `azdo-emu-templates` (tree under `/cross/`) created and authorized by
+`scripts/oracle-provision.ts`. The second repo is what makes the task answerable at all — every
+`@alias` question is "which repository was this path read from", and one repo cannot distinguish
+the answers.
+
+The two docs the **Ground** field names settle the *syntax* and almost none of the *semantics*.
+They give the absolute/relative rule, the `@alias` and `@self` spellings and the alias charset;
+they never say which repository a bare path inside a cross-repo template is read from, what a
+cycle does, whether lookups fold case, or what happens when `../` walks above the repository root.
+
+Three results changed the design rather than confirming it:
+
+- **A repository switch resets the base directory to the repository root** (C-E03-215). The
+  intuitive model — "the including file's directory is the base, always" — is wrong across a repo
+  boundary, and it is wrong in *both* directions, which took two purpose-built probes to pin.
+- **There is no cycle detection.** A self-including template dies of `Maximum object depth
+  exceeded` (C-E03-208), not of a cycle-specific message.
+- **The alias splits on the *first* `@`, not the last** (C-E03-210), so a path whose filename
+  contains `@` is read as an alias reference and cannot name a file.
+
+### What the docs settle
+
+[C-E03-195] **Absolute means repository-absolute; everything else is relative to the including
+file.** Stated in two sentences, with a worked nested-hierarchy example showing `../` traversal in
+both directions. The example never walks above the repository root, so the escape case is
+undocumented (measured as C-E03-206).
+  — https://learn.microsoft.com/azure/devops/pipelines/process/templates (checked 2026-08-20) —
+    §"Reference template paths": "Template paths can be an absolute path within the repository or
+    relative to the file that does the including." / "To use an absolute path, the template path
+    must start with a `/`. All other paths are considered relative."
+
+[C-E03-196] **`@alias` names a `resources.repositories` entry, and repositories resolve once.**
+The page gives the spelling and the lifetime, and the lifetime is what licenses pinning a
+repository to one commit for the whole expansion — the identity our cycle detection keys on.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/templates (checked 2026-08-20) —
+    §"Store templates in other repositories": "When you refer to the core repo, use `@` and the
+    name you gave it in `resources`." / "Repositories are resolved only once, when the pipeline
+    starts up. After that, the same resource is used during the pipeline run. Only the template
+    files are used."
+
+[C-E03-197] **`@self` is the repository the pipeline definition itself came from**, not "the
+current repository" — a distinction the doc's own example depends on, since it is written for a
+template that lives in *another* repo and reaches back. Measured as C-E03-214.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/templates (checked 2026-08-20) —
+    "You can also use `@self` to refer to the repository where the original pipeline was found.
+    This is convenient for use in `extends` templates if you want to refer back to contents in the
+    extending pipeline's repository."
+
+[C-E03-198] **Alias charset and `ref` default.** Alias is `[-_A-Za-z0-9]*`; `ref` "defaults to
+'refs/heads/main'"; `type` is `git | github | githubenterprise | bitbucket`, and for `type: git`
+the `name` is `<repo>` in-project or `<project>/<repo>` cross-project.
+  — https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/resources-repositories-repository
+    (checked 2026-08-20) — "**`repository`** string. Required as first property. Alias for the
+    specified repository. Acceptable values: [-\_A-Za-z0-9]\*." / "**`ref`** string. ref name to
+    checkout; defaults to 'refs/heads/main'."
+
+[C-E03-199] **The stated limits are 100 files, 100 nesting levels, 20 MB** — none of which is the
+limit a cycle actually hits (C-E03-208). Recorded here because E03-S04-T01 owns the limits and
+will need to reconcile the two.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/templates (checked 2026-08-20) —
+    §"Imposed limits on template updates": "No more than 100 separate YAML files may be included
+    (directly or indirectly)" / "No more than 100 levels of template nesting (templates including
+    other templates)" / "No more than 20 megabytes of memory consumed while parsing the YAML".
+
+### Path math
+
+[C-E03-200] **The join is literally `<directory of the including file> + '/' + <reference>`, and
+the *unnormalized* result is what error text shows.** This is not cosmetic — it is the only reason
+the two escape probes produce different strings for the same rule. From the root file
+`/azure-pipelines.yml` the directory is `/`, so `../outside.yml` joins to `//../outside.yml`; from
+`/e03-refs/escape.yml` the directory is `/e03-refs`, so `../../../outside.yml` joins to
+`/e03-refs/../../../outside.yml`. Both appear verbatim in the rejection.
+  — research/experiments/E03-references/{escape-root-direct,escape-root-nested}/ (live preview,
+    checked 2026-08-20)
+
+[C-E03-201] **A leading `/` is repository-absolute and ignores the including file's directory**,
+including from inside a nested template where the two would differ: `/e03-refs/dir/deep-abs.yml`
+referencing `/e03-refs/leaf.yml` reaches the leaf rather than `/e03-refs/dir/e03-refs/leaf.yml`.
+  — research/experiments/E03-references/{abs-from-root,abs-from-template}/ (live preview, checked
+    2026-08-20)
+
+[C-E03-202] **`./` is accepted as an ordinary relative prefix.** `./e03-refs/leaf.yml` expands.
+It fails the doc's "starts with `/`" test and is therefore relative, and the `.` segment is then
+dropped by normalization rather than looked up as a directory name.
+  — research/experiments/E03-references/dot-slash/ (live preview, checked 2026-08-20)
+
+[C-E03-203] **Backslashes are normalized to `/`.** `e03-refs\leaf.yml` resolves to the same file as
+`e03-refs/leaf.yml`, so the separator is not a repository path character.
+  — research/experiments/E03-references/backslash/ (live preview, checked 2026-08-20)
+
+[C-E03-204] **Path lookup is case-sensitive.** `/E03-REFS/LEAF.YML` is rejected `File
+/E03-REFS/LEAF.YML not found in repository …` even though `/e03-refs/leaf.yml` exists. The Git tree
+wins; nothing folds. This is the one lookup in the reference system that does *not* fold case —
+the alias lookup beside it does (C-E03-213).
+  — research/experiments/E03-references/case-mismatch/ (live preview, checked 2026-08-20)
+
+[C-E03-205] **The reference text is not trimmed.** A quoted `"/e03-refs/leaf.yml "` is rejected
+`File /e03-refs/leaf.yml  not found` — the trailing space survives into the lookup and into the
+message. (Plain YAML scalars are stripped by the parser, so only a quoted scalar can carry one
+this far.)
+  — research/experiments/E03-references/trailing-space/ (live preview, checked 2026-08-20)
+
+[C-E03-206] **`../` is legal while the normalized path stays inside the repository, and escaping it
+is rejected `The file path <joined> is invalid`.** The check is on the *result*, not on each step:
+`/e03-refs/dir/deep-parent.yml` referencing `../leaf.yml` resolves fine, while a traversal that
+ends above the root is rejected — with no help link, prefixed by the file that wrote the
+reference.
+  — research/experiments/E03-references/{parent-traversal,escape-root-direct,escape-root-nested}/
+    (live preview, checked 2026-08-20)
+
+[C-E03-207] **The missing-file rejection names repository URL, branch and commit.** `File
+<path> not found in repository <url> branch <ref> version <40-hex sha>.` — which independently
+confirms C-E03-196's "resolved only once": the *same* commit id appears in every probe of a run,
+so a repository is pinned for the whole expansion rather than re-resolved per reference.
+  — research/experiments/E03-references/{missing-file,cross-missing-file}/ (live preview, checked
+    2026-08-20)
+
+### Cycles and repetition
+
+[C-E03-208] **There is no cycle detection; a cycle dies of `Maximum object depth exceeded`.** Both
+a self-including template and a mutual a→b→a pair produce that sentence, *not* any of the three
+documented limits (C-E03-199) and not a cycle-specific message. The diagnostic is located at the
+**repeated** file — `/e03-refs/self-cycle.yml` for the self case and `/e03-refs/cycle-a.yml` for
+the mutual one — which is the file that re-enters, not the file that wrote the offending
+reference. Our resolver cannot recurse until it blows a stack, so it detects the repeat on
+`(repository, commit, path)` and reports *this* sentence at *that* file: same observable behavior,
+terminating implementation. The divergence is in the mechanism only, and is deliberate.
+  — research/experiments/E03-references/{self-cycle,mutual-cycle}/ (live preview, checked
+    2026-08-20)
+
+[C-E03-209] **The same file included twice from one parent expands twice.** The control that keeps
+C-E03-208's detection from being "have I ever seen this path": a diamond is legal and both copies
+appear in `finalYaml`. Detection is therefore on the *active stack*, not on a visited set.
+  — research/experiments/E03-references/diamond-not-cycle/ (live preview, checked 2026-08-20)
+
+### Aliases
+
+[C-E03-210] **The alias splits on the *first* `@`, and the remainder is the alias verbatim.**
+`/e03-refs/leaf.yml@self@self` is rejected `No repository found by name self@self` — everything
+after the first `@`, `@` included, is one alias name. The corollary is measured directly: a file
+genuinely named `we@ird.yml` is unreachable, because `/e03-refs/we@ird.yml` is rejected `No
+repository found by name ird.yml` even though that file exists in the repo.
+  — research/experiments/E03-references/{double-at,at-in-filename}/ (live preview, checked
+    2026-08-20)
+
+[C-E03-211] **An undeclared alias is rejected `No repository found by name <alias>`**, prefixed by
+the including file and with no help link. Distinct from a *declared* alias naming a repository that
+does not exist, which fails later and differently: `The repository <name> in project <guid> could
+not be retrieved. Verify the name and credentials being used and permissions.` — no file prefix at
+all, because it is a resource-resolution failure rather than a reference one.
+  — research/experiments/E03-references/{unknown-alias,alias-undeclared-repo}/ (live preview,
+    checked 2026-08-20)
+
+[C-E03-212] **A trailing `@` with nothing after it resolves as `self`.** `/e03-refs/leaf.yml@`
+expands to the same leaf as the bare path, so the empty alias is not an error and is not "no
+alias" either — it lands on the default repository.
+  — research/experiments/E03-references/empty-alias/ (live preview, checked 2026-08-20)
+
+[C-E03-213] **Alias lookup folds case.** Declared `templates`, referenced `@TEMPLATES`, expands.
+Paired with C-E03-204 this is the asymmetry the resolver has to encode: the alias half of a
+reference is case-insensitive and the path half is not.
+  — research/experiments/E03-references/alias-case/ (live preview, checked 2026-08-20)
+
+[C-E03-214] **`@self` is the root pipeline's repository from anywhere, including from inside
+another repository's template.** `/cross/back-to-self.yml` — a file in `azdo-emu-templates` —
+referencing `/e03-refs/leaf.yml@self` reaches the *anchor* repo's leaf. `@self` therefore means
+"the definition's repo", never "the repo I am currently in", exactly as C-E03-197 says. Within the
+anchor repo it is a no-op and resolves identically to the bare path.
+  — research/experiments/E03-references/{cross-back-to-self,self-alias-root,self-alias-nested}/
+    (live preview, checked 2026-08-20)
+
+### The repository-switch rule
+
+[C-E03-215] **Crossing a repository boundary resets the base directory to the repository root; a
+reference that stays in its own repository keeps the including file's directory.** This is the
+finding that constrains the resolver, and it needed three probes because the obvious spellings do
+not discriminate — from a root file at `/azure-pipelines.yml` the base *is* the root, so both
+models agree:
+
+  - Same repo, explicit alias, subdirectory: `../leaf.yml@self` written in `/e03-refs/dir/`
+    **resolves**. So an explicit `@alias` does not by itself reset the base.
+  - Switching repo, inward: `../e03-refs/leaf.yml@self` written in `/cross/rel-self.yml` (templates
+    repo) is **rejected** `The file path /../e03-refs/leaf.yml is invalid`. The base was `` — not
+    `/cross`, and not `/` either, since the join shows a single leading slash (C-E03-200).
+  - Switching repo, outward: `cross/leaf.yml@templates` written in `/e03-refs/dir/` **resolves** to
+    the templates repo's `/cross/leaf.yml`, not to `/e03-refs/dir/cross/leaf.yml`.
+
+  The rule is a property of the *repository changing*, not of the alias being written.
+  — research/experiments/E03-references/{self-alias-relative-nested,cross-rel-self,cross-rel-outward}/
+    (live preview, checked 2026-08-20)
+
+[C-E03-216] **Inside a cross-repo template the repository context stays switched, for bare and
+absolute paths alike.** `/cross/outer.yml@templates` (bare `leaf.yml`) and `/cross/abs.yml@templates`
+(absolute `/cross/leaf.yml`) both reach the *templates* repo's leaf, never the anchor repo's. So a
+frame carries its repository, an absolute path is absolute **in the frame's repository**, and only
+an explicit alias changes it.
+  — research/experiments/E03-references/{cross-bare-inside,cross-abs-inside}/ (live preview,
+    checked 2026-08-20)
+
+[C-E03-217] **A cross-repo file is *named* `<path>@<alias>` in diagnostics.** The rejection from
+inside the templates repo is prefixed `/cross/rel-self.yml@templates: `, so the service's file
+identity for error attribution carries the alias — which is what `TemplateFrame.file` has to hold
+for a cross-repo frame if our diagnostics are to match.
+  — research/experiments/E03-references/cross-rel-self/ (live preview, checked 2026-08-20)
+
+[C-E03-218] **An explicit `ref: refs/heads/main` behaves identically to omitting it**, confirming
+C-E03-198's documented default against the service rather than against the schema page alone.
+  — research/experiments/E03-references/alias-ref-pinned/ (live preview, checked 2026-08-20)
