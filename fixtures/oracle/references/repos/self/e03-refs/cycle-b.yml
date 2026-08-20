@@ -1,0 +1,2 @@
+steps:
+- template: cycle-a.yml

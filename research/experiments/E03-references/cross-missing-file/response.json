@@ -1,0 +1,9 @@
+{
+  "$id": "1",
+  "innerException": null,
+  "message": "/azure-pipelines.yml: File /cross/no-such-file.yml not found in repository https://dev.azure.com/{org}/oracle/_git/azdo-emu-templates branch refs/heads/main version 2cc1a2e5751dad0c3b1935beadc56ef7104a466b.",
+  "typeName": "Microsoft.Azure.Pipelines.WebApi.PipelineValidationException, Microsoft.Azure.Pipelines.WebApi",
+  "typeKey": "PipelineValidationException",
+  "errorCode": 0,
+  "eventId": 3000
+}

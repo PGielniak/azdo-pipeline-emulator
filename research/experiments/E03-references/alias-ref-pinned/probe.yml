@@ -1,0 +1,8 @@
+resources:
+  repositories:
+  - repository: templates
+    type: git
+    name: azdo-emu-templates
+    ref: refs/heads/main
+steps:
+- template: /cross/leaf.yml@templates
