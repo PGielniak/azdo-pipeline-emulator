@@ -1127,6 +1127,19 @@ TABLE
   resolved="$(azdo__command_state_dir)"
   [ "$resolved" = "$AZDO_STATE_DIR/commands/step-030" ]
 
+  # The public reader defaults to zero, sees what the handler increments in the scope it is
+  # called from, and rejects a kind it does not know.
+  run -0 azdo_step_issue_count error
+  [ "$output" -eq 0 ]
+  azdo_logging_parse_line '##vso[task.logissue type=error]scoped error'
+  azdo_logging_dispatch
+  run -0 azdo_step_issue_count error
+  [ "$output" -eq 1 ]
+  run -0 azdo_step_issue_count warning
+  [ "$output" -eq 0 ]
+  run ! azdo_step_issue_count sometimes
+  [ "$status" -eq 2 ]
+
   # run_step scopes it further so concurrent steps cannot reset each other's counters.
   prepare_run_step
   printf '%s\n' "printf '%s\\n' '##vso[task.logissue type=warning]scoped'" \
@@ -1183,6 +1196,19 @@ TABLE
   AZDO_COLOR=always
   run -0 azdo_render_stream <<<"$plain"
   [ "$output" = $'\033[1;36mBeginning of a group\033[0m\n\033[33mWarning message\033[0m\n\033[31mError message\033[0m\n\033[1mStart of a section\033[0m\n\033[34mCommand-line being run\033[0m\nordinary line' ]
+
+  # The debug arm is the one tag the renderer can drop entirely: it is console-gated on
+  # System.Debug (C-E06-065, docs/06 §5 decision 36), independently of color.
+  local debug_line='##[debug]Debug detail'
+  run -0 azdo_render_stream <<<"$debug_line"
+  [ "$output" = '' ]
+  azdo_var_set 'System.Debug' true
+  run -0 azdo_render_stream <<<"$debug_line"
+  [ "$output" = $'\033[2mDebug detail\033[0m' ]
+  AZDO_COLOR=never
+  run -0 azdo_render_stream <<<"$debug_line"
+  [ "$output" = "$debug_line" ]
+  AZDO_COLOR=always
 
   # An unknown tag and a bare ##vso line are not formatting commands.
   run -0 azdo_render_stream <<<$'##[unknown]left alone\n##vso[task.setvariable variable=x]y'
