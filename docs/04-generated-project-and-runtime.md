@@ -123,17 +123,17 @@ the first `run_step` skeleton even though their condition/result policies land i
 | Command | Behavior |
 |---|---|
 | `task.setvariable` (`variable`, `isSecret`, `isOutput`, `isReadOnly`) | Required name + Boolean flags feed the store; plain values become visible to following tasks only, output vars additionally use the read-only `<step>.<var>` alias and `outputs/`, secrets register immediately with the masker, and read-only overwrites retain the original value (C-E06-005/006, C-E06-050..056; hosted runs 539/544) |
-| `task.setsecret` | Add value to the masker |
-| `task.prependpath` | Append to `path.d` → subsequent steps |
+| `task.setsecret` | Add value to the masker for the rest of the job; earlier occurrences are not retroactively masked (C-E06-058) |
+| `task.prependpath` | Nonempty value appended to `path.d` → subsequent steps, repeats move to newest (C-E06-012/057) |
 | `task.uploadartifact` / `artifact.upload` | Copy into `.artifacts/<artifactname>/` |
 | `task.uploadfile`, `task.uploadsummary`, `task.addattachment` | Copy under `logs/attachments/` (degraded: no UI) |
-| `task.logissue type=error\|warning` | Colored output; error issues count toward `SucceededWithIssues`/`Failed` |
-| `task.complete result=…` | Overrides step result |
-| `task.setprogress` | Ignored (debug log) |
+| `task.logissue type=error\|warning` | Message rendered as a tagged `##[error]`/`##[warning]` line and counted per step; issue **counts alone do not change the step result** — only a failing logging command or the step's own exit status does (C-E06-062..064; docs/06 §5 decision 36) |
+| `task.complete result=…` | `result` is required and merges worst-wins into the step result; a nonzero exit still overrides it, then command failures merge, then `continueOnError` downgrades (C-E06-059..061) |
+| `task.setprogress` | Ignored with a gated debug note; percent-complete has no local timeline (C-E06-067) |
 | `build.updatebuildnumber` | Updates `Build.BuildNumber` in store |
 | `build.addbuildtag` | Appends `state/tags` |
 | `build.uploadlog`, `release.*` | Ignored with debug note |
-| Formatting `##[group]/[endgroup]/[section]/[command]/[warning]/[error]/[debug]` | ANSI-colored rendering; `##[debug]` shown only when `System.Debug=true` |
+| Formatting `##[group]/[endgroup]/[section]/[command]/[warning]/[error]/[debug]` | ANSI-colored console rendering by a filter placed *after* the log tee, so `logs/<step>.log` stays byte-faithful; the hosted agent emits these tags and its web UI colors them (C-E06-066). The debug **channel** (`##vso[task.debug]`, per-command `Processed:` notes) is gated on `System.Debug` exactly as the agent gates `context.Debug` (C-E06-065); a raw `##[debug]` line echoed by a script is ordinary output that the log keeps either way, and the local renderer hides it from the console unless `System.Debug` is true (docs/06 §5 decision 36) |
 
 The runtime parses logging commands as physical UTF-8 output lines and reverses task-lib escaping
 before dispatch. Unknown or malformed `##vso` lines produce a warning and remain visible unchanged;
