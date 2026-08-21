@@ -636,3 +636,185 @@ localPath) && (context.Variables.System_HostType != HostTypes.Build)) { throw ne
 StringUtil.Loc(\"UploadArtifactCommandNotSupported\", context.Variables.System_HostType)); }" /
 "context.AsyncCommands.Add(commandContext);". The local runtime copies synchronously into
 `.artifacts/`, so a copy failure *is* a command failure — a divergence in timing, not in outcome.
+
+## E06-S05-T01 — pipeline artifact publish and download
+
+Sources pinned for this pass: the *Publish and download pipeline artifacts* doc page
+(`git_commit_id` `1eeaa8de39f8b7130d8eb45ec907d9e47d6f5a32`, `updated_at` 2026-05-07), the
+`steps.download` schema page (`git_commit_id` `d089fd2dbb54483ec611eeb478e3eff14be74393`,
+`ms.date` 2026-07-29), `microsoft/azure-pipelines-tasks` @ `299572e25b6cf14b21c7b60e5228603cbb5ffb42`
+(`PublishPipelineArtifactV1`/`DownloadPipelineArtifactV2` `task.json`) and
+`microsoft/azure-pipelines-agent` @ `42bde98bea7bb3b9e186d693e3b1554249e93a38`. Both tasks are
+`AgentPlugin` tasks — `"AgentPlugin": { "target": "Agent.Plugins.PipelineArtifact.PublishPipelineArtifactTaskV1, Agent.Plugins" }`
+and `"…DownloadPipelineArtifactTaskV2_0_0, Agent.Plugins"` — so the implementation to read is
+`src/Agent.Plugins/PipelineArtifact/PipelineArtifactPluginV1.cs` and `…/PipelineArtifactPluginV2.cs`,
+**not** `PipelineArtifactPlugin.cs`, which holds the older V0 classes of the same shape.
+
+[C-E06-084] The `download` keyword puts artifacts of the **current** pipeline in
+`$(Pipeline.Workspace)/<artifact name>` and artifacts of an associated pipeline resource in
+`$(Pipeline.Workspace)/<pipeline resource identifier>/<artifact name>`. —
+https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/steps-download (checked 2026-08-21)
+— "Artifacts from the current pipeline are downloaded to `$(Pipeline.Workspace)/<artifact name>`.
+Artifacts from the associated pipeline resource are downloaded to
+`$(Pipeline.Workspace)/<pipeline resource identifier>/<artifact name>`." The keyword is a
+server-side shorthand for the task (same page: "Depending on the type of referenced artifact (or
+artifacts), `download` calls Download Pipeline Artifacts …"), so this layout is what the *emitter*
+must pass as `--path`; it is **not** the task's own default, which is C-E06-085.
+
+[C-E06-085] `DownloadPipelineArtifact@2` input defaults are `source`/`buildType` = `current`,
+`artifact`/`artifactName` = empty, `patterns`/`itemPattern` = `**`, and `path` (aliases
+`targetPath`, `downloadPath`, required) = `$(Pipeline.Workspace)`; the task creates the target
+directory when it does not exist. —
+https://github.com/microsoft/azure-pipelines-tasks/blob/299572e25b6cf14b21c7b60e5228603cbb5ffb42/Tasks/DownloadPipelineArtifactV2/task.json
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/PipelineArtifact/PipelineArtifactPluginV2.cs#L310-L317
+(checked 2026-08-21) — "{ \"name\": \"path\", \"aliases\": [ \"targetPath\", \"downloadPath\" ],
+\"defaultValue\": \"$(Pipeline.Workspace)\", \"required\": true }" / "string fullPath =
+Path.GetFullPath(targetPath); bool dirExists = Directory.Exists(fullPath); if (!dirExists) {
+Directory.CreateDirectory(fullPath); }".
+
+[C-E06-086] With an artifact **name** supplied, only that artifact is downloaded, the step fails if
+the artifact does not exist, the file-matching patterns are evaluated relative to the artifact root,
+and the files land directly in `path` with no per-artifact subdirectory. —
+https://learn.microsoft.com/azure/devops/pipelines/artifacts/pipeline-artifacts (checked 2026-08-21)
+— "Only files for that specific artifact are downloaded. If the artifact doesn't exist, the task
+will fail. File matching patterns are evaluated relative to the root of the artifact." and "By
+default, files are downloaded to **$(Pipeline.Workspace)**. If an artifact name wasn't specified, a
+subdirectory will be created for each downloaded artifact." The no-subdirectory half is the
+contrapositive of that second sentence; it is corroborated by
+`ArtifactDownloadParameters.AppendArtifactNameToTargetPath` being consulted **only** on the
+multi-download branch —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/Artifact/FileContainerProvider.cs#L84-L86
+— "var dirPath = downloadParameters.AppendArtifactNameToTargetPath ?
+Path.Combine(downloadParameters.TargetDirectory, buildArtifact.Name) :
+downloadParameters.TargetDirectory;". That file is the **container** provider (build artifacts);
+for pipeline artifacts the same composition happens inside the closed BlobStore
+`DownloadDedupManifestArtifactOptions.CreateWithMultiManifestIds(…, minimatchFilterWithArtifactName:
+…)`, so it is cited as corroboration of the rule, not as the pipeline-artifact code path.
+
+[C-E06-087] With **no** artifact name, every artifact of the run is downloaded, the step does not
+fail when no files match, a subdirectory is created per artifact, and the first segment of each
+pattern is matched against the artifact name. —
+https://learn.microsoft.com/azure/devops/pipelines/artifacts/pipeline-artifacts (checked 2026-08-21)
+— "Multiple artifacts can be downloaded and the task does not fail if no files are found. A
+subdirectory is created for each artifact. File matching patterns should assume the first segment of
+the pattern is (or matches) an artifact name." The agent expresses the same rule as
+`MinimatchFilterWithArtifactName = true` on the download parameters, and its filter helper documents
+the candidate shape it implies —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/Artifact/ArtifactItemFilters.cs#L33-L40
+— "<param name=\"paths\">List of relative paths for items detected in artifact. The relative paths
+start from name of artifact.</param>".
+
+[C-E06-088] An empty `patterns` input is read as `**`, and the value is split into patterns on
+**newline only** (empty entries removed) — not on `;`. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/PipelineArtifact/PipelineArtifactPluginV2.cs#L111-L117
+(checked 2026-08-21) — "// Empty input field \"Matching pattern\" must be recognised as default
+value '**' itemPattern = string.IsNullOrEmpty(itemPattern) ? \"**\" : itemPattern; string[]
+minimatchPatterns = itemPattern.Split(new[] { \"\\n\" }, StringSplitOptions.RemoveEmptyEntries);".
+The `;`-delimited multi-pattern spelling in docs/03 §29 belongs to the `azdo_match` task-input
+surface (E09-S01-T03) and is deliberately **not** accepted here.
+
+[C-E06-089] **Doc/source conflict, source wins.** A relative `path` is resolved against
+`System.DefaultWorkingDirectory`, not against the pipeline workspace, in both the publish and the
+download plugin; the `task.json` help text for the same input says the opposite. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/PipelineArtifact/PipelineArtifactPluginV2.cs#L93-L95
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/PipelineArtifact/PipelineArtifactPluginV1.cs#L86-L97
+and
+https://github.com/microsoft/azure-pipelines-tasks/blob/299572e25b6cf14b21c7b60e5228603cbb5ffb42/Tasks/DownloadPipelineArtifactV2/task.json
+(checked 2026-08-21) — "string defaultWorkingDirectory =
+context.Variables.GetValueOrDefault(\"system.defaultworkingdirectory\").Value; targetPath =
+Path.IsPathFullyQualified(targetPath) ? targetPath : Path.GetFullPath(Path.Combine(
+defaultWorkingDirectory, targetPath));" versus "Directory to download the artifact files to. Can be
+relative to the pipeline workspace directory or absolute." Per BACKLOG §3's source hierarchy
+(Microsoft source code > official docs) the emulator implements the code behavior and records the
+docs as wrong.
+
+[C-E06-090] Pattern list semantics: each pattern is trimmed and skipped when empty; a pattern
+starting with `#` is a comment and skipped; leading `!` characters are counted and stripped, and the
+pattern is an **include** iff that count is even; patterns are then applied **in order** to an
+accumulating map, an include adding its matches and an exclude removing them. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/Artifact/ArtifactItemFilters.cs#L45-L100
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/Artifact/ArtifactItemFilters.cs#L161-L175
+(checked 2026-08-21) — "if (!matchOptions.NoComment && currentPattern.StartsWith('#')) { …
+continue; } … while (negateCount < currentPattern.Length && currentPattern[negateCount] == '!') {
+negateCount++; } … bool isIncludePattern = negateCount == 0 || (negateCount % 2 == 0 &&
+!matchOptions.FlipNegate) || …" / "<param name=\"map\">… Item with path from the hashtable is
+considered as required to be in list after filtering.</param>". The order-sensitivity is
+load-bearing: `!*.md` followed by `**` yields **everything**, because the later include re-adds what
+the exclude removed.
+
+[C-E06-091] `PublishPipelineArtifact@1` takes `path`/`targetPath` (required, default
+`$(Pipeline.Workspace)`), `artifactName`/`artifact` (optional, default empty) and
+`artifactType`/`publishLocation` (default `pipeline`); an empty artifact name falls back to
+`System.JobIdentifier` normalized by deleting every character outside `[a-zA-Z0-9 - .]` and then
+deleting the literal `.default`. —
+https://github.com/microsoft/azure-pipelines-tasks/blob/299572e25b6cf14b21c7b60e5228603cbb5ffb42/Tasks/PublishPipelineArtifactV1/task.json
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/PipelineArtifact/PipelineArtifactPluginV1.cs#L122-L127
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/PipelineArtifact/PipelineArtifactPluginV1.cs#L193-L196
+(checked 2026-08-21) — "if (String.IsNullOrWhiteSpace(artifactName)) { string jobIdentifier =
+context.Variables.GetValueOrDefault(WellKnownDistributedTaskVariables.JobIdentifier).Value; var
+normalizedJobIdentifier = NormalizeJobIdentifier(jobIdentifier); artifactName =
+normalizedJobIdentifier; }" / "jobIdentifier = jobIdentifierRgx.Replace(jobIdentifier,
+string.Empty).Replace(\".default\", string.Empty);" with "new Regex(\"[^a-zA-Z0-9 - .]\", …)". The
+doc page states the same fallback in prose: "**artifact**: (Optional) Name of the artifact to
+publish. If not set, defaults to a unique ID scoped to the job."
+
+[C-E06-092] Publish fails when the resolved target path is neither an existing file nor an existing
+directory. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/PipelineArtifact/PipelineArtifactPluginV1.cs#L134-L141
+(checked 2026-08-21) — "bool isFile = File.Exists(fullPath); bool isDir =
+Directory.Exists(fullPath); if (!isFile && !isDir) { // if local path is neither file nor folder
+throw new FileNotFoundException(StringUtil.Loc(\"PathDoesNotExist\", targetPath)); }". Unlike
+`artifact.upload` (C-E06-070) there is **no** empty-directory special case: publishing an empty
+directory is a plain success.
+
+[C-E06-093] An artifact name is rejected when it contains any of `" : < > | * ? / \` or a character
+below U+0020. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/PipelineArtifact/PipelineArtifactPluginUtil.cs#L12-L27
+(checked 2026-08-21) — "// This collection of invalid characters is based on the characters that are
+illegal in Windows/NTFS filenames. Also prevent files (pipeline artifact names) from containing
+\"/\" or \"\\\" due to the added complexity this introduces for file pattern matching on download."
+This set is neither a superset nor a subset of the emulator's `azdo__valid_store_segment`, so the
+runtime applies **both**: the agent set as the graded parity rule, and the store-segment guard on
+top, which additionally rejects `""`, `.` and `..` — names the agent accepts but which cannot be
+directory names under `.artifacts/`. That extra rejection is a recorded local hardening.
+
+[C-E06-094] Publishing a **directory** places the directory's *contents* at the artifact root: the
+doc's cross-stage example publishes `$(Build.ArtifactStagingDirectory)/scripts` as artifact `drop`
+and then runs `$(Pipeline.Workspace)\drop\test.ps1`, so `scripts/` itself does not appear in the
+downloaded tree. —
+https://learn.microsoft.com/azure/devops/pipelines/artifacts/pipeline-artifacts (checked 2026-08-21)
+— "- publish: '$(Build.ArtifactStagingDirectory)/scripts' displayName: 'Publish script' artifact:
+drop" / "filePath: '$(Pipeline.Workspace)\\drop\\test.ps1'". The **file** case has no citable
+source: the plugin hands `fullPath` straight to the closed BlobStore
+`dedupManifestClient.PublishAsync(source, …)`
+(https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/Artifact/PipelineArtifactServer.cs#L79).
+The emulator therefore reuses the container rule C-E06-071 — a file contributes its basename at the
+artifact root — as an **inference**, flagged here so a later oracle run can falsify it.
+
+[C-E06-095] **Delta, deliberately not implemented.** Publishing honors an `.artifactignore` file in
+the `targetPath` directory, and in its absence Azure Artifacts silently drops the `.git` folder. —
+https://learn.microsoft.com/azure/devops/pipelines/artifacts/pipeline-artifacts (checked 2026-08-21)
+— "Azure Artifacts automatically ignore the `.git` folder path when you don't have a
+*.artifactignore* file. You can bypass this by creating an empty *.artifactignore* file." Both are
+server/BlobStore-side filtering outside the scope of E06-S05-T01's **Do**; `azdo_artifact_publish`
+copies everything under the target path. A local publish of a work tree therefore contains `.git`
+where the service's artifact would not.
+
+[C-E06-096] Artifacts are downloaded automatically **only** in deployment jobs, only for the
+`deploy` lifecycle hook, to `$(Pipeline.Workspace)`, and `download: none` suppresses it. —
+https://learn.microsoft.com/azure/devops/pipelines/artifacts/pipeline-artifacts and
+https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/steps-download (checked 2026-08-21)
+— "Artifacts are only downloaded automatically in deployment jobs. By default, artifacts are
+downloaded to `$(Pipeline.Workspace)`. The download artifact task will be auto injected only when
+using the `deploy` lifecycle hook in your deployment. To stop artifacts from being downloaded
+automatically, add a `download` step and set its value to none." / "All available artifacts from the
+current pipeline and from the associated pipeline resources are automatically downloaded in
+deployment jobs and made available for your deployment." Downloading *all* artifacts to
+`$(Pipeline.Workspace)` is exactly the no-artifact-name branch of C-E06-087, so the injected step is
+`azdo_artifact_download` with no `--artifact`, and each artifact lands at
+`$(Pipeline.Workspace)/<name>` — the same layout the `download` keyword produces (C-E06-084).

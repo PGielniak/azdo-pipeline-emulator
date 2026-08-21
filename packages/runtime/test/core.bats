@@ -1451,3 +1451,250 @@ TABLE
   run -0 azdo_step_result bad-upload
   [ "$output" = Failed ]
 }
+
+# ── E06-S05-T01 · pipeline artifact publish & download ────────────────────────
+
+# One job's view of the run: a working directory that a relative `--path` resolves against
+# (C-E06-089), a workspace that a download defaults to (C-E06-085), and the run-level `.artifacts/`
+# store — which `prepare_artifact_dirs` keeps at the *same* path for every job on purpose, because
+# that is what makes a cross-job hand-off possible at all.
+prepare_pipeline_artifacts() {
+  local job="$1"
+  AZDO_VAR_SCOPE="$job"
+  export AZDO_VAR_SCOPE
+  prepare_artifact_dirs
+  mkdir -p "$BATS_TEST_TMPDIR/$job/work" "$BATS_TEST_TMPDIR/$job/workspace"
+  azdo_var_set 'System.DefaultWorkingDirectory' "$BATS_TEST_TMPDIR/$job/work"
+  azdo_var_set 'Pipeline.Workspace' "$BATS_TEST_TMPDIR/$job/workspace"
+}
+
+# A drop with a nested file and a Markdown file, so pattern cases have something to exclude.
+seed_drop() {
+  local root="$1"
+  mkdir -p "$root/nested"
+  printf 'TOP\n' >"$root/top.txt"
+  printf 'NOTES\n' >"$root/notes.md"
+  printf 'DEEP\n' >"$root/nested/deep.txt"
+}
+
+@test "a pipeline artifact published in one job is downloaded by name in the next (C-E06-085/091/094)" {
+  prepare_pipeline_artifacts publish-job
+  azdo_var_set 'System.JobIdentifier' 'Build.Job1.__default'
+  seed_drop "$BATS_TEST_TMPDIR/publish-job/work/drop"
+
+  # No --artifact: the name is System.JobIdentifier with every character outside `[a-zA-Z0-9 .]`
+  # deleted and the literal `.default` then removed — the underscores go first, which is why
+  # `.__default` collapses to `.default` and disappears (C-E06-091).
+  run -0 azdo_artifact_publish --path drop
+  [[ "$output" == *'for artifact Build.Job1'* ]]
+  # A directory contributes its *contents*; its own name never appears (C-E06-094).
+  [ "$(cat "$AZDO_ARTIFACT_DIR/Build.Job1/nested/deep.txt")" = DEEP ]
+  [ ! -e "$AZDO_ARTIFACT_DIR/Build.Job1/drop" ]
+  [ "$(cat "$AZDO_ARTIFACT_DIR/.meta/Build.Job1")" = 'type=pipeline' ]
+
+  # The next job: its own variable scope, so nothing the publisher set is visible …
+  prepare_pipeline_artifacts download-job
+  run -0 azdo_var 'System.JobIdentifier'
+  [ -z "$output" ]
+  # … but the artifact store is the run's, so the hand-off works.
+  run -0 azdo_artifact_download --artifact Build.Job1
+  [[ "$output" == *"Downloading artifacts to $BATS_TEST_TMPDIR/download-job/workspace"* ]]
+  # `--path` defaults to `$(Pipeline.Workspace)` and a *named* download lands directly there:
+  # no `Build.Job1/` level on this branch (C-E06-085/086).
+  [ "$(cat "$BATS_TEST_TMPDIR/download-job/workspace/top.txt")" = TOP ]
+  [ "$(cat "$BATS_TEST_TMPDIR/download-job/workspace/nested/deep.txt")" = DEEP ]
+  [ ! -e "$BATS_TEST_TMPDIR/download-job/workspace/Build.Job1" ]
+}
+
+@test "a named download lands at --path while an unnamed download adds one directory per artifact (C-E06-084/086/087)" {
+  local workspace="$BATS_TEST_TMPDIR/layout/workspace"
+  prepare_pipeline_artifacts layout
+  seed_drop "$BATS_TEST_TMPDIR/layout/work/alpha"
+  printf 'ONLY\n' >"$BATS_TEST_TMPDIR/layout/work/single.txt"
+
+  run -0 azdo_artifact_publish --path alpha --artifact alpha
+  # A file source contributes its basename at the artifact root — the container rule reused as an
+  # inference, flagged in C-E06-094 for a later oracle run.
+  run -0 azdo_artifact_publish --path single.txt --artifact beta
+  [ "$(cat "$AZDO_ARTIFACT_DIR/beta/single.txt")" = ONLY ]
+
+  # The `download:` keyword's `$(Pipeline.Workspace)/<name>` layout is produced by the *caller*
+  # passing that path, not by the task (C-E06-084 vs C-E06-086; docs/06 §5 decision 39).
+  run -0 azdo_artifact_download --artifact alpha --path "$workspace/alpha"
+  [ "$(cat "$workspace/alpha/top.txt")" = TOP ]
+  [ ! -e "$workspace/alpha/alpha" ]
+
+  # With no name, every artifact of the run is taken and the name *is* a directory level. The target
+  # directory is created when it does not exist (C-E06-085/087).
+  run -0 azdo_artifact_download --path "$BATS_TEST_TMPDIR/layout/absent-target"
+  [ "$(cat "$BATS_TEST_TMPDIR/layout/absent-target/alpha/nested/deep.txt")" = DEEP ]
+  [ "$(cat "$BATS_TEST_TMPDIR/layout/absent-target/beta/single.txt")" = ONLY ]
+  # `.meta` is bookkeeping beside the artifacts, never an artifact of its own.
+  [ ! -e "$BATS_TEST_TMPDIR/layout/absent-target/.meta" ]
+}
+
+@test "download patterns accumulate in order, so a later include re-adds an excluded file (C-E06-090)" {
+  local target
+  prepare_pipeline_artifacts patterns
+  seed_drop "$BATS_TEST_TMPDIR/patterns/work/drop"
+  run -0 azdo_artifact_publish --path drop --artifact drop
+
+  # Exclude after include: the Markdown file is removed from the accumulating map.
+  target="$BATS_TEST_TMPDIR/patterns/exclude-last"
+  run -0 azdo_artifact_download --artifact drop --patterns $'**\n!**/*.md' --path "$target"
+  [ -f "$target/top.txt" ]
+  [ -f "$target/nested/deep.txt" ]
+  [ ! -e "$target/notes.md" ]
+
+  # The same two patterns in the other order select *everything* — the include re-adds what the
+  # exclude removed. This is the assertion that a "match includes, then subtract excludes"
+  # implementation cannot satisfy.
+  target="$BATS_TEST_TMPDIR/patterns/include-last"
+  run -0 azdo_artifact_download --artifact drop --patterns $'!**/*.md\n**' --path "$target"
+  [ -f "$target/notes.md" ]
+
+  # A comment is skipped before the negation prefix is read, and an even number of `!` is an
+  # include, so `!!**/*.md` adds the file a bare `!**/*.md` would have removed.
+  target="$BATS_TEST_TMPDIR/patterns/comment-and-double-negation"
+  run -0 azdo_artifact_download --artifact drop \
+    --patterns $'# !**/*.txt is a comment, not an exclude\n**\n!**/*.md\n!!**/*.md' --path "$target"
+  [ -f "$target/top.txt" ]
+  [ -f "$target/notes.md" ]
+}
+
+@test "artifact patterns split on newlines only and match the artifact name in the first segment (C-E06-087/088/090)" {
+  local target
+  prepare_pipeline_artifacts globs
+  seed_drop "$BATS_TEST_TMPDIR/globs/work/alpha"
+  printf 'B\n' >"$BATS_TEST_TMPDIR/globs/work/beta.txt"
+  run -0 azdo_artifact_publish --path alpha --artifact alpha
+  run -0 azdo_artifact_publish --path beta.txt --artifact beta
+
+  # First segment selects the artifact on the multi-download branch (C-E06-087).
+  target="$BATS_TEST_TMPDIR/globs/first-segment"
+  run -0 azdo_artifact_download --patterns 'alpha/**' --path "$target"
+  [ -f "$target/alpha/top.txt" ]
+  [ ! -e "$target/beta" ]
+
+  # `*` does not cross a separator, `**` does, `?` is exactly one character.
+  target="$BATS_TEST_TMPDIR/globs/star"
+  run -0 azdo_artifact_download --artifact alpha --patterns '*.txt' --path "$target"
+  [ -f "$target/top.txt" ]
+  [ ! -e "$target/nested" ]
+  target="$BATS_TEST_TMPDIR/globs/question"
+  run -0 azdo_artifact_download --artifact alpha --patterns 'nested/?eep.txt' --path "$target"
+  [ -f "$target/nested/deep.txt" ]
+
+  # `;` is the `azdo_match` convention, not this one: the whole string is one pattern here and it
+  # matches nothing, which is a plain success rather than a failure (C-E06-088/087).
+  target="$BATS_TEST_TMPDIR/globs/semicolon"
+  run -0 azdo_artifact_download --artifact alpha --patterns 'top.txt;notes.md' --path "$target"
+  [ -z "$(find "$target" -type f)" ]
+}
+
+@test "the deployment-job auto-download injection point puts every artifact under Pipeline.Workspace (C-E06-096/084)" {
+  local workspace="$BATS_TEST_TMPDIR/deploy/workspace"
+  prepare_pipeline_artifacts build-stage
+  seed_drop "$BATS_TEST_TMPDIR/build-stage/work/drop"
+  printf 'CHART\n' >"$BATS_TEST_TMPDIR/build-stage/work/chart.yaml"
+  run -0 azdo_artifact_publish --path drop --artifact drop
+  run -0 azdo_artifact_publish --path chart.yaml --artifact manifests
+
+  # The deployment job: the injected step takes no arguments at all, and "all available artifacts …
+  # are automatically downloaded" to `$(Pipeline.Workspace)` is exactly the no-name branch, so each
+  # artifact lands at `$(Pipeline.Workspace)/<name>` — the `download:` keyword layout (C-E06-096/084).
+  prepare_pipeline_artifacts deploy
+  run -0 azdo_artifact_auto_download
+  [ "$(cat "$workspace/drop/top.txt")" = TOP ]
+  [ "$(cat "$workspace/drop/nested/deep.txt")" = DEEP ]
+  [ "$(cat "$workspace/manifests/chart.yaml")" = CHART ]
+  # `download: none` is the *absence* of this call, decided by the emitter; nothing here suppresses
+  # an injected step at runtime.
+}
+
+@test "publish requires an existing path, and its artifact name must be a usable store segment (C-E06-092/093)" {
+  prepare_pipeline_artifacts validation
+  seed_drop "$BATS_TEST_TMPDIR/validation/work/drop"
+
+  # Each case has exactly one defect: the agent's own ordering of the name check against the
+  # existence check is not established by the pinned sources, so nothing here depends on it.
+  run ! azdo_artifact_publish --path absent --artifact drop
+  [[ "$output" == *"Path does not exist: absent"* ]]
+  run ! azdo_artifact_publish --path drop --artifact 'sub/drop'
+  run ! azdo_artifact_publish --path drop --artifact '..'
+  [ -z "$(find "$AZDO_ARTIFACT_DIR" -mindepth 1)" ]
+
+  # --path is required; an unknown flag is a usage error, not a failed publish.
+  run -2 azdo_artifact_publish --artifact drop
+  run -2 azdo_artifact_publish --path drop --nonsense
+}
+
+@test "publishing an empty directory is a plain success, unlike artifact.upload (C-E06-092 vs C-E06-070)" {
+  prepare_pipeline_artifacts empty
+  mkdir -p "$BATS_TEST_TMPDIR/empty/work/hollow/only-a-subdirectory"
+
+  run -0 azdo_artifact_publish --path hollow --artifact Hollow
+  # No `Directory '…' is empty` warning: that special case belongs to the logging command, and the
+  # plugin has nothing like it (C-E06-092).
+  [[ "$output" != *'is empty'* ]]
+  [ -d "$AZDO_ARTIFACT_DIR/Hollow" ]
+  [ "$(cat "$AZDO_ARTIFACT_DIR/.meta/Hollow")" = 'type=pipeline' ]
+
+  # Downloading it is a success with no files, not an "artifact not found".
+  run -0 azdo_artifact_download --artifact Hollow --path "$BATS_TEST_TMPDIR/empty/out"
+  [ -z "$(find "$BATS_TEST_TMPDIR/empty/out" -type f)" ]
+}
+
+@test "relative artifact paths resolve against System.DefaultWorkingDirectory, not the workspace (C-E06-089)" {
+  local work="$BATS_TEST_TMPDIR/relative/work" workspace="$BATS_TEST_TMPDIR/relative/workspace"
+  prepare_pipeline_artifacts relative
+  # The same relative name exists under both roots, so the assertion cannot pass by accident.
+  mkdir -p "$work/rel" "$workspace/rel"
+  printf 'FROM-WORK\n' >"$work/rel/marker.txt"
+  printf 'FROM-WORKSPACE\n' >"$workspace/rel/marker.txt"
+
+  run -0 azdo_artifact_publish --path rel --artifact rel
+  [ "$(cat "$AZDO_ARTIFACT_DIR/rel/marker.txt")" = FROM-WORK ]
+
+  # The task.json help text says "relative to the pipeline workspace directory"; the plugin source
+  # combines with `system.defaultworkingdirectory` and the source wins (BACKLOG §3 hierarchy).
+  run -0 azdo_artifact_download --artifact rel --path out
+  [ "$(cat "$work/out/marker.txt")" = FROM-WORK ]
+  [ ! -e "$workspace/out" ]
+}
+
+@test "a named download fails on an unknown artifact and on one with no local bytes (C-E06-086)" {
+  prepare_pipeline_artifacts missing
+  seed_drop "$BATS_TEST_TMPDIR/missing/work/drop"
+  run -0 azdo_artifact_publish --path drop --artifact drop
+
+  run ! azdo_artifact_download --artifact absent
+  [[ "$output" == *absent* ]]
+
+  # An associated artifact is a server-side coordinate with nothing local behind it (C-E06-073).
+  # The named branch says so rather than reporting an empty success; the multi-download branch
+  # skips it with a debug note, because there "no files" is not an error (C-E06-087). The asymmetry
+  # is a local decision — docs/06 §5 decision 39.
+  run -0 dispatch_line '##vso[artifact.associate type=filepath;artifactname=Shared]\\MyShare\Drop'
+  run ! azdo_artifact_download --artifact Shared
+  run -0 azdo_artifact_download --path "$BATS_TEST_TMPDIR/missing/all"
+  [ -f "$BATS_TEST_TMPDIR/missing/all/drop/top.txt" ]
+  [ ! -e "$BATS_TEST_TMPDIR/missing/all/Shared" ]
+}
+
+@test "download refuses a source it cannot serve and a workspace it was never given (C-E06-085)" {
+  prepare_pipeline_artifacts degrade
+  seed_drop "$BATS_TEST_TMPDIR/degrade/work/drop"
+  run -0 azdo_artifact_publish --path drop --artifact drop
+
+  # `specific` needs a run id, a REST fetch and the lockfile-pinned `.cache/artifacts/` tree (E08):
+  # refused loudly rather than silently served from the current run.
+  run ! azdo_artifact_download --artifact drop --source specific
+  [[ "$output" == *specific* ]]
+  [ -z "$(find "$BATS_TEST_TMPDIR/degrade/workspace" -type f)" ]
+
+  # No --path and no Pipeline.Workspace: the default has nothing to resolve to.
+  azdo_var_set 'Pipeline.Workspace' ''
+  run ! azdo_artifact_download --artifact drop
+  [[ "$output" == *'Pipeline.Workspace'* ]]
+}

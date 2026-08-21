@@ -2513,3 +2513,328 @@ run_step() {
       ;;
   esac
 }
+
+# ── E06-S05-T01 · pipeline artifact publish & download ────────────────────────
+#
+# `PublishPipelineArtifact@1` and `DownloadPipelineArtifact@2` are *agent plugin* tasks, so the
+# behavior reproduced below is read from `src/Agent.Plugins/PipelineArtifact/PipelineArtifactPlugin{V1,V2}.cs`
+# rather than from a task `main.ts` (C-E06-085/091). The local store is the same `.artifacts/<name>/`
+# tree that `artifact.upload` writes (C-E06-072), which is why a download resolves an artifact by
+# name and never by container folder.
+
+# Two independent name rules, both applied: the agent's forbidden-character set is the parity rule,
+# and the store-segment guard on top rejects "", "." and ".." — names the agent accepts but which
+# cannot be a directory under `.artifacts/` (C-E06-093).
+azdo__valid_artifact_name() {
+  local name="$1"
+  if [[ "$name" == *[[:cntrl:]]* ]] || [[ -n "${name//[^\":<>|*?\/\\]/}" ]]; then
+    printf 'Artifact name is not valid: %s\n' "$name" >&2
+    return 1
+  fi
+  azdo__valid_store_segment "$name" || return 1
+}
+
+# Translate the minimatch subset the artifact tasks actually use into an anchored ERE: `**` crosses
+# directory separators, `*` and `?` do not. Brace expansion and bracket classes are *not* part of the
+# subset — they are matched literally and announced, because silently treating `{a,b}` as one
+# directory name would be a wrong answer rather than a missing one (C-E06-090).
+azdo__artifact_pattern_regex() {
+  local rest="$1" out='' char
+  case "$rest" in
+    *'{'* | *'['*)
+      printf 'azdo-emu: artifact pattern %s uses brace/bracket syntax; matched literally (degraded)\n' \
+        "$rest" >&2
+      ;;
+  esac
+  while [[ -n "$rest" ]]; do
+    case "$rest" in
+      '**/'*)
+        out+='(.*/)?'
+        rest="${rest#\*\*/}"
+        ;;
+      '**'*)
+        out+='.*'
+        rest="${rest#\*\*}"
+        ;;
+      '*'*)
+        out+='[^/]*'
+        rest="${rest#\*}"
+        ;;
+      '?'*)
+        out+='[^/]'
+        rest="${rest#\?}"
+        ;;
+      *)
+        char="${rest:0:1}"
+        case "$char" in
+          '.' | '^' | '$' | '+' | '(' | ')' | '{' | '}' | '[' | ']' | '|' | \\) out+="\\$char" ;;
+          *) out+="$char" ;;
+        esac
+        rest="${rest:1}"
+        ;;
+    esac
+  done
+  printf '%s\n' "^$out\$"
+}
+
+# azdo__artifact_filter <patterns>   —   candidate paths on stdin, selected paths on stdout
+#
+# The agent applies the patterns **in order to an accumulating map**: an include adds its matches,
+# an exclude removes them. Order is load-bearing — `!*.md` followed by `**` selects everything —
+# so this cannot be simplified into "match all includes, then subtract all excludes" (C-E06-090).
+# Patterns are newline-delimited only; `;` is the `azdo_match` convention, not this one (C-E06-088).
+azdo__artifact_filter() {
+  local patterns="$1" raw pattern regex negate idx path
+  local -a candidates=()
+  local -A keep=()
+  mapfile -t candidates
+  while IFS= read -r raw; do
+    pattern="${raw#"${raw%%[![:space:]]*}"}"
+    pattern="${pattern%"${pattern##*[![:space:]]}"}"
+    [[ -n "$pattern" ]] || continue
+    # Comments are skipped before the negation prefix is read, matching the agent's order.
+    [[ "$pattern" != '#'* ]] || continue
+    negate=0
+    while [[ "$pattern" == '!'* ]]; do
+      pattern="${pattern#!}"
+      negate=$((negate ^ 1))
+    done
+    pattern="${pattern#"${pattern%%[![:space:]]*}"}"
+    pattern="${pattern%"${pattern##*[![:space:]]}"}"
+    [[ -n "$pattern" ]] || continue
+    regex="$(azdo__artifact_pattern_regex "$pattern")" || return
+    for idx in "${!candidates[@]}"; do
+      path="${candidates[idx]}"
+      [[ "$path" =~ $regex ]] || continue
+      if ((negate == 0)); then keep["$path"]=1; else keep["$path"]=0; fi
+    done
+  done <<<"$patterns"
+  for idx in "${!candidates[@]}"; do
+    path="${candidates[idx]}"
+    [[ "${keep[$path]:-0}" == 1 ]] && printf '%s\n' "$path"
+  done
+  return 0
+}
+
+# A relative `path`/`targetPath` resolves against System.DefaultWorkingDirectory, **not** against the
+# pipeline workspace: the plugin source and the task.json help text disagree and the source wins
+# (C-E06-089).
+azdo__artifact_resolve_path() {
+  local path="$1" base
+  if [[ "$path" == /* ]]; then
+    printf '%s\n' "$path"
+    return 0
+  fi
+  base="$(azdo_var 'System.DefaultWorkingDirectory')" || return
+  if [[ -z "$base" ]]; then
+    printf 'System.DefaultWorkingDirectory must be set to resolve the relative path: %s\n' "$path" >&2
+    return 1
+  fi
+  printf '%s\n' "${base%/}/$path"
+}
+
+azdo__artifact_workspace() {
+  local workspace
+  workspace="$(azdo_var 'Pipeline.Workspace')" || return
+  if [[ -z "$workspace" ]]; then
+    printf '%s\n' 'Pipeline.Workspace must be set before downloading artifacts' >&2
+    return 1
+  fi
+  printf '%s\n' "$workspace"
+}
+
+# `[^a-zA-Z0-9 - .]` is deleted, then the literal `.default` is removed (C-E06-091). The `-` in that
+# .NET class is consumed as a range operator between the two spaces, so the surviving characters are
+# alphanumerics, space and `.` — which is exactly why `Build.Job1.__default` normalizes to
+# `Build.Job1`: the underscores are stripped first, leaving `.default` to be removed.
+azdo__artifact_default_name() {
+  local identifier name
+  identifier="$(azdo_var 'System.JobIdentifier')" || return
+  name="${identifier//[^A-Za-z0-9 .]/}"
+  name="${name//.default/}"
+  if [[ -z "$name" ]]; then
+    printf '%s\n' 'Artifact name is required: System.JobIdentifier is empty, so no default name can be derived' >&2
+    return 1
+  fi
+  printf '%s\n' "$name"
+}
+
+azdo__artifact_meta_field() {
+  local name="$1" field="$2" artifact_dir meta_path line
+  artifact_dir="$(azdo__artifact_dir)" || return
+  meta_path="$artifact_dir/.meta/$name"
+  [[ -f "$meta_path" ]] || return 0
+  while IFS= read -r line; do
+    if [[ "$line" == "$field="* ]]; then
+      printf '%s\n' "${line#"$field="}"
+      return 0
+    fi
+  done <"$meta_path"
+}
+
+# Relative paths of every file under an artifact root, sorted so a download is reproducible. The
+# optional prefix is the artifact name the multi-download branch matches patterns against.
+azdo__artifact_entries() {
+  local root="$1" prefix="${2-}" entry
+  [[ -d "$root" ]] || return 0
+  while IFS= read -r -d '' entry; do
+    printf '%s%s\n' "$prefix" "${entry#"$root"/}"
+  done < <(find "$root" -type f -print0 | LC_ALL=C sort -z)
+}
+
+# azdo_artifact_publish --path <file-or-directory> [--artifact <name>]
+#
+# The pipeline-artifact counterpart of `artifact.upload`. A directory contributes its *contents* at
+# the artifact root and a file contributes its basename, so the copy rule is shared with the file
+# container (C-E06-094/071). Unlike `artifact.upload` there is no empty-directory special case:
+# publishing an empty directory is a plain success (C-E06-092).
+azdo_artifact_publish() {
+  local path='' artifact_name='' resolved artifact_dir destination meta_dir
+  while (($# > 0)); do
+    case "$1" in
+      --path)
+        path="${2-}"
+        shift 2 || return 2
+        ;;
+      --artifact)
+        artifact_name="${2-}"
+        shift 2 || return 2
+        ;;
+      *)
+        printf 'usage: azdo_artifact_publish --path <file-or-directory> [--artifact <name>]\n' >&2
+        return 2
+        ;;
+    esac
+  done
+  if [[ -z "$path" ]]; then
+    printf '%s\n' 'azdo_artifact_publish: --path is required' >&2
+    return 2
+  fi
+
+  resolved="$(azdo__artifact_resolve_path "$path")" || return
+  [[ -n "$artifact_name" ]] || artifact_name="$(azdo__artifact_default_name)" || return
+  azdo__valid_artifact_name "$artifact_name" || return 1
+
+  if [[ ! -f "$resolved" ]] && [[ ! -d "$resolved" ]]; then
+    printf 'Path does not exist: %s\n' "$path" >&2
+    return 1
+  fi
+
+  artifact_dir="$(azdo__artifact_dir)" || return
+  destination="$artifact_dir/$artifact_name"
+  azdo__logging_artifact_copy "$resolved" "$destination" || return
+  meta_dir="$artifact_dir/.meta"
+  mkdir -p "$meta_dir" || return
+  printf 'type=pipeline\n' >"$meta_dir/$artifact_name" || return
+  printf 'Uploading pipeline artifact from %s for artifact %s\n' "$resolved" "$artifact_name"
+}
+
+# Selected paths on stdin; the optional prefix is stripped back off before they are resolved
+# against the artifact root. Prefixing is done with parameter expansion rather than `sed` because an
+# artifact name may legally contain `.`, `[`, `(` and `$` (C-E06-093), which a regex would eat.
+azdo__artifact_copy_selected() {
+  local root="$1" target="$2" prefix="${3-}" relative source destination
+  while IFS= read -r relative; do
+    [[ -n "$relative" ]] || continue
+    relative="${relative#"$prefix"}"
+    source="$root/$relative"
+    destination="$target/$relative"
+    mkdir -p "${destination%/*}" || return
+    cp -f -- "$source" "$destination" || return
+  done
+}
+
+# azdo_artifact_download [--artifact <name>] [--patterns <patterns>] [--path <dir>] [--source current]
+#
+# Task semantics, not `download:`-keyword semantics: `--path` defaults to `$(Pipeline.Workspace)` and
+# a named artifact lands *at* that path, while an unnamed download creates one subdirectory per
+# artifact (C-E06-085/086/087). The keyword's `$(Pipeline.Workspace)/<name>` layout (C-E06-084) is
+# the emitter's job to pass through `--path`; see docs/06 §5 decision 39.
+azdo_artifact_download() {
+  local artifact_name='' patterns='' target='' source='current'
+  local artifact_dir root resolved selected entry meta_type associated
+  while (($# > 0)); do
+    case "$1" in
+      --artifact)
+        artifact_name="${2-}"
+        shift 2 || return 2
+        ;;
+      --patterns)
+        patterns="${2-}"
+        shift 2 || return 2
+        ;;
+      --path)
+        target="${2-}"
+        shift 2 || return 2
+        ;;
+      --source)
+        source="${2-}"
+        shift 2 || return 2
+        ;;
+      *)
+        printf 'usage: azdo_artifact_download [--artifact <name>] [--patterns <p>] [--path <dir>] [--source current]\n' >&2
+        return 2
+        ;;
+    esac
+  done
+
+  # `specific` needs a run id, a REST fetch and the lockfile-pinned `.cache/artifacts/` tree (E08).
+  if [[ "$source" != current ]]; then
+    printf 'azdo_artifact_download: --source %s is not supported yet (only "current"; see E08)\n' \
+      "$source" >&2
+    return 1
+  fi
+  # Empty means `**`, and the value splits on newline only (C-E06-088).
+  [[ -n "$patterns" ]] || patterns='**'
+  [[ -n "$target" ]] || target="$(azdo__artifact_workspace)" || return
+  resolved="$(azdo__artifact_resolve_path "$target")" || return
+  mkdir -p "$resolved" || return
+  artifact_dir="$(azdo__artifact_dir)" || return
+  printf 'Downloading artifacts to %s\n' "$resolved"
+
+  if [[ -n "$artifact_name" ]]; then
+    azdo__valid_artifact_name "$artifact_name" || return 1
+    root="$artifact_dir/$artifact_name"
+    associated="$(azdo__artifact_meta_field "$artifact_name" associated)" || return
+    if [[ -n "$associated" ]]; then
+      printf 'Artifact %s is an associated artifact at %s: it has no local content to download.\n' \
+        "$artifact_name" "$associated" >&2
+      return 1
+    fi
+    if [[ ! -d "$root" ]]; then
+      printf 'Artifact not found: %s\n' "$artifact_name" >&2
+      return 1
+    fi
+    # Patterns are relative to the artifact root and the files land directly in the target
+    # directory — no per-artifact subdirectory on this branch (C-E06-086).
+    selected="$(azdo__artifact_entries "$root" | azdo__artifact_filter "$patterns")" || return
+    printf '%s\n' "$selected" | azdo__artifact_copy_selected "$root" "$resolved" || return
+    return 0
+  fi
+
+  # No name: every artifact of the run, one subdirectory each, patterns matched against
+  # `<artifact>/<relative path>`, and no failure when nothing matches (C-E06-087).
+  for root in "$artifact_dir"/*/; do
+    root="${root%/}"
+    entry="${root##*/}"
+    [[ "$entry" != .meta ]] || continue
+    [[ -d "$root" ]] || continue
+    meta_type="$(azdo__artifact_meta_field "$entry" type)" || return
+    associated="$(azdo__artifact_meta_field "$entry" associated)" || return
+    if [[ -n "$associated" ]]; then
+      azdo__debug_note "Skipping associated artifact '$entry' ($meta_type): no local bytes to copy."
+      continue
+    fi
+    selected="$(azdo__artifact_entries "$root" "$entry/" | azdo__artifact_filter "$patterns")" || return
+    printf '%s\n' "$selected" | azdo__artifact_copy_selected "$root" "$resolved/$entry" "$entry/" || return
+  done
+  return 0
+}
+
+# The injection point for deployment jobs: "All available artifacts ... are automatically downloaded
+# in deployment jobs", to `$(Pipeline.Workspace)`, only for the `deploy` lifecycle hook, and only
+# when no `download: none` step is present (C-E06-096). That is exactly the no-name branch above, so
+# this is a passthrough the emitter can name rather than a second implementation.
+azdo_artifact_auto_download() {
+  azdo_artifact_download "$@"
+}
