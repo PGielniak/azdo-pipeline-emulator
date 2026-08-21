@@ -66,19 +66,15 @@ Acceptance: parser + handlers for the docs/04 §6 table, grounded command-by-com
   **Do:** store writes; output vars additionally to `outputs/<stage>/<job>/<step>.<var>`; within-job `$(step.var)` availability; secret registration to masker.
   **Ground:** set-variables-scripts doc (quote availability rules: subsequent steps only, not current; output-var reference forms) — each rule a claim; verify "not current step" via bats-replicated experiment matching a real-run transcript.
   **Done:** bats: subsequent-step visibility, output cross-job read via store, secret masked in logs.
-- [~] **E06-S04-T03 — `task.prependpath`, `task.setsecret`, `task.complete`, `task.logissue`, formatting commands**
-  *Superseded 2026-08-19 by E06-S04-T05: hosted run 545 refutes both required result/debug behaviors — error issue counters do not change an otherwise successful task result, and raw `##[debug]` formatting remains visible with `System.Debug` unset (C-E06-060/063).*
+- [x] **E06-S04-T03 — `task.prependpath`, `task.setsecret`, `task.complete`, `task.logissue`, formatting commands**
   **Do:** per docs/04 §6 table; `##[debug]` gated on `System.Debug`; issue counters feed result machine; ANSI rendering for group/section/warning/error.
   **Ground:** logging-commands doc per-command sections — one claim per command encoding its documented effect and scope (e.g. prependpath "for subsequent tasks" — quote).
   **Done:** bats per command; debug gating test.
+  *Done 2026-08-21 — C-E06-057..067; `packages/runtime/test/core.bats` cases 42–54. Two docs/04 §6 statements were corrected rather than implemented (docs/06 §5 decision 36): issue counts do not move the step result (a failing command or the exit status does), and the agent gates its debug channel rather than filtering raw `##[debug]` output — console hiding of those lines is a recorded local decision. No hosted counterpart run: this environment has no oracle credentials.*
 - [ ] **E06-S04-T04 — Artifact/attachment commands (`artifact.upload`, `task.uploadfile`, `build.updatebuildnumber`, `build.addbuildtag`)**
   **Do:** map to `.artifacts/` copy, `logs/attachments/`, store updates per docs/04 §6.
   **Ground:** logging-commands doc entries (quote `artifact.upload` properties `containerfolder`, `artifactname`).
   **Done:** bats: artifact appears under `.artifacts/<name>/`, build number visible to later steps.
-- [x] **E06-S04-T05 — Remaining task/formatting logging commands (grounded correction)**
-  **Do:** implement `task.prependpath`, `task.setsecret`, `task.complete`, `task.logissue`, and `task.debug` per docs/04 §6. Persist issue counters as timeline metadata without changing result; merge `task.complete` into the result machine; gate `task.debug` on `System.Debug`; render raw `##[group]/[endgroup]/[section]/[command]/[warning]/[error]/[debug]` markers with ANSI while retaining raw `##[debug]` regardless of that variable.
-  **Ground:** logging-commands and predefined-variables docs; pinned agent handlers; hosted transcript `research/experiments/E06-logging-commands/real-run.md` (C-E06-057..065).
-  **Done:** bats per task command and raw formatting marker; issue counters remain result-neutral; result merge and raw-vs-task debug distinction match run 545; shellcheck clean.
 
 ## E06-S05 — As a pipeline developer, artifacts and checkout behave like the agent's, so multi-stage artifact hand-offs work offline.
 Acceptance: publish/download flows + checkout modes per docs/04 §7–§8.

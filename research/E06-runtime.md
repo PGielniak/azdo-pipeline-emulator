@@ -251,79 +251,151 @@ defines handler property validation and defaults. C-E06-055/056 prevent multilin
 leaks. Existing C-E06-005/006 supply output-alias read-only storage and strict `isReadOnly`
 overwrite enforcement. No source contradicts docs/04.
 
-[C-E06-057] `task.setsecret` registers a nonempty value as a job-duration secret, masks later log
-occurrences from the command onward, and does not retroactively mask earlier output. —
+## E06-S04-T03 grounding composition
+
+[C-E06-057] `task.prependpath` requires a nonempty value, moves a repeated entry to the newest
+position, and its PATH change is scoped to later tasks rather than the emitting one. —
+https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#prependpath-prepend-a-path-to-the-path-environment-variable and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L845-L868
+(checked 2026-08-21) — "Update the PATH environment variable by prepending to the PATH. The
+updated environment variable will be reflected in subsequent tasks." / "ArgUtil.NotNullOrEmpty(data,
+this.Name); context.PrependPath.RemoveAll(...); context.PrependPath.Add(data);". Ordering of the
+resulting PATH is the already-established C-E06-012.
+
+[C-E06-058] `task.setsecret` registers its message with the job masker for the remainder of the
+job and masks only output produced after the registration; the handler delegates to the same
+`TaskCommandHelper.AddSecret` used by `task.setvariable`, which ignores an empty value. —
 https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#setsecret-register-a-value-as-a-secret and
-https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L39-L53 plus
-https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L566-L579
-(checked 2026-08-19) — "registered as a secret for the duration of the job" / "from this point
-forward."
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L567-L580
+(checked 2026-08-21) — "The value is registered as a secret for the duration of the job. The value
+will be masked out from the logs from this point forward." / "Note: Previous occurrences of the
+secret value won't be masked." / "TaskCommandHelper.AddSecret(context, command.Data,
+WellKnownSecretAliases.TaskSetSecretCommand)".
 
-[C-E06-058] `task.prependpath` requires a nonempty path, removes an existing identical entry before
-adding the new one, and changes `PATH` only for subsequent tasks. —
-https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#prependpath-prepend-a-path-to-the--path-environment-variable and
-https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L844-L866
-(checked 2026-08-19) — "The updated environment variable will be reflected in subsequent tasks." /
-"PrependPath.RemoveAll".
+[C-E06-059] `task.complete` merges a parsed `result` into the task result; the agent source
+**requires** a present, nonempty, parseable `result` and throws `InvalidCommandResult` otherwise,
+contradicting the doc sentence that a missing result means succeeded. The optional `done=true`
+property additionally forces task completion. — Doc:
+https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#complete-finish-timeline
+(checked 2026-08-21) — "Finish the timeline record for the current task, set task result and
+current operation. When result not provided, set result to succeeded." / "`Succeeded` … 
+`SucceededWithIssues` The task ran into problems. … `Failed` The build will be completed as
+failed." — Source:
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L503-L535
+(checked 2026-08-21) — "if (!eventProperties.TryGetValue(TaskCompleteEventProperties.Result, out
+resultText) || String.IsNullOrEmpty(resultText) || !Enum.TryParse<TaskResult>(resultText, out
+result)) { throw new ArgumentException(StringUtil.Loc(\"InvalidCommandResult\")); }" /
+"context.Result = TaskResultUtil.MergeTaskResults(context.Result, result);" /
+"context.ForceTaskComplete();". **The source wins**: the emulator requires `result` and treats a
+missing/unparseable value as a failed command (C-E06-064), because the doc sentence describes
+neither the throw nor the merge that the same handler performs.
 
-[C-E06-059] `task.logissue` requires `type=error` or `type=warning`, renders the corresponding
-tagged line, and increments the matching timeline issue counter. —
-https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#logissue-log-an-error-or-warning,
-https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L360-L429, and
-https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/ExecutionContext.cs#L438-L479
-(checked 2026-08-19) — "Log an error or warning message in the timeline record" / "ErrorCount++".
+[C-E06-060] Task results merge worst-wins over the order
+`Succeeded → SucceededWithIssues → Failed → Canceled/Skipped/Abandoned`, and a current result
+worse than `Failed` is sticky. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Microsoft.VisualStudio.Services.Agent/Util/TaskResultUtil.cs#L36-L63
+(checked 2026-08-21) — "Merge 2 TaskResults get the worst result. Succeeded ->
+SucceededWithIssues -> Failed/Canceled/Skipped/Abandoned" / "if (currentResult > TaskResult.Failed)
+{ return currentResult.Value; } if (comingResult >= currentResult) { return comingResult; }".
 
-[C-E06-060] Error and warning issue counters do not determine task result: hosted run 545 recorded
-one of each on an otherwise zero-exit task whose timeline result remained `succeeded`. —
-research/experiments/E06-logging-commands/real-run.md (run 545, checked 2026-08-19) — "Log warning
-and error issues | succeeded | 1 | 1".
+[C-E06-061] The per-step result precedence is: `task.complete` merges into the result; a thrown
+step failure (nonzero exit, timeout, cancellation) then **assigns** `Failed`/`Canceled` directly
+and therefore overrides an earlier `task.complete result=Succeeded`; accumulated command failures
+merge next; `continueOnError` downgrades a final `Failed`; an unset result completes as
+`Succeeded`. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/StepsRunner.cs#L369-L476 and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/ExecutionContext.cs#L329-L392
+(checked 2026-08-21) — "step.ExecutionContext.Result = TaskResult.Failed;" (catch block, plain
+assignment) / "step.ExecutionContext.Result = TaskResultUtil.MergeTaskResults(step.ExecutionContext.Result, step.ExecutionContext.CommandResult.Value);" /
+"// Fixup the step result if ContinueOnError." / "_record.Result = _record.Result ?? TaskResult.Succeeded;".
 
-[C-E06-061] The public `task.complete` contract exposes `Succeeded`, `SucceededWithIssues`, and
-`Failed`; the current agent requires a nonempty parseable result, merges it with the current result
-rather than improving a worse result, and does not stop the task unless the separate `done=true`
-property is supplied. Hosted run 545 observed post-command shell lines and the documented result
-merges. —
-https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#complete-finish-timeline,
-https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L502-L534, and
-https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Microsoft.VisualStudio.Services.Agent/Util/TaskResultUtil.cs#L37-L64 plus
-research/experiments/E06-logging-commands/real-run.md (run 545, checked 2026-08-19) — "set task
-result" / "MergeTaskResults".
+[C-E06-062] `task.logissue` requires a `type` property; a missing type produces the warning
+"Can't create TaskIssue from logging event." and no issue, while a value other than
+case-insensitive `error`/`warning` throws. `sourcepath`, `linenumber`, `columnnumber`, and `code`
+are the documented optional properties. —
+https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#logissue-log-an-error-or-warning and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L361-L430
+(checked 2026-08-21) — "`type` = `error` or `warning` (Required)" / "`sourcepath` = source file
+location" / "context.Warning(\"Can't create TaskIssue from logging event.\");" / "throw new
+ArgumentException($\"issue type {issueType} is not an expected issue type.\")".
 
-[C-E06-062] Raw `##[group]`, `##[endgroup]`, `##[section]`, `##[command]`, `##[warning]`,
-`##[error]`, and `##[debug]` lines are formatting messages that mark warnings, errors, collapsible
-sections, and other log presentation without acting as `##vso` worker commands. —
+[C-E06-063] Recording an issue masks the message, writes it to the log tagged `##[error]` or
+`##[warning]`, increments the record's `ErrorCount`/`WarningCount`, keeps only the first
+`_maxIssueCount` = 10 issues of each kind on the record, and **does not change the task result** —
+the doc's tip that `exit 1` is a separate, optional step confirms that reading. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/ExecutionContext.cs#L106-L107,
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/ExecutionContext.cs#L439-L479, and
+https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#logissue-log-an-error-or-warning
+(checked 2026-08-21) — "issue.Message = HostContext.SecretMasker.MaskSecrets(issue.Message);" /
+"long logLineNumber = Write(WellKnownTags.Error, issue.Message);" / "if (_record.ErrorCount <
+_maxIssueCount) { _record.Issues.Add(issue); } _record.ErrorCount++;" / "`exit 1` is optional, but
+is often a command you'll issue soon after an error is logged."
+
+[C-E06-064] A logging command that throws is reported as an error and sets `CommandResult` to
+`Failed` — which later merges into the step result (C-E06-061) — while output processing
+continues with the next line. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/WorkerCommandManager.cs#L96-L135
+(checked 2026-08-21) — "catch (Exception ex) { context.Error(StringUtil.Loc(\"CommandProcessFailed\",
+input)); context.Error(ex); context.CommandResult = TaskResult.Failed; }".
+
+[C-E06-065] Debug output is gated on `System.Debug`: `WriteDebug` is initialized from that
+variable, `context.Debug` writes only when it is true, and `##vso[task.debug]` is the command that
+routes a task message through it. Every other successfully processed logging command also emits a
+gated `Processed: <unescaped command>` debug line; `task.debug` itself is excluded from that note.
+The formatter tags the agent itself writes are `##[section]`, `##[command]`, `##[error]`,
+`##[warning]`, and `##[debug]`. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/ExecutionContext.cs#L747,
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/ExecutionContext.cs#L1341-L1365,
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L666-L681, and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/WorkerCommandManager.cs#L125-L134
+(checked 2026-08-21) — "WriteDebug = Variables.System_Debug ?? false;" / "Verbose output is enabled
+by setting System.Debug" / "if (context.WriteDebug) { context.Write(WellKnownTags.Debug, message); }"
+/ "public string Name => \"debug\"; … context.Debug(data);" / "trace the ##vso command as long as
+the command is not a ##vso[task.debug] command" / "public static readonly string Section =
+\"##[section]\";".
+
+[C-E06-066] The formatting commands are a distinct, message-only syntax (`##[group]`,
+`##[endgroup]`, `##[section]`, `##[command]`, `##[warning]`, `##[error]`, `##[debug]`) addressed to
+the log formatter rather than to the agent's command handlers; a group is collapsible in the
+rendered log. —
 https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#formatting-commands
-(checked 2026-08-19) — "messages to the log formatter" / "mark specific log lines as errors,
-warnings, collapsible sections, and so on."
+(checked 2026-08-21) — "There are also a few formatting commands with a slightly different syntax:
+`##[command]message`" / "These commands are messages to the log formatter in Azure Pipelines. They
+mark specific log lines as errors, warnings, collapsible sections, and so on." / "That block of
+commands can also be collapsed".
 
-[C-E06-063] A raw `##[debug]` formatting line is retained even when `System.Debug` is unset;
-hosted run 545 recorded `FORMAT DEBUG OFF`, so gating raw formatting would be a divergence. —
-research/experiments/E06-logging-commands/real-run.md (run 545, checked 2026-08-19) —
-"##[debug]FORMAT DEBUG OFF".
+[C-E06-067] `task.setprogress` sets percent-complete and current operation on the timeline record,
+clamping `value` to 0..100 and defaulting to 0 when the property is missing or unparseable; it has
+no effect reproducible in a local, timeline-free run. —
+https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#setprogress-show-percentage-completed and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L538-L565
+(checked 2026-08-21) — "Set progress and current operation for the current task." / "`value` =
+percentage of completion" / "percentComplete = (Int32)Math.Min(Math.Max(progress, 0), 100);".
 
-[C-E06-064] The distinct `##vso[task.debug]` worker command is gated by `System.Debug`: the agent
-copies that variable into `WriteDebug`, writes task debug data only when it is true, and hosted run
-545 omitted the off message while retaining the on message. —
-https://learn.microsoft.com/azure/devops/pipelines/build/variables#systemdebug,
-https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L666-L679,
-https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/ExecutionContext.cs#L735-L748,
-https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/ExecutionContext.cs#L1342-L1355, and
-research/experiments/E06-logging-commands/real-run.md (run 545, checked 2026-08-19) — "For more
-detailed logs ... set it to `true`" / "if (context.WriteDebug)".
+### Composition and the two docs/04 §6 corrections
 
-[C-E06-065] The emulator deliberately renders recognized formatting markers with terminal ANSI
-styling while preserving their message text; collapsible UI state is unavailable in a plain Bash
-terminal, so group boundaries are visible colored delimiters. — backlog/E06-runtime.md corrected
-E06-S04-T05 and docs/04-generated-project-and-runtime.md §6 (checked 2026-08-19) — "ANSI-colored
-rendering" / "plain Bash terminal".
+C-E06-057/058 fix `task.prependpath` and `task.setsecret` scope; both reuse existing runtime seams
+(`path.d` from C-E06-012, `azdo_mask_register` from C-E06-053). C-E06-059..061 define the result
+machine that `task.complete` feeds, including the discriminating detail that a nonzero exit
+*overrides* rather than merges. C-E06-062..064 define issue handling and the actual path from a
+logging command to a failed step.
 
-## E06-S04-T03 grounding correction / E06-S04-T05 grounding composition
+Two statements in docs/04 §6 did not survive grounding and are corrected in this task:
 
-C-E06-057/058 define the two stateful commands and their current-task/subsequent-task boundaries.
-C-E06-059 records issue validation, rendering, and counters; run 545 supplies C-E06-060, which
-refutes T03's assertion that those counters feed result computation. C-E06-061 defines result
-merging and demonstrates that `task.complete` does not normally stop the shell. C-E06-062 defines
-the raw formatting family, while run 545 separates always-retained raw `##[debug]` (C-E06-063)
-from the genuinely `System.Debug`-gated `task.debug` command (C-E06-064). C-E06-065 records the
-terminal-only ANSI presentation policy. These contradictions require a corrected replacement task
-and docs/04/docs/06 updates before implementation.
+1. "error issues count toward `SucceededWithIssues`/`Failed`" — `AddIssue` only increments counters
+   and writes a tagged line (C-E06-063); the result changes only through a *failing command*
+   (C-E06-064) or the step's own exit status (C-E06-061). Counters are still recorded and surfaced,
+   which is what the backlog's "issue counters feed result machine" bullet is satisfied by, with
+   the correction stated rather than silently implemented.
+2. "`##[debug]` shown only when `System.Debug=true`" — the agent gates its *debug channel*
+   (`context.Debug`, `##vso[task.debug]`, the per-command `Processed:` note) on `System.Debug`
+   (C-E06-065), but a raw `##[debug]` line echoed by a script is ordinary task output that reaches
+   the log verbatim; it is a formatter tag (C-E06-066), not a handled command. What the ADO web log
+   viewer does with such a line when `System.Debug` is false is **not** established by any source
+   available here (no oracle credentials in this environment), so no claim asserts it. The emulator
+   therefore makes a *local* decision, recorded in docs/06 §5: the console renderer hides `##[debug]`
+   lines unless `System.Debug` is true, while `logs/<step>.log` keeps every line verbatim.
+
+ANSI colors themselves are a local rendering choice: the hosted agent emits the tags and the web UI
+colors them (C-E06-066), so no source prescribes specific escape sequences. The renderer is a
+separate stream filter placed after the log `tee`, which keeps emitted logs byte-faithful.

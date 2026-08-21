@@ -300,36 +300,25 @@ azdo_step_result() {
   fi
 }
 
-# azdo_step_issue_count <step-id> <error|warning>
+# azdo_step_issues <step-id>
 #
-# Issue counts are timeline metadata rather than result inputs (C-E06-059/060). Keeping them beside
-# the job's result files makes them available to the later run-summary task without letting the
-# status-context glob mistake a counter for a step result.
-azdo_step_issue_count() {
-  (($# == 2)) || {
-    printf '%s\n' 'usage: azdo_step_issue_count <step-id> <error|warning>' >&2
+# Prints `errors=<n>` and `warnings=<n>` recorded for a completed step. The counts live in an
+# `issues/` subdirectory of the result store so the job-status scan, which reads every *file* in
+# that directory as a step result, never sees them (C-E06-063).
+azdo_step_issues() {
+  (($# == 1)) || {
+    printf '%s\n' 'usage: azdo_step_issues <step-id>' >&2
     return 2
   }
   azdo__valid_store_segment "$1" || return
-  case "$2" in
-    error | warning) ;;
-    *)
-      printf 'invalid step issue type: %s\n' "$2" >&2
-      return 2
-      ;;
-  esac
 
-  local result_dir count_path count=0
-  result_dir="$(azdo__step_result_dir)" || return
-  count_path="$result_dir/.issues/$1/$2"
-  if [[ -f "$count_path" ]]; then
-    IFS= read -r count <"$count_path" || [[ -n "$count" ]] || return
-    [[ "$count" =~ ^[0-9]+$ ]] || {
-      printf 'invalid step issue count: %s\n' "$count_path" >&2
-      return 2
-    }
+  local issues_path
+  issues_path="$(azdo__step_result_dir)/issues/$1" || return
+  if [[ -f "$issues_path" ]]; then
+    cat -- "$issues_path"
+  else
+    printf 'errors=0\nwarnings=0\n'
   fi
-  printf '%s\n' "$count"
 }
 
 # Step-scoped StatusContext for compiled condition functions. The hosted agent initializes
@@ -939,12 +928,35 @@ azdo__add_prepend_path_to_environment() {
   path_dir="$state_dir/path.d"
   [[ -d "$path_dir" ]] || return 0
 
-  # path.d names carry an increasing prefix. Processing oldest to newest and prepending each one
-  # produces the agent's reversed/newest-first order (C-E06-012). A repeated entry replaces its
-  # older occurrence, matching TaskPrepandPathCommand's RemoveAll-then-Add behavior.
+  # path.d names carry an increasing numeric prefix. Processing oldest to newest and prepending each
+  # one produces the agent's reversed/newest-first order (C-E06-012). A repeated entry replaces its
+  # older occurrence, matching TaskPrepandPathCommand's RemoveAll-then-Add behavior. Ordering is by
+  # the parsed number rather than the file name, so a run mixing zero-padding widths still applies
+  # the tenth prepend after the second.
   local LC_ALL=C
+  local -a ordered=()
+  local candidate candidate_index other_index position index
   for path_file in "$path_dir"/*; do
     [[ -f "$path_file" ]] || continue
+    candidate="${path_file##*/}"
+    candidate="${candidate%%-*}"
+    if [[ "$candidate" =~ ^[0-9]+$ ]]; then
+      candidate_index="$((10#$candidate))"
+    else
+      candidate_index=0
+    fi
+    position=${#ordered[@]}
+    for ((index = 0; index < ${#ordered[@]}; index++)); do
+      other_index="${ordered[$index]%% *}"
+      if ((candidate_index < other_index)); then
+        position=$index
+        break
+      fi
+    done
+    ordered=("${ordered[@]:0:position}" "$candidate_index $path_file" "${ordered[@]:position}")
+  done
+  for path_file in "${ordered[@]}"; do
+    path_file="${path_file#* }"
     azdo__read_file_exact "$path_file" path_entry || return
     [[ -n "$path_entry" ]] || {
       printf 'empty PATH prepend entry: %s\n' "$path_file" >&2
@@ -1007,7 +1019,7 @@ azdo_env_materialize() {
   azdo__refresh_step_env
 }
 
-# E06-S04-T01/T02/T05 — logging commands are parsed from physical output lines. The globals below form
+# E06-S04-T01/T02 — logging commands are parsed from physical output lines. The globals below form
 # the dispatch seam for command handlers. Indexed key/value arrays keep the generated runtime
 # compatible with the same Bash versions as the rest of this file.
 
@@ -1016,9 +1028,12 @@ azdo__logging_fold() {
     printf '%s\n' 'usage: azdo__logging_fold <value> <destination-variable>' >&2
     return 2
   }
-  local folded
-  folded="$(LC_ALL=C printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')" || return
-  printf -v "$2" '%s' "$folded"
+  # The scratch name is deliberately unlikely: a caller destination variable of the same name would
+  # be shadowed by this local and silently receive nothing.
+  local azdo__logging_folded_scratch
+  azdo__logging_folded_scratch="$(LC_ALL=C printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')" ||
+    return
+  printf -v "$2" '%s' "$azdo__logging_folded_scratch"
 }
 
 azdo__logging_unescape() {
@@ -1238,214 +1253,6 @@ azdo__logging_bool_property() {
   fi
 }
 
-# Raw formatting messages are a separate protocol from ##vso worker commands (C-E06-062). The
-# hosted UI owns collapsibility; a plain terminal keeps the complete marker visible and adds ANSI
-# styling so group boundaries and severities remain inspectable (C-E06-065).
-azdo__logging_format_line() {
-  (($# == 1)) || {
-    printf '%s\n' 'usage: azdo__logging_format_line <line>' >&2
-    return 2
-  }
-  [[ "$1" = '##['*']'* ]] || return 1
-
-  local tag="${1#'##['}" color
-  tag="${tag%%]*}"
-  case "$tag" in
-    group | endgroup) color=$'\033[1;36m' ;;
-    section) color=$'\033[1;35m' ;;
-    command) color=$'\033[1;34m' ;;
-    warning) color=$'\033[1;33m' ;;
-    error) color=$'\033[1;31m' ;;
-    debug) color=$'\033[2;37m' ;;
-    *) return 1 ;;
-  esac
-  printf '%s%s%s\n' "$color" "$1" $'\033[0m'
-}
-
-azdo__logging_task_setsecret() {
-  # The helper ignores empty values, matching the agent handler (C-E06-057).
-  azdo_mask_register "$AZDO_LOGGING_MESSAGE"
-}
-
-azdo__logging_task_prependpath() {
-  [[ -n "$AZDO_LOGGING_MESSAGE" ]] || {
-    printf '%s\n' 'task.prependpath requires a nonempty path' >&2
-    return 1
-  }
-
-  local state_dir path_dir path_file path_value base prefix sequence=0 next_sequence
-  local next_tmp entry_tmp entry_path old_umask
-  state_dir="$(azdo__state_dir)" || return
-  path_dir="$state_dir/path.d"
-  mkdir -p "$path_dir" || return
-
-  if [[ -f "$path_dir/.next" ]]; then
-    IFS= read -r sequence <"$path_dir/.next" || [[ -n "$sequence" ]] || return
-    [[ "$sequence" =~ ^[0-9]+$ ]] || {
-      printf 'invalid PATH sequence file: %s\n' "$path_dir/.next" >&2
-      return 2
-    }
-  fi
-  for path_file in "$path_dir"/*; do
-    [[ -f "$path_file" ]] || continue
-    base="${path_file##*/}"
-    prefix="${base%%-*}"
-    if [[ "$prefix" =~ ^[0-9]+$ ]] && ((10#$prefix > sequence)); then
-      sequence=$((10#$prefix))
-    fi
-    azdo__read_file_exact "$path_file" path_value || return
-    # A repeated entry moves to newest rather than appearing twice (C-E06-058).
-    [[ "$path_value" != "$AZDO_LOGGING_MESSAGE" ]] || rm -f -- "$path_file"
-  done
-  next_sequence=$((sequence + 1))
-
-  old_umask="$(umask)"
-  umask 077
-  next_tmp="$(mktemp "$path_dir/.next.XXXXXX")" || {
-    umask "$old_umask"
-    return
-  }
-  entry_tmp="$(mktemp "$path_dir/.path.XXXXXX")" || {
-    rm -f -- "$next_tmp"
-    umask "$old_umask"
-    return
-  }
-  umask "$old_umask"
-  printf '%s\n' "$next_sequence" >"$next_tmp" || {
-    rm -f -- "$next_tmp" "$entry_tmp"
-    return
-  }
-  printf '%s' "$AZDO_LOGGING_MESSAGE" >"$entry_tmp" || {
-    rm -f -- "$next_tmp" "$entry_tmp"
-    return
-  }
-  printf -v entry_path '%s/%020d-command' "$path_dir" "$next_sequence"
-  mv -f -- "$next_tmp" "$path_dir/.next" || {
-    rm -f -- "$next_tmp" "$entry_tmp"
-    return
-  }
-  mv -f -- "$entry_tmp" "$entry_path"
-}
-
-azdo__logging_issue_increment() {
-  (($# == 1)) || {
-    printf '%s\n' 'usage: azdo__logging_issue_increment <error|warning>' >&2
-    return 2
-  }
-  [[ -n "${AZDO_LOGGING_ISSUE_DIR:-}" ]] || {
-    printf '%s\n' 'AZDO_LOGGING_ISSUE_DIR must be set while processing task.logissue' >&2
-    return 2
-  }
-
-  local count_path="$AZDO_LOGGING_ISSUE_DIR/$1" count=0 count_tmp old_umask
-  mkdir -p "$AZDO_LOGGING_ISSUE_DIR" || return
-  if [[ -f "$count_path" ]]; then
-    IFS= read -r count <"$count_path" || [[ -n "$count" ]] || return
-  fi
-  [[ "$count" =~ ^[0-9]+$ ]] || return 2
-  count=$((count + 1))
-  old_umask="$(umask)"
-  umask 077
-  count_tmp="$(mktemp "$AZDO_LOGGING_ISSUE_DIR/.count.XXXXXX")" || {
-    umask "$old_umask"
-    return
-  }
-  umask "$old_umask"
-  printf '%s\n' "$count" >"$count_tmp" || {
-    rm -f -- "$count_tmp"
-    return
-  }
-  mv -f -- "$count_tmp" "$count_path"
-}
-
-azdo__logging_task_logissue() {
-  local issue_type
-  if ! azdo_logging_property type issue_type; then
-    printf '%s\n' 'task.logissue requires type=error or type=warning' >&2
-    return 1
-  fi
-  azdo__logging_fold "$issue_type" issue_type || return
-  case "$issue_type" in
-    error | warning) ;;
-    *)
-      printf 'invalid task.logissue type: %s\n' "$issue_type" >&2
-      return 1
-      ;;
-  esac
-  azdo__logging_issue_increment "$issue_type" || return
-  azdo__logging_format_line "##[$issue_type]$AZDO_LOGGING_MESSAGE"
-}
-
-azdo__logging_merge_result() {
-  (($# == 3)) || {
-    printf '%s\n' 'usage: azdo__logging_merge_result <current> <incoming> <destination-variable>' >&2
-    return 2
-  }
-  local current="$1" incoming="$2" current_rank incoming_rank
-  case "$current" in
-    '') current_rank=-1 ;;
-    Succeeded) current_rank=0 ;;
-    SucceededWithIssues) current_rank=1 ;;
-    Failed) current_rank=2 ;;
-    *)
-      printf 'invalid current task.complete result: %s\n' "$current" >&2
-      return 2
-      ;;
-  esac
-  case "$incoming" in
-    Succeeded) incoming_rank=0 ;;
-    SucceededWithIssues) incoming_rank=1 ;;
-    Failed) incoming_rank=2 ;;
-    *)
-      printf 'invalid task.complete result: %s\n' "$incoming" >&2
-      return 1
-      ;;
-  esac
-  if ((incoming_rank >= current_rank)); then
-    printf -v "$3" '%s' "$incoming"
-  else
-    printf -v "$3" '%s' "$current"
-  fi
-}
-
-azdo__logging_task_complete() {
-  local incoming current='' merged result_tmp result_dir old_umask
-  if ! azdo_logging_property result incoming || [[ -z "$incoming" ]]; then
-    printf '%s\n' 'task.complete requires a result property' >&2
-    return 1
-  fi
-  [[ -n "${AZDO_LOGGING_COMPLETION_FILE:-}" ]] || {
-    printf '%s\n' 'AZDO_LOGGING_COMPLETION_FILE must be set while processing task.complete' >&2
-    return 2
-  }
-  if [[ -f "$AZDO_LOGGING_COMPLETION_FILE" ]]; then
-    IFS= read -r current <"$AZDO_LOGGING_COMPLETION_FILE" || [[ -n "$current" ]] || return
-  fi
-  azdo__logging_merge_result "$current" "$incoming" merged || return
-
-  result_dir="${AZDO_LOGGING_COMPLETION_FILE%/*}"
-  mkdir -p "$result_dir" || return
-  old_umask="$(umask)"
-  umask 077
-  result_tmp="$(mktemp "$result_dir/.complete.XXXXXX")" || {
-    umask "$old_umask"
-    return
-  }
-  umask "$old_umask"
-  printf '%s\n' "$merged" >"$result_tmp" || {
-    rm -f -- "$result_tmp"
-    return
-  }
-  mv -f -- "$result_tmp" "$AZDO_LOGGING_COMPLETION_FILE"
-}
-
-azdo__logging_task_debug() {
-  local enabled
-  enabled="$(azdo_var 'System.Debug' "${AZDO_VAR_SCOPE:-pipeline}")" || return
-  [[ "$enabled" =~ ^[[:space:]]*[Tt][Rr][Uu][Ee][[:space:]]*$ ]] || return 0
-  azdo__logging_format_line "##[debug]$AZDO_LOGGING_MESSAGE"
-}
-
 azdo__logging_task_setvariable() {
   local name secret output readonly_flag stored_name var_path
   if ! azdo_logging_property variable name || [[ -z "$name" ]]; then
@@ -1478,16 +1285,299 @@ azdo__logging_task_setvariable() {
   fi
 }
 
+# E06-S04-T03 — command-scoped state. Handlers run inside the logging-stream subshell, so every
+# effect a later phase needs (issue counts, a `task.complete` override, a failed command) has to be
+# file-backed exactly like the masker. `run_step` points AZDO_COMMAND_STATE_DIR at a fresh
+# per-attempt directory, mirroring the agent's reset of the record's issue counts before a retry.
+
+azdo__command_state_dir() {
+  local state_dir step_id
+  if [[ -n "${AZDO_COMMAND_STATE_DIR:-}" ]]; then
+    printf '%s\n' "$AZDO_COMMAND_STATE_DIR"
+    return 0
+  fi
+  state_dir="$(azdo__state_dir)" || return
+  step_id="${AZDO_STEP_ID:-current}"
+  azdo__valid_store_segment "$step_id" || return
+  printf '%s/commands/%s\n' "$state_dir" "$step_id"
+}
+
+# shellcheck disable=SC2120 # This reset intentionally accepts no arguments.
+azdo_command_state_reset() {
+  (($# == 0)) || {
+    printf '%s\n' 'usage: azdo_command_state_reset' >&2
+    return 2
+  }
+  local command_dir
+  command_dir="$(azdo__command_state_dir)" || return
+  rm -rf -- "$command_dir" || return
+  mkdir -p "$command_dir"
+}
+
+azdo__command_state_read() {
+  (($# == 2)) || {
+    printf '%s\n' 'usage: azdo__command_state_read <name> <destination-variable>' >&2
+    return 2
+  }
+  local command_dir value=''
+  command_dir="$(azdo__command_state_dir)" || return
+  if [[ -f "$command_dir/$1" ]]; then
+    IFS= read -r value <"$command_dir/$1" || :
+  fi
+  printf -v "$2" '%s' "$value"
+}
+
+# Only counters, markers, and result names are persisted here. Handler messages are not, because
+# the masker runs downstream of dispatch and could not scrub a secret already written to disk.
+azdo__command_state_write() {
+  (($# == 2)) || {
+    printf '%s\n' 'usage: azdo__command_state_write <name> <value>' >&2
+    return 2
+  }
+  local command_dir
+  command_dir="$(azdo__command_state_dir)" || return
+  mkdir -p "$command_dir" || return
+  printf '%s\n' "$2" >"$command_dir/$1"
+}
+
+azdo__command_state_bump() {
+  (($# == 1)) || {
+    printf '%s\n' 'usage: azdo__command_state_bump <name>' >&2
+    return 2
+  }
+  local current
+  azdo__command_state_read "$1" current || return
+  [[ "$current" =~ ^[0-9]+$ ]] || current=0
+  azdo__command_state_write "$1" "$((current + 1))"
+}
+
+# azdo_step_issue_count <error|warning>
+#
+# Issues are counted, not tallied into the result: `AddIssue` only increments the record's counters
+# and writes the tagged line, so a `task.logissue type=error` on its own leaves the step successful
+# (C-E06-063). The result changes through a failed command (C-E06-064) or the step's exit status.
+azdo_step_issue_count() {
+  (($# == 1)) || {
+    printf '%s\n' 'usage: azdo_step_issue_count <error|warning>' >&2
+    return 2
+  }
+  local count
+  case "$1" in
+    error) azdo__command_state_read errors count || return ;;
+    warning) azdo__command_state_read warnings count || return ;;
+    *)
+      printf 'unknown issue kind: %s\n' "$1" >&2
+      return 2
+      ;;
+  esac
+  [[ "$count" =~ ^[0-9]+$ ]] || count=0
+  printf '%s\n' "$count"
+}
+
+# Prints the result accumulated from `task.complete` commands, or nothing when none ran.
+# shellcheck disable=SC2120 # This reader intentionally accepts no arguments.
+azdo_command_result() {
+  (($# == 0)) || {
+    printf '%s\n' 'usage: azdo_command_result' >&2
+    return 2
+  }
+  local result
+  azdo__command_state_read result result || return
+  [[ -z "$result" ]] || printf '%s\n' "$result"
+}
+
+# Status 0 when at least one logging command failed during the current step attempt.
+# shellcheck disable=SC2120 # This reader intentionally accepts no arguments.
+azdo_command_failed() {
+  (($# == 0)) || {
+    printf '%s\n' 'usage: azdo_command_failed' >&2
+    return 2
+  }
+  local marker
+  azdo__command_state_read command-failed marker || return
+  [[ "$marker" = true ]]
+}
+
+azdo__task_result_rank() {
+  case "$1" in
+    Succeeded) printf '%s\n' 0 ;;
+    SucceededWithIssues) printf '%s\n' 1 ;;
+    Failed) printf '%s\n' 2 ;;
+    Canceled) printf '%s\n' 3 ;;
+    Skipped) printf '%s\n' 4 ;;
+    *)
+      printf 'invalid task result: %s\n' "$1" >&2
+      return 2
+      ;;
+  esac
+}
+
+# azdo_merge_task_results <current-or-empty> <coming>
+#
+# TaskResultUtil's worst-wins merge: an empty current result takes the incoming one, a current
+# result worse than Failed is sticky, and otherwise the worse of the two wins (C-E06-060). The
+# agent's `Abandoned` state has no local meaning and is deliberately outside this vocabulary.
+azdo_merge_task_results() {
+  (($# == 2)) || {
+    printf '%s\n' 'usage: azdo_merge_task_results <current-or-empty> <coming>' >&2
+    return 2
+  }
+  local current_rank coming_rank failed_rank
+  azdo__valid_step_result "$2" || return
+  if [[ -z "$1" ]]; then
+    printf '%s\n' "$2"
+    return 0
+  fi
+  azdo__valid_step_result "$1" || return
+  current_rank="$(azdo__task_result_rank "$1")" || return
+  coming_rank="$(azdo__task_result_rank "$2")" || return
+  failed_rank="$(azdo__task_result_rank Failed)" || return
+  if ((current_rank > failed_rank)) || ((coming_rank < current_rank)); then
+    printf '%s\n' "$1"
+  else
+    printf '%s\n' "$2"
+  fi
+}
+
+# The agent initializes WriteDebug from System.Debug and writes every `context.Debug` message only
+# while it is true; `##vso[task.debug]` and the per-command `Processed:` note both travel that
+# channel (C-E06-065).
+azdo__system_debug_enabled() {
+  local value
+  value="$(azdo_var 'System.Debug')" || return 1
+  [[ "$value" =~ ^[[:space:]]*[Tt][Rr][Uu][Ee][[:space:]]*$ ]]
+}
+
+azdo__debug_note() {
+  (($# == 1)) || {
+    printf '%s\n' 'usage: azdo__debug_note <message>' >&2
+    return 2
+  }
+  azdo__system_debug_enabled || return 0
+  printf '##[debug]%s\n' "$1"
+}
+
+# azdo__logging_record_issue <error|warning> <message>
+#
+# Reproduces AddIssue: the message is written back as a tagged line and the matching counter is
+# incremented. Sourcepath/linenumber/columnnumber/code are parsed and validated but have no local
+# timeline record to carry them, so they do not alter the emitted line (C-E06-062/063).
+azdo__logging_record_issue() {
+  (($# == 2)) || {
+    printf '%s\n' 'usage: azdo__logging_record_issue <error|warning> <message>' >&2
+    return 2
+  }
+  case "$1" in
+    error) azdo__command_state_bump errors || return ;;
+    warning) azdo__command_state_bump warnings || return ;;
+    *)
+      printf 'unknown issue kind: %s\n' "$1" >&2
+      return 2
+      ;;
+  esac
+  printf '##[%s]%s\n' "$1" "$2"
+}
+
+azdo__logging_task_prependpath() {
+  local value="$AZDO_LOGGING_MESSAGE" path_dir entry index next=1
+  [[ -n "$value" ]] || {
+    printf '%s\n' 'Value of prependpath command must not be empty.' >&2
+    return 1
+  }
+
+  # An entry repeated later in the job moves to the newest position; the environment pass already
+  # implements that as newest-wins de-duplication, so a plain append is enough (C-E06-012/057).
+  path_dir="$(azdo__state_dir)/path.d" || return
+  mkdir -p "$path_dir" || return
+  for entry in "$path_dir"/*; do
+    [[ -f "$entry" ]] || continue
+    index="${entry##*/}"
+    index="${index%%-*}"
+    [[ "$index" =~ ^[0-9]+$ ]] || continue
+    ((10#$index >= next)) && next=$((10#$index + 1))
+  done
+  printf '%s' "$value" >"$(printf '%s/%09d-prependpath' "$path_dir" "$next")"
+}
+
+azdo__logging_task_setsecret() {
+  # Registration is job-scoped and forward-only: output already written keeps the clear value
+  # (C-E06-058). An empty value is ignored by AddSecret, and no multiline guard applies here —
+  # that check lives in the setvariable handler alone (C-E06-055).
+  azdo_mask_register "$AZDO_LOGGING_MESSAGE"
+}
+
+azdo__logging_task_complete() {
+  local result_text folded_result canonical current merged done_text
+  if ! azdo_logging_property result result_text || [[ -z "$result_text" ]]; then
+    printf '%s\n' "Command doesn't have valid result value." >&2
+    return 1
+  fi
+  azdo__logging_fold "$result_text" folded_result || return
+  case "$folded_result" in
+    succeeded) canonical=Succeeded ;;
+    succeededwithissues) canonical=SucceededWithIssues ;;
+    failed) canonical=Failed ;;
+    canceled) canonical=Canceled ;;
+    skipped) canonical=Skipped ;;
+    *)
+      # The agent would also parse `Abandoned`, a server-assigned state the local five-state store
+      # has no room for; every other unparseable value fails the command there too (C-E06-059).
+      printf '%s\n' "Command doesn't have valid result value." >&2
+      return 1
+      ;;
+  esac
+
+  # shellcheck disable=SC2119 # The reader takes no arguments.
+  current="$(azdo_command_result)" || return
+  merged="$(azdo_merge_task_results "$current" "$canonical")" || return
+  azdo__command_state_write result "$merged" || return
+
+  azdo__logging_bool_property 'done' done_text || return
+  [[ "$done_text" = true ]] &&
+    azdo__debug_note 'task.complete done=true has no local force-complete seam; ignored.'
+  return 0
+}
+
+azdo__logging_task_logissue() {
+  local type_text folded_type
+  if ! azdo_logging_property type type_text || [[ -z "$type_text" ]]; then
+    # The agent reports this through context.Warning, which is itself a warning issue.
+    azdo__logging_record_issue warning "Can't create TaskIssue from logging event."
+    return 0
+  fi
+  azdo__logging_fold "$type_text" folded_type || return
+  case "$folded_type" in
+    error | warning) azdo__logging_record_issue "$folded_type" "$AZDO_LOGGING_MESSAGE" ;;
+    *)
+      printf 'issue type %s is not an expected issue type.\n' "$type_text" >&2
+      return 1
+      ;;
+  esac
+}
+
+azdo__logging_task_setprogress() {
+  # Percent-complete and current operation belong to a timeline record the local runtime does not
+  # have; the command is accepted and noted on the debug channel only (C-E06-067).
+  local value
+  azdo_logging_property value value || :
+  azdo__debug_note "task.setprogress ignored (value=${value:-0}): no local timeline record."
+}
+
+azdo__logging_task_debug() {
+  azdo__debug_note "$AZDO_LOGGING_MESSAGE"
+}
+
 # Status 127 means the command is unknown to the local runtime; other non-zero statuses are handler
-# failures. E06-S04-T04 extends this case statement with the artifact command family.
+# failures. E06-S04-T04 extends this case statement with the artifact/attachment family.
 azdo_logging_dispatch() {
   case "$AZDO_LOGGING_AREA.$AZDO_LOGGING_ACTION" in
-    task.complete) azdo__logging_task_complete ;;
-    task.debug) azdo__logging_task_debug ;;
-    task.logissue | task.issue) azdo__logging_task_logissue ;;
+    task.setvariable) azdo__logging_task_setvariable ;;
     task.prependpath) azdo__logging_task_prependpath ;;
     task.setsecret) azdo__logging_task_setsecret ;;
-    task.setvariable) azdo__logging_task_setvariable ;;
+    task.complete) azdo__logging_task_complete ;;
+    task.logissue | task.issue) azdo__logging_task_logissue ;;
+    task.setprogress) azdo__logging_task_setprogress ;;
+    task.debug) azdo__logging_task_debug ;;
     *) return 127 ;;
   esac
 }
@@ -1499,43 +1589,114 @@ azdo__logging_process_line() {
   }
 
   local parse_status dispatch_status
-  if azdo__logging_format_line "$1"; then
-    return 0
-  fi
   if azdo_logging_parse_line "$1"; then
     parse_status=0
   else
     parse_status=$?
   fi
 
+  local unescaped
   case "$parse_status" in
     0)
       if azdo_logging_dispatch; then
+        # Every processed command except task.debug itself is traced on the gated debug channel,
+        # in the agent's decoded wire form (C-E06-065).
+        if [[ "$AZDO_LOGGING_AREA.$AZDO_LOGGING_ACTION" != task.debug ]]; then
+          azdo__logging_unescape "$1" unescaped || return
+          azdo__debug_note "Processed: $unescaped" || return
+        fi
         return 0
       else
         dispatch_status=$?
       fi
       if ((dispatch_status == 127)); then
         # The local-debug passthrough is intentional even though the hosted agent consumes a parsed
-        # unknown-area line after warning (C-E06-048/049).
-        printf "##[warning]Unknown Azure Pipelines logging command '%s.%s'; passing through unchanged.\n" \
-          "$AZDO_LOGGING_AREA" "$AZDO_LOGGING_ACTION"
+        # unknown-area line after warning (C-E06-048/049). The agent reports the unknown command
+        # through context.Warning, so it is also a counted warning issue (C-E06-063).
+        azdo__logging_record_issue warning \
+          "Unknown Azure Pipelines logging command '$AZDO_LOGGING_AREA.$AZDO_LOGGING_ACTION'; passing through unchanged." ||
+          return
         printf '%s\n' "$1"
         return 0
       fi
-      printf "##[error]Azure Pipelines logging command '%s.%s' failed with status %s.\n" \
-        "$AZDO_LOGGING_AREA" "$AZDO_LOGGING_ACTION" "$dispatch_status"
-      return "$dispatch_status"
+      # A failing handler is an error issue plus CommandResult=Failed, and output processing
+      # continues with the next line — aborting the stream would drop the rest of the step's
+      # console and log output (C-E06-064). The agent's message interpolates the whole wire line;
+      # this one names only the command, deliberately, because a handler that rejects a value
+      # (multiline secret, read-only overwrite) fails *before* registering it with the masker,
+      # which runs downstream of dispatch and could not scrub it from the console or the log.
+      azdo__logging_record_issue error \
+        "Unable to process command '$AZDO_LOGGING_AREA.$AZDO_LOGGING_ACTION' successfully." || return
+      azdo__command_state_write command-failed true || return
+      return 0
       ;;
     1)
       printf '%s\n' "$1"
       ;;
     2)
-      printf '%s\n' \
-        '##[warning]Malformed Azure Pipelines logging command; passing through unchanged.'
+      azdo__logging_record_issue warning \
+        'Malformed Azure Pipelines logging command; passing through unchanged.' || return
       printf '%s\n' "$1"
       ;;
     *) return "$parse_status" ;;
+  esac
+}
+
+# azdo_render_stream
+#
+# Console rendering of the formatting commands (C-E06-066). It runs after the log tee, so ANSI
+# escapes never reach `logs/<stage>/<job>/<step>.log` and a rendering decision cannot corrupt the
+# recorded output. `##[debug]` lines are console-hidden unless System.Debug is true — a deliberate
+# local decision (docs/06 §5 decision 36), since the agent gates its own debug channel rather than
+# filtering echoed formatter tags. The filter never fails: it sits in run_step's pipefail pipeline.
+# shellcheck disable=SC2120 # This stream filter intentionally accepts no arguments.
+azdo_render_stream() {
+  (($# == 0)) || {
+    printf '%s\n' 'usage: azdo_render_stream' >&2
+    return 2
+  }
+
+  local color=false debug=false line tag body
+  azdo__render_color_enabled && color=true
+  azdo__system_debug_enabled && debug=true
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    tag=''
+    body="$line"
+    if [[ "$line" = '##['*']'* ]]; then
+      tag="${line#\#\#[}"
+      tag="${tag%%]*}"
+      body="${line#*]}"
+    fi
+    case "$tag" in
+      debug) [[ "$debug" = true ]] || continue ;;
+      group | endgroup | section | command | warning | error) ;;
+      *) tag='' ;;
+    esac
+    if [[ -z "$tag" || "$color" != true ]]; then
+      printf '%s\n' "$line"
+      continue
+    fi
+    case "$tag" in
+      group) printf '\033[1;36m%s\033[0m\n' "$body" ;;
+      endgroup) : ;;
+      section) printf '\033[1m%s\033[0m\n' "$body" ;;
+      command) printf '\033[34m%s\033[0m\n' "$body" ;;
+      warning) printf '\033[33m%s\033[0m\n' "$body" ;;
+      error) printf '\033[31m%s\033[0m\n' "$body" ;;
+      debug) printf '\033[2m%s\033[0m\n' "$body" ;;
+    esac
+  done
+  return 0
+}
+
+# NO_COLOR (https://no-color.org) and an explicit AZDO_COLOR override the terminal probe. The probe
+# is meaningful because the renderer's stdout is the real console, not the log pipe.
+azdo__render_color_enabled() {
+  case "${AZDO_COLOR:-auto}" in
+    always) return 0 ;;
+    never) return 1 ;;
+    *) [[ -z "${NO_COLOR+set}" && -t 1 ]] ;;
   esac
 }
 
@@ -1631,11 +1792,13 @@ azdo__run_step_process() {
   # same pipe and are teed live, matching the task implementations' ordered output wiring
   # (C-E06-029). With failOnStderr enabled, a second tee records any stderr bytes while forwarding
   # them immediately into the same live stream (C-E06-033). The logging-command parser consumes
-  # that stream before it is teed to the console and log (C-E06-044).
+  # that stream before it is teed to the console and log (C-E06-044); ANSI rendering runs after the
+  # tee so the log file keeps the raw agent-shaped lines (C-E06-066, docs/06 §5 decision 36).
   (
     set -o pipefail
-    # shellcheck disable=SC2119 # The stream filter intentionally accepts no arguments.
-    azdo_logging_stream <"$fifo" 2>&1 | azdo_mask_stream | tee -a -- "$log_file"
+    # shellcheck disable=SC2119 # The stream filters intentionally accept no arguments.
+    azdo_logging_stream <"$fifo" 2>&1 | azdo_mask_stream | tee -a -- "$log_file" |
+      azdo_render_stream
   ) &
   tee_pid=$!
   if [[ "$fail_on_stderr" = true ]]; then
@@ -1755,8 +1918,12 @@ run_step() {
   local seen_id=false seen_file=false seen_condition=false seen_display=false seen_wd=false
   local seen_continue=false seen_fail_on_stderr=false seen_retries=false seen_timeout=false
   local no_condition=false seen_no_condition=false condition_status=0 condition_error=''
-  local expanded_file expanded_wd ignored_secret log_file status result attempt_result=Failed
-  local completion_result result_dir command_state_dir issue_dir completion_file
+  local expanded_file expanded_wd ignored_secret log_file status result attempt_result
+  local error_count warning_count issues_dir issues_path
+  # Dynamically scoped for the logging-stream subshell, exactly like AZDO_EXPR_ERROR_FILE below:
+  # per step *and* per job scope, so concurrent steps cannot reset each other's command state.
+  # shellcheck disable=SC2034 # Read by azdo__command_state_dir in the stream subshell.
+  local AZDO_COMMAND_STATE_DIR
   local retry_index=0 effective_retries remaining_seconds elapsed_seconds delay_seconds wait_status
   local start_seconds state_dir condition_error_dir condition_error_file old_umask
 
@@ -1864,6 +2031,7 @@ run_step() {
     return 2
   fi
   azdo__valid_store_segment "$id" || return
+  azdo__valid_store_segment "${AZDO_VAR_SCOPE:-pipeline}" || return
   [[ -n "$file" && -f "$file" && -r "$file" ]] || {
     printf 'step file is not readable: %s\n' "$file" >&2
     return 2
@@ -1890,6 +2058,8 @@ run_step() {
     printf '%s\n' 'AZDO_LOG_DIR must be set before running a step' >&2
     return 2
   }
+
+  AZDO_COMMAND_STATE_DIR="$(azdo__state_dir)/commands/${AZDO_VAR_SCOPE:-pipeline}/$id" || return
 
   mkdir -p "$AZDO_LOG_DIR" || return
   log_file="$AZDO_LOG_DIR/$id.log"
@@ -1972,17 +2142,6 @@ run_step() {
 
   expanded_file="$(azdo_expand_macros "$file")" || return
 
-  result_dir="$(azdo__step_result_dir)" || return
-  command_state_dir="$result_dir/.commands/$id"
-  issue_dir="$result_dir/.issues/$id"
-  completion_file="$command_state_dir/result"
-  mkdir -p "$command_state_dir" "$issue_dir" || return
-  printf '%s\n' 0 >"$issue_dir/error" || return
-  printf '%s\n' 0 >"$issue_dir/warning" || return
-  local AZDO_LOGGING_COMPLETION_FILE="$completion_file"
-  local AZDO_LOGGING_ISSUE_DIR="$issue_dir"
-  export AZDO_LOGGING_COMPLETION_FILE AZDO_LOGGING_ISSUE_DIR
-
   effective_retries="$retries"
   if ((effective_retries > 10)); then
     printf '##[warning]retryCountOnTaskFailure is limited to 10; requested %s.\n' "$retries" |
@@ -1992,16 +2151,17 @@ run_step() {
 
   start_seconds=$SECONDS
   while :; do
-    # RetryHelper clears the Failed attempt result before invoking the task again. A completion
-    # command from one attempt therefore cannot leak into the next (C-E06-061).
-    rm -f -- "$completion_file"
     elapsed_seconds=$((SECONDS - start_seconds))
     remaining_seconds=$((timeout_seconds - elapsed_seconds))
     if ((remaining_seconds <= 0)); then
       status=124
-      attempt_result=Failed
       break
     fi
+
+    # Issue counters and any task.complete override belong to this attempt alone: the agent clears
+    # the record's counts before re-running a failed task (C-E06-035, C-E06-063).
+    # shellcheck disable=SC2119 # The reset takes no arguments.
+    azdo_command_state_reset || return
 
     if azdo__run_step_process \
       "$expanded_file" "$expanded_wd" "$log_file" "$remaining_seconds" "${expanded_file%/*}" \
@@ -2011,25 +2171,24 @@ run_step() {
       status=$?
     fi
 
-    if ((status == 0)); then
-      attempt_result=Succeeded
-    else
-      attempt_result=Failed
-    fi
-    if [[ -f "$completion_file" ]]; then
-      IFS= read -r completion_result <"$completion_file" || [[ -n "$completion_result" ]] || return
-      azdo__logging_merge_result "$attempt_result" "$completion_result" attempt_result || return
-      # A task.complete failure is retryable even when the shell itself exits zero. Preserve a
-      # real process status when present; otherwise use the generic failure status.
-      if [[ "$attempt_result" = Failed ]] && ((status == 0)); then
-        status=1
-      fi
-    fi
-
     if [[ "$AZDO_RUN_STEP_STDERR_DETECTED" = true ]]; then
       printf '%s\n' '##[error]Bash wrote one or more lines to the standard error stream.' |
         tee -a -- "$log_file"
     fi
+
+    # Result precedence per C-E06-061: task.complete has already merged its own commands, a failed
+    # attempt then *assigns* Failed over that value, and command failures merge afterwards.
+    # shellcheck disable=SC2119 # The reader takes no arguments.
+    attempt_result="$(azdo_command_result)" || return
+    ((status == 0)) || attempt_result=Failed
+    # shellcheck disable=SC2119 # The reader takes no arguments.
+    if azdo_command_failed; then
+      attempt_result="$(azdo_merge_task_results "$attempt_result" Failed)" || return
+    fi
+    [[ -n "$attempt_result" ]] || attempt_result=Succeeded
+
+    # The agent retries only while the attempt result is exactly Failed (C-E06-035), which now
+    # includes an exit-zero attempt failed by task.complete or by a failing logging command.
     [[ "$attempt_result" != Failed ]] && break
     [[ "$AZDO_RUN_STEP_TIMED_OUT" = true ]] && break
     ((retry_index >= effective_retries)) && break
@@ -2058,14 +2217,29 @@ run_step() {
     ((retry_index += 1))
   done
 
-  result="$attempt_result"
+  # Independent of which loop exit ran: a nonzero status is Failed regardless (C-E06-061).
+  ((status == 0)) || attempt_result=Failed
+  result="${attempt_result:-Succeeded}"
   if [[ "$result" = Failed && "$continue_on_error" = true ]]; then
     result=SucceededWithIssues
   fi
   azdo_step_result_set "$id" "$result" || return
 
+  # Counts are recorded next to the result for the run summary. They never move the result on their
+  # own — only a failing command or the step's exit status does (C-E06-063/064).
+  error_count="$(azdo_step_issue_count error)" || return
+  warning_count="$(azdo_step_issue_count warning)" || return
+  issues_dir="$(azdo__step_result_dir)/issues" || return
+  mkdir -p "$issues_dir" || return
+  issues_path="$issues_dir/$id"
+  printf 'errors=%s\nwarnings=%s\n' "$error_count" "$warning_count" >"$issues_path" || return
+
   case "$result" in
     Succeeded | SucceededWithIssues) return 0 ;;
-    *) return "$status" ;;
+    *)
+      ((status != 0)) && return "$status"
+      # A task.complete or command failure with a zero exit status still fails the step.
+      return 1
+      ;;
   esac
 }
