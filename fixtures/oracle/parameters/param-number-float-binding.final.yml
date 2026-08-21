@@ -1,0 +1,26 @@
+parameters:
+- name: a
+  type: number
+  default: 1.0
+- name: b
+  type: number
+  default: 0.5
+- name: c
+  type: string
+  default: 1.0
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      env:
+        OUT: >-
+          {
+            "a": 1,
+            "b": 0.5,
+            "c": "1.0"
+          }
+      inputs:
+        script: echo probe
+

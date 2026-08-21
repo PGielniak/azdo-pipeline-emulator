@@ -1,0 +1,15 @@
+parameters:
+- name: p
+  type: string
+  default: dflt
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      env:
+        OUT: '"from-queue"'
+      inputs:
+        script: echo probe
+

@@ -1,0 +1,14 @@
+parameters:
+- name: p
+  default: s
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      env:
+        OUT: '"s"'
+      inputs:
+        script: echo probe
+

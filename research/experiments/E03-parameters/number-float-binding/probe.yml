@@ -1,0 +1,14 @@
+parameters:
+- name: a
+  type: number
+  default: 1.0
+- name: b
+  type: number
+  default: 0.5
+- name: c
+  type: string
+  default: 1.0
+steps:
+- script: echo probe
+  env:
+    OUT: ${{ convertToJson(parameters) }}

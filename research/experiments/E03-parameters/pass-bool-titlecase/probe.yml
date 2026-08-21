@@ -1,0 +1,4 @@
+steps:
+- template: /e03-params/bind-boolean.yml
+  parameters:
+    p: True

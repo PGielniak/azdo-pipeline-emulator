@@ -1,0 +1,10 @@
+variables:
+  foo: bar
+parameters:
+- name: p
+  type: string
+  default: ${{ variables.foo }}
+steps:
+- script: echo probe
+  env:
+    OUT: ${{ convertToJson(parameters.p) }}

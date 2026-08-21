@@ -1,0 +1,15 @@
+parameters:
+- name: outer
+  type: string
+  default: from-caller
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      env:
+        OUT: '"from-caller"'
+      inputs:
+        script: echo probe
+

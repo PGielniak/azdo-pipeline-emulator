@@ -1,0 +1,10 @@
+steps:
+- template: /e03-params/bind-legacyobject.yml
+  parameters:
+    p:
+      n: 3
+      b: true
+      nil:
+      list:
+      - 1
+      - two

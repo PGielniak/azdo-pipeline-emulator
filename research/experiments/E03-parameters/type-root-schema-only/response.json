@@ -1,0 +1,3 @@
+{
+  "finalYaml": "parameters:\n- name: t01\n  type: environment\n  default: env\n- name: t02\n  type: filePath\n  default: /tmp/x\n- name: t03\n  type: pool\n  default:\n    vmImage: ubuntu-latest\n- name: t04\n  type: secureFile\n  default: sf\n- name: t05\n  type: serviceConnection\n  default: sc\nstages:\n- stage: __default\n  jobs:\n  - job: Job\n    steps:\n    - task: CmdLine@2\n      env:\n        OUT: '\"/tmp/x\"'\n      inputs:\n        script: echo probe\n\n"
+}

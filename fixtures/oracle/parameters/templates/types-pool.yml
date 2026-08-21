@@ -1,0 +1,9 @@
+parameters:
+- name: p
+  type: pool
+  default:
+    vmImage: ubuntu-latest
+steps:
+- script: echo probe
+  env:
+    OUT: ${{ convertToJson(parameters.p) }}

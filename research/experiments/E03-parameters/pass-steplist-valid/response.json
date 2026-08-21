@@ -1,0 +1,3 @@
+{
+  "finalYaml": "stages:\n- stage: __default\n  jobs:\n  - job: Job\n    steps:\n    - task: CmdLine@2\n      env:\n        OUT: >-\n          [\n            {\n              \"task\": \"CmdLine@2\",\n              \"inputs\": {\n                \"script\": \"echo one\"\n              }\n            },\n            {\n              \"task\": \"Bash@3\",\n              \"displayName\": \"Two\",\n              \"inputs\": {\n                \"targetType\": \"inline\",\n                \"script\": \"echo two\"\n              }\n            }\n          ]\n      inputs:\n        script: echo probe\n\n"
+}

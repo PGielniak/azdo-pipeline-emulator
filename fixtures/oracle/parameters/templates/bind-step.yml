@@ -1,0 +1,9 @@
+parameters:
+- name: p
+  type: step
+  default:
+    script: echo dflt
+steps:
+- script: echo probe
+  env:
+    OUT: ${{ convertToJson(parameters.p) }}

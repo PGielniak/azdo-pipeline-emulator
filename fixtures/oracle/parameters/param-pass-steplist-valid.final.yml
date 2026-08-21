@@ -1,0 +1,27 @@
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      env:
+        OUT: >-
+          [
+            {
+              "task": "CmdLine@2",
+              "inputs": {
+                "script": "echo one"
+              }
+            },
+            {
+              "task": "Bash@3",
+              "displayName": "Two",
+              "inputs": {
+                "targetType": "inline",
+                "script": "echo two"
+              }
+            }
+          ]
+      inputs:
+        script: echo probe
+

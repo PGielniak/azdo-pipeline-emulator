@@ -1,0 +1,12 @@
+parameters:
+- name: p
+  type: stringList
+  default:
+  - a
+  values:
+  - a
+  - b
+steps:
+- script: echo probe
+  env:
+    OUT: ${{ convertToJson(parameters.p) }}

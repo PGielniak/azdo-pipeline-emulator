@@ -1,0 +1,6 @@
+steps:
+- template: /e03-params/bind-stringlist.yml
+  parameters:
+    p:
+    - a
+    - zzz

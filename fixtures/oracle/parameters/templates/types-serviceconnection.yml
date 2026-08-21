@@ -1,0 +1,8 @@
+parameters:
+- name: p
+  type: serviceConnection
+  default: sc
+steps:
+- script: echo probe
+  env:
+    OUT: ${{ convertToJson(parameters.p) }}

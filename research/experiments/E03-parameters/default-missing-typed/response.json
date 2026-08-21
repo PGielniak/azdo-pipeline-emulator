@@ -1,0 +1,9 @@
+{
+  "$id": "1",
+  "innerException": null,
+  "message": "A value for the 'n' parameter must be provided.\nA value for the 'b' parameter must be provided.\nA value for the 'o' parameter must be provided.\nA value for the 'l' parameter must be provided.",
+  "typeName": "Microsoft.Azure.Pipelines.WebApi.PipelineValidationException, Microsoft.Azure.Pipelines.WebApi",
+  "typeKey": "PipelineValidationException",
+  "errorCode": 0,
+  "eventId": 3000
+}

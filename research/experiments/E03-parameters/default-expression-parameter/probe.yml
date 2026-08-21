@@ -1,0 +1,11 @@
+parameters:
+- name: a
+  type: string
+  default: first
+- name: b
+  type: string
+  default: ${{ parameters.a }}
+steps:
+- script: echo probe
+  env:
+    OUT: ${{ convertToJson(parameters.b) }}
