@@ -1028,9 +1028,12 @@ azdo__logging_fold() {
     printf '%s\n' 'usage: azdo__logging_fold <value> <destination-variable>' >&2
     return 2
   }
-  local folded
-  folded="$(LC_ALL=C printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')" || return
-  printf -v "$2" '%s' "$folded"
+  # The scratch name is deliberately unlikely: a caller destination variable of the same name would
+  # be shadowed by this local and silently receive nothing.
+  local azdo__logging_folded_scratch
+  azdo__logging_folded_scratch="$(LC_ALL=C printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')" ||
+    return
+  printf -v "$2" '%s' "$azdo__logging_folded_scratch"
 }
 
 azdo__logging_unescape() {
@@ -1504,13 +1507,13 @@ azdo__logging_task_setsecret() {
 }
 
 azdo__logging_task_complete() {
-  local result_text folded canonical current merged done_text
+  local result_text folded_result canonical current merged done_text
   if ! azdo_logging_property result result_text || [[ -z "$result_text" ]]; then
     printf '%s\n' "Command doesn't have valid result value." >&2
     return 1
   fi
-  azdo__logging_fold "$result_text" folded || return
-  case "$folded" in
+  azdo__logging_fold "$result_text" folded_result || return
+  case "$folded_result" in
     succeeded) canonical=Succeeded ;;
     succeededwithissues) canonical=SucceededWithIssues ;;
     failed) canonical=Failed ;;
@@ -1536,15 +1539,15 @@ azdo__logging_task_complete() {
 }
 
 azdo__logging_task_logissue() {
-  local type_text folded
+  local type_text folded_type
   if ! azdo_logging_property type type_text || [[ -z "$type_text" ]]; then
     # The agent reports this through context.Warning, which is itself a warning issue.
     azdo__logging_record_issue warning "Can't create TaskIssue from logging event."
     return 0
   fi
-  azdo__logging_fold "$type_text" folded || return
-  case "$folded" in
-    error | warning) azdo__logging_record_issue "$folded" "$AZDO_LOGGING_MESSAGE" ;;
+  azdo__logging_fold "$type_text" folded_type || return
+  case "$folded_type" in
+    error | warning) azdo__logging_record_issue "$folded_type" "$AZDO_LOGGING_MESSAGE" ;;
     *)
       printf 'issue type %s is not an expected issue type.\n' "$type_text" >&2
       return 1

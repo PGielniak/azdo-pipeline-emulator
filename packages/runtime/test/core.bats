@@ -901,3 +901,230 @@ masked-or|cond_masked_or_error
 substitution|cond_substitution_error
 TABLE
 }
+
+@test "task.prependpath reaches subsequent steps and rejects an empty value (C-E06-057)" {
+  local setter="$BATS_TEST_TMPDIR/prepend.sh" observer="$BATS_TEST_TMPDIR/observe-path.sh"
+  local empty="$BATS_TEST_TMPDIR/prepend-empty.sh"
+  prepare_run_step
+  printf '%s\n' \
+    "printf '%s\\n' '##vso[task.prependpath]/opt/first-tool'" \
+    "printf '%s\\n' '##vso[task.prependpath]/opt/second-tool'" \
+    'printf "CURRENT_PATH=%s\n" "$PATH"' >"$setter"
+
+  run -0 run_test_step prepend "$setter" 10
+  # The emitting task keeps the environment it started with (C-E06-012/057).
+  [[ "$output" != *'/opt/first-tool'* ]]
+
+  azdo_env_materialize
+  printf '%s\n' 'printf "LATER_PATH=%s\n" "$PATH"' >"$observer"
+  run -0 run_test_step observe-path "$observer" 10
+  [[ "$output" == LATER_PATH=/opt/second-tool:/opt/first-tool:* ]]
+
+  printf '%s\n' "printf '%s\\n' '##vso[task.prependpath]'" >"$empty"
+  run ! run_test_step prepend-empty "$empty" 10
+  run -0 azdo_step_result prepend-empty
+  [ "$output" = Failed ]
+}
+
+@test "task.prependpath orders more than nine entries numerically (C-E06-012/057)" {
+  local index
+  prepare_run_step
+  for ((index = 1; index <= 11; index++)); do
+    azdo_logging_parse_line "##vso[task.prependpath]/opt/tool-$index"
+    azdo_logging_dispatch
+  done
+
+  azdo_env_materialize
+  run -0 materialized_env_value PATH
+  [[ "$output" == /opt/tool-11:/opt/tool-10:/opt/tool-9:* ]]
+}
+
+@test "task.setsecret masks later output only (C-E06-058)" {
+  local source_file="$BATS_TEST_TMPDIR/set-secret-command.sh"
+  local marker='synthetic-derived-secret-value'
+  prepare_run_step
+  printf '%s\n' \
+    "printf 'BEFORE=%s\\n' '$marker'" \
+    "printf '%s\\n' '##vso[task.setsecret]$marker'" \
+    "printf 'AFTER=%s\\n' '$marker'" >"$source_file"
+
+  run -0 run_test_step set-secret-command "$source_file" 10
+  [ "$output" = $'BEFORE='"$marker"$'\nAFTER=***' ]
+  [ "$(cat "$AZDO_LOG_DIR/set-secret-command.log")" = "$output" ]
+}
+
+@test "task.complete result precedence follows the agent order (C-E06-059/060/061)" {
+  local complete_failed="$BATS_TEST_TMPDIR/complete-failed.sh"
+  local complete_succeeded="$BATS_TEST_TMPDIR/complete-succeeded.sh"
+  local complete_merge="$BATS_TEST_TMPDIR/complete-merge.sh"
+  local complete_invalid="$BATS_TEST_TMPDIR/complete-invalid.sh"
+  prepare_run_step
+
+  # task.complete alone fails a step that exited zero.
+  printf '%s\n' "printf '%s\\n' '##vso[task.complete result=Failed;]DONE'" >"$complete_failed"
+  run ! run_result_step complete-failed "$complete_failed" false false 0 10
+  run -0 azdo_step_result complete-failed
+  [ "$output" = Failed ]
+  # The result must come from the merge, not from the command itself failing to parse.
+  ! grep -qF 'Unable to process command' "$AZDO_LOG_DIR/complete-failed.log"
+  ! grep -qF "valid result value" "$AZDO_LOG_DIR/complete-failed.log"
+  run -0 azdo_step_issues complete-failed
+  [ "$output" = $'errors=0\nwarnings=0' ]
+
+  # A nonzero exit assigns Failed over an earlier task.complete result=Succeeded.
+  printf '%s\n' \
+    "printf '%s\\n' '##vso[task.complete result=succeeded;]DONE'" \
+    'exit 3' >"$complete_succeeded"
+  run -3 run_result_step complete-succeeded "$complete_succeeded" false false 0 10
+  run -0 azdo_step_result complete-succeeded
+  [ "$output" = Failed ]
+
+  # Worst-wins merge: a later Succeeded cannot undo an earlier Failed.
+  printf '%s\n' \
+    "printf '%s\\n' '##vso[task.complete result=Failed;]first'" \
+    "printf '%s\\n' '##vso[task.complete result=Succeeded;]second'" >"$complete_merge"
+  run ! run_result_step complete-merge "$complete_merge" false false 0 10
+  run -0 azdo_step_result complete-merge
+  [ "$output" = Failed ]
+  ! grep -qF 'Unable to process command' "$AZDO_LOG_DIR/complete-merge.log"
+
+  # continueOnError downgrades the completed failure last.
+  run -0 run_result_step complete-downgrade "$complete_failed" true false 0 10
+  run -0 azdo_step_result complete-downgrade
+  [ "$output" = SucceededWithIssues ]
+
+  # A missing or unparseable result is a failed command.
+  printf '%s\n' "printf '%s\\n' '##vso[task.complete]no result property'" >"$complete_invalid"
+  run ! run_result_step complete-invalid "$complete_invalid" false false 0 10
+  run -0 azdo_step_result complete-invalid
+  [ "$output" = Failed ]
+  [[ "$(cat "$AZDO_LOG_DIR/complete-invalid.log")" == *"Command doesn't have valid result value."* ]]
+}
+
+@test "task.complete state resets between retry attempts (C-E06-035/061)" {
+  local source_file="$BATS_TEST_TMPDIR/complete-retry.sh"
+  local count_file="$BATS_TEST_TMPDIR/complete-retry.count"
+  prepare_run_step
+  azdo__run_step_retry_wait() { return 0; }
+  printf '%s\n' \
+    'count=0' \
+    "[[ ! -f '$count_file' ]] || IFS= read -r count <'$count_file'" \
+    'count=$((count + 1))' \
+    "printf '%s\\n' \"\$count\" >'$count_file'" \
+    '((count >= 2)) ||' \
+    "  printf '%s\\n' '##vso[task.complete result=Failed;]first attempt'" >"$source_file"
+
+  run -0 run_result_step complete-retry "$source_file" false false 1 10
+  [ "$(cat "$count_file")" -eq 2 ]
+  run -0 azdo_step_result complete-retry
+  [ "$output" = Succeeded ]
+}
+
+@test "task.logissue counts issues without changing the step result (C-E06-062/063)" {
+  local source_file="$BATS_TEST_TMPDIR/logissue.sh"
+  prepare_run_step
+  printf '%s\n' \
+    "printf '%s\\n' '##vso[task.logissue type=error]Something went very wrong.'" \
+    "printf '%s\\n' '##vso[task.logissue type=ERROR;sourcepath=main.cs;linenumber=1;code=100;]Second error.'" \
+    "printf '%s\\n' '##vso[task.logissue type=warning]Could be a problem.'" \
+    "printf '%s\\n' '##vso[task.logissue]missing type'" >"$source_file"
+
+  run -0 run_test_step logissue "$source_file" 10
+  [ "$output" = $'##[error]Something went very wrong.\n##[error]Second error.\n##[warning]Could be a problem.\n##[warning]Can'"'"'t create TaskIssue from logging event.' ]
+
+  # The doc's "exit 1 is optional" tip and AddIssue agree: issues alone leave the step successful.
+  run -0 azdo_step_result logissue
+  [ "$output" = Succeeded ]
+  run -0 azdo_step_issues logissue
+  [ "$output" = $'errors=2\nwarnings=2' ]
+}
+
+@test "task.logissue with an unexpected type fails the command but not the stream (C-E06-062/064)" {
+  local source_file="$BATS_TEST_TMPDIR/logissue-bad-type.sh"
+  prepare_run_step
+  printf '%s\n' \
+    "printf '%s\\n' '##vso[task.logissue type=fatal]boom'" \
+    "printf '%s\\n' 'after-the-failed-command'" >"$source_file"
+
+  run ! run_result_step logissue-bad-type "$source_file" false false 0 10
+  # Output after a failing command must survive on both the console and in the log: the handler
+  # status must not propagate out of the reader (C-E06-064).
+  [[ "$output" == *after-the-failed-command* ]]
+  [[ "$output" == *"Unable to process command"* ]]
+  run -0 azdo_step_result logissue-bad-type
+  [ "$output" = Failed ]
+  grep -qxF 'after-the-failed-command' "$AZDO_LOG_DIR/logissue-bad-type.log"
+  grep -qF 'issue type fatal is not an expected issue type.' \
+    "$AZDO_LOG_DIR/logissue-bad-type.log"
+  grep -qF "Unable to process command" "$AZDO_LOG_DIR/logissue-bad-type.log"
+}
+
+@test "the debug channel is gated on System.Debug (C-E06-065)" {
+  local source_file="$BATS_TEST_TMPDIR/debug-channel.sh"
+  prepare_run_step
+  printf '%s\n' \
+    "printf '%s\\n' '##vso[task.debug]verbose detail'" \
+    "printf '%s\\n' '##vso[task.setprogress value=40;]halfway'" \
+    "printf '%s\\n' '##vso[task.setsecret]'" \
+    "printf '%s\\n' 'plain output'" >"$source_file"
+
+  run -0 run_test_step debug-off "$source_file" 10
+  [ "$output" = 'plain output' ]
+
+  azdo_var_set 'System.Debug' 'TRUE'
+  azdo_env_materialize
+  run -0 run_test_step debug-on "$source_file" 10
+  [ "$output" = $'##[debug]verbose detail\n##[debug]task.setprogress ignored (value=40): no local timeline record.\n##[debug]Processed: ##vso[task.setprogress value=40;]halfway\n##[debug]Processed: ##vso[task.setsecret]\nplain output' ]
+}
+
+@test "raw ##[debug] lines stay in the log and are console-gated (docs/06 §5 decision 36)" {
+  local source_file="$BATS_TEST_TMPDIR/debug-tag.sh"
+  prepare_run_step
+  printf '%s\n' \
+    "printf '%s\\n' '##[debug]echoed by the script'" \
+    "printf '%s\\n' 'plain output'" >"$source_file"
+
+  run -0 run_test_step debug-tag-off "$source_file" 10
+  [ "$output" = 'plain output' ]
+  grep -qxF '##[debug]echoed by the script' "$AZDO_LOG_DIR/debug-tag-off.log"
+
+  azdo_var_set 'System.Debug' 'true'
+  azdo_env_materialize
+  run -0 run_test_step debug-tag-on "$source_file" 10
+  [ "$output" = $'##[debug]echoed by the script\nplain output' ]
+}
+
+@test "formatting commands render with ANSI only when color is enabled (C-E06-066)" {
+  local plain
+  plain=$'##[group]Beginning of a group\n##[warning]Warning message\n##[error]Error message\n##[section]Start of a section\n##[command]Command-line being run\n##[endgroup]\nordinary line'
+
+  AZDO_COLOR=never
+  run -0 azdo_render_stream <<<"$plain"
+  [ "$output" = "$plain" ]
+
+  AZDO_COLOR=always
+  run -0 azdo_render_stream <<<"$plain"
+  [ "$output" = $'\033[1;36mBeginning of a group\033[0m\n\033[33mWarning message\033[0m\n\033[31mError message\033[0m\n\033[1mStart of a section\033[0m\n\033[34mCommand-line being run\033[0m\nordinary line' ]
+
+  # An unknown tag and a bare ##vso line are not formatting commands.
+  run -0 azdo_render_stream <<<$'##[unknown]left alone\n##vso[task.setvariable variable=x]y'
+  [ "$output" = $'##[unknown]left alone\n##vso[task.setvariable variable=x]y' ]
+}
+
+@test "merging task results reproduces the agent's worst-wins order (C-E06-060)" {
+  run -0 azdo_merge_task_results '' Succeeded
+  [ "$output" = Succeeded ]
+  run -0 azdo_merge_task_results Succeeded SucceededWithIssues
+  [ "$output" = SucceededWithIssues ]
+  run -0 azdo_merge_task_results Failed Succeeded
+  [ "$output" = Failed ]
+  run -0 azdo_merge_task_results SucceededWithIssues Failed
+  [ "$output" = Failed ]
+  # A result worse than Failed is sticky.
+  run -0 azdo_merge_task_results Canceled Failed
+  [ "$output" = Canceled ]
+  run -0 azdo_merge_task_results Skipped Canceled
+  [ "$output" = Skipped ]
+  run ! azdo_merge_task_results Succeeded Abandoned
+  [ "$status" -eq 2 ]
+}
