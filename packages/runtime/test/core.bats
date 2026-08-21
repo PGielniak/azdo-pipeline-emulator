@@ -1039,6 +1039,24 @@ TABLE
   [ "$output" = $'errors=2\nwarnings=2' ]
 }
 
+@test "task.issue is an alias dispatching to the same handler (C-E06-068)" {
+  local source_file="$BATS_TEST_TMPDIR/issue-alias.sh"
+  prepare_run_step
+  printf '%s\n' \
+    "printf '%s\\n' '##vso[task.issue type=error]Aliased error.'" \
+    "printf '%s\\n' '##vso[task.issue type=warning]Aliased warning.'" >"$source_file"
+
+  run -0 run_test_step issuealias "$source_file" 10
+  # Same tagged rendering as task.logissue -- one executor behind both names.
+  [ "$output" = $'##[error]Aliased error.\n##[warning]Aliased warning.' ]
+
+  # And the same counters: the alias is not an unknown command falling through to the warning path.
+  run -0 azdo_step_issues issuealias
+  [ "$output" = $'errors=1\nwarnings=1' ]
+  run -0 azdo_step_result issuealias
+  [ "$output" = Succeeded ]
+}
+
 @test "task.logissue with an unexpected type fails the command but not the stream (C-E06-062/064)" {
   local source_file="$BATS_TEST_TMPDIR/logissue-bad-type.sh"
   prepare_run_step

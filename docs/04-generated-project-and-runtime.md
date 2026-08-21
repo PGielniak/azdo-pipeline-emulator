@@ -127,7 +127,7 @@ the first `run_step` skeleton even though their condition/result policies land i
 | `task.prependpath` | Nonempty value appended to `path.d` → subsequent steps, repeats move to newest (C-E06-012/057) |
 | `task.uploadartifact` / `artifact.upload` | Copy into `.artifacts/<artifactname>/` |
 | `task.uploadfile`, `task.uploadsummary`, `task.addattachment` | Copy under `logs/attachments/` (degraded: no UI) |
-| `task.logissue type=error\|warning` | Message rendered as a tagged `##[error]`/`##[warning]` line and counted per step; issue **counts alone do not change the step result** — only a failing logging command or the step's own exit status does (C-E06-062..064; docs/06 §5 decision 36) |
+| `task.logissue type=error\|warning` | Message rendered as a tagged `##[error]`/`##[warning]` line and counted per step; issue **counts alone do not change the step result** — only a failing logging command or the step's own exit status does (C-E06-062..064; docs/06 §5 decision 36). `task.issue` is a registered alias of the same handler, so both spellings behave identically (C-E06-068) |
 | `task.complete result=…` | `result` is required and merges worst-wins into the step result; a nonzero exit still overrides it, then command failures merge, then `continueOnError` downgrades (C-E06-059..061) |
 | `task.setprogress` | Ignored with a gated debug note; percent-complete has no local timeline (C-E06-067) |
 | `build.updatebuildnumber` | Updates `Build.BuildNumber` in store |

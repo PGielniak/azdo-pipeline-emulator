@@ -372,6 +372,21 @@ https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed4672
 (checked 2026-08-21) — "Set progress and current operation for the current task." / "`value` =
 percentage of completion" / "percentComplete = (Int32)Math.Min(Math.Max(progress, 0), 100);".
 
+[C-E06-068] `task.issue` is a registered **alias** of `task.logissue`, not a distinct command: the
+handler declares one alias, and the command manager stores the alias in the same dispatch map
+pointing at the same executor, so both spellings run identical code (a duplicate alias is a hard
+error, confirming one-executor-per-name). The doc page documents only the `task.logissue`
+spelling. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L363-L364
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/WorkerCommandManager.cs#L188-L199
+(checked 2026-08-21) — "public string Name => \"logissue\";" / "public List<string> Aliases =>
+new List<string>() { \"issue\" };" / "_commands[commandExecutor.Name] = commandExecutor; var
+aliasList = commandExecutor.Aliases; if (aliasList != null) { foreach (var alias in
+commandExecutor.Aliases) { ... _commands[alias] = commandExecutor; } }". The emulator dispatches
+`task.logissue | task.issue` to one handler for the same reason.
+
+
 ### Composition and the two docs/04 §6 corrections
 
 C-E06-057/058 fix `task.prependpath` and `task.setsecret` scope; both reuse existing runtime seams
