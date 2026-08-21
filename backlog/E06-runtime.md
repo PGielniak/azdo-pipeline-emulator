@@ -66,10 +66,11 @@ Acceptance: parser + handlers for the docs/04 §6 table, grounded command-by-com
   **Do:** store writes; output vars additionally to `outputs/<stage>/<job>/<step>.<var>`; within-job `$(step.var)` availability; secret registration to masker.
   **Ground:** set-variables-scripts doc (quote availability rules: subsequent steps only, not current; output-var reference forms) — each rule a claim; verify "not current step" via bats-replicated experiment matching a real-run transcript.
   **Done:** bats: subsequent-step visibility, output cross-job read via store, secret masked in logs.
-- [ ] **E06-S04-T03 — `task.prependpath`, `task.setsecret`, `task.complete`, `task.logissue`, formatting commands**
+- [x] **E06-S04-T03 — `task.prependpath`, `task.setsecret`, `task.complete`, `task.logissue`, formatting commands**
   **Do:** per docs/04 §6 table; `##[debug]` gated on `System.Debug`; issue counters feed result machine; ANSI rendering for group/section/warning/error.
   **Ground:** logging-commands doc per-command sections — one claim per command encoding its documented effect and scope (e.g. prependpath "for subsequent tasks" — quote).
   **Done:** bats per command; debug gating test.
+  *Done 2026-08-21 — C-E06-057..067; `packages/runtime/test/core.bats` cases 42–52. Two docs/04 §6 statements were corrected rather than implemented (docs/06 §5 decision 36): issue counts do not move the step result (a failing command or the exit status does), and the agent gates its debug channel rather than filtering raw `##[debug]` output — console hiding of those lines is a recorded local decision. No hosted counterpart run: this environment has no oracle credentials.*
 - [ ] **E06-S04-T04 — Artifact/attachment commands (`artifact.upload`, `task.uploadfile`, `build.updatebuildnumber`, `build.addbuildtag`)**
   **Do:** map to `.artifacts/` copy, `logs/attachments/`, store updates per docs/04 §6.
   **Ground:** logging-commands doc entries (quote `artifact.upload` properties `containerfolder`, `artifactname`).
