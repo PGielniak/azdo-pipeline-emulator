@@ -1475,6 +1475,8 @@ seed_drop() {
   printf 'TOP\n' >"$root/top.txt"
   printf 'NOTES\n' >"$root/notes.md"
   printf 'DEEP\n' >"$root/nested/deep.txt"
+  # A name a pattern list can only reach by *not* reading `#` as a comment (C-E06-090).
+  printf 'HASH\n' >"$root/#hash.txt"
 }
 
 @test "a pipeline artifact published in one job is downloaded by name in the next (C-E06-085/091/094)" {
@@ -1553,13 +1555,15 @@ seed_drop() {
   run -0 azdo_artifact_download --artifact drop --patterns $'!**/*.md\n**' --path "$target"
   [ -f "$target/notes.md" ]
 
-  # A comment is skipped before the negation prefix is read, and an even number of `!` is an
-  # include, so `!!**/*.md` adds the file a bare `!**/*.md` would have removed.
+  # A comment is skipped *before* the negation prefix is read, and an even number of `!` is an
+  # include. The comment line is the last one and would otherwise re-add `#hash.txt`, so a reader
+  # that treats `#` as an ordinary character selects a file this one must not.
   target="$BATS_TEST_TMPDIR/patterns/comment-and-double-negation"
   run -0 azdo_artifact_download --artifact drop \
-    --patterns $'# !**/*.txt is a comment, not an exclude\n**\n!**/*.md\n!!**/*.md' --path "$target"
-  [ -f "$target/top.txt" ]
+    --patterns $'**\n!**\n!!**/*.md\n#hash.txt' --path "$target"
   [ -f "$target/notes.md" ]
+  [ ! -e "$target/top.txt" ]
+  [ ! -e "$target/#hash.txt" ]
 }
 
 @test "artifact patterns split on newlines only and match the artifact name in the first segment (C-E06-087/088/090)" {
@@ -1620,8 +1624,17 @@ seed_drop() {
   # existence check is not established by the pinned sources, so nothing here depends on it.
   run ! azdo_artifact_publish --path absent --artifact drop
   [[ "$output" == *"Path does not exist: absent"* ]]
+  # The agent's own forbidden set — `" : < > | * ? / \` and anything below U+0020 — none of which
+  # `azdo__valid_store_segment` would catch on its own (C-E06-093).
+  run ! azdo_artifact_publish --path drop --artifact 'star*name'
+  run ! azdo_artifact_publish --path drop --artifact 'q?name'
+  run ! azdo_artifact_publish --path drop --artifact 'back\slash'
+  run ! azdo_artifact_publish --path drop --artifact 'colon:name'
   run ! azdo_artifact_publish --path drop --artifact 'sub/drop'
+  # And the store-segment guard on top, which rejects names the agent accepts but a directory
+  # under `.artifacts/` cannot be — a recorded local hardening (C-E06-093).
   run ! azdo_artifact_publish --path drop --artifact '..'
+  run ! azdo_artifact_publish --path drop --artifact ''
   [ -z "$(find "$AZDO_ARTIFACT_DIR" -mindepth 1)" ]
 
   # --path is required; an unknown flag is a usage error, not a failed publish.

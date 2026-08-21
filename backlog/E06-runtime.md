@@ -86,10 +86,11 @@ Acceptance: parser + handlers for the docs/04 §6 table, grounded command-by-com
 ## E06-S05 — As a pipeline developer, artifacts and checkout behave like the agent's, so multi-stage artifact hand-offs work offline.
 Acceptance: publish/download flows + checkout modes per docs/04 §7–§8.
 
-- [!] **E06-S05-T01 — Artifact publish/download (current)**
+- [x] **E06-S05-T01 — Artifact publish/download (current)**
   **Do:** `azdo_artifact_publish/download` with pattern support; deployment-job auto-download injection point; download target `$(Pipeline.Workspace)/<name>`.
   **Ground:** pipeline-artifacts doc (…/pipelines/artifacts/pipeline-artifacts — quote default download path & auto-download behavior for deployment jobs); `PublishPipelineArtifactV1`/`DownloadPipelineArtifactV2` task.json defaults (pin).
   **Done:** bats: publish→download round trip across two jobs; deployment auto-download fixture.
+  *Done 2026-08-21 — C-E06-084..096; `packages/runtime/test/core.bats` 10 new cases, 12 mutations confirmed red. `azdo_artifact_publish`/`azdo_artifact_download` reproduce the two **agent-plugin** tasks (read from `src/Agent.Plugins/PipelineArtifact/PipelineArtifactPlugin{V1,V2}.cs`, not a task `main.ts`), with `azdo_artifact_auto_download` as the deployment-job injection point. The **Do** field's `$(Pipeline.Workspace)/<name>` target is the `download:` **keyword's** layout, not the task's: implementing it inside the download function would double the name segment for pipelines that write `DownloadPipelineArtifact@2` with its documented default, so the emitter passes it via `--path` (docs/06 §5 decision 39; docs/04 §7 corrected). A relative path resolves against `System.DefaultWorkingDirectory`, contradicting the task.json help text. No hosted run: no oracle credentials in this environment.*
 - [ ] **E06-S05-T02 — Checkout (self) modes & options**
   **Do:** `clone` (reference clone from pinned origin+commit), `copy` (rsync worktree), `worktree`; options `fetchDepth fetchTags lfs submodules path clean`; `Build.SourceBranch/SourceVersion/Repository.*` seeding from repo state.
   **Ground:** yaml-schema `steps-checkout` page (quote each option's effect); multi-repo layout claims deferred to T03; git flag mapping cited from git-scm.com docs (pin per flag).
