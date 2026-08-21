@@ -25,76 +25,20 @@ Acceptance: directive semantics proven by oracle fixture pairs, not by reading a
   (E01-S01-T04, E02-S01-T03). `loneExpression` finds its closing `}}` with a quote-aware scan: the
   documented escape for a literal `${{` is to wrap it in an expression string (C-E03-117), which
   E03-S01-T05 depends on.
-- [x] **E03-S01-T02 — Conditional insertion chains**
+- [!] **E03-S01-T02 — Conditional insertion chains**
+  *Blocked 2026-08-18: the required six-case preview-oracle matrix cannot run because `AZDO_ORG_URL`, `AZDO_PROJECT`, `AZDO_ORACLE_PIPELINE_ID`, and `AZDO_PAT` are all unset and `.env.oracle` is absent; official docs leave chain grouping, nesting, and orphan/missing-chain behavior unspecified. Configure `research/oracle-setup.md`, then resume from C-E03-120/121.*
   **Do:** `if/elseif/else` chain grouping in document order; winning branch spliced into parent; nested chains.
   **Ground:** templates doc "Conditional insertion"; **oracle fixtures**: ≥ 6 cases (mapping vs sequence, nested, else-only-missing) — commit input+`finalYaml` pairs under `fixtures/oracle/directives/` with claim IDs.
   **Done:** goldens equal oracle output for all pairs.
-  *Done/reconciled 2026-08-19:* `packages/engine/src/template/conditionals.ts` implements lazy,
-  per-container selection and recursive structural splicing. The union of two independent live
-  surveys is retained: 45 preview probes, 37 successful input/`finalYaml` pairs, and 8 rejection
-  controls under `research/experiments/E03-conditionals/`, `research/experiments/E03-if/`, and
-  `fixtures/oracle/directives/` (C-E03-120..137). The original Side A implementation matched all
-  37 successful pairs; the parallel Side B implementation matched 34, rejecting the service's two
-  collection-truthiness fixtures and its mapping-body-in-sequence fixture, so Side A survived.
-  **Two mutation-checked findings invert the natural forward-grouping reading of `Do`:** chain
-  membership is not adjacency-gated and the winner splices at its own directive position
-  (C-E03-128); conditions evaluate in document order and stop at the first winner (C-E03-132).
-  Conditions span all value kinds, including truthy empty collections (C-E03-135), and body shape
-  controls flatten/merge/item insertion (C-E03-136). Orphans, members after `else`, and duplicate
-  `else` clauses remain distinct measured rejections (C-E03-129/130/137). An `each`/`insert` sibling
-  between chain members was unmeasured here and is settled the other way by E03-S01-T04
-  (C-E03-138/139).
-- [x] **E03-S01-T03 — Iterative insertion (`each`)**
-  *Done 2026-08-18:* 12 live preview probes recorded C-E03-140..151 and produced 11
-  input/`finalYaml` fixture pairs. `eachVisitor` expands sequences and mappings in authored order,
-  including integer-like keys, recursively supports nested loops and full `stepList`/`jobList`
-  structures, splices mapping/sequence bodies, and creates no implicit index. Oracle golden tests
-  cover every successful pair; the rejected bare-index case is retained as an error transcript.
+- [ ] **E03-S01-T03 — Iterative insertion (`each`)**
   **Do:** sequence iteration, mapping iteration (`pair.key`/`pair.value` semantics), iteration over `object`/`*List` parameters, nested `each`, index availability check.
   **Ground:** templates doc "Iterative insertion"; oracle fixtures ≥ 8 incl. each-over-mapping key order (record observed ordering as a claim) and each wrapping full jobs.
   **Done:** goldens vs oracle; ordering claim documented.
-- [x] **E03-S01-T04 — `${{ insert }}` merge**
-  *Done 2026-08-19:* `packages/engine/src/template/insert.ts` (`insertVisitor`, `InsertValueError`)
-  on T01's directive seam, plus `scripts/insert-survey.ts` (`pnpm insert-survey`) and
-  `composeVisitors` in `walk.ts`. 32 live probes (`research/experiments/E03-insert/`,
-  C-E03-160..174): 13 expanded into committed input/`finalYaml` pairs and **19 were rejected** and
-  are asserted against their committed error transcripts — for this task the rejections carry most
-  of the claims, since both headline answers are ones the service gives by refusing a document. **The Ground field's source does not exist**: the templates page has no
-  "Insertion" section — `${{ insert }}` is documented on **template-expressions**, in one paragraph
-  with one example, and the templates page's "Insert a template" is the unrelated `- template:`
-  include (C-E03-160). Unlike T02/T03, the `actions/runner` fork *does* implement this directive, so
-  it is a real second source; it predicted the collision rule correctly and the position rule
-  wrongly (C-E03-162/173).
-  **The flagged unknown is settled: collision is an *error*, not an overwrite** — `'<key>' is
-  already defined`, HTTP 400, at the **later** occurrence, folding case, echoing the later spelling
-  (C-E03-169/170). And the rule is **the mapping's, not the directive's**: two colliding inserts and
-  an `each`-produced key colliding with a literal reject identically, so the check lives on the
-  mapping rebuild in `walk.ts` (C-E03-171), accumulating a diagnostic and dropping the later entry,
-  with directive keys exempt to agree with E01-S01-T04's parse-time exemption.
-  **The T02 open question is settled the opposite way to T02's guess** (C-E03-138): an `each`/
-  `insert` sibling **between** two chain members orphans the trailing member — both parent shapes,
-  both directives, `elseif` as well as `else`, against controls placing the same insert immediately
-  before and after the chain, where it expands. `conditionals.ts` now ends the containing chain at
-  any directive it does not own, which is why `conditionalVisitor` composes **first**. That also
-  exposed a second T02 defect: the orphan rejection hard-coded the *sequence* wording, but in a
-  mapping the second sentence is `A mapping was not expected` (C-E03-139); the diagnostics are now
-  position-aware, and the service's third sentence — an internal reader-stack dump — is deliberately
-  not reproduced. (Both claims were probed as C-E03-135/136 and renumbered on the rebase onto
-  `main`, where the reconciled T02 survey already held 135..137.)
-  Also measured: the merge is in-place and preserves the source object's authored order
-  (C-E03-163); literal-mapping values (164), empty objects (165), well-known-key mappings with
-  nested values (166), loop-binding sources (167) and two inserts in one mapping (168); non-mapping
-  values are `Expected a mapping` (172); outside key position the keyword is still recognized but
-  cannot act and its text survives verbatim (173 — **handed to T05: never evaluate a lone
-  `${{ insert }}`**); and `- ${{ insert }}: <obj>` merges into the *item*, not the parent sequence
-  (174). Six mutations turn the suite red, including one that initially did **not** — the
-  merge-vs-splice distinction was unobservable on a single-key object, which is why
-  `sequence-position-valid` exists. Docs updated per rule 5: docs/02 §4, docs/06 §5 decision 33
-  (and decision 27's open question marked settled), REFERENCES.md.
+- [ ] **E03-S01-T04 — `${{ insert }}` merge**
   **Do:** mapping-merge semantics incl. collision behavior (verify: error vs overwrite).
   **Ground:** templates doc "Insertion"; oracle probe for key-collision behavior; claim recorded.
   **Done:** goldens incl. collision case matching service.
-- [x] **E03-S01-T05 — Scalar interpolation rules** *(done 2026-08-19. `packages/engine/src/template/interpolate.ts` — `interpolationVisitor` on T01's scalar seam, grounded by 34 live preview probes (`pnpm interpolation-survey`, `research/experiments/E03-interpolation/`, C-E03-175..194); 27 committed as fixture pairs, 7 asserted against their rejection transcripts. The two documented rules held (`Null → ''`, Boolean → `True`/`False`); three undocumented ones decided the code. **The lone/mixed boundary is whitespace-sensitive** — `'  ${{ obj }}  '` is mixed content and rejects, the unpadded quoted spelling inserts structurally — so `loneExpression` stopped trimming (C-E03-180); it had been wrong since T01 and was invisible because YAML strips plain scalars itself. **Every scalar result is converted to its String form**, proven by Null rendering `''` in lone position (C-E03-183); Number is shortest-round-trip invariant (`1.0` → `1`), making the expressions page's "no decimal separator" false as written (C-E03-182). **Keys share the split but have no structural option** and their spelling is `True` — closing the docs/02 §8 ambiguity entry — with two distinct rejections proving the split is shared: lone collection → `Expected a scalar value`, mixed → `Unable to convert from Object to String. Value: Object` (C-E03-190/191/192). Also landed: `TemplateVisitor.scalar` gained a `TemplateScalarContext` (`position` + `report`), `walkSequence` gained the array-into-array flatten (C-E03-178), and the `fixtureScalars` stand-in is deleted so all four E03-S01 suites run the real pass. Eight mutations turn the suite red. A defect in the **normalizer** was found and filed rather than patched here — it types scalar leaves before comparing them (C-E03-193) — as E03-S05-T03; its two affected pairs are asserted against raw `finalYaml` meanwhile. 70 tests.)*
+- [ ] **E03-S01-T05 — Scalar interpolation rules**
   **Do:** lone-expression structural insertion vs mixed-content stringification; Null→``, Boolean→`True/False`, Number invariant; expression-in-key stringification.
   **Ground:** docs/02 §3 spec + oracle probes for each stringification rule (esp. Boolean casing, float rendering `0.5`/`1.0`); claims per rule.
   **Done:** table-driven goldens vs oracle.
@@ -109,21 +53,11 @@ Acceptance: directive semantics proven by oracle fixture pairs, not by reading a
 ## E03-S02 — As a pipeline developer, includes/`extends` with typed parameters resolve like the service, so multi-file pipelines just work.
 Acceptance: reference forms, parameter typing, and `extends` restrictions all enforced with service-matching errors.
 
-- [x] **E03-S02-T01 — Reference resolution (`relative`, `/root`, `@alias`, `@self`)**
-  *Note (2026-08-20, C-E03-195..218): the **Do** field's "cycle detection on (repo, commit, path)"
-  is ours, not the service's — a cycle there is not detected at all, it recurses until
-  `Maximum object depth exceeded` (C-E03-208). We detect the repeat over the active stack and emit
-  that sentence at the file the service attributes it to. Also measured and not implied by the task
-  text: a **repository switch resets the base directory** to the target repo's root (C-E03-215), so
-  "per-file base dir" holds only within one repository.*
+- [ ] **E03-S02-T01 — Reference resolution (`relative`, `/root`, `@alias`, `@self`)**
   **Do:** resolver with per-file base dir, repo-context switching on `@alias` (fetcher interface injected; local-FS impl now, remote in E08), cycle detection on (repo, commit, path).
   **Ground:** templates doc "Use other repositories" + resources doc `repositories`; oracle can't exercise cross-repo without setup — add a two-repo fixture in the test org and capture `finalYaml` proving path resolution + `@self` semantics.
   **Done:** unit tests for path math; oracle fixture for cross-repo include.
-- [!] **E03-S02-T02 — Typed parameter binding**
-  *In progress 2026-08-20 by worker `claude` on worktree `/root/wt-claude`, branch
-  `claude/e03-s01-t04`; do not pick. Builds on E03-S02-T01's `reference.ts` resolver and
-  E03-S01-T01's `TemplateFrame` parameter seam in `walk.ts`. Claim block C-E03-300..339
-  (E03-S02's original 195..229 block has only 219..229 left, which T03/T04 need).*
+- [ ] **E03-S02-T02 — Typed parameter binding**
   **Do:** all documented types (`string number boolean object step stepList job jobList deployment deploymentList stage stageList`), `values:` restriction, `default`, required-missing error, extra-parameter error; runtime parameters at root bound from CLI/config.
   **Ground:** template-parameters + runtime-parameters docs (quote type list and coercion notes); oracle probes for: passing number to string, boolean literals accepted (`true`/`True`?), object deep shape — transcripts + claims.
   **Done:** binding test matrix per type × (default/provided/missing/wrong-type); errors snapshot-compared to service phrasing collected via oracle.
@@ -175,16 +109,3 @@ Acceptance: normalize-and-diff pipeline usable locally and in CI.
   **Do:** expand locally → fetch `finalYaml` → normalize both → semantic diff (path-based, colored) → exit code; `--update-fixture` writes the pair into `fixtures/oracle/`.
   **Ground:** preview REST page (already pinned E00-S03); diff behavior spec docs/02 §8.
   **Done:** command green on corpus; used by E12-S03 nightly.
-- [ ] **E03-S05-T03 — Normalizer rule N9: compare scalar leaves as source text**
-  *Added 2026-08-19 by E03-S01-T05, which found the gap rather than assuming it (C-E03-193).*
-  **Do:** `normalize.ts`'s `plain()` stringifies the values the YAML parser already typed, so the
-  service's `PROBE: 0123` becomes `"123"` while our `PROBE: "0123"` stays `"0123"` — one value,
-  reported as drift. Rule N7 ("scalar leaves compared as strings") is right and applied one layer
-  too late: read each scalar's **source text** from the CST instead, which is what the service's own
-  reader does and why its `finalYaml` round-trips (C-E03-001). Affects Booleans and numeric-looking
-  strings equally (`True` vs `true`).
-  **Ground:** C-E03-193 + `research/experiments/E03-interpolation/lone-string-numeric/`; no new
-  oracle probes needed — the two divergent pairs are already committed.
-  **Done:** `interp-lone-string-numeric` and `interp-key-boolean` removed from
-  `NORMALIZER_LOSSY` in `packages/engine/test/template/interpolate.test.ts` and passing as ordinary
-  goldens; normalizer idempotence still green.
