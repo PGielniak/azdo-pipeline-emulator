@@ -86,7 +86,7 @@ Acceptance: parser + handlers for the docs/04 §6 table, grounded command-by-com
 ## E06-S05 — As a pipeline developer, artifacts and checkout behave like the agent's, so multi-stage artifact hand-offs work offline.
 Acceptance: publish/download flows + checkout modes per docs/04 §7–§8.
 
-- [ ] **E06-S05-T01 — Artifact publish/download (current)**
+- [!] **E06-S05-T01 — Artifact publish/download (current)**
   **Do:** `azdo_artifact_publish/download` with pattern support; deployment-job auto-download injection point; download target `$(Pipeline.Workspace)/<name>`.
   **Ground:** pipeline-artifacts doc (…/pipelines/artifacts/pipeline-artifacts — quote default download path & auto-download behavior for deployment jobs); `PublishPipelineArtifactV1`/`DownloadPipelineArtifactV2` task.json defaults (pin).
   **Done:** bats: publish→download round trip across two jobs; deployment auto-download fixture.
