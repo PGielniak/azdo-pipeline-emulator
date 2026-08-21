@@ -59,6 +59,18 @@ prepare_run_step() {
   azdo_env_materialize
 }
 
+prepare_artifact_dirs() {
+  AZDO_ARTIFACT_DIR="$BATS_TEST_TMPDIR/.artifacts"
+  AZDO_ATTACHMENT_DIR="$BATS_TEST_TMPDIR/logs/attachments"
+  export AZDO_ARTIFACT_DIR AZDO_ATTACHMENT_DIR
+  mkdir -p "$AZDO_ARTIFACT_DIR" "$AZDO_ATTACHMENT_DIR"
+}
+
+dispatch_line() {
+  azdo_logging_parse_line "$1" || return
+  azdo_logging_dispatch
+}
+
 run_test_step() {
   local id="$1" file="$2" timeout_seconds="${3:-10}"
   shift 3
@@ -1286,4 +1298,218 @@ TABLE
   [ "$output" = Skipped ]
   run ! azdo_merge_task_results Succeeded Abandoned
   [ "$status" -eq 2 ]
+}
+
+@test "artifact.upload of a file lands under the artifact name and records the container folder (C-E06-069/071/072)" {
+  local payload="$BATS_TEST_TMPDIR/testresult.trx"
+  prepare_artifact_dirs
+  printf 'RESULT\n' >"$payload"
+
+  # The doc page's own example: the two levels deliberately differ.
+  run -0 dispatch_line "##vso[artifact.upload containerfolder=testresult;artifactname=uploadedresult]$payload"
+
+  [ "$(cat "$AZDO_ARTIFACT_DIR/uploadedresult/testresult.trx")" = RESULT ]
+  # The container folder is the coordinate inside the container, never a directory level of the
+  # downloaded tree (C-E06-072, docs/06 §5 decision 37).
+  [ ! -e "$AZDO_ARTIFACT_DIR/uploadedresult/testresult" ]
+  [ "$(cat "$AZDO_ARTIFACT_DIR/.meta/uploadedresult")" = $'type=container\ncontainerfolder=testresult' ]
+}
+
+@test "artifact.upload of a directory contributes its contents, not its own name (C-E06-071)" {
+  local source="$BATS_TEST_TMPDIR/drop"
+  prepare_artifact_dirs
+  mkdir -p "$source/nested/deeper"
+  printf 'TOP\n' >"$source/top.txt"
+  printf 'DEEP\n' >"$source/nested/deeper/deep.txt"
+
+  run -0 dispatch_line "##vso[artifact.upload artifactname=MyDrop]$source"
+
+  [ "$(cat "$AZDO_ARTIFACT_DIR/MyDrop/top.txt")" = TOP ]
+  [ "$(cat "$AZDO_ARTIFACT_DIR/MyDrop/nested/deeper/deep.txt")" = DEEP ]
+  [ ! -e "$AZDO_ARTIFACT_DIR/MyDrop/drop" ]
+  # An absent containerfolder defaults to the artifact name (C-E06-069).
+  [ "$(cat "$AZDO_ARTIFACT_DIR/.meta/MyDrop")" = $'type=container\ncontainerfolder=MyDrop' ]
+}
+
+@test "artifact.upload requires an artifact name and an existing path (C-E06-069/070)" {
+  local payload="$BATS_TEST_TMPDIR/payload.txt"
+  prepare_artifact_dirs
+  printf 'X\n' >"$payload"
+
+  run ! dispatch_line "##vso[artifact.upload containerfolder=drop]$payload"
+  [[ "$output" == *'Artifact Name is required.'* ]]
+
+  run ! dispatch_line "##vso[artifact.upload artifactname=drop]"
+  [[ "$output" == *'Artifact location is required.'* ]]
+
+  run ! dispatch_line "##vso[artifact.upload artifactname=drop]$BATS_TEST_TMPDIR/absent"
+  [[ "$output" == *'Path does not exist: '* ]]
+
+  [ ! -e "$AZDO_ARTIFACT_DIR/drop" ]
+}
+
+@test "artifact.upload of an empty directory warns and succeeds without failing the step (C-E06-070)" {
+  local source_file="$BATS_TEST_TMPDIR/upload-empty.sh" empty="$BATS_TEST_TMPDIR/empty-drop"
+  prepare_run_step
+  prepare_artifact_dirs
+  mkdir -p "$empty/only-a-subdirectory"
+
+  printf '%s\n' "printf '%s\\n' '##vso[artifact.upload artifactname=EmptyDrop]$empty'" >"$source_file"
+  run -0 run_test_step upload-empty "$source_file" 10
+
+  # context.Warning is AddIssue(Warning): a counted warning issue and a tagged line, and the
+  # command still returns successfully.
+  [ "$output" = "##[warning]Directory '$empty' is empty. Nothing will be added to build artifact 'EmptyDrop'." ]
+  run -0 azdo_step_result upload-empty
+  [ "$output" = Succeeded ]
+  [ ! -e "$AZDO_ARTIFACT_DIR/EmptyDrop" ]
+}
+
+@test "artifact.associate is accepted and recorded without copying bytes (C-E06-073)" {
+  prepare_artifact_dirs
+  run -0 dispatch_line '##vso[artifact.associate type=filepath;artifactname=MyFileShareDrop]\\MyShare\MyDropLocation'
+  [ "$(cat "$AZDO_ARTIFACT_DIR/.meta/MyFileShareDrop")" = $'type=filepath\nassociated=\\\\MyShare\\MyDropLocation' ]
+  [ ! -e "$AZDO_ARTIFACT_DIR/MyFileShareDrop" ]
+
+  run ! dispatch_line '##vso[artifact.associate artifactname=NoType]#/1/build'
+  [[ "$output" == *'Artifact Type is required.'* ]]
+  run ! dispatch_line '##vso[artifact.associate type=container]#/1/build'
+  [[ "$output" == *'Artifact Name is required.'* ]]
+}
+
+@test "the attachment family is one implementation with three name/type derivations (C-E06-074/075/079)" {
+  local summary="$BATS_TEST_TMPDIR/testsummary.md" extra="$BATS_TEST_TMPDIR/additionalfile.log"
+  prepare_artifact_dirs
+  printf '# Summary\n' >"$summary"
+  printf 'LOGLINE\n' >"$extra"
+
+  run -0 dispatch_line "##vso[task.uploadsummary]$summary"
+  run -0 dispatch_line "##vso[task.uploadfile]$extra"
+  run -0 dispatch_line "##vso[task.addattachment type=myattachmenttype;name=myattachmentname;]$extra"
+
+  # uploadsummary is the documented shorthand for exactly this addattachment, so both spellings
+  # land in the same place — the identity is locally observable (C-E06-079).
+  [ "$(cat "$AZDO_ATTACHMENT_DIR/Distributedtask.Core.Summary/testsummary.md")" = '# Summary' ]
+  [ "$(cat "$AZDO_ATTACHMENT_DIR/FileAttachment/additionalfile.log")" = LOGLINE ]
+  [ "$(cat "$AZDO_ATTACHMENT_DIR/myattachmenttype/myattachmentname")" = LOGLINE ]
+
+  run -0 dispatch_line "##vso[task.addattachment type=Distributedtask.Core.Summary;name=testsummary.md;]$summary"
+  [ "$(cat "$AZDO_ATTACHMENT_DIR/Distributedtask.Core.Summary/testsummary.md")" = '# Summary' ]
+}
+
+@test "attachments require type, name and an existing file, and reject path segments (C-E06-074/075/076)" {
+  local extra="$BATS_TEST_TMPDIR/attach.log"
+  prepare_artifact_dirs
+  printf 'X\n' >"$extra"
+
+  run ! dispatch_line "##vso[task.addattachment name=n]$extra"
+  [[ "$output" == *"attachment type is not provided."* ]]
+  run ! dispatch_line "##vso[task.addattachment type=t]$extra"
+  [[ "$output" == *"attachment name is not provided."* ]]
+  run ! dispatch_line "##vso[task.addattachment type=t;name=n]$BATS_TEST_TMPDIR/absent"
+  [[ "$output" == *'does not exist on disk.'* ]]
+  # A directory is accepted by artifact.upload but never by an attachment (C-E06-075).
+  run ! dispatch_line "##vso[task.addattachment type=t;name=n]$BATS_TEST_TMPDIR"
+  [[ "$output" == *'does not exist on disk.'* ]]
+
+  # The agent rejects Path.GetInvalidFileNameChars(); the local guard is narrower but sufficient,
+  # because both values become path segments (C-E06-076).
+  run ! dispatch_line "##vso[task.addattachment type=..;name=n]$extra"
+  [[ "$output" == *'invalid variable-store path segment'* ]]
+
+  # Empty message is rejected by the two upload commands with their own message, before the helper.
+  run ! dispatch_line '##vso[task.uploadfile]'
+  [[ "$output" == *'Cannot upload file because file location is not specified.'* ]]
+  run ! dispatch_line '##vso[task.uploadsummary]'
+  [[ "$output" == *'Cannot upload summary file, summary file location is not specified.'* ]]
+}
+
+@test "build.uploadlog and the deprecated build.uploadsummary attach under derived names (C-E06-077/078)" {
+  local log="$BATS_TEST_TMPDIR/msbuild.log" summary="$BATS_TEST_TMPDIR/report.md"
+  prepare_artifact_dirs
+  printf 'BUILT\n' >"$log"
+  printf 'REPORT\n' >"$summary"
+
+  run -0 dispatch_line "##vso[build.uploadlog]$log"
+  # Fixed name, not the file's own (C-E06-077).
+  [ "$(cat "$AZDO_ATTACHMENT_DIR/Log/CustomToolLog")" = BUILT ]
+
+  run -0 dispatch_line "##vso[build.uploadsummary]$summary"
+  [ "$(cat "$AZDO_ATTACHMENT_DIR/Distributedtask.Core.Summary/CustomMarkDownSummary-report.md")" = REPORT ]
+
+  run ! dispatch_line '##vso[build.uploadlog]'
+  [[ "$output" == *"Log file path is not provided or file doesn't exist: ''"* ]]
+  run ! dispatch_line "##vso[build.uploadsummary]$BATS_TEST_TMPDIR/absent.md"
+  [[ "$output" == *"Markdown summary file path is not provided or file doesn't exist:"* ]]
+}
+
+@test "build.updatebuildnumber overwrites the read-only name and reaches later steps (C-E06-080/081)" {
+  local setter="$BATS_TEST_TMPDIR/set-number.sh" observer="$BATS_TEST_TMPDIR/read-number.sh"
+  # Build.BuildNumber is a member of Constants.Variables.ReadOnlyVariables, so seed it as the
+  # runner would; task.setvariable must still be refused on it.
+  azdo_var_set 'Build.BuildNumber' '20260821.1' false false true
+  prepare_run_step
+
+  printf '%s\n' "printf '%s\\n' '##vso[build.updatebuildnumber]  my-new-build-number  '" >"$setter"
+  run -0 run_test_step set-number "$setter" 10
+  run -0 azdo_step_result set-number
+  [ "$output" = Succeeded ]
+
+  # Not trimmed, unlike addbuildtag (C-E06-080/082).
+  [ "$(azdo_var 'Build.BuildNumber')" = '  my-new-build-number  ' ]
+  # The name stays read-only: Variables.Set propagates the flag, it does not clear it (C-E06-081).
+  run -0 azdo_var_meta 'Build.BuildNumber'
+  [[ "$output" == *'readonly=true'* ]]
+
+  azdo_env_materialize
+  printf '%s\n' 'printf "SEEN=[%s]\n" "$BUILD_BUILDNUMBER"' >"$observer"
+  run -0 run_test_step read-number "$observer" 10
+  [ "$output" = 'SEEN=[  my-new-build-number  ]' ]
+}
+
+@test "build.updatebuildnumber requires a value while task.setvariable stays refused (C-E06-004/080/081)" {
+  prepare_artifact_dirs
+  azdo_var_set 'Build.BuildNumber' 'original' false false true
+
+  run ! dispatch_line '##vso[build.updatebuildnumber]'
+  [[ "$output" == *'Build number is required.'* ]]
+  [ "$(azdo_var 'Build.BuildNumber')" = original ]
+
+  # The read-only rule is enforced in the setvariable handler, not in the store, which is precisely
+  # why updatebuildnumber can bypass it (C-E06-081).
+  run ! dispatch_line '##vso[task.setvariable variable=Build.BuildNumber]hijacked'
+  [ "$(azdo_var 'Build.BuildNumber')" = original ]
+}
+
+@test "build.addbuildtag trims, de-duplicates case-insensitively and rejects blanks (C-E06-082)" {
+  prepare_artifact_dirs
+
+  run -0 dispatch_line '##vso[build.addbuildtag]  last_scanned-2026  '
+  run -0 dispatch_line '##vso[build.addbuildtag]LAST_SCANNED-2026'
+  run -0 dispatch_line '##vso[build.addbuildtag]release'
+  # Server-side tags are a set compared OrdinalIgnoreCase (C-E06-082).
+  [ "$(cat "$AZDO_STATE_DIR/tags")" = $'last_scanned-2026\nrelease' ]
+
+  run ! dispatch_line '##vso[build.addbuildtag]'
+  [[ "$output" == *'Build tag is required.'* ]]
+  run ! dispatch_line '##vso[build.addbuildtag]   '
+  [[ "$output" == *'Build tag is required.'* ]]
+  [ "$(cat "$AZDO_STATE_DIR/tags")" = $'last_scanned-2026\nrelease' ]
+}
+
+@test "a failing artifact command is an error issue that fails the step (C-E06-064/069)" {
+  local source_file="$BATS_TEST_TMPDIR/bad-upload.sh"
+  prepare_run_step
+  prepare_artifact_dirs
+  printf '%s\n' \
+    "printf '%s\\n' '##vso[artifact.upload containerfolder=drop]/tmp/whatever'" \
+    "printf '%s\\n' 'still-running'" >"$source_file"
+
+  run ! run_result_step bad-upload "$source_file" false false 0 10
+  [[ "$output" == *still-running* ]]
+  # The message names area.action, never the wire line - the T03 convention (C-E06-064).
+  grep -qxF "##[error]Unable to process command 'artifact.upload' successfully." \
+    "$AZDO_LOG_DIR/bad-upload.log"
+  run -0 azdo_step_result bad-upload
+  [ "$output" = Failed ]
 }

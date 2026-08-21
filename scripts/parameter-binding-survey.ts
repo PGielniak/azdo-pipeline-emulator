@@ -151,7 +151,14 @@ const probe = (
   yaml: string,
   expected: ParameterProbe['expected'],
   templateParameters?: Readonly<Record<string, string>>,
-): ParameterProbe => ({ name, asserts, yaml, expected, templateParameters });
+): ParameterProbe => ({
+  name,
+  asserts,
+  yaml,
+  expected,
+  // `exactOptionalPropertyTypes` forbids writing an explicit `undefined` into an optional field.
+  ...(templateParameters === undefined ? {} : { templateParameters }),
+});
 
 // ---------------------------------------------------------------------------------------------
 // Probes
@@ -348,7 +355,7 @@ const PROBES: readonly ParameterProbe[] = [
     'default-expression',
     'template-parameters: "You can only use literals for parameter default values." What happens ' +
       'when the default is a template expression?',
-    root(decl('p', 'string', "  default: \${{ 'x' }}\n")),
+    root(decl('p', 'string', "  default: ${{ 'x' }}\n")),
     'either',
   ),
   probe(
@@ -731,7 +738,7 @@ const PROBES: readonly ParameterProbe[] = [
   probe(
     'default-expression-function',
     'A pure-function expression in a default — no named context at all.',
-    root(decl('p', 'string', "  default: \${{ format('{0}-{1}', 'a', 'b') }}\n")),
+    root(decl('p', 'string', "  default: ${{ format('{0}-{1}', 'a', 'b') }}\n")),
     'either',
   ),
   probe(
@@ -769,14 +776,14 @@ const PROBES: readonly ParameterProbe[] = [
   probe(
     'default-expression-literal-string-on-number',
     'The other half: a lone string-literal expression on a `number` parameter.',
-    root(decl('p', 'number', "  default: \${{ '42' }}\n")),
+    root(decl('p', 'number', "  default: ${{ '42' }}\n")),
     'either',
   ),
   probe(
     'default-expression-mixed',
     'A literal expression embedded in surrounding text — mixed content is a `format()` call ' +
       '(C-E02-109), so if the rule really is "literals only" this must reject.',
-    root(decl('p', 'string', "  default: pre-\${{ 'x' }}-post\n")),
+    root(decl('p', 'string', "  default: pre-${{ 'x' }}-post\n")),
     'either',
   ),
   //

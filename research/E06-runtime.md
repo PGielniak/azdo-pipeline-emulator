@@ -414,3 +414,219 @@ Two statements in docs/04 §6 did not survive grounding and are corrected in thi
 ANSI colors themselves are a local rendering choice: the hosted agent emits the tags and the web UI
 colors them (C-E06-066), so no source prescribes specific escape sequences. The renderer is a
 separate stream filter placed after the log `tee`, which keeps emitted logs byte-faithful.
+
+## E06-S04-T04 — artifact, attachment and build commands
+
+Sources for this block: the logging-commands doc page (checked 2026-08-21, `ms.date` 2026-03-05,
+docs commit `1481c0d18812667ac57f38b2b70c34d924608ccc`) and the agent pinned at
+`4571a73531e1ea6342ed46723dd39a115b92843b`, the same commit E06-S02..S04 already trace.
+
+[C-E06-069] `artifact.upload` requires a nonempty `artifactname` property; the `containerfolder`
+property is optional and **defaults to the artifact name** when absent or empty. —
+https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#upload-upload-an-artifact
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Build/ArtifactCommandExtension.cs#L149-L161
+(checked 2026-08-21) — "`containerfolder` = folder that the file will upload to, folder will be
+created if needed." / "`artifactname` = artifact name. (Required)" / "if
+(!eventProperties.TryGetValue(ArtifactUploadEventProperties.ArtifactName, out artifactName) ||
+string.IsNullOrEmpty(artifactName)) { throw new Exception(StringUtil.Loc(\"ArtifactNameRequired\"));
+}" / "containerFolder = artifactName;". `ArtifactNameRequired` is "Artifact Name is required."
+(`src/Misc/layoutbin/en-US/strings.json`).
+
+[C-E06-070] `artifact.upload`'s message is a local path that may be **either a file or a
+directory**; a path that is neither fails the command with `PathDoesNotExist`, and a directory
+that contains no files at any depth produces the **warning** `DirectoryIsEmptyForArtifact` and
+returns **successfully** without uploading anything. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Build/ArtifactCommandExtension.cs#L178-L189
+(checked 2026-08-21) — "string fullPath = Path.GetFullPath(localPath); if (!File.Exists(fullPath)
+&& !Directory.Exists(fullPath)) { throw new FileNotFoundException(StringUtil.Loc(\"PathDoesNotExist\",
+localPath)); } else if (Directory.Exists(fullPath) && Directory.EnumerateFiles(fullPath, \"*\",
+SearchOption.AllDirectories).FirstOrDefault() == null) { context.Warning(StringUtil.Loc(
+\"DirectoryIsEmptyForArtifact\", fullPath, artifactName)); return; }". Strings: "Path does not
+exist: {0}" / "Directory '{0}' is empty. Nothing will be added to build artifact '{1}'.". The
+warning travels `context.Warning` → `AddIssue(IssueType.Warning)`, so it is a **counted** warning
+issue exactly like `task.logissue type=warning`
+(https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/ExecutionContext.cs#L1314-L1318,
+C-E06-063). This is the discriminating case for the emulator: the natural implementation makes an
+empty directory a command *failure*, and the agent makes it a successful warning.
+
+[C-E06-071] The uploaded container item path is `<containerfolder>/<path relative to the source's
+parent directory>`: for a **file** source the parent is its containing directory, so the item is
+`<containerfolder>/<basename>`; for a **directory** source the parent is the directory itself, so
+its own name does **not** appear and the items are `<containerfolder>/<relative path inside it>`,
+recursively. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Build/FileContainerServer.cs#L83-L93
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Build/FileContainerServer.cs#L238
+(checked 2026-08-21) — "if (File.Exists(source)) { files = new List<String>() { source };
+_sourceParentDirectory = Path.GetDirectoryName(source); } else { files =
+Directory.EnumerateFiles(source, \"*\", SearchOption.AllDirectories).ToList();
+_sourceParentDirectory = source.TrimEnd(Path.DirectorySeparatorChar,
+Path.AltDirectorySeparatorChar); }" / "string itemPath = (_containerPath.TrimEnd('/') + \"/\" +
+fileToUpload.Remove(0, _sourceParentDirectory.Length + 1)).Replace('\\\\', '/');".
+
+[C-E06-072] The uploaded files land in the file container at `#/<containerId>/<containerfolder>`,
+and that container path is then associated with the **build artifact named `artifactname`** as a
+`Container`-type resource. The artifact name and the container folder are therefore two distinct
+levels: the name keys the artifact a later download asks for, the folder keys the bytes inside the
+container. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Build/ArtifactCommandExtension.cs#L243-L253
+(checked 2026-08-21) — "var fileContainerFullPath = StringUtil.Format($\"#/{containerId}/{containerPath}\");
+context.Output(StringUtil.Loc(\"UploadToFileContainer\", source, fileContainerFullPath)); ... var
+artifact = await buildHelper.AssociateArtifactAsync(buildId, projectId, name, jobId,
+ArtifactResourceTypes.Container, fileContainerFullPath, propertiesDictionary, cancellationToken);".
+
+[C-E06-073] `artifact.associate` creates a link to an **already existing** artifact rather than
+uploading anything: its message is a server-side location (file-container path, UNC share, TFVC
+path, git ref), and it requires nonempty `artifactname`, `type` and location. —
+https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#associate-initialize-an-artifact
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Build/ArtifactCommandExtension.cs#L29-L86
+(checked 2026-08-21) — "Create a link to an existing Artifact. Artifact location must be a file
+container path, VC path or UNC share path." / "`artifactname` = artifact name (Required)" /
+"`type` = artifact type (Required) `container` | `filepath` | `versioncontrol` | `gitref` |
+`tfvclabel`" / "throw new Exception(StringUtil.Loc(\"ArtifactTypeRequired\"));" / "throw new
+Exception(StringUtil.Loc(\"ArtifactLocationRequired\"));". Strings: "Artifact Type is required." /
+"Artifact location is required." There is nothing local to copy, so the emulator accepts, validates
+and records the association without materializing bytes — the `task.setprogress` pattern (C-E06-067).
+
+[C-E06-074] `task.uploadfile`, `task.uploadsummary` and `task.addattachment` are **one
+implementation**: both upload commands build a two-entry property dictionary and call
+`TaskAddAttachmentCommand.AddAttachment` directly. `uploadfile` supplies type
+`CoreAttachmentType.FileAttachment`, `uploadsummary` supplies `CoreAttachmentType.Summary`, and
+**both derive the attachment name as `Path.GetFileName(data)`** — the doc's shorthand example,
+which shows `uploadsummary` expanding to a custom `name=testsummaryname`, does not match the
+source. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L249-L302
+(checked 2026-08-21) — "uploadSummaryProperties.Add(TaskAddAttachmentEventProperties.Type,
+CoreAttachmentType.Summary); var fileName = Path.GetFileName(data);
+uploadSummaryProperties.Add(TaskAddAttachmentEventProperties.Name, fileName);
+TaskAddAttachmentCommand.AddAttachment(context, uploadSummaryProperties, data);" and the identical
+shape with `CoreAttachmentType.FileAttachment` in `TaskUploadFileCommand`. An empty message is
+rejected before the helper runs, with a command-specific message: `CannotUploadFile` = "Cannot
+upload file because file location is not specified." / `CannotUploadSummary` = "Cannot upload
+summary file, summary file location is not specified."
+
+[C-E06-075] `task.addattachment` requires nonempty `type` **and** `name` properties and a message
+naming a file that **exists on disk**; unlike `artifact.upload`, a directory is not accepted. —
+https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#addattachment-attach-a-file-to-the-build
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L317-L357
+(checked 2026-08-21) — "`type` = attachment type (Required)" / "`name` = attachment name
+(Required)" / "if (!String.IsNullOrEmpty(filePath) && File.Exists(filePath)) { context.QueueAttachFile(
+type, name, filePath); } else { throw new ArgumentNullException(StringUtil.Loc(
+\"MissingAttachmentFile\")); }". Strings: "Can't add task attachment, attachment type is not
+provided." / "Can't add task attachment, attachment name is not provided." / "Cannot upload task
+attachment file, attachment file location is not specified or attachment file does not exist on
+disk."
+
+[C-E06-076] Both `type` and `name` are additionally rejected when they contain any character in
+.NET's `Path.GetInvalidFileNameChars()`, with a message that is **not** localized and enumerates
+the set. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L333-L343
+(checked 2026-08-21) — "char[] s_invalidFileChars = Path.GetInvalidFileNameChars(); if
+(type.IndexOfAny(s_invalidFileChars) != -1) { throw new ArgumentException($\"Type contains invalid
+characters. ({String.Join(\",\", s_invalidFileChars)})\"); }". The set itself is
+platform-dependent in .NET (on Unix it is effectively `\0` and `/`), so the emulator does **not**
+reproduce the Windows set; it reuses the existing, strictly narrower `azdo__valid_store_segment`
+guard (rejects empty, `.`, `..`, `/`, newline, carriage return), which is sound because both values
+become local path segments. Recorded as a deliberate divergence rather than an imported constant.
+
+[C-E06-077] `build.uploadlog` requires a message naming an **existing** file and attaches it as a
+`Log`-type attachment under the fixed name `CustomToolLog`; a missing or absent path fails the
+command. —
+https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#uploadlog-upload-a-log
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Build/BuildCommandExtension.cs#L30-L51
+(checked 2026-08-21) — "Upload user interested log to build's container \"`logs\\tool`\" folder." /
+"if (!string.IsNullOrEmpty(data) && File.Exists(data)) { context.QueueAttachFile(
+CoreAttachmentType.Log, \"CustomToolLog\", data); } else { throw new Exception(StringUtil.Loc(
+\"CustomLogDoesNotExist\", data ?? string.Empty)); }". String: "Log file path is not provided or
+file doesn't exist: '{0}'". docs/04 §6 previously said this command was "ignored with debug note";
+it is a real attachment command and the row is corrected.
+
+[C-E06-078] `build.uploadsummary` still exists on the agent as a **deprecated** back-compat command
+distinct from `task.uploadsummary`: it attaches a `Summary`-type file under the derived name
+`CustomMarkDownSummary-<filename>`. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Build/BuildCommandExtension.cs#L53-L77
+(checked 2026-08-21) — "// ##VSO[build.uploadsummary] command has been deprecated / // Leave the
+implementation on agent for back compat" / "var fileName = Path.GetFileName(data);
+context.QueueAttachFile(CoreAttachmentType.Summary, StringUtil.Format(
+$\"CustomMarkDownSummary-{fileName}\"), data);". The doc page does not list it. String
+`CustomMarkDownSummaryDoesNotExist` = "Markdown summary file path is not provided or file doesn't
+exist: '{0}'".
+
+[C-E06-079] The wire values of the `CoreAttachmentType` constants live in the closed
+`Microsoft.TeamFoundation.DistributedTask.WebApi` assembly, not in any pinned repository — the same
+situation as the expression engine (C-E00-012). Only `Summary` has a documented value: the doc page
+states `task.uploadsummary` is shorthand for `##vso[task.addattachment
+type=Distributedtask.Core.Summary;name=…]`. —
+https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#uploadsummary-add-some-markdown-content-to-the-build-summary
+(checked 2026-08-21) — "It's a short hand form for the command
+`##vso[task.addattachment type=Distributedtask.Core.Summary;name=testsummaryname;]c:\\testsummary.md`".
+The emulator therefore uses `Distributedtask.Core.Summary` verbatim for the two summary commands —
+which makes the documented shorthand identity locally observable — and uses the **C# member names**
+`FileAttachment` and `Log` as local directory segments for the two whose values it cannot cite,
+rather than inventing wire spellings. Recorded as a local naming decision, not a parity claim.
+
+[C-E06-080] `build.updatebuildnumber` requires a nonempty message and sets `Build.BuildNumber` in
+the job's variable set **synchronously and locally** before queueing the server update, so the new
+value is visible to subsequent steps. —
+https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#updatebuildnumber-override-the-automatically-generated-build-number
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Build/BuildCommandExtension.cs#L99-L120
+(checked 2026-08-21) — "if (!String.IsNullOrEmpty(data)) { // update build number within Context.
+context.Variables.Set(BuildVariables.BuildNumber, data); ... } else { throw new Exception(
+StringUtil.Loc(\"BuildNumberRequired\")); }". String: "Build number is required." The message is
+**not** trimmed.
+
+[C-E06-081] That write **bypasses the read-only rule that would otherwise reject it.**
+`build.buildNumber` is a member of `Constants.Variables.ReadOnlyVariables`, and `Variables.IsReadOnly`
+consults that list — but the read-only *check* lives in `TaskSetVariableCommand`, not in
+`Variables.Set`, which only propagates an existing read-only flag onto the replacement. The source
+comment names this command as the reason. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Microsoft.VisualStudio.Services.Agent/Constants.cs#L623
+,
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Variables.cs#L442-L444
+,
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Variables.cs#L650-L658
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L629
+(checked 2026-08-21) — "Build.Number," in the `ReadOnlyVariables` list, where
+`Number = \"build.buildNumber\"` / "// Also keep any variables that are already read only as read
+only. // This only really matters for server side system variables that get updated by something
+other than setVariable (e.g. updateBuildNumber). readOnly = readOnly || (_expanded.ContainsKey(name)
+&& _expanded[name].ReadOnly);" / "return Constants.Variables.ReadOnlyVariables.Contains(
+variable.Name, StringComparer.OrdinalIgnoreCase);" / "if (context.Variables.IsReadOnly(name))".
+The emulator enforces read-only in `azdo__write_var` (C-E06-004/006), so this command needs an
+explicit unchecked write that still **preserves** the read-only flag.
+
+[C-E06-082] `build.addbuildtag` **trims** its message before the emptiness check — unlike
+`build.updatebuildnumber`, which does not — and rejects an empty or whitespace-only tag. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Build/BuildCommandExtension.cs#L150-L175
+(checked 2026-08-21) — "string data = command.Data?.Trim();" / "if (!string.IsNullOrEmpty(data)) {
+... } else { throw new Exception(StringUtil.Loc(\"BuildTagRequired\")); }". String: "Build tag is
+required." Tags are a **set** server-side: the async completion re-reads the build's tags and fails
+only if the requested tag is absent from the returned list under `OrdinalIgnoreCase`
+(`BuildTagAddFailed`), which is why the emulator de-duplicates `state/tags` case-insensitively
+rather than appending blindly. The doc's "You can't use a colon with AddBuildTag" is a
+**server-side** restriction the agent source does not implement; it is recorded here and
+deliberately **not** reproduced as a local rejection.
+
+[C-E06-083] Four preconditions of these commands have no local counterpart and are deliberately not
+reproduced: `artifact.upload`/`artifact.associate` throw
+`UploadArtifactCommandNotSupported`/`AssociateArtifactCommandNotSupported` ("Uploading server
+artifact is not supported in {0}.") outside a `Build` host type; all four artifact/build commands
+assert `System.TeamProjectId`, `Build.BuildId` and (for upload) `Build.ContainerId` through
+`ArgUtil`; the actual transfer runs on the **async command queue** after the handler returns, so a
+transfer failure surfaces at job end rather than at the command; and file paths are first mapped
+through `context.TranslateToHostPath(data)`, which only matters for container jobs (E14). —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Build/ArtifactCommandExtension.cs#L139-L177
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Build/BuildCommandExtension.cs#L86-L98
+(checked 2026-08-21) — "long? containerId = context.Variables.Build_ContainerId; ArgUtil.NotNull(
+containerId, nameof(containerId));" / "if (!ArtifactCommandExtensionUtil.IsUncSharePath(context,
+localPath) && (context.Variables.System_HostType != HostTypes.Build)) { throw new Exception(
+StringUtil.Loc(\"UploadArtifactCommandNotSupported\", context.Variables.System_HostType)); }" /
+"context.AsyncCommands.Add(commandContext);". The local runtime copies synchronously into
+`.artifacts/`, so a copy failure *is* a command failure — a divergence in timing, not in outcome.

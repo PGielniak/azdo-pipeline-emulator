@@ -68,6 +68,26 @@ azdo__validate_bool() {
 }
 
 azdo__write_var() {
+  local name="$1" meta_path
+  meta_path="$(azdo__var_path "$name" "$6").meta" || return
+
+  if azdo__meta_flag_is_true "$meta_path" readonly; then
+    # Run 539 showed that hosted agents reject the second command before it changes the first
+    # value, rather than issuing the legacy warning and overwriting it (C-E06-004, C-E06-006).
+    printf "##[error]Overwriting readonly variable '%s' is not permitted.\n" "$name" >&2
+    return 1
+  fi
+  azdo__write_var_unchecked "$@"
+}
+
+# azdo__write_var_unchecked <name> <value> <secret> <output> <readonly> <scope>
+#
+# The read-only rule is enforced by callers, not by the store, because the agent enforces it in
+# `TaskSetVariableCommand` rather than in `Variables.Set` — which is exactly why
+# `build.updatebuildnumber` can overwrite `Build.BuildNumber` even though that name is a member of
+# `Constants.Variables.ReadOnlyVariables` (C-E06-081). A read-only variable stays read-only across
+# such a write, so the flag is preserved below rather than reset by the caller.
+azdo__write_var_unchecked() {
   local name="$1" value="$2" secret="$3" output="$4" readonly="$5" scope="$6"
   local var_path meta_path var_dir value_tmp meta_tmp
   var_path="$(azdo__var_path "$name" "$scope")" || return
@@ -76,17 +96,13 @@ azdo__write_var() {
 
   mkdir -p "$var_dir" || return
 
-  if azdo__meta_flag_is_true "$meta_path" readonly; then
-    # Run 539 showed that hosted agents reject the second command before it changes the first
-    # value, rather than issuing the legacy warning and overwriting it (C-E06-004, C-E06-006).
-    printf "##[error]Overwriting readonly variable '%s' is not permitted.\n" "$name" >&2
-    return 1
-  fi
-
   # A secret variable cannot be downgraded by a later non-secret write; the replacement value must
   # remain out of automatic environments and be registered with the masker (C-E06-056).
   if azdo__meta_flag_is_true "$meta_path" secret; then
     secret=true
+  fi
+  if azdo__meta_flag_is_true "$meta_path" readonly; then
+    readonly=true
   fi
 
   value_tmp="$(mktemp "$var_dir/.value.XXXXXX")" || return
@@ -1567,8 +1583,248 @@ azdo__logging_task_debug() {
   azdo__debug_note "$AZDO_LOGGING_MESSAGE"
 }
 
+# --- E06-S04-T04: artifact, attachment and build commands ---------------------------------------
+#
+# These four families all move bytes the hosted agent moves to the server. Locally the destinations
+# are directories in the generated project: published artifacts under `.artifacts/<artifactname>/`
+# (docs/04 §1/§7, the download source E06-S05-T01 reads), attachments under
+# `<logs>/attachments/<type>/<name>`, and build tags under `state/tags`. The hosted transfers run on
+# the agent's async command queue *after* the handler returns, so a hosted transfer failure surfaces
+# at job end; here the copy is synchronous and a copy failure is a command failure (C-E06-083).
+
+azdo__artifact_dir() {
+  if [[ -z "${AZDO_ARTIFACT_DIR:-}" ]]; then
+    printf '%s\n' 'AZDO_ARTIFACT_DIR must be set before using the artifact logging commands' >&2
+    return 2
+  fi
+  printf '%s\n' "$AZDO_ARTIFACT_DIR"
+}
+
+azdo__attachment_dir() {
+  if [[ -z "${AZDO_ATTACHMENT_DIR:-}" ]]; then
+    printf '%s\n' 'AZDO_ATTACHMENT_DIR must be set before using the attachment logging commands' >&2
+    return 2
+  fi
+  printf '%s\n' "$AZDO_ATTACHMENT_DIR"
+}
+
+# azdo__logging_attach_file <type> <name> <path>
+#
+# The one implementation behind `task.addattachment`, `task.uploadfile`, `task.uploadsummary`,
+# `build.uploadlog` and `build.uploadsummary` — the agent has exactly one too, and the two task
+# upload commands are literally calls into it with a derived type and `Path.GetFileName(data)` as
+# the name (C-E06-074/075). Both `type` and `name` must be nonempty and the message must name an
+# existing *file*; a directory is not accepted here, unlike `artifact.upload`.
+#
+# The agent additionally rejects `Path.GetInvalidFileNameChars()` in either value. That set is
+# platform-dependent in .NET, so the strictly narrower `azdo__valid_store_segment` guard is reused
+# instead of importing the Windows set — both values become local path segments, which is the
+# reason the guard exists (C-E06-076).
+azdo__logging_attach_file() {
+  (($# == 3)) || {
+    printf '%s\n' 'usage: azdo__logging_attach_file <type> <name> <path>' >&2
+    return 2
+  }
+  local type="$1" name="$2" path="$3" attachment_dir target_dir
+
+  if [[ -z "$type" ]]; then
+    printf '%s\n' "Can't add task attachment, attachment type is not provided." >&2
+    return 1
+  fi
+  if [[ -z "$name" ]]; then
+    printf '%s\n' "Can't add task attachment, attachment name is not provided." >&2
+    return 1
+  fi
+  if [[ -z "$path" || ! -f "$path" ]]; then
+    printf '%s\n' 'Cannot upload task attachment file, attachment file location is not specified or attachment file does not exist on disk.' >&2
+    return 1
+  fi
+  azdo__valid_store_segment "$type" || return 1
+  azdo__valid_store_segment "$name" || return 1
+
+  attachment_dir="$(azdo__attachment_dir)" || return
+  target_dir="$attachment_dir/$type"
+  mkdir -p "$target_dir" || return
+  cp -f -- "$path" "$target_dir/$name"
+}
+
+azdo__logging_task_addattachment() {
+  local type name
+  azdo_logging_property type type || :
+  azdo_logging_property name name || :
+  azdo__logging_attach_file "$type" "$name" "$AZDO_LOGGING_MESSAGE"
+}
+
+azdo__logging_task_uploadfile() {
+  if [[ -z "$AZDO_LOGGING_MESSAGE" ]]; then
+    printf '%s\n' 'Cannot upload file because file location is not specified.' >&2
+    return 1
+  fi
+  # `FileAttachment` is the C# member name, used because the constant's wire value lives in the
+  # closed WebApi assembly and is not citable (C-E06-079).
+  azdo__logging_attach_file FileAttachment "${AZDO_LOGGING_MESSAGE##*/}" "$AZDO_LOGGING_MESSAGE"
+}
+
+azdo__logging_task_uploadsummary() {
+  if [[ -z "$AZDO_LOGGING_MESSAGE" ]]; then
+    printf '%s\n' 'Cannot upload summary file, summary file location is not specified.' >&2
+    return 1
+  fi
+  # The one attachment type whose wire value the doc page states, so the documented shorthand
+  # identity with `task.addattachment type=Distributedtask.Core.Summary` is observable locally
+  # (C-E06-079). The name is the file name, not the doc example's custom name (C-E06-074).
+  azdo__logging_attach_file Distributedtask.Core.Summary "${AZDO_LOGGING_MESSAGE##*/}" "$AZDO_LOGGING_MESSAGE"
+}
+
+azdo__logging_build_uploadlog() {
+  if [[ -z "$AZDO_LOGGING_MESSAGE" || ! -f "$AZDO_LOGGING_MESSAGE" ]]; then
+    printf "Log file path is not provided or file doesn't exist: '%s'\n" "$AZDO_LOGGING_MESSAGE" >&2
+    return 1
+  fi
+  # Fixed attachment name, not the file's own (C-E06-077).
+  azdo__logging_attach_file Log CustomToolLog "$AZDO_LOGGING_MESSAGE"
+}
+
+azdo__logging_build_uploadsummary() {
+  if [[ -z "$AZDO_LOGGING_MESSAGE" || ! -f "$AZDO_LOGGING_MESSAGE" ]]; then
+    printf "Markdown summary file path is not provided or file doesn't exist: '%s'\n" "$AZDO_LOGGING_MESSAGE" >&2
+    return 1
+  fi
+  # Deprecated on the agent but still installed, and distinct from `task.uploadsummary`: same type,
+  # a prefixed name (C-E06-078). The doc page does not list it.
+  azdo__logging_attach_file Distributedtask.Core.Summary \
+    "CustomMarkDownSummary-${AZDO_LOGGING_MESSAGE##*/}" "$AZDO_LOGGING_MESSAGE"
+}
+
+azdo__logging_build_updatebuildnumber() {
+  if [[ -z "$AZDO_LOGGING_MESSAGE" ]]; then
+    printf '%s\n' 'Build number is required.' >&2
+    return 1
+  fi
+  # Not trimmed, unlike addbuildtag (C-E06-080/082), and written through the unchecked path because
+  # `Build.BuildNumber` is a read-only name that this command is specifically allowed to overwrite
+  # (C-E06-081). Subsequent steps see the new value through the ordinary environment pass.
+  azdo__write_var_unchecked 'Build.BuildNumber' "$AZDO_LOGGING_MESSAGE" false false false \
+    "${AZDO_VAR_SCOPE:-pipeline}"
+}
+
+azdo__logging_build_addbuildtag() {
+  local tag="$AZDO_LOGGING_MESSAGE" tags_path existing folded_tag folded_existing
+  # The agent trims before the emptiness check; a whitespace-only tag is therefore rejected
+  # (C-E06-082).
+  tag="${tag#"${tag%%[![:space:]]*}"}"
+  tag="${tag%"${tag##*[![:space:]]}"}"
+  if [[ -z "$tag" ]]; then
+    printf '%s\n' 'Build tag is required.' >&2
+    return 1
+  fi
+  # Server-side tags are a set compared OrdinalIgnoreCase, so a repeat is a no-op rather than a
+  # second line (C-E06-082). The doc's "no colon" restriction is enforced by the server, not the
+  # agent, and is deliberately not reproduced here.
+  azdo__logging_fold "$tag" folded_tag || return
+  tags_path="$(azdo__state_dir)/tags" || return
+  if [[ -f "$tags_path" ]]; then
+    while IFS= read -r existing || [[ -n "$existing" ]]; do
+      azdo__logging_fold "$existing" folded_existing || return
+      [[ "$folded_existing" = "$folded_tag" ]] && return 0
+    done <"$tags_path"
+  fi
+  printf '%s\n' "$tag" >>"$tags_path"
+}
+
+# azdo__logging_artifact_copy <source> <destination-root>
+#
+# Reproduces the container item paths of C-E06-071 as a local tree: a file source contributes its
+# basename, a directory source contributes its *contents* — its own name never appears.
+azdo__logging_artifact_copy() {
+  local source="$1" destination="$2" entry relative target
+  mkdir -p "$destination" || return
+  if [[ -f "$source" ]]; then
+    cp -f -- "$source" "$destination/${source##*/}"
+    return
+  fi
+  while IFS= read -r -d '' entry; do
+    relative="${entry#"$source"/}"
+    target="$destination/$relative"
+    mkdir -p "${target%/*}" || return
+    cp -f -- "$entry" "$target" || return
+  done < <(find "$source" -type f -print0)
+}
+
+azdo__logging_artifact_upload() {
+  local artifact_name container_folder source artifact_dir destination meta_dir
+
+  if ! azdo_logging_property artifactname artifact_name || [[ -z "$artifact_name" ]]; then
+    printf '%s\n' 'Artifact Name is required.' >&2
+    return 1
+  fi
+  # Absent or empty containerfolder defaults to the artifact name (C-E06-069).
+  azdo_logging_property containerfolder container_folder || :
+  [[ -n "$container_folder" ]] || container_folder="$artifact_name"
+
+  source="$AZDO_LOGGING_MESSAGE"
+  if [[ -z "$source" ]]; then
+    printf '%s\n' 'Artifact location is required.' >&2
+    return 1
+  fi
+  if [[ ! -e "$source" ]]; then
+    printf 'Path does not exist: %s\n' "$source" >&2
+    return 1
+  fi
+  if [[ -d "$source" ]] && [[ -z "$(find "$source" -type f -print -quit)" ]]; then
+    # A successful no-op with a counted warning issue, not a failure — the one case where the
+    # obvious implementation gets the agent backwards (C-E06-070).
+    azdo__logging_record_issue warning \
+      "Directory '$source' is empty. Nothing will be added to build artifact '$artifact_name'."
+    return
+  fi
+
+  azdo__valid_store_segment "$artifact_name" || return 1
+  artifact_dir="$(azdo__artifact_dir)" || return
+  # `.artifacts/` is keyed by **artifact name**, because that is what a later download asks for and
+  # what E06-S05-T01 resolves against `$(Pipeline.Workspace)/<name>`; the container folder is the
+  # coordinate of the bytes *inside* the container and does not appear in a downloaded tree
+  # (C-E06-072, docs/06 §5 decision 37). It is recorded beside the artifact so the second level the
+  # service would see is not silently lost.
+  destination="$artifact_dir/$artifact_name"
+  azdo__logging_artifact_copy "$source" "$destination" || return
+  meta_dir="$artifact_dir/.meta"
+  mkdir -p "$meta_dir" || return
+  printf 'type=container\ncontainerfolder=%s\n' "$container_folder" >"$meta_dir/$artifact_name"
+}
+
+azdo__logging_artifact_associate() {
+  local artifact_name artifact_type location artifact_dir meta_dir
+  if ! azdo_logging_property artifactname artifact_name || [[ -z "$artifact_name" ]]; then
+    printf '%s\n' 'Artifact Name is required.' >&2
+    return 1
+  fi
+  if ! azdo_logging_property type artifact_type || [[ -z "$artifact_type" ]]; then
+    printf '%s\n' 'Artifact Type is required.' >&2
+    return 1
+  fi
+  location="$AZDO_LOGGING_MESSAGE"
+  if [[ -z "$location" ]]; then
+    printf '%s\n' 'Artifact location is required.' >&2
+    return 1
+  fi
+  azdo__valid_store_segment "$artifact_name" || return 1
+
+  # The location is a *server-side* coordinate — file container, UNC share, TFVC path or git ref —
+  # so there is nothing to materialize. The command is accepted, validated and recorded, following
+  # the `task.setprogress` pattern rather than the unknown-command path, because the hosted agent
+  # accepts it and a passthrough warning would be the wrong parity signal (C-E06-073).
+  artifact_dir="$(azdo__artifact_dir)" || return
+  meta_dir="$artifact_dir/.meta"
+  mkdir -p "$meta_dir" || return
+  printf 'type=%s\nassociated=%s\n' "$artifact_type" "$location" >"$meta_dir/$artifact_name"
+  azdo__debug_note "artifact.associate recorded '$artifact_name' ($artifact_type): no local bytes to copy."
+}
+
 # Status 127 means the command is unknown to the local runtime; other non-zero statuses are handler
-# failures. E06-S04-T04 extends this case statement with the artifact/attachment family.
+# failures. `release.*` and the remaining `task.*` timeline commands (`logdetail`, `setendpoint`,
+# `settaskvariable`) are deliberately still unknown here: they act on server-side state the local
+# runtime has no counterpart for, so they take the warning-and-passthrough path (C-E06-048/049).
 azdo_logging_dispatch() {
   case "$AZDO_LOGGING_AREA.$AZDO_LOGGING_ACTION" in
     task.setvariable) azdo__logging_task_setvariable ;;
@@ -1578,6 +1834,15 @@ azdo_logging_dispatch() {
     task.logissue | task.issue) azdo__logging_task_logissue ;;
     task.setprogress) azdo__logging_task_setprogress ;;
     task.debug) azdo__logging_task_debug ;;
+    task.addattachment) azdo__logging_task_addattachment ;;
+    task.uploadfile) azdo__logging_task_uploadfile ;;
+    task.uploadsummary) azdo__logging_task_uploadsummary ;;
+    artifact.upload) azdo__logging_artifact_upload ;;
+    artifact.associate) azdo__logging_artifact_associate ;;
+    build.uploadlog) azdo__logging_build_uploadlog ;;
+    build.uploadsummary) azdo__logging_build_uploadsummary ;;
+    build.updatebuildnumber) azdo__logging_build_updatebuildnumber ;;
+    build.addbuildtag) azdo__logging_build_addbuildtag ;;
     *) return 127 ;;
   esac
 }
