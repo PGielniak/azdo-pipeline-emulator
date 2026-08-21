@@ -85,6 +85,7 @@ Stage result aggregates job results; `continueOnError: true` jobs degrade to `Su
 state/vars/<scope>/<NAME>          # value file; .meta sidecar: secret,output,readonly flags
 state/outputs/<stage>/<job>/<step>.<var>
 state/results/<stage>[/<job>[/<step>]]   # Succeeded|SucceededWithIssues|Failed|Skipped|Canceled
+state/results/<stage>/<job>/.issues/<step>/{error,warning}  # result-neutral issue counters
 state/path.d/NNN-<step>            # PATH prepends, applied in order to subsequent steps
 state/masks/mask.*                 # private exact values registered for streaming log masking
 ```
@@ -115,7 +116,7 @@ the first `run_step` skeleton even though their condition/result policies land i
 3. **Macro pass**: mirror the agent's two phase boundary. Immediately before the step, recursively recalculate stored variable values (exact case-insensitive references, inherited secret status, depth/cycle guards); then read the step file and run the separate non-recursive target scan, substituting `$(Name)` from that expanded view (secrets included), leaving unmatched candidates **literal**, and never revisiting inserted bytes. Write the result as a private file under `$(Agent.TempDirectory)/steps/`. This explains both hosted run-541 observations without contradiction: a runtime-created `a=$(b)` is recalculated to `inner` before the next task, while target text `$(a$(b))` first misses the outer candidate, expands the inner `$(b)`, and remains `$(ainner)` even when `ainner` exists (C-E06-018..024; docs/06 §5 decision 29).
 4. **Execute**: `timeout <remaining>` bash (or pwsh) on the expanded file, cwd = workingDirectory, stdout+stderr streamed.
 5. **Stream processing** (line-wise): parse `##vso[…]` (§6) and `##[…]` formatting; apply **secret masking** (all values flagged secret + `task.setsecret` additions → `***`); tee to `logs/<stage>/<job>/030.log`. A successful secret `task.setvariable` registration affects the very next physical output line in the same step and every later step (C-E06-053; hosted run 544).
-6. **Result**: exit code + `task.complete` override + error-issue count + `failOnStderr` ⇒ `Succeeded/SucceededWithIssues/Failed`; `retryCountOnTaskFailure` loops step re-exec; `continueOnError` downgrades `Failed`→`SucceededWithIssues` for control flow.
+6. **Result**: merge exit code + `task.complete` result + `failOnStderr` into `Succeeded/SucceededWithIssues/Failed`; `task.logissue` error/warning counters are retained as timeline metadata but do not change that result (C-E06-059..061; hosted run 545). `retryCountOnTaskFailure` loops step re-exec; `continueOnError` downgrades `Failed`→`SucceededWithIssues` for control flow.
 7. **Persist**: variable/PATH/output deltas become visible to subsequent steps.
 
 ## 6. Logging commands supported (`##vso`)
@@ -123,17 +124,18 @@ the first `run_step` skeleton even though their condition/result policies land i
 | Command | Behavior |
 |---|---|
 | `task.setvariable` (`variable`, `isSecret`, `isOutput`, `isReadOnly`) | Required name + Boolean flags feed the store; plain values become visible to following tasks only, output vars additionally use the read-only `<step>.<var>` alias and `outputs/`, secrets register immediately with the masker, and read-only overwrites retain the original value (C-E06-005/006, C-E06-050..056; hosted runs 539/544) |
-| `task.setsecret` | Add value to the masker |
-| `task.prependpath` | Append to `path.d` → subsequent steps |
+| `task.setsecret` | Register a nonempty value with the masker for the rest of the job; only later output is masked (C-E06-057) |
+| `task.prependpath` | De-duplicate and append to `path.d` → subsequent steps (C-E06-058) |
 | `task.uploadartifact` / `artifact.upload` | Copy into `.artifacts/<artifactname>/` |
 | `task.uploadfile`, `task.uploadsummary`, `task.addattachment` | Copy under `logs/attachments/` (degraded: no UI) |
-| `task.logissue type=error\|warning` | Colored output; error issues count toward `SucceededWithIssues`/`Failed` |
-| `task.complete result=…` | Overrides step result |
+| `task.logissue type=error\|warning` | Colored output plus the corresponding issue counter; counters do not change task result (C-E06-059/060; hosted run 545) |
+| `task.complete result=…` | Merge the requested result with the current step result; the command does not normally stop the shell (C-E06-061; hosted run 545) |
+| `task.debug` | Colored debug output only when `System.Debug=true` (C-E06-064; hosted run 545) |
 | `task.setprogress` | Ignored (debug log) |
 | `build.updatebuildnumber` | Updates `Build.BuildNumber` in store |
 | `build.addbuildtag` | Appends `state/tags` |
 | `build.uploadlog`, `release.*` | Ignored with debug note |
-| Formatting `##[group]/[endgroup]/[section]/[command]/[warning]/[error]/[debug]` | ANSI-colored rendering; `##[debug]` shown only when `System.Debug=true` |
+| Formatting `##[group]/[endgroup]/[section]/[command]/[warning]/[error]/[debug]` | ANSI-colored terminal rendering; raw `##[debug]` remains visible regardless of `System.Debug` (C-E06-062/063/065; hosted run 545) |
 
 The runtime parses logging commands as physical UTF-8 output lines and reverses task-lib escaping
 before dispatch. Unknown or malformed `##vso` lines produce a warning and remain visible unchanged;

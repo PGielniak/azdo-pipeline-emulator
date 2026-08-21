@@ -1,0 +1,54 @@
+trigger: none
+pr: none
+jobs:
+- job: issueResult
+  pool:
+    vmImage: ubuntu-latest
+  steps:
+  - bash: |
+      echo '##vso[task.logissue type=warning]synthetic warning issue'
+      echo '##vso[task.logissue type=error]synthetic error issue'
+      echo 'CASE ISSUE_STEP_CONTINUED=yes'
+    displayName: Log warning and error issues
+- job: completeResults
+  pool:
+    vmImage: ubuntu-latest
+  steps:
+  - bash: |
+      echo '##vso[task.complete result=SucceededWithIssues;]synthetic partial result'
+      echo 'CASE AFTER_PARTIAL_COMPLETE=yes'
+    displayName: Complete as succeeded with issues
+  - bash: |
+      echo '##vso[task.complete result=Failed;]synthetic failed result'
+      echo 'CASE AFTER_FAILED_COMPLETE=yes'
+    displayName: Complete as failed
+  - bash: |
+      echo '##vso[task.complete result=Succeeded;]synthetic success result'
+      echo 'CASE BEFORE_EXIT_ONE=yes'
+      exit 1
+    condition: always()
+    displayName: Complete success then exit one
+- job: debugOff
+  pool:
+    vmImage: ubuntu-latest
+  steps:
+  - bash: |
+      echo '##[debug]FORMAT DEBUG OFF'
+      echo '##vso[task.debug]VSO DEBUG OFF'
+      echo '##[group]FORMAT GROUP OFF'
+      echo 'FORMAT GROUP BODY OFF'
+      echo '##[endgroup]'
+    displayName: Debug formatting disabled
+- job: debugOn
+  variables:
+    System.Debug: true
+  pool:
+    vmImage: ubuntu-latest
+  steps:
+  - bash: |
+      echo '##[debug]FORMAT DEBUG ON'
+      echo '##vso[task.debug]VSO DEBUG ON'
+      echo '##[group]FORMAT GROUP ON'
+      echo 'FORMAT GROUP BODY ON'
+      echo '##[endgroup]'
+    displayName: Debug formatting enabled
