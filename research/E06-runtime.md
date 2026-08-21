@@ -463,7 +463,13 @@ _sourceParentDirectory = Path.GetDirectoryName(source); } else { files =
 Directory.EnumerateFiles(source, \"*\", SearchOption.AllDirectories).ToList();
 _sourceParentDirectory = source.TrimEnd(Path.DirectorySeparatorChar,
 Path.AltDirectorySeparatorChar); }" / "string itemPath = (_containerPath.TrimEnd('/') + \"/\" +
-fileToUpload.Remove(0, _sourceParentDirectory.Length + 1)).Replace('\\\\', '/');".
+fileToUpload.Remove(0, _sourceParentDirectory.Length + 1)).Replace('\\\\', '/');". Two consequences the emulator encodes: the directory branch **trims trailing separators** off the
+source before taking it as the parent, so an `artifact.upload` written as
+`$(Build.ArtifactStagingDirectory)/` behaves identically to the unslashed spelling (without the trim
+the prefix strip misses and the whole absolute path is nested inside the artifact); and
+`Directory.EnumerateFiles` returns symbolic links as files, where the local `find … -type f` does
+not — a recorded divergence, not reproduced, because a symlinked payload has no meaning in a
+`.artifacts/` tree a later local download copies from.
 
 [C-E06-072] The uploaded files land in the file container at `#/<containerId>/<containerfolder>`,
 and that container path is then associated with the **build artifact named `artifactname`** as a

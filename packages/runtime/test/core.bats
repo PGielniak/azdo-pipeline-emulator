@@ -1323,8 +1323,13 @@ TABLE
   printf 'DEEP\n' >"$source/nested/deeper/deep.txt"
 
   run -0 dispatch_line "##vso[artifact.upload artifactname=MyDrop]$source"
+  # A trailing separator is trimmed on the directory branch, so `$(Build.ArtifactStagingDirectory)/`
+  # produces the same tree rather than nesting the absolute path inside the artifact (C-E06-071).
+  run -0 dispatch_line "##vso[artifact.upload artifactname=SlashDrop]$source/"
 
   [ "$(cat "$AZDO_ARTIFACT_DIR/MyDrop/top.txt")" = TOP ]
+  [ "$(cat "$AZDO_ARTIFACT_DIR/SlashDrop/top.txt")" = TOP ]
+  [ "$(cat "$AZDO_ARTIFACT_DIR/SlashDrop/nested/deeper/deep.txt")" = DEEP ]
   [ "$(cat "$AZDO_ARTIFACT_DIR/MyDrop/nested/deeper/deep.txt")" = DEEP ]
   [ ! -e "$AZDO_ARTIFACT_DIR/MyDrop/drop" ]
   # An absent containerfolder defaults to the artifact name (C-E06-069).

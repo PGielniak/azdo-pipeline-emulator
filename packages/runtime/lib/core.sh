@@ -1743,6 +1743,11 @@ azdo__logging_artifact_copy() {
     cp -f -- "$source" "$destination/${source##*/}"
     return
   fi
+  # `TrimEnd(Path.DirectorySeparatorChar, ...)`, and only on the directory branch — the file branch
+  # takes `Path.GetDirectoryName` instead, and trimming before the `-f` test above would accept
+  # `file.txt/`, where `File.Exists` is false (C-E06-071). Without it a trailing slash leaves the
+  # prefix strip below unmatched and the whole absolute path lands inside the artifact.
+  source="${source%"${source##*[!/]}"}"
   while IFS= read -r -d '' entry; do
     relative="${entry#"$source"/}"
     target="$destination/$relative"
