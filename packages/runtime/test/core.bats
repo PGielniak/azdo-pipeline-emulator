@@ -1488,7 +1488,7 @@ seed_drop() {
   # deleted and the literal `.default` then removed — the underscores go first, which is why
   # `.__default` collapses to `.default` and disappears (C-E06-091).
   run -0 azdo_artifact_publish --path drop
-  [[ "$output" == *'for artifact Build.Job1'* ]]
+  [[ "$output" == *"for artifact Build.Job1" ]]
   # A directory contributes its *contents*; its own name never appears (C-E06-094).
   [ "$(cat "$AZDO_ARTIFACT_DIR/Build.Job1/nested/deep.txt")" = DEEP ]
   [ ! -e "$AZDO_ARTIFACT_DIR/Build.Job1/drop" ]
@@ -1630,6 +1630,9 @@ seed_drop() {
   run ! azdo_artifact_publish --path drop --artifact 'q?name'
   run ! azdo_artifact_publish --path drop --artifact 'back\slash'
   run ! azdo_artifact_publish --path drop --artifact 'colon:name'
+  run ! azdo_artifact_publish --path drop --artifact 'quote"name'
+  run ! azdo_artifact_publish --path drop --artifact 'angle<name>'
+  run ! azdo_artifact_publish --path drop --artifact 'pipe|name'
   run ! azdo_artifact_publish --path drop --artifact 'sub/drop'
   # And the store-segment guard on top, which rejects names the agent accepts but a directory
   # under `.artifacts/` cannot be — a recorded local hardening (C-E06-093).
@@ -1710,4 +1713,23 @@ seed_drop() {
   azdo_var_set 'Pipeline.Workspace' ''
   run ! azdo_artifact_download --artifact drop
   [[ "$output" == *'Pipeline.Workspace'* ]]
+}
+
+@test "a container artifact written by artifact.upload downloads by its artifact name (C-E06-072/086, docs/06 §5 decision 37)" {
+  prepare_pipeline_artifacts crosscommand
+  printf 'RESULT\n' >"$BATS_TEST_TMPDIR/crosscommand/work/testresult.trx"
+
+  # The doc page's own example, where the two names deliberately differ. Decision 37 keys
+  # `.artifacts/` by the *artifact* name precisely because that is the name a download asks for;
+  # this is the case that proves it, and the only one where the download reads `type=container`
+  # metadata instead of the `type=pipeline` its own publish writes.
+  run -0 dispatch_line "##vso[artifact.upload containerfolder=testresult;artifactname=uploadedresult]$BATS_TEST_TMPDIR/crosscommand/work/testresult.trx"
+  run -0 azdo_artifact_download --artifact uploadedresult --path "$BATS_TEST_TMPDIR/crosscommand/out"
+  [ "$(cat "$BATS_TEST_TMPDIR/crosscommand/out/testresult.trx")" = RESULT ]
+  # The container folder is not a directory level of the downloaded tree.
+  [ ! -e "$BATS_TEST_TMPDIR/crosscommand/out/testresult/testresult.trx" ]
+
+  # And it is reachable by name from the multi-download branch too, one directory per artifact.
+  run -0 azdo_artifact_download --path "$BATS_TEST_TMPDIR/crosscommand/all"
+  [ "$(cat "$BATS_TEST_TMPDIR/crosscommand/all/uploadedresult/testresult.trx")" = RESULT ]
 }
