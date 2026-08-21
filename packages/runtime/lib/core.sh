@@ -1621,9 +1621,12 @@ azdo__logging_process_line() {
       fi
       # A failing handler is an error issue plus CommandResult=Failed, and output processing
       # continues with the next line — aborting the stream would drop the rest of the step's
-      # console and log output (C-E06-064).
+      # console and log output (C-E06-064). The agent's message interpolates the whole wire line;
+      # this one names only the command, deliberately, because a handler that rejects a value
+      # (multiline secret, read-only overwrite) fails *before* registering it with the masker,
+      # which runs downstream of dispatch and could not scrub it from the console or the log.
       azdo__logging_record_issue error \
-        "Unable to process command '$1' successfully." || return
+        "Unable to process command '$AZDO_LOGGING_AREA.$AZDO_LOGGING_ACTION' successfully." || return
       azdo__command_state_write command-failed true || return
       return 0
       ;;
@@ -1917,6 +1920,10 @@ run_step() {
   local no_condition=false seen_no_condition=false condition_status=0 condition_error=''
   local expanded_file expanded_wd ignored_secret log_file status result attempt_result
   local error_count warning_count issues_dir issues_path
+  # Dynamically scoped for the logging-stream subshell, exactly like AZDO_EXPR_ERROR_FILE below:
+  # per step *and* per job scope, so concurrent steps cannot reset each other's command state.
+  # shellcheck disable=SC2034 # Read by azdo__command_state_dir in the stream subshell.
+  local AZDO_COMMAND_STATE_DIR
   local retry_index=0 effective_retries remaining_seconds elapsed_seconds delay_seconds wait_status
   local start_seconds state_dir condition_error_dir condition_error_file old_umask
 
@@ -2024,6 +2031,7 @@ run_step() {
     return 2
   fi
   azdo__valid_store_segment "$id" || return
+  azdo__valid_store_segment "${AZDO_VAR_SCOPE:-pipeline}" || return
   [[ -n "$file" && -f "$file" && -r "$file" ]] || {
     printf 'step file is not readable: %s\n' "$file" >&2
     return 2
@@ -2050,6 +2058,8 @@ run_step() {
     printf '%s\n' 'AZDO_LOG_DIR must be set before running a step' >&2
     return 2
   }
+
+  AZDO_COMMAND_STATE_DIR="$(azdo__state_dir)/commands/${AZDO_VAR_SCOPE:-pipeline}/$id" || return
 
   mkdir -p "$AZDO_LOG_DIR" || return
   log_file="$AZDO_LOG_DIR/$id.log"
@@ -2207,6 +2217,8 @@ run_step() {
     ((retry_index += 1))
   done
 
+  # Independent of which loop exit ran: a nonzero status is Failed regardless (C-E06-061).
+  ((status == 0)) || attempt_result=Failed
   result="${attempt_result:-Succeeded}"
   if [[ "$result" = Failed && "$continue_on_error" = true ]]; then
     result=SucceededWithIssues

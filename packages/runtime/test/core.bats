@@ -1056,7 +1056,44 @@ TABLE
   grep -qxF 'after-the-failed-command' "$AZDO_LOG_DIR/logissue-bad-type.log"
   grep -qF 'issue type fatal is not an expected issue type.' \
     "$AZDO_LOG_DIR/logissue-bad-type.log"
-  grep -qF "Unable to process command" "$AZDO_LOG_DIR/logissue-bad-type.log"
+  grep -qxF "##[error]Unable to process command 'task.logissue' successfully." \
+    "$AZDO_LOG_DIR/logissue-bad-type.log"
+}
+
+@test "a rejected command reports the command name, never the wire line (C-E06-055/064)" {
+  local source_file="$BATS_TEST_TMPDIR/rejected-secret.sh"
+  local marker='synthetic-rejected-secret-value'
+  prepare_run_step
+  # The multiline guard rejects before registration, so the masker downstream of dispatch has
+  # never seen this value: the failure message must not carry it.
+  printf '%s\n' \
+    "printf '%s\\n' '##vso[task.setvariable variable=multiline;isSecret=true]$marker%0Asecond'" \
+    "printf '%s\\n' 'still-running'" >"$source_file"
+
+  run ! run_result_step rejected-secret "$source_file" false false 0 10
+  [[ "$output" == *still-running* ]]
+  [[ "$output" != *"$marker"* ]]
+  run -0 azdo_step_result rejected-secret
+  [ "$output" = Failed ]
+  ! grep -qF "$marker" "$AZDO_LOG_DIR/rejected-secret.log"
+  grep -qxF "##[error]Unable to process command 'task.setvariable' successfully." \
+    "$AZDO_LOG_DIR/rejected-secret.log"
+}
+
+@test "command state is per step and per job scope (C-E06-063)" {
+  local resolved
+  AZDO_STEP_ID=step-030
+  resolved="$(azdo__command_state_dir)"
+  [ "$resolved" = "$AZDO_STATE_DIR/commands/step-030" ]
+
+  # run_step scopes it further so concurrent steps cannot reset each other's counters.
+  prepare_run_step
+  printf '%s\n' "printf '%s\\n' '##vso[task.logissue type=warning]scoped'" \
+    >"$BATS_TEST_TMPDIR/scoped.sh"
+  run -0 run_test_step scoped "$BATS_TEST_TMPDIR/scoped.sh" 10
+  [ -f "$AZDO_STATE_DIR/commands/pipeline/scoped/warnings" ]
+  run -0 azdo_step_issues scoped
+  [ "$output" = $'errors=0\nwarnings=1' ]
 }
 
 @test "the debug channel is gated on System.Debug (C-E06-065)" {
