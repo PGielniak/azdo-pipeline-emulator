@@ -66,7 +66,8 @@ Acceptance: parser + handlers for the docs/04 §6 table, grounded command-by-com
   **Do:** store writes; output vars additionally to `outputs/<stage>/<job>/<step>.<var>`; within-job `$(step.var)` availability; secret registration to masker.
   **Ground:** set-variables-scripts doc (quote availability rules: subsequent steps only, not current; output-var reference forms) — each rule a claim; verify "not current step" via bats-replicated experiment matching a real-run transcript.
   **Done:** bats: subsequent-step visibility, output cross-job read via store, secret masked in logs.
-- [ ] **E06-S04-T03 — `task.prependpath`, `task.setsecret`, `task.complete`, `task.logissue`, formatting commands**
+- [!] **E06-S04-T03 — `task.prependpath`, `task.setsecret`, `task.complete`, `task.logissue`, formatting commands**
+  claimed 2026-08-21 by Hermes → assigned to Claude (hourly session clear)
   **Do:** per docs/04 §6 table; `##[debug]` gated on `System.Debug`; issue counters feed result machine; ANSI rendering for group/section/warning/error.
   **Ground:** logging-commands doc per-command sections — one claim per command encoding its documented effect and scope (e.g. prependpath "for subsequent tasks" — quote).
   **Done:** bats per command; debug gating test.
