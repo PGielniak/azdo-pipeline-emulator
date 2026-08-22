@@ -1,12 +1,25 @@
-# azdo-pipeline-emulator — Master Plan
+# azdo-pipeline-emulator — Master Plan (revised)
 
-Status: **Design / planning** · Date: 2026-07-29 · Working CLI name: `azdo-emu`
+Status: **Design / planning (revised)** · Date: 2026-08-22 · Working CLI name: `azdo-emu`
+
+> **Revision note.** This file is the **simplified** plan. It replaces the original
+> "reimplement Azure Pipelines end-to-end" plan after an architecture review on `main`
+> (commit `b187501`). The review — *isn't this already too complicated?* — and the reasoning
+> behind every cut are in [docs/07-simplification-review.md](docs/07-simplification-review.md).
+> In one sentence: **the hardest 60% of the original plan (reimplementing the server-side template
+> engine and compile-time expression language) is work the Azure DevOps service already does for
+> free, so we stop reimplementing it and delegate it.**
+
+---
 
 ## 1. Problem & vision
 
-Debugging Azure DevOps YAML pipelines today means: edit YAML → push → queue → wait → read logs → repeat. There is no official way to run a pipeline locally (the template expansion happens server-side, and tasks assume a hosted agent).
+Debugging Azure DevOps YAML pipelines today means: edit YAML → push → queue → wait → read logs →
+repeat. There is no official way to run a pipeline locally.
 
-**Vision:** a converter that takes any Azure DevOps pipeline YAML and emits a **self-contained local project of plain scripts** that reproduces the pipeline's behavior step by step:
+**Vision (unchanged):** a tool that turns a pipeline into a **self-contained local project of plain
+bash scripts** that reproduces the pipeline's *runtime* behavior step by step, so a developer can
+edit locally and debug without committing to the repo every time:
 
 ```
 azdo-emu convert azure-pipelines.yml -o ./local-run
@@ -14,174 +27,195 @@ cd local-run && cp .env.example .env   # fill in secrets/service-connection cred
 ./run.sh                               # or run one stage / job / single step
 ```
 
-The generated project:
-
-- mirrors the pipeline structure (stages → jobs → steps) as individual scripts, so any single step can be re-run in isolation with the exact same environment;
-- ships a small runtime library that emulates the agent contract: variable store, `$(macro)` expansion, `##vso[...]` logging commands, conditions, `dependsOn`, artifacts, predefined variables and the agent folder layout;
-- resolves **templates** (including templates in other repos via `resources.repositories`), **pipeline artifacts** from other pipelines, and **multi-repo checkouts** — fetched at convert time using **Azure DevOps interactive sign-in** and/or **GitHub auth**;
-- contains **no secrets**: everything unresolvable (variable-group secrets, service connections, `System.AccessToken`, secure files) becomes a documented entry in `.env.example`;
-- has **zero runtime dependency on the converter** — it is bash (later also pwsh) + standard tools, readable and hand-editable, because readability is the point of debugging.
+**What changed (the simplification):** how the tool gets from "the user's YAML" to "a runnable
+project". The original plan reimplemented the server's template expansion and compile-time
+expression evaluation locally, to byte parity, oracle-probed at every step — two full epics of
+compiler cloning that would never stop needing parity fixes. The revised plan instead **asks the
+service to expand the pipeline** (it already offers this via the Pipelines *preview* endpoint), and
+builds the local runner from the service's own fully-expanded YAML. Expansion parity is then **true
+by construction**, and the work left to us is only the *runtime* half — the part the **agent** does
+at run time — which is small and stable.
 
 ## 2. Goals
 
-1. Parse the full Azure Pipelines YAML schema as documented in the official schema reference; validate against the official JSON schema.
-2. Reimplement the server-side **template engine** and **expression language** (`${{ }}`, `$[ ]`, `$( )`) with parity verified against the real service (see §6, "oracle testing").
-3. Cover the most frequently used tasks with an explicit **fidelity tier** per task — prioritized (decision 2026-07-30) on the **deployment set**: `AzurePowerShell`, `PowerShell`/`Bash`, `AzureCLI`, Docker build/push, Helm install/deploy, Kubernetes actions, Azure resource-group (ARM/Bicep) deployment, Key Vault and storage-account operations — followed by toolchains (`DotNetCoreCLI`, `Npm`, `Maven`), test publishing and top marketplace tasks (`replacetokens`).
-4. Resolve remote inputs at convert time: templates from other ADO/GitHub repos, multi-repo `checkout`, artifacts from `resources.pipelines`, marketplace `task.json` metadata — with a lockfile for reproducible regeneration. Variable groups are mapped to `.env` (names listed when signed in; values always user-filled).
-5. Emit a debuggable project: per-step scripts with provenance comments (original file:line), `pipeline.expanded.yml` (the fully resolved YAML), a manifest of the stage/job graph, a README listing every warning and unsupported construct, and `.env.example`.
-6. Same-behavior local execution: dependency ordering, conditions evaluated at run time against actual job/step results, output variables across jobs and stages, `continueOnError`, `failOnStderr`, timeouts, matrix expansion, artifact publish/download flow.
-7. **A coverage report per conversion**: every generated project states what % of the original pipeline it reproduces (weighted by fidelity tier), with a ranked gap list and remediation hints (docs/04 §13).
-8. **Isolated local execution**: by default the generated project runs inside a sandbox container when a container runtime is available, so debugging never pollutes the host and the environment approximates the hosted agent (D11; host mode remains a first-class fallback).
+1. **Delegate expansion, don't reimplement it.** Call the Pipelines `preview` endpoint
+   (`POST …/_apis/pipelines/{id}/preview`, `previewRun: true`) with the user's *local* YAML; take
+   back `finalYaml` (templates resolved, `${{ }}` evaluated, parameters bound) and emit it as
+   `pipeline.expanded.yml` so local **execution** stays offline and reproducible.
+2. **Bundle local edits into the expansion request.** A mechanical inliner packs local `@self`
+   template files into the override so editing templates (not just the root file) works without
+   committing.
+3. **Reproduce the runtime contract.** Parse the expanded YAML and run it with an agent-faithful
+   bash runtime: `$( )` macro expansion, `$[ ]` runtime conditions, `##vso[…]` logging commands,
+   variables/outputs/artifacts, `dependsOn`, secret masking, and `.env` for everything unresolvable.
+4. **Run script steps natively; delegate the rest to real task code.** `script`/`bash`/`pwsh`/
+   `powershell`/`checkout` steps are the debugging surface and are emitted as readable bash. Every
+   other task runs either in **real-task mode** (download the actual task package and execute it
+   against an emulated `azure-pipelines-task-lib`, the `INPUT_*` contract) or as a **stub** that
+   dumps its resolved inputs. There is no per-task transpiler.
+5. **Prioritize the deployment set.** The agreed priority set (AzureCLI/PowerShell, Docker,
+   Helm/kubectl, ARM/Bicep, Key Vault, storage) is delivered first, on top of real-task mode and the
+   service-connection `.env` contract.
 
-## 3. Non-goals
+## 3. Non-goals (v1)
 
-- Triggers, schedules, PR policies, approvals/checks/gates, environment protection — parsed, recorded in the manifest, **not executed** (ManualValidation becomes an interactive prompt).
-- Extracting secrets from Azure DevOps (not possible via API by design) — they go to `.env`.
-- Pipeline decorators, classic (designer) pipelines, billing/parallelism semantics.
-- Perfect replication of Microsoft-hosted images — instead: a `doctor` command checks required tools (on the host or inside the sandbox image), the default sandbox image *approximates* hosted tooling (D11), and declared container jobs run their own images. Byte-level hosted-image parity stays a non-goal.
-- Being an agent that reports back to Azure DevOps. This is strictly local.
-- Azure DevOps Server (on-prem): **out of scope** (decision 2026-07-30). Nothing in the architecture blocks it — PAT auth + adjusted URL shapes would be the entry point if that ever changes.
-- Windows **host** execution for now — deferred, not dropped (decision 2026-07-30): the emitter keeps a per-job target-OS backend seam so a native pwsh emission set bolts on later (roadmap "Future"). `PowerShell`/`AzurePowerShell` steps already run on Linux/macOS via `pwsh` from P2/P4.
+- **Reimplementing server-side expansion.** Templates, `extends`, `each`/`insert`/`if` directives,
+  compile-time `${{ }}` evaluation, parameter binding and server limits are the service's job. The
+  original in-repo template engine and compile-time evaluator are retained only as an **offline
+  fallback** (off the critical path) for when a user has no preview access.
+- **A per-task transpiler.** We do not hand-write a readable-bash emitter for every task in the
+  catalogue. Complex tasks run Microsoft's own code in real-task mode; unknown tasks stub.
+- **A weighted coverage report** (the original D10). Replaced by a plain **warnings/unsupported
+  list** in the generated README. Fidelity *labels* (exact/equivalent/degraded/stub) are kept; the
+  percentage metric and `--min-coverage` gate are dropped.
+- **Sandbox-by-default** (the original D11). Host execution is the default; an optional container
+  sandbox is deferred.
+- **Faithful per-job workspace isolation** (the original D9). A shared workspace is the default
+  first; per-job `Pipeline.Workspace` fidelity is deferred.
+- **Triggers, schedules, PR policies, approvals/checks/gates, environments** — recorded, not
+  executed.
+- **Windows host execution** — deferred (unchanged). `pwsh` steps run on Linux/macOS via `pwsh`.
+- **Azure DevOps Server (on-prem)** — out of scope (unchanged).
+- **Perfect hosted-image parity, classic pipelines, pipeline decorators, billing semantics** —
+  unchanged non-goals.
 
 ## 4. Architecture
 
 ```
-                         ┌───────────────────────── convert time ─────────────────────────┐
- azure-pipelines.yml     │                                                                │
- templates @self     ──► │ Loader/Fetcher ─► YAML Front End ─► Template Engine ─► Semantic│
- templates @repo     ──► │  (FS, ADO Git,     (yaml lib,         (${{ }}, if/each/        │
- resources.pipelines ──► │   GitHub, cache,    source maps,       insert, extends,        │
- task.json metadata  ──► │   lockfile)         schema check)      parameters)             │
-                         │        ▲                                     │                 │
-                         │        │                                     ▼                 │
-                         │   Auth (ADO device-code / az / PAT,    Semantic Model          │
-                         │         GitHub gh / PAT)               (normalize steps,       │
-                         │                                         matrix, deps graph,    │
-                         │                                         variable scopes)       │
-                         │                                              │                 │
-                         │                    Task Handler Registry ◄───┤                 │
-                         │                    (per-task emitters)       ▼                 │
-                         │                                          Emitter ──────────────┼──► out/
-                         └────────────────────────────────────────────────────────────────┘
-                          out/ = run.sh + stages/**/jobs/**/steps/*.sh + lib/runtime.sh
-                                + .env.example + pipeline.expanded.yml + manifest.json + README
-                         ┌────────────────────────── run time ────────────────────────────┐
-                         │ run.sh ─► topological job order ─► run_step(): condition eval, │
-                         │ env materialization, $(macro) expansion, exec, ##vso parsing,  │
-                         │ var store / outputs / artifacts / results persistence          │
-                         └────────────────────────────────────────────────────────────────┘
+                    ┌────────────────────────── convert time ──────────────────────────┐
+ azure-pipelines.yml │                                                               │
+ (+ local @self      │  Bundler ──► POST preview ──► finalYaml (fully expanded)      │
+  templates)         │  (inline      (service does    (templates + ${{ }} + params    │
+                     │   local files)  the expansion)  resolved by the service)       │
+                     │        ▲                    │                                 │
+                     │        │                    ▼                                 │
+                     │   Auth (device-code/az/PAT)│  YAML Front End (expanded schema)│
+                     │   + cache/lockfile         │  ──► Semantic Model (normalize    │
+                     │                            │      steps, matrix, deps graph)  │
+                     │                            │  ──► Emitter ────────────────────┼─► out/
+                     └──────────────────────────────────────────────────────────────┘
+   out/ = run.sh + stages/**/jobs/**/steps/*.sh + lib/runtime.sh
+        + pipeline.expanded.yml + .env.example + README (warnings list)
+                    ┌────────────────────────── run time ───────────────────────────┐
+                    │ run.sh ─► jobs in dependsOn order ─► run_step(): $( ) macro    │
+                    │ expansion, $[ ] condition eval, exec, ##vso[] parsing, var    │
+                    │ store / outputs / artifacts / results persistence            │
+                    │ non-script tasks: real-task mode (task-lib INPUT_*) or stub  │
+                    └──────────────────────────────────────────────────────────────┘
 ```
 
 | Component | Responsibility | Detail doc |
 |---|---|---|
-| Loader/Fetcher | Resolve file references: local FS, `templates@repoAlias` (ADO Git REST, GitHub), artifact downloads; content-addressed cache + `azdo-emu.lock.json` | [docs/05](docs/05-fetching-and-auth.md) |
-| YAML Front End | Parse YAML with source positions, validate against official schema, produce raw DOM (expressions still inert strings) | [docs/01](docs/01-pipeline-model-and-schema.md) |
-| Template Engine | Expand includes/`extends`, bind typed parameters, evaluate compile-time `${{ }}` incl. `if/elseif/else`, `each`, `insert`; enforce server limits; emit `pipeline.expanded.yml` + provenance map | [docs/02](docs/02-template-and-expression-engine.md) |
-| Expression Compiler | One AST for the ADO expression language, two backends: evaluate now (compile time) or compile to bash/pwsh predicates (runtime conditions, `$[ ]`) | [docs/02](docs/02-template-and-expression-engine.md) |
-| Semantic Model | Typed pipeline model: shorthand steps normalized to canonical tasks with `task.json` defaults applied, matrix expanded, dependency graph validated, variable scoping resolved | [docs/01](docs/01-pipeline-model-and-schema.md) |
-| Task Handler Registry | Plugin per task (`Name@major`) that emits script body + env requirements + tool prereqs + fidelity warnings; stub policy for unknown tasks; user-supplied handlers | [docs/03](docs/03-task-catalog.md) |
-| Emitter | Generate the output project: scripts, runtime lib, `.env.example` synthesis, manifest, README with warnings table | [docs/04](docs/04-generated-project-and-runtime.md) |
-| Runtime lib (generated) | `lib/runtime.sh`: step lifecycle, variable store, logging-command parser, artifacts, checkout, secret masking | [docs/04](docs/04-generated-project-and-runtime.md) |
-| Auth & REST clients | ADO Entra device-code / `az` token reuse / PAT; GitHub `gh` reuse / PAT; ADO Git, Pipelines, Build, DistributedTask APIs | [docs/05](docs/05-fetching-and-auth.md) |
-| CLI, config, doctor | `convert`, `auth`, `doctor`, `fetch-artifacts`, `preview-diff`; project config file | [docs/06](docs/06-cli-testing-roadmap.md) |
-| Parity harness (dev) | Golden tests + **server oracle**: the real `pipelines/{id}/preview` REST endpoint returns the service's final expanded YAML for comparison | [docs/06](docs/06-cli-testing-roadmap.md) |
+| **Bundler** | Mechanically inline local `@self` template files into the override; collect parameters | docs/02 §5, docs/05 §4 |
+| **Expansion client** | `POST preview` with the local YAML; return `finalYaml` + provenance; cache + lockfile | docs/05 §2, `packages/fetch` |
+| **YAML Front End** | Parse the *expanded* YAML with source positions; validate the runtime subset (no directives, no `${{ }}`) | docs/01 §1–§2 |
+| **Semantic Model** | Normalize shorthand steps → canonical tasks, expand matrix, build/validate the dependency graph, resolve variable scopes | docs/01 §3–§6 |
+| **Emitter** | Generate `run.sh`, per-step scripts, `lib/runtime.sh` (or link it), `.env.example` synthesis, `pipeline.expanded.yml`, README with warnings | docs/04 §1–§2, §10–§12 |
+| **Runtime lib (generated)** | `lib/runtime.sh`: step lifecycle, variable store, `$( )`/`$[ ]` evaluation, `##vso[]` parser, artifacts, secret masking | docs/04 §3–§9 |
+| **Real-task mode** | Download the real task package; execute it with an emulated `azure-pipelines-task-lib` (`INPUT_*` env); stub policy for the rest | docs/03 §6, docs/04 §9 |
+| **Auth & REST clients** | ADO device-code / `az` / PAT; preview, task-metadata and artifact endpoints; cache + lockfile | docs/05 |
+| **CLI, config, doctor** | `convert`, `auth`, `doctor`, `bundle`; project config file | docs/06 §1–§2 |
+| **Parity harness (dev)** | Golden tests + the preview oracle as the *expansion* source; conformance + nightly drift check | docs/06 §3 |
 
-## 5. Key design decisions
+## 5. Key design decisions (revised)
 
-**D1 — Converter in TypeScript / Node ≥ 22.**
-The entire in-the-box task ecosystem (`microsoft/azure-pipelines-tasks`, `azure-pipelines-task-lib`) is Node, which unlocks the later high-fidelity mode (D3) and lets us reuse input-parsing conventions. The `yaml` package exposes a CST for precise source maps (error messages and provenance comments need file:line). MSAL handles device-code sign-in. Distribution: npm package + optional single-binary build. *Alternatives:* Go (nicer binary, but re-implements everything, no task-lib synergy), Python (weaker typing for a large object model).
+Decisions marked **(revised)** change a decision from the original plan; the review rationale is in
+docs/07. Unmarked decisions carry over unchanged.
 
-**D2 — Generated output is dependency-free bash (pwsh emission later), never calls back into the converter to run.**
-The user must be able to read, edit and re-run any step script without our tool installed. Runtime = bash ≥ 4 + coreutils + git (+ whatever the pipeline itself needs: dotnet, docker…). Only optional refresh helpers (`fetch-artifacts.sh`) shell out to `azdo-emu` if present.
+- **D1 — Converter in TypeScript / Node ≥ 22.** *(unchanged)* The task ecosystem is Node; MSAL for
+  device-code; npm package + optional single-binary.
+- **D2 — Generated output is dependency-free bash, never calls back into the converter.** *(unchanged)*
+  Runtime = bash ≥ 4 + coreutils + git (+ whatever the pipeline itself needs).
+- **D3 — Server-expanded, not reimplemented (revised, replaces old D4/D6).** The Pipelines `preview`
+  endpoint is the expansion step, promoted from test-only oracle to the product path. The emitted
+  `pipeline.expanded.yml` freezes the result so execution is offline and reproducible. The original
+  in-repo template engine and compile-time expression evaluator are demoted to an **offline fallback**
+  (see D4), not deleted.
+- **D4 — Script-native execution; real-task mode for the rest (revised, replaces old D3/D7).**
+  `script`/`bash`/`pwsh`/`powershell`/`checkout` steps are emitted as readable bash. Non-script tasks
+  run via **real-task mode** (real task package + emulated `azure-pipelines-task-lib`) or a **stub**
+  that dumps resolved inputs. No per-task transpiler. Fidelity *labels* are kept; the weighted
+  coverage metric is dropped.
+- **D5 — Fetch at convert time, cache, lock (unchanged).** The preview expansion, task metadata and
+  artifacts are downloaded during `convert`, cached, and pinned in `azdo-emu.lock.json`; `--frozen`
+  is fully offline after the first fetch.
+- **D6 — The runtime expression subset is local; the compile-time half is delegated (revised).**
+  `$[ ]` runtime conditions, `dependencies.*.outputs`, status functions and `$( )` macros are local
+  (they are evaluated by the *agent* at run time and cannot be delegated). The compile-time `${{ }}`
+  evaluator is retained only as the offline fallback (D3/D4) and is not on the critical path.
+- **D7 — Hard secret boundary: everything secret goes through `.env` (unchanged, was D8).** The
+  converter never writes tokens, variable-group secret values, or service-connection credentials into
+  scripts, YAML dumps, logs, or the lockfile. `.env.example` documents each entry with its origin.
+- **D8 — Shared workspace by default (revised, was D9).** One shared workspace per run; per-job
+  `Pipeline.Workspace` fidelity and a shared tool cache are deferred polish.
+- **D9 — Host execution by default (revised, was D11).** The run executes on the host; an optional
+  container sandbox is deferred. `container:` *jobs* remain a future pipeline feature, orthogonal to
+  this.
+- **D10 — Warnings list, not a coverage metric (revised, was D10/D7-metric).** Every conversion
+  emits a README with a ranked warnings/unsupported list and per-step fidelity labels. No percentage
+  coverage, no `--min-coverage` gate.
 
-**D3 — Transpile-first; optional "high-fidelity task execution" mode later.**
-Default: each task is *transpiled* to a readable script (this is what makes local debugging pleasant). Phase 6 adds an opt-in mode that downloads the real task package (they are Node programs, fetchable per org via the DistributedTask REST API) and executes it with an emulated `azure-pipelines-task-lib` host (`INPUT_*` env contract) for near-perfect parity on complex tasks. Both modes share the same runtime contract.
+## 6. Fidelity labels (used on every step; no longer a weighted metric)
 
-**D4 — Expressions are compiled, not interpreted at run time.**
-Compile-time `${{ }}` is evaluated during conversion. Runtime constructs — step/job/stage `condition:`, `$[ ]` variable values, `dependencies.*.outputs` — are compiled by the converter into small bash functions that read the local state store. No expression interpreter ships in the output, yet conditions still react to actual local results. Macro `$( )` stays textual and is expanded by the runtime just before each step, exactly like the agent does (unmatched macros stay literal — same observable behavior as the real agent).
+| Label | Meaning | Example |
+|---|---|---|
+| `exact` | Same observable behavior as the hosted agent | `bash` step, `$( )` macro, `task.setvariable` |
+| `equivalent` | Same outcome via equivalent local commands | `AzureCLI@2` with ambient `az login` |
+| `degraded` | Meaningful local approximation, documented deltas | test-publishing → copy + console summary |
+| `stub` | Logs inputs, does nothing; configurable skip/fail/prompt | unknown marketplace tasks |
+| `unsupported` | Convert-time error or explicit runtime failure with a remediation note | pipeline decorators |
 
-**D5 — Fetch at convert time, cache, and lock.**
-Remote templates, repos, artifacts and task metadata are downloaded during `convert` into `.cache/` and pinned (commit SHAs, run IDs) in `azdo-emu.lock.json`. Re-converting with `--frozen` is fully offline and reproducible. Generated `fetch-artifacts.sh` allows refreshing artifacts without re-converting.
-
-**D6 — Parity oracle = the real service.**
-Azure DevOps' template expansion is closed source, so we verify instead of guessing: the REST *preview* endpoint (`POST …/_apis/pipelines/{pipelineId}/preview`, `previewRun: true`, with `yamlOverride`) returns the service's **final YAML** without running anything. A `preview-diff` command diffs our expansion against it; CI runs it nightly over a fixture corpus against a test org. Where docs are ambiguous (e.g. compile-time variable visibility inside templates), the oracle decides.
-
-**D7 — Task support is a plugin registry with explicit fidelity tiers.**
-Every construct/task gets one of: `exact` / `equivalent` / `degraded` / `stub` / `unsupported` (defined in §6). The generated README and step headers state the tier, so the user always knows what to trust. Unknown marketplace tasks become stubs that dump their resolved inputs; users can drop a script into `handlers/` (receiving `INPUT_*` env vars, same convention as real tasks) to implement them without touching the converter.
-
-**D8 — Hard secret boundary: everything secret goes through `.env`.**
-The converter never writes tokens, variable-group secret values, or service-connection credentials into scripts, YAML dumps, logs or the lockfile. `.env.example` documents each required entry with its origin (which variable group, which task, which service connection) and how to obtain it. The generated project gets its own `.gitignore` (`.env`, `.work/`, `.artifacts/`, `.cache/`).
-
-**D9 — Faithful workspace semantics by default.**
-Each job gets its own `Pipeline.Workspace` (fresh `s/`, `a/`, `b/` folders, own checkout) because that's how agents behave and it surfaces real bugs (e.g. relying on a previous job's files without artifacts). `--shared-workspace` exists for speed. A shared tool cache (`~/.azdo-emu/tools`) emulates `Agent.ToolsDirectory` for `UseDotNet`/`NodeTool` installers.
-
-**D10 — Every conversion is measured: the coverage report.**
-`convert` always emits `coverage.md` + `coverage.json` quantifying how much of the original pipeline the generated project reproduces: % of steps weighted by fidelity tier (§6), per-stage/job breakdown, ranked gap list with concrete remediation hints. `--min-coverage N` turns it into a gate. Spec: docs/04 §13.
-
-**D11 — Isolated execution: the run is sandboxed in a container by default (decision 2026-07-30).**
-Local debugging must not depend on — or pollute — the developer's host. When a container runtime (docker/podman) is present and the job targets Linux, `run.sh` and every job/step entry point re-execute themselves inside **one long-lived sandbox container per run** (`--host` opts out; `--sandbox` forces and errors without a runtime; macOS/Windows-targeted jobs fall back to host with a warning). The project directory is bind-mounted at the identical absolute path and the tool cache is a named volume, so **the same dependency-free scripts run unchanged in both environments** (D2 intact) and state/logs/artifacts land in the same files either way; iteration flags (`--only-step`, `--resume`, `--shell-at`) re-enter the same container. The sandbox image approximates the job's `vmImage` (default mapping, overridable via config or an emitted `environment/Dockerfile`; image+digest pinned in the lockfile; `doctor --sandbox` checks the image, not the host). Pipelines that themselves need docker get opt-in socket passthrough with a documented isolation tradeoff. Note the distinction: ADO `container:` **jobs** are a faithful pipeline feature (docs/04 §9, E14-S02); the sandbox is *our* host-side isolation layer, orthogonal to what the YAML declares. Spec: docs/04 §9; tasks: E14-S04.
-
-## 6. Fidelity tiers (used everywhere; basis of the coverage metric)
-
-| Tier | Coverage weight | Meaning | Example |
-|---|---|---|---|
-| `exact` | 1.0 | Same observable behavior as the hosted agent | `bash` step, `$(macro)` expansion, `task.setvariable` |
-| `equivalent` | 1.0 | Same outcome via equivalent local commands | `HelmDeploy@0` → `helm`, `AzureCLI@2` with ambient `az login` |
-| `degraded` | 0.5 | Meaningful local approximation, documented deltas | `PublishTestResults@2` → copy + console summary; Windows batch steps on Linux |
-| `stub` | 0 | Logs inputs, does nothing; configurable skip/fail/prompt | SonarQube tasks, unknown marketplace tasks |
-| `unsupported` | 0 | Convert-time error or explicit runtime failure with remediation note | pipeline decorators, YAML anchors (match server behavior) |
-
-The weights feed the per-pipeline coverage report (D10, docs/04 §13).
+These labels appear in the generated README and step headers. They are **informational** — the
+original per-pipeline coverage percentage (old D10) is dropped.
 
 ## 7. Roadmap summary
 
-Sizes: S ≈ 1–2 weeks, M ≈ 3–4, L ≈ 5–8 (single developer). Details & exit criteria: [docs/06](docs/06-cli-testing-roadmap.md).
+Sizes: S ≈ 1–2 weeks, M ≈ 3–4 (single developer). Details & exit criteria: docs/06 §4.
 
 | Phase | Size | Deliverable |
 |---|---|---|
-| P0 Foundations | S | CLI skeleton, YAML front end with source maps + schema validation, `pipeline.expanded.yml` dump for template-free files, preview-oracle harness |
-| P1 Core engine | L | Expression evaluator, template expansion (local files), typed parameters, variables model, matrix, dependency graph — oracle-green on corpus |
-| P2 Script emission (MVP) | L | Emitter + bash runtime lib, core steps (script/bash/pwsh/powershell, checkout self, publish/download, file ops), deployment jobs (`runOnce`), predefined vars, `.env.example`, manifest, **coverage report**, README, **sandbox execution wrapper (D11)** — a real single-repo Linux pipeline runs locally, host or sandboxed |
-| P3 Fetchers & auth | M | ADO device-code + `az`/PAT, GitHub, cross-repo templates, multi-repo checkout, variable groups → `.env`, artifact download, lockfile |
-| P4 **Priority deployment tasks** | L | The decided priority set: `AzurePowerShell`, `AzureCLI`, Docker build/push, Helm installer+deploy, kubectl/`KubernetesManifest`, ARM/Bicep resource-group deployment, `AzureKeyVault`, `AzureFileCopy`/storage ops; service-connection `.env` contract; `rolling`/`canary` strategies; `doctor`; unknown-task stubs + user handlers |
-| P5 Task breadth | M | Toolchains (`UseDotNet`/`DotNetCoreCLI`, Node/`Npm`, Python, Maven/Gradle), feed auth, test/coverage publishing, `Cache@2`, `replacetokens`, stub set |
-| P6 Fidelity & DX | M | Real-task execution mode (D3), container jobs & service sidecars via Docker, sandbox × container-job composition (D11 socket policy), parallel jobs & slicing, `--shell-at` debug shell, secret masking polish |
-| Future — Windows host | M | Native pwsh emission set for Windows-targeted jobs on a Windows host, cmd semantics (deferred by decision 2026-07-30; emitter backend seam reserved) |
+| **P1 Thin expansion** | S | Expansion client (preview) as the `convert` path + provenance/cache; template bundler for local `@self` files; YAML front end for the expanded schema; cleanup of the v1 reimplementation scope |
+| **P2 Script-native runner (MVP)** | M | Semantic model + emitter + bash runtime lib: script/bash/pwsh/powershell/checkout natively; `$( )`/`$[ ]`/`##vso[]`; variables/outputs/artifacts; `.env.example`; README warnings list; `--only-step`/`--resume` — **a real single-repo pipeline runs locally, no commit required** |
+| **P3 Task breadth** | M | Real-task mode + stub policy; priority deployment tasks (AzureCLI/Docker/Helm/kubectl/ARM-Bicep/Key Vault/storage) via `INPUT_*` + service-connection `.env`; auth/fetchers + lockfile; CLI `auth`/`doctor`; nightly drift harness |
+
+The first genuinely useful milestone — edit `azure-pipelines.yml`, run it locally, re-run one step,
+never commit — lands at the end of **P2**, not after a multi-phase compiler clone.
 
 ## 8. Risks & mitigations
 
 | Risk | Mitigation |
 |---|---|
-| Parity drift with server-side expansion (closed source, evolving) | Oracle CI against real preview API (D6); agent source as behavior reference; pinned schema snapshots |
-| Undocumented behaviors (variable visibility in templates, coercion edge cases) | Table-driven tests generated from oracle answers; mark known ambiguities in docs/02 |
-| Secrets & service connections fundamentally unobtainable | `.env` contract (D8) with per-entry provenance and instructions; ambient-CLI auth mode for `az`/`docker`/`kubectl` |
-| Windows-targeted pipelines on a Linux host | `--target-os` awareness, pwsh where possible, explicit `degraded` warnings, container mode |
-| Marketplace long tail | Stub + inputs dump + user handler drop-in (D7); org-level `task.json` fetch for input defaults |
-| Hosted images have tools preinstalled that the laptop lacks | `doctor` checks per generated project; default sandbox image approximates hosted tooling (D11); declared container jobs run their own images |
-| Scope explosion toward "reimplement the whole agent" | Fidelity tiers make partial support explicit; non-goals list; phased roadmap |
-| Licensing | Everything we depend on (agent, tasks, task-lib, schema) is MIT; we do not redistribute marketplace binaries, we fetch them per-org with the user's own auth |
+| Convert-time dependency on the `preview` endpoint (network + auth on every re-expansion) | `pipeline.expanded.yml` is emitted into the output, so *execution* is offline; only re-expansion needs the network; `--frozen` reuses the cache |
+| `preview` API stability (it is the editor's surface, not a headline REST contract) | pin the api-version (already done, `7.1`); freeze the expanded YAML; retain the offline fallback (D3/D4) |
+| Editing *templates* (not just the root) resolves `@self` against the committed repo | the bundler inlines local template files into the override (P1); root-file edits are fully uncommitted from day one |
+| Real-task mode still needs an emulated `azure-pipelines-task-lib` (`INPUT_*`) | one emulation host serves all tasks, instead of N hand-written transpilers; unknown tasks stub cleanly |
+| Service connections / secrets unobtainable by design | `.env` contract with per-entry provenance; ambient `az`/`docker`/`kubectl` auth mode |
+| Marketplace long tail | stub + inputs dump + user handler drop-in |
+| The retained offline fallback drifts from the service | it is off the critical path and cross-checked against the preview result when both are available |
 
 ## 9. Grounding in official references
 
-The parsing engine and runtime are built **from the official references**, per area:
+Unchanged in spirit, but re-scoped: **expansion behavior is grounded by the service itself** (the
+`preview` endpoint is the source of truth, not a thing we reimplement), while **runtime behavior** is
+grounded in official docs and the agent/task sources as before.
 
-- YAML schema: learn.microsoft.com/azure/devops/pipelines/yaml-schema/ + machine-readable schema from the `microsoft/azure-pipelines-vscode` repo and per-org `GET {org}/_apis/distributedtask/yamlschema` (includes installed marketplace task input schemas).
-- Expressions & conditions: learn.microsoft.com/azure/devops/pipelines/process/expressions. Behavioral source code reference: the agent repo only *consumes* the closed expressions NuGet (`src/Agent.Worker/ExpressionManager.cs` for runtime conditions); the open engine implementation is the `actions/runner` fork `src/Sdk/DTExpressions2` + `DTObjectTemplating` (corrected 2026-07-30, C-E00-012/013 — oracle D6 outranks it on divergence).
-- Templates: …/process/templates; runtime parameters: …/process/runtime-parameters.
-- Variables & predefined variables: …/process/variables, …/build/variables.
+- Expansion: the Pipelines `preview` endpoint (grounded live, claims C-E00-017…027); template and
+  expression docs remain references only.
+- Runtime expressions (`$[ ]`, `$( )`): learn.microsoft.com …/process/expressions, …/process/variables.
 - Logging commands (`##vso`): …/scripts/logging-commands.
-- Tasks: reference docs at …/pipelines/tasks/reference/ and **source of truth** `microsoft/azure-pipelines-tasks` (each task's `task.json` for inputs/defaults/aliases, `.ts` for behavior).
-- Agent behavior (folder layout, step lifecycle, handlers): `microsoft/azure-pipelines-agent`, `microsoft/azure-pipelines-task-lib`.
-- REST: learn.microsoft.com/rest/api/azure/devops/ (Git items, Pipelines runs/artifacts/preview, Build, DistributedTask variable groups & tasks). Entra resource for ADO tokens: `499b84ac-1321-427f-aa17-267ca6975798`.
-- Hosted image contents (for `doctor` expectations): `actions/runner-images`.
+- Agent behavior (step lifecycle, folder layout, handlers): `microsoft/azure-pipelines-agent`,
+  `microsoft/azure-pipelines-task-lib`.
+- Tasks: `microsoft/azure-pipelines-tasks` (each task's `task.json` for inputs/defaults/aliases).
+- REST: learn.microsoft.com/rest/api/azure/devops/ (Pipelines preview, DistributedTask tasks).
 
-Exact `api-version`s and numeric server limits are re-verified against live docs at implementation time (flagged inline in the detail docs).
+Exact `api-version`s and numeric limits are re-verified against live docs at implementation time.
 
 ## 10. Document index
 
-1. [docs/01-pipeline-model-and-schema.md](docs/01-pipeline-model-and-schema.md) — schema coverage matrix, variables system, predefined variables → local mapping
-2. [docs/02-template-and-expression-engine.md](docs/02-template-and-expression-engine.md) — expansion algorithm, expression grammar/functions, compilation to shell, oracle
-3. [docs/03-task-catalog.md](docs/03-task-catalog.md) — task-by-task emulation strategy, handler plugin API, unknown-task policy
-4. [docs/04-generated-project-and-runtime.md](docs/04-generated-project-and-runtime.md) — output layout, runtime spec, logging commands, artifacts, `.env`, debugging UX
-5. [docs/05-fetching-and-auth.md](docs/05-fetching-and-auth.md) — sign-in flows, REST endpoints, caching & lockfile, security
-6. [docs/06-cli-testing-roadmap.md](docs/06-cli-testing-roadmap.md) — CLI/config, testing strategy, detailed phases, open questions
+1. [docs/01-pipeline-model-and-schema.md](docs/01-pipeline-model-and-schema.md) — schema coverage, variables, predefined variables
+2. [docs/02-template-and-expression-engine.md](docs/02-template-and-expression-engine.md) — runtime-expression subset, bundler, the (fallback-only) compile-time engine
+3. [docs/03-task-catalog.md](docs/03-task-catalog.md) — real-task mode, stub policy, deployment-set strategy
+4. [docs/04-generated-project-and-runtime.md](docs/04-generated-project-and-runtime.md) — output layout, runtime spec, logging commands, artifacts, `.env`
+5. [docs/05-fetching-and-auth.md](docs/05-fetching-and-auth.md) — sign-in, the preview expansion, caching & lockfile
+6. [docs/06-cli-testing-roadmap.md](docs/06-cli-testing-roadmap.md) — CLI/config, testing, phased roadmap, decisions record
+7. [docs/07-simplification-review.md](docs/07-simplification-review.md) — **the review this plan is based on** (what was cut and why)

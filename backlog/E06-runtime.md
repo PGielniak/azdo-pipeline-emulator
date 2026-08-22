@@ -5,6 +5,11 @@ Primary grounding set: logging-commands doc (…/pipelines/scripts/logging-comma
 
 All tasks here are bash (`packages/runtime/src/*.sh`) with bats tests; shellcheck-clean is a global Done criterion.
 
+> **Unchanged by the simplification (docs/07).** E06 *is* the runtime half the revised plan keeps —
+> the part the **agent** does at run time, which cannot be delegated to the `preview` endpoint. The
+> only adjustment: the runtime now executes steps produced by the script-native emitter (E05) and
+> dispatches non-script tasks to real-task mode / stubs (E07) instead of per-task transpilers.
+
 ## E06-S01 — As a pipeline developer, variables behave exactly as on the agent (store, env mapping, secrets), so scripts see identical environments locally.
 Acceptance: store + env materialization per docs/04 §4–§5 with cited agent behavior.
 
