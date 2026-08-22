@@ -2,7 +2,9 @@
 // the global `--json` flag, and a single exit path.
 //
 // Command *bodies* deliberately stop at NotImplementedError; their flags and behaviour belong to the
-// epics that implement them (convert: E13-S02-T01, config: E13-S01-T02, auth: E08, doctor: E13-S04).
+// epics that implement them (convert: E10-S02-T01, config: E10-S01-T02, auth: E09-S01 + E10-S03,
+// doctor: E10-S04). Epic IDs re-pointed 2026-08-22 (E12-S03-T01) after the re-orientation's
+// renumbering — the CLI epic is E10, fetchers/auth E09; `C-E13-*` claim IDs keep their prefix.
 // What this module owns is the shape: the surface a user sees, and the exit code they get.
 import { createRequire } from 'node:module';
 import { Command, CommanderError, Option } from 'commander';
@@ -69,14 +71,14 @@ export function createProgram(io: Io): Command {
     .option('--org <url>', 'organization URL, e.g. https://dev.azure.com/contoso')
     .addOption(choice('--mode <mode>', 'authentication mode', ['interactive', 'az', 'pat']))
     .action(() => {
-      throw new NotImplementedError('auth login', 'E13-S03-T01 (auth UX) on top of E08-S01');
+      throw new NotImplementedError('auth login', 'E10-S03-T01 (auth UX) on top of E09-S01');
     });
 
   auth
     .command('status')
     .description('show who you are signed in as, and for which organization')
     .action(() => {
-      throw new NotImplementedError('auth status', 'E13-S03-T01 (auth UX) on top of E08-S01');
+      throw new NotImplementedError('auth status', 'E10-S03-T01 (auth UX) on top of E09-S01');
     });
 
   program
@@ -102,7 +104,7 @@ export function createProgram(io: Io): Command {
       false,
     )
     .action(() => {
-      throw new NotImplementedError('convert', 'E13-S02-T01 (flag surface) on top of E05');
+      throw new NotImplementedError('convert', 'E10-S02-T01 (flag surface) on top of E05');
     });
 
   program
@@ -111,7 +113,7 @@ export function createProgram(io: Io): Command {
     .argument('<outdir>', 'a generated project directory')
     .option('--sandbox', 'check inside the sandbox image instead of on the host', false)
     .action(() => {
-      throw new NotImplementedError('doctor', 'E13-S04-T01 (doctor engine)');
+      throw new NotImplementedError('doctor', 'E10-S04-T01 (doctor engine)');
     });
 
   program
@@ -121,15 +123,7 @@ export function createProgram(io: Io): Command {
     .option('--refresh', 're-download even when the cache is warm', false)
     .option('--latest', 'resolve each artifact to the latest run instead of the pinned one', false)
     .action(() => {
-      throw new NotImplementedError('fetch-artifacts', 'E08-S04 (artifact fetchers)');
-    });
-
-  program
-    .command('preview-diff')
-    .description("compare our expansion against the real service's final YAML")
-    .argument('<pipeline.yml>', 'the pipeline to expand on both sides')
-    .action(() => {
-      throw new NotImplementedError('preview-diff', 'E12-S03-T01 (nightly parity workflow)');
+      throw new NotImplementedError('fetch-artifacts', 'E09-S03-T02 (artifact fetchers)');
     });
 
   program
@@ -138,7 +132,7 @@ export function createProgram(io: Io): Command {
     .argument('<outdir>', 'a generated project directory')
     .argument('[args...]', 'arguments forwarded verbatim to run.sh')
     .action(() => {
-      throw new NotImplementedError('run', 'E13-S02-T02 (run proxy)');
+      throw new NotImplementedError('run', 'E10-S02-T02 (run proxy)');
     });
 
   return program;

@@ -1,6 +1,18 @@
-# docs/07 — Simplification review & revised architecture (proposal)
+# docs/07 — Simplification review & revised architecture (accepted)
 
-Status: **Proposal for owner review** · Date: 2026-08-22 · Author: architecture review on `main`
+Status: **Accepted — this is the architecture in force** · Proposed 2026-08-22 · accepted 2026-08-22
+· Author: architecture review on `main`
+
+> **Status corrected 2026-08-22 (E12-S03-T01).** The paragraph below was written while this was still
+> a proposal and said that nothing had been altered yet. The owner approved the §6 reorientation:
+> [PLAN.md](../PLAN.md) is the revised plan, the backlog was re-sequenced (E12 carries the cleanup),
+> and docs/01–06 now describe the server-expanded, script-native architecture as *the* plan. The
+> dated decision entries for the six revisited decisions are docs/06 §5's — D3/D4/D6/D8/D9/D10 land
+> there under E12-S03-T02. §1–§8 below are kept **verbatim as the review that was accepted**; where
+> they say "proposal" or "would", read "decided". One correction of substance since acceptance: the
+> local template engine (E03) and bash runtime (E06) turned out to be substantially **built**, so
+> "delete the reimplementation from the critical path" is executed as "retain it as an offline
+> fallback, off the critical path" (PLAN's reconciliation addendum).
 
 This document answers a direct question asked of the current `main` branch: *"isn't this project
 already too complicated? — think of ways to simplify it in order to achieve the goal: debug Azure

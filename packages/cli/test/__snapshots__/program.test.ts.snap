@@ -21,8 +21,6 @@ Commands:
                                       prerequisites from its manifest
   fetch-artifacts [options] <outdir>  download the pipeline artifacts a
                                       generated project depends on
-  preview-diff <pipeline.yml>         compare our expansion against the real
-                                      service's final YAML
   run <outdir> [args...]              convenience proxy to <outdir>/run.sh
   help [command]                      display help for command
 "
@@ -113,19 +111,6 @@ Options:
   --latest    resolve each artifact to the latest run instead of the pinned one
               (default: false)
   -h, --help  display help for command
-"
-`;
-
-exports[`CLI scaffold (E13-S01-T01) > help > \`azdo-emu preview-diff --help\` output is stable 1`] = `
-"Usage: azdo-emu preview-diff [options] <pipeline.yml>
-
-compare our expansion against the real service's final YAML
-
-Arguments:
-  pipeline.yml  the pipeline to expand on both sides
-
-Options:
-  -h, --help    display help for command
 "
 `;
 

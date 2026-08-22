@@ -1,5 +1,13 @@
 # 06 — CLI & config, testing strategy, detailed roadmap
 
+> **Epic-ID note (E12-S03-T01, 2026-08-22).** Parts of this file predate the re-orientation's epic
+> renumbering. In §5's **dated decision entries**, which are historical records and are left
+> verbatim, `E13-S01-*` is the CLI epic — now **E10** — and `E12-S01-T0x` in a *testing* context is
+> the parity-harness epic — now **E11**; the same `E12` prefix in a *cleanup* context is the current
+> E12. Live prose in §1–§4 has been re-pointed to the current IDs. **Claim IDs (`C-E12-*`,
+> `C-E13-*`) keep their original prefix by design** — a claim ID is permanent and its research file
+> is named after it (`research/E13-cli-config-doctor.md`).
+
 ## 1. CLI
 
 ```
@@ -17,7 +25,8 @@ azdo-emu convert <pipeline.yml> -o <dir>
     [--sandbox-image IMG]                 # override the default vmImage→image mapping (sandbox only; deferred with it)
     [--group-names | --no-group-names]    # list variable-group names in .env.example when signed in (values never fetched)
     [--frozen | --update [what]]          # lockfile behavior (docs/05 §4)
-    [--offline]
+    [--offline]                           # make no network call — satisfiable only via `--frozen` over a warm
+                                          #   expansion cache or `--offline-expand` (docs/05 §5); wiring is E10-S02-T01
     [--offline-expand]                    # E12-S01-T01: expand with the retained local engine instead of the
                                           #   service — a **degraded fallback** (PLAN D3, docs/07 §6). Off by
                                           #   default; the conversion it produces is labelled degraded and
@@ -27,18 +36,23 @@ azdo-emu convert <pipeline.yml> -o <dir>
 azdo-emu doctor <outdir> [--sandbox]      # verify tool prereqs from manifest.json — on the host by default; `--sandbox`
                                           #   checks inside the sandbox image and is deferred with it (D9 revised)
 azdo-emu fetch-artifacts <outdir> [--refresh|--latest]
-azdo-emu preview-diff <pipeline.yml>      # dev/CI parity check vs the real service (docs/02 §8)
 azdo-emu run <outdir> [...]               # thin convenience proxy to <outdir>/run.sh (optional sugar)
 ```
 
-Conventions: human-readable output with `--json` for tooling; exit codes 0 ok / 1 conversion errors / 2 warnings-as-errors (`--strict`). **CLI usage errors** (unknown flag, missing argument, unknown command) reuse **1** rather than adding a code outside that set — which is also the CLI library's own default, so the two never need translating (E13-S01-T01, C-E13-007). `convert` ends with a one-line summary of the warnings/unsupported list it wrote into the generated `README.md` (described in the closing paragraph of docs/04 §12 — the README has no section of its own there; flagged for E12-S03-T01).
+> **`preview-diff` removed 2026-08-22 (E12-S03-T01, completing E03-S05-T02's demotion).** With the
+> service *as* the expansion (PLAN D3) there is nothing to diff on the default path, so the command
+> is gone from this surface and from `packages/cli/src/program.ts`. Its two jobs live on elsewhere:
+> **service drift** → the nightly re-expansion harness (§3 L3, E11-S03-T01); **fallback parity** →
+> conformance (§3 L2, E11-S02). The normalizer it was built on (E03-S05-T01) is unaffected.
+
+Conventions: human-readable output with `--json` for tooling; exit codes 0 ok / 1 conversion errors / 2 warnings-as-errors (`--strict`). **CLI usage errors** (unknown flag, missing argument, unknown command) reuse **1** rather than adding a code outside that set — which is also the CLI library's own default, so the two never need translating (E10-S01-T01, C-E13-007). `convert` ends with a one-line summary of the warnings/unsupported list it wrote into the generated `README.md` (described in the closing paragraph of docs/04 §12 — the README has no section of its own there; flagged for E12-S03-T01).
 
 > **Revised 2026-08-22 (E12-S02-T01).** Exit code `3` (below `--min-coverage`) and the flag itself are
 > gone with the weighted coverage metric (PLAN D10 revised, docs/07 §6, docs/04 §13's banner);
 > `EXIT` in `packages/cli/src/exit.ts` reserves `0/1/2`. C-E13-007's decision — usage errors reuse
 > `1` — is unaffected by the set shrinking.
 
-Implemented in `packages/cli` (E13-S01-T01): `src/exit.ts` owns the policy (`EXIT`, `CliError`, `NotImplementedError`), `src/program.ts` registers the surface above and returns an exit code instead of calling `process.exit`, and `src/bin.ts` is the only module that touches process state. Commands not yet implemented are *registered* and fail with a message naming the epic that implements them, so `--help` stays honest about the intended surface.
+Implemented in `packages/cli` (E10-S01-T01): `src/exit.ts` owns the policy (`EXIT`, `CliError`, `NotImplementedError`), `src/program.ts` registers the surface above and returns an exit code instead of calling `process.exit`, and `src/bin.ts` is the only module that touches process state. Commands not yet implemented are *registered* and fail with a message naming the epic that implements them, so `--help` stays honest about the intended surface.
 
 ## 2. Config file — `azdo-emu.yaml` (next to the pipeline, all keys optional; CLI > config > defaults)
 
@@ -64,33 +78,59 @@ output:
     dockerSocket: auto                            #   auto|share|none — host-socket passthrough (sandbox only)
 ```
 
-Implemented in `packages/cli/src/config/` (E13-S01-T02): discovery is **beside the pipeline file** (there is no `--config` flag in §1); parsing uses plain `yaml`, *not* the engine's pipeline parser, so the service quirks (anchors rejected, case-folded duplicate keys, single document — C-E01-021..028) deliberately do **not** apply to our own file format. Two rules §2 leaves open are settled in `research/E13-cli-config-doctor.md`: **map-valued keys merge per key** (`parameters`, `repositories`, `tasks.overrides`) while scalars and lists replace wholesale (C-E13-012), and **paths typed on the command line resolve from the working directory while paths written in the config resolve from the config file's own directory** (C-E13-013). The machine-readable schema is committed at `schema/azdo-emu.schema.json` (draft-07) for editor support via `# yaml-language-server: $schema=…`; a test pins it to the loader so the two cannot drift.
+Implemented in `packages/cli/src/config/` (E10-S01-T02): discovery is **beside the pipeline file** (there is no `--config` flag in §1); parsing uses plain `yaml`, *not* the engine's pipeline parser, so the service quirks (anchors rejected, case-folded duplicate keys, single document — C-E01-021..028) deliberately do **not** apply to our own file format. Two rules §2 leaves open are settled in `research/E13-cli-config-doctor.md`: **map-valued keys merge per key** (`parameters`, `repositories`, `tasks.overrides`) while scalars and lists replace wholesale (C-E13-012), and **paths typed on the command line resolve from the working directory while paths written in the config resolve from the config file's own directory** (C-E13-013). The machine-readable schema is committed at `schema/azdo-emu.schema.json` (draft-07) for editor support via `# yaml-language-server: $schema=…`; a test pins it to the loader so the two cannot drift.
 
 ## 3. Testing strategy
 
 | Layer | What | How |
 |---|---|---|
 | L1 Expression unit | Full function/coercion table (~300 cases from the expressions doc + oracle-resolved edge cases) | Table-driven; same tables run against **both** backends (eval + compiled-shell via bats) so the two can never diverge |
-| L2 Expansion goldens | Fixture YAML in → expanded YAML out | Snapshot tests; fixtures include every directive, template type, parameter type, nesting patterns |
-| L3 **Server oracle** | Our expansion ≡ service `finalYaml` | `preview-diff` over the corpus against a dedicated test org (PAT in CI secret), nightly + pre-release gate; every discovered divergence becomes a permanent L2 fixture |
+| L2 Expansion goldens | Fixture YAML in → expanded YAML out | Snapshot tests; fixtures include every directive, template type, parameter type, nesting patterns. **Re-scoped 2026-08-22 (E12-S03-T01):** on the default path the golden *is* the service's pinned `finalYaml` (`fixtures/oracle/`), so these snapshots now exercise the **offline fallback** and its agreement with that pin — conformance work (E11-S02), not a gate on the shipped conversion |
+| L3 **Service drift** | The pinned `finalYaml` still matches what the service returns *today* | **Re-scoped 2026-08-22 (E12-S03-T01):** expansion parity is true by construction now (PLAN D3), so what is tested is drift, not agreement — nightly re-expansion of the corpus against the test org (E11-S03-T01, PAT in CI secret), normalized (E03-S05-T01) and diffed against `fixtures/oracle/`; a mismatch is **triaged** (E11-S03-T02), never auto-accepted, and becomes a fixture update plus, where the fallback disagrees too, an L2 case. `preview-diff` was the old vehicle and is gone (§1) |
 | L4 Runtime unit | `runtime.sh` behaviors: setvariable/isoutput propagation, prependpath, masking, macro edge cases (unmatched literal), conditions vs results, continueOnError/failOnStderr/retries, artifact flow, deps outputs across jobs/stages | bats-core; runs in CI on ubuntu + macos |
 | L5 E2E | Convert & run sample apps (dotnet, node, python, docker) in containers approximating hosted images | Docker; assert artifacts produced, exit codes, key log lines |
-| L6 Real-run parity spot checks | Same fixture pipeline run in real ADO and locally; compare artifact contents, produced variables, step result sequence | Manual-triggered CI job (costs real pipeline minutes); release gate for majors |
+| L6 Real-run parity spot checks (**the only layer that can validate what the oracle cannot see** — see the two limits below) | Same fixture pipeline run in real ADO and locally; compare artifact contents, produced variables, step result sequence | Manual-triggered CI job (costs real pipeline minutes); release gate for majors |
 
-Repo layout of the runners (E12-S01-T01): L1/L2 run under **vitest projects** — one per TypeScript package (`cli`, `engine`, `emit`, `fetch`), plus `repo` for meta-tests about the test layout itself; each project keeps its suite in `packages/<pkg>/test/**/*.test.ts`, so `pnpm vitest run --project engine` runs one package. L4 runs under **bats** in `packages/runtime/test/`, with shared helpers in `test/helpers/*.bash` loaded via `load` (relative to the test file, no `BATS_LIB_PATH` to set) and a fixture store that copies `fixtures/runtime/<name>` into the test's own `BATS_TEST_TMPDIR` before the test may touch it. `pnpm test` = vitest (with coverage) + bats; CI runs the same two commands and uploads junit + coverage reports.
+Repo layout of the runners (E11-S01-T01): L1/L2 run under **vitest projects** — one per TypeScript package (`cli`, `engine`, `emit`, `fetch`), plus `repo` for meta-tests about the test layout itself; each project keeps its suite in `packages/<pkg>/test/**/*.test.ts`, so `pnpm vitest run --project engine` runs one package. L4 runs under **bats** in `packages/runtime/test/`, with shared helpers in `test/helpers/*.bash` loaded via `load` (relative to the test file, no `BATS_LIB_PATH` to set) and a fixture store that copies `fixtures/runtime/<name>` into the test's own `BATS_TEST_TMPDIR` before the test may touch it. `pnpm test` = vitest (with coverage) + bats; CI runs the same two commands and uploads junit + coverage reports.
 
 Coverage gating: thresholds live in the root `vitest.config.ts` (coverage is root-level in vitest — there is no per-project coverage config); "per package" is expressed as glob keys (`packages/cli/src/**`) plus a repo-wide floor, and the numbers are a **ratchet seeded from measured coverage**, never an aspiration — a threshold above reality would make the first CI run red for no defect. Global and per-package sets are checked independently, so a package number below the repo floor is a second, narrower gate rather than a weakening; the one legitimate way a number goes *down* is re-seeding a placeholder package from measurement once it gains real code (`emit` at P2). Two traps are guarded by `test/test-layout.test.ts` rather than by convention: a package that gains tests but no project (its suite silently never runs) and a threshold glob that stops matching (vitest reports *no* error for an unmatched glob — it just stops gating).
 
 Corpus: ≥30 pipelines patterned after real-world shapes — nested cross-repo templates, `extends` + `each` over `jobList`, matrix builds, deployment jobs with runOnce/canary, multi-checkout, artifact hand-offs between stages, variable groups + runtime expressions, monorepo path-heavy pipelines. Grown continuously from bug reports (every bug → corpus entry first).
 
-Corpus mechanics (E12-S01-T02): entries live at `fixtures/corpus/<entry>/` (`pipeline.yml`, optional `templates/*.yml`, a README naming what the entry exercises) and their oracle pairs at `fixtures/oracle/<entry>.final.yml`, with `MANIFEST.json` recording the input hash each pair was fetched for — so a fixture edited without re-verification is a red test (`test/corpus.test.ts`), not a stale golden. `fixtures/corpus/` **mirrors the oracle repository's `/corpus/` directory**, because the service resolves `template:` references against the repo, treating a `yamlOverride` as though it were the pipeline definition's own file: templates must be pushed before the preview call, root references spelled `/corpus/<entry>/…` and in-template references spelled as bare siblings (C-E12-011/012). Goldens are redacted, so every consumer of a fresh response — the `--update` flow, the nightly `preview-diff` — must redact before diffing.
+Corpus mechanics (E11-S01-T02): entries live at `fixtures/corpus/<entry>/` (`pipeline.yml`, optional `templates/*.yml`, a README naming what the entry exercises) and their oracle pairs at `fixtures/oracle/<entry>.final.yml`, with `MANIFEST.json` recording the input hash each pair was fetched for — so a fixture edited without re-verification is a red test (`test/corpus.test.ts`), not a stale golden. `fixtures/corpus/` **mirrors the oracle repository's `/corpus/` directory**, because the service resolves `template:` references against the repo, treating a `yamlOverride` as though it were the pipeline definition's own file: templates must be pushed before the preview call, root references spelled `/corpus/<entry>/…` and in-template references spelled as bare siblings (C-E12-011/012). Goldens are redacted, so every consumer of a fresh response — the `--update` flow, the nightly re-expansion (E11-S03-T01, which replaced `preview-diff`) — must redact before diffing.
 
 Two limits of the oracle as an instrument, found by authoring corpus v1 and load-bearing for what L2/L3 may claim:
 
 - **The oracle cannot see everything.** `strategy: matrix`/`parallel` is *not* expanded by the service (C-E12-018) — job multiplication happens at run time — so no golden can prove it; that behaviour is E04's, verified at L6. Variable-group contents are likewise never inlined (C-E12-016), which is independent confirmation of D5.
-- **Some corpus shapes need org objects, not just YAML.** `environment:` and `- group:` are validated at *load* time and fail with "does not exist or has not been authorized" until the object exists **and** the pipeline is authorized for it (C-E12-015/017); `scripts/oracle-provision.ts` provisions the ones corpus v1 needs. The expansion also rewrites shortcut steps to task **GUIDs** (`checkout`/`download` GUIDs that the task catalogue itself cannot resolve — C-E12-019/020), which the E03-S05-T01 normalizer must canonicalize or `preview-diff` reports permanent false drift.
+- **Some corpus shapes need org objects, not just YAML.** `environment:` and `- group:` are validated at *load* time and fail with "does not exist or has not been authorized" until the object exists **and** the pipeline is authorized for it (C-E12-015/017); `scripts/oracle-provision.ts` provisions the ones corpus v1 needs. The expansion also rewrites shortcut steps to task **GUIDs** (`checkout`/`download` GUIDs that the task catalogue itself cannot resolve — C-E12-019/020), which the E03-S05-T01 normalizer must canonicalize or the nightly re-expansion (E11-S03-T01) reports permanent false drift.
 
 ## 4. Detailed roadmap & exit criteria
+
+**The live roadmap is three phases (PLAN §7, docs/07 §5).** *Rewritten 2026-08-22 (E12-S03-T01).*
+
+| Phase | Size | Deliverable | Exit criterion | Epics |
+|---|---|---|---|---|
+| **P1 Thin expansion** | S | Expansion client (`preview`) as the `convert` path + provenance/cache/lockfile; the bundler that inlines local `@self` templates; YAML front end for the *expanded* schema; cleanup of the v1 reimplementation scope | A root pipeline — and one editing a local template file — converts from an uncommitted tree: `pipeline.expanded.yml` is the service's own output, re-convert is byte-identical under `--frozen` | E00-S04, E12, E01, E03-S06/S07, E10-S01 |
+| **P2 Script-native runner (MVP)** | M | Semantic model + emitter + `lib/runtime.sh`: `script`/`bash`/`pwsh`/`powershell`/`checkout` natively; `$( )`/`$[ ]`/`##vso[]`; variables/outputs/artifacts; `.env.example`; README warnings list + fidelity labels; `--only-step`/`--resume` | **Dogfood**: a real single-repo Linux pipeline converts and runs to green locally, on the host, in one shared workspace (D8/D9 revised), its README naming every degraded or stubbed construct | E06, E04, E05, E02, E10-S02, E11-S01 |
+| **P3 Task breadth** | M | Real-task mode + stub policy; the priority deployment set via `INPUT_*` + service-connection `.env`; auth/fetchers + lockfile; `auth`/`doctor`; nightly drift harness | A real build → docker push → helm/kubectl deploy pipeline runs locally against a real subscription with ambient auth; no corpus pipeline reports an *unexplained* warning | E09, E07, E08, E10-S03/S04, E11-S02/S03 |
+
+Old → new phase mapping, for the numbers the archived table and the committed changelog use:
+
+| Archived | Live |
+|---|---|
+| P0 Foundations · P1 Core engine | **P1** — but the engine half is now the *service's* work; what remains of old-P1 locally is the retained fallback (docs/02 §2–§5) and the runtime-expression slice, which lands with P2 |
+| P2 Emission MVP | **P2** |
+| P3 Fetchers & auth · P4 Priority deployment tasks · P5 Task breadth | **P3** |
+| P6 Fidelity & DX · Future — Windows host | **deferred**, no phase — sandbox, per-job workspace, container jobs, `--parallel`, `--shell-at`, Windows host (docs/04 §9; no backlog story carries them, E14 was cut) |
+
+<details>
+<summary><b>Archived — the original seven-phase roadmap (P0–P6), superseded by docs/07 but kept verbatim</b></summary>
+
+> **Superseded 2026-08-22 (E12-S03-T01), not deleted** (BACKLOG rule 3). It is retained for two
+> reasons: its **exit criteria and contents are the detail** the three rows above compress, and
+> committed `CHANGELOG-BACKLOG.md` entries — which are append-only — cite these rows *by number*
+> ("the P2 exit criteria", "rehomed to P6"). Renumbering them would make those entries false, so the
+> labels stay put. Read a `P<n>` anywhere in docs/01–06 as a pointer into **this** table.
 
 | Phase | Size | Contents | Exit criteria |
 |---|---|---|---|
@@ -102,6 +142,8 @@ Two limits of the oracle as an instrument, found by authoring corpus v1 and load
 | **P5 Task breadth** | M | Groups C/E/F/G *via real-task mode and stubs, not transpilation* (E12-S02-T03): toolchains (dotnet/node/python/maven/gradle), feed auth, test/coverage publishing, `Cache@2`, `replacetokens`, stub set — breadth here is verification and remediation notes per task, not new emitters | No corpus pipeline reports an *unexplained* warning — every degraded/stubbed step carries a remediation line (the metric this row used to gate on was dropped in E12-S02-T01); unknown-task flow polished |
 | **P6 Fidelity & DX** | M | ~~Real-task execution mode~~ (**promoted out of P6** by E12-S02-T03 — it is the default non-script path from P4 on; docs/03 §6), container jobs + services, `step.target`, **the deferred sandbox execution wrapper and per-job `Pipeline.Workspace` isolation** (D8/D9 revised, E12-S02-T02) incl. sandbox × container-job composition and the docker-socket policy — **no backlog story carries them**, since E14 was cut in the re-orientation (docs/07 §6), `--parallel` + slicing, `--shell-at`, masking/UX polish | Container-job pipeline runs via Docker (the real-task exit criterion moved to P4 with the mode itself — E12-S02-T03) |
 | **Future — Windows host** | M | Native pwsh emission set (`run-job.ps1`, `steps/*.ps1`) for Windows-targeted jobs, cmd step semantics, Windows runner testing | Windows-targeted corpus pipeline runs on a Windows host (deferred by decision 2026-07-30; emitter backend seam reserved from P2) |
+
+</details>
 
 Suggested converter repo layout (monorepo, pnpm):
 ```
@@ -314,3 +356,19 @@ Still open:
 
     (h) **False positives left alone, deliberately.** `Handler` in E06-S01-T02's grounding set is the *agent's* class; the `##vso` "handlers" of E06-S04 are command handlers; `handlers/` in docs/04 §1 is the live user drop-in of E07-S02-T02; `registry` in docs/03 group D and docs/01 §2 is a **container** registry. None is the per-task sense this task drops, and rewriting them would have made the word's disappearance, not the design change, the deliverable.
 
+
+46. **The design docs are synced by *status banner per section*, and the archived roadmap keeps its phase numbers (2026-08-22, E12-S03-T01).** PLAN.md and docs/07 had been revised while docs/01–06 still described the v1 architecture as current — a reviewer opening docs/02 read "the hard core of the project: reimplementing what the Azure DevOps service does", and docs/06 §4's P1 ("Core engine: expression evaluator, template expansion") contradicted PLAN §7's P1 ("Thin expansion") using the same label. This entry records how that was closed, and the two things it deliberately did **not** do.
+
+    (a) **Granularity is the section, not the document.** docs/02 is the case that forced it: §6's *runtime* half (`$[ ]`, `condition:`, `$( )`, `dependencies.*`) is live and local by PLAN **D6**, while §2/§3/§4 are fallback-only — a single "superseded" banner on the file would have archived the live runtime spec that E02/E06 are built from, and a single "live" banner would have left the compile-time walk reading as the default path. The doc therefore opens with a per-section status table, and each affected section repeats its own status in its heading. Same treatment in docs/01 (§1's validation pass, §2's `extends`/`template:` rows, §4's three-syntaxes table) and docs/05 (the `preview` row is now the **Expansion** row, not the **Oracle** row).
+
+    (b) **The archived P0–P6 phase labels were *not* renumbered, and that is a constraint rather than a preference.** `CHANGELOG-BACKLOG.md` is append-only and three committed entries cite those rows by number ("the P2 exit criteria", "the P4/P5/P6 rows", "rehomed to P6"). Renumbering would make committed entries false with no way to correct them. So §4 now publishes PLAN §7's live **P1–P3** above the old table, keeps the old table verbatim behind a `<details>` banner, and carries an explicit old→new mapping; every other doc that has a `Phase` column (docs/01 §2, docs/03, docs/04, docs/05) gained a one-line pointer saying its numbers index the **archived** table. The token `P2` meant two different things in two files before this; the pointer is what disambiguates it, not a mechanical renumber.
+
+    (c) **`preview-diff` was an active-surface removal — this task's `coverage.min`.** E03-S05-T02 demoted the command 2026-08-22 and recorded that removing the surface belonged to E12-S02/S03; it was still registered in `packages/cli/src/program.ts`, still listed in docs/06 §1, and its `NotImplementedError` still named "E12-S03-T01 (nightly parity workflow)" — a pointer at *this* task, which is the docs sync and not a nightly harness. With the service *as* the expansion there is nothing to diff on the default path, so the command is gone from the CLI, docs/06 §1 and docs/02 §8, with its two jobs re-pointed to E11-S03-T01 (service drift) and E11-S02 (fallback conformance). The E03-S05-T01 normalizer is untouched: the nightly compares normalized expansions.
+
+    (d) **Stale *task* IDs were re-pointed in live prose; claim IDs and dated records were not.** The re-orientation renumbered the epics, so docs/06 §3 said "Repo layout of the runners (E12-S01-T01)" meaning the parity harness — an ID that now names the `--offline-expand` gate, i.e. a collision, not merely a stale link. Live prose in §1–§4 now says E11-S01-T01/T02 and E10-S01-T01/T02, and `program.ts`'s user-facing "not implemented yet" hints name E10/E09 instead of E13/E08. **Left verbatim:** §5's dated decision entries (a record of what was decided on a date, not a forward pointer), the historical `E13-S01-T01` attribution in the test titles and module header, and every `C-E12-*`/`C-E13-*` claim ID — a claim ID is permanent and its research file is named after it. A note at the top of this file states the mapping so the surviving prefixes are readable rather than merely stale.
+
+    (e) **Two lines were corrected rather than annotated, because annotation would have let E05 build them** (decision 43's `coverage.md` failure mode). docs/04 §1's tree listed `expansion-map.json` unconditionally, but on the default path no local expansion runs and nothing produces it — it is now marked fallback-only, with the default path's provenance named as the bundler's (docs/02 §5.1, E03-S07-T01, whose file names that task still owns — they are deliberately not pinned here). docs/01 §1 said "schema validation runs twice: raw root (loose) + expanded (strict)"; the loose pass is dropped, since validating the unexpanded file is the server's job now (E01-S02-T02's re-scope) and a local loose pass could only disagree with the authority.
+
+    (f) **docs/02 §5.1 is new content, and it is written from the tasks rather than from the architecture.** PLAN's component table pointed at docs/02 §5 for the **bundler**, but §5 described full template *resolution* — the fallback's semantics — so the default path's only local template work was undocumented. §5.1 states it as a mechanic-per-task table (E03-S06-T01..T04, E03-S07-T01/T02) and says what the bundler explicitly does **not** do: no `${{ }}`, no directives, no parameter binding, and cross-repo `@other` is a diagnostic in v1. Nothing there asserts behavior those tasks do not already specify.
+
+    (g) **Scope fences.** The six dated revisit entries for **D3/D4/D6/D8/D9/D10** and CLAUDE.md rule 2's "decisions already made" list remain **E12-S03-T02**'s — this entry is about the sync mechanics, not about re-deciding. `--offline` was *composed*, not redefined: docs/05 §5 now says a zero-network convert is reachable only via `--frozen` over a warm expansion cache or `--offline-expand`, and that the flag's wiring and error message are **E10-S02-T01**'s. One step past the task's stated docs/01–06 range was taken deliberately and is reported: **docs/07's own header** still read "Proposal for owner review … Nothing in PLAN.md, docs/01–06, or the backlog has been altered", which a reviewer opening the review first would take to mean the re-orientation never happened.

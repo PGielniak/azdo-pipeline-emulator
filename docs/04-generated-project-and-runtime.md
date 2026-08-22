@@ -1,6 +1,10 @@
 # 04 — Generated project layout & runtime specification
 
-The contract of the output: what `convert` emits and how the scripts behave at run time. Behavior reference: `microsoft/azure-pipelines-agent` (worker step lifecycle, `_work` layout) and the logging-commands doc (…/scripts/logging-commands).
+The contract of the output: what `convert` emits and how the scripts behave at run time.
+
+> **Phase labels in this file (`P6`, `P4`, …) are the archived P0–P6 roadmap** (docs/06 §4), kept by
+> number because committed changelog entries cite them; the live plan is PLAN §7's P1–P3
+> (E12-S03-T01, 2026-08-22). Behavior reference: `microsoft/azure-pipelines-agent` (worker step lifecycle, `_work` layout) and the logging-commands doc (…/scripts/logging-commands).
 
 ## 1. Output layout
 
@@ -11,8 +15,12 @@ out/
 ├── .env                          # user-filled copy (gitignored)
 ├── .gitignore                    # .env .work/ .artifacts/ logs
 ├── README.md                     # conversion report: fidelity table, warnings, how-to (§12)
-├── pipeline.expanded.yml         # the fully resolved YAML (≈ service "final YAML")
-├── expansion-map.json            # provenance: expanded node → source file:line chain
+├── pipeline.expanded.yml         # the service's own final YAML, frozen (PLAN D3; --offline-expand: the
+│                              #   fallback engine's output, labelled degraded)
+├── expansion-map.json            # FALLBACK-ONLY (E12-S03-T01): provenance node → source file:line chain,
+│                              #   produced by the local expansion (E03-S04-T02). The default path's
+│                              #   provenance is the bundler's redacted override + path map instead —
+│                              #   E03-S07-T01 fixes those file names; docs/02 §5.1/§7
 ├── manifest.json                 # machine-readable graph + metadata (§11)
 ├── azdo-emu.lock.json            # pins: template repo SHAs, artifact run IDs (docs/05)
 ├── fetch-artifacts.sh            # optional refresh of downloaded artifacts
@@ -71,7 +79,7 @@ Key debugging affordances (the point of the tool):
 
 ## 3. Job execution model
 
-`run.sh` topologically orders stages (then jobs) honoring `dependsOn`; ties broken by YAML order; sequential by default (`--parallel` opt-in, P6). For each job:
+`run.sh` topologically orders stages (then jobs) honoring `dependsOn`; ties broken by YAML order; sequential by default (`--parallel` opt-in — archived-roadmap P6, docs/06 §4). For each job:
 
 1. Evaluate job condition (compiled; against dependency results/outputs). Skipped → record `Skipped`, continue.
 2. Use the run's **shared** workspace `<run>/workspace/{s,a,b,tmp,TestResults}` — created once per run, reused by every job, and the value of `Pipeline.Workspace`/`Agent.BuildDirectory` for all of them (D8 revised, E12-S02-T02; `config output.sharedWorkspace: true`). Reuse across runs with `--resume`; `workspace.clean` honored. **Deferred fidelity:** faithful per-job isolation (`<run>/<stage>/<job>/…`, `sharedWorkspace: false`) and a shared tool cache. The consequence is stated rather than left implicit — jobs see each other's files, so a pipeline relying on a clean workspace per job behaves differently here and the emitter records it in the README's warnings list.

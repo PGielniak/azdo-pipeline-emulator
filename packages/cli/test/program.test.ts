@@ -39,7 +39,6 @@ const COMMANDS = [
   ['convert'],
   ['doctor'],
   ['fetch-artifacts'],
-  ['preview-diff'],
   ['run'],
 ] as const;
 
@@ -59,14 +58,7 @@ describe('CLI scaffold (E13-S01-T01)', () => {
       const registered = createProgram({ out: () => {}, err: () => {} })
         .commands.map((command) => command.name())
         .sort();
-      expect(registered).toEqual([
-        'auth',
-        'convert',
-        'doctor',
-        'fetch-artifacts',
-        'preview-diff',
-        'run',
-      ]);
+      expect(registered).toEqual(['auth', 'convert', 'doctor', 'fetch-artifacts', 'run']);
     });
 
     it('--version prints the package version and exits 0 (C-E13-005)', () => {
@@ -105,7 +97,7 @@ describe('CLI scaffold (E13-S01-T01)', () => {
       const { code, err } = cli('doctor', 'out');
       expect(code).toBe(EXIT.error);
       expect(err).toContain('`azdo-emu doctor` is not implemented yet');
-      expect(err).toContain('E13-S04-T01');
+      expect(err).toContain('E10-S04-T01');
     });
 
     it('every registered command reports not-implemented rather than doing something', () => {
@@ -115,7 +107,6 @@ describe('CLI scaffold (E13-S01-T01)', () => {
         ['convert', 'azure-pipelines.yml', '-o', 'out'],
         ['doctor', 'out'],
         ['fetch-artifacts', 'out'],
-        ['preview-diff', 'azure-pipelines.yml'],
         ['run', 'out'],
       ];
       for (const argv of invocations) {
@@ -126,10 +117,10 @@ describe('CLI scaffold (E13-S01-T01)', () => {
     });
 
     it('NotImplementedError is a CliError, so it flows through the same exit path', () => {
-      const error = new NotImplementedError('convert', 'E13-S02-T01');
+      const error = new NotImplementedError('convert', 'E10-S02-T01');
       expect(error).toBeInstanceOf(CliError);
       expect(error.exitCode).toBe(EXIT.error);
-      expect(error.hint).toContain('E13-S02-T01');
+      expect(error.hint).toContain('E10-S02-T01');
     });
   });
 
