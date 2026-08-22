@@ -64,7 +64,7 @@ never in model memory.** A task is not done until its evidence exists.
 | [E00](backlog/E00-foundations.md) | Foundations & expansion client | P1 | — | PLAN §5 D1/D3, docs/05 §2 |
 | [E01](backlog/E01-yaml-frontend.md) | YAML front end (expanded schema) | P1 | E00 | docs/01 §1–§2 |
 | [E02](backlog/E02-expressions.md) | Runtime expressions & conditions | P2 | E00, E06 | docs/02 §6 |
-| [E03](backlog/E03-template-bundler.md) | Local template bundler | P1 | E00, E01 | docs/02 §5, docs/05 §4 |
+| [E03](backlog/E03-template-engine.md) | Template engine (offline fallback) + local bundler | P1 | E00, E01, E02 | docs/02 §2–§5, docs/05 §4 |
 | [E04](backlog/E04-semantic-model.md) | Semantic model (expanded pipeline) | P2 | E01, E03 | docs/01 §3–§6 |
 | [E05](backlog/E05-emitter.md) | Emitter: generated project & scripts | P2 | E04, E06 | docs/04 §1–§2, §10–§12 |
 | [E06](backlog/E06-runtime.md) | Runtime library (bash) | P2 | E00 (parallel w/ E02–E05) | docs/04 §3–§9 |

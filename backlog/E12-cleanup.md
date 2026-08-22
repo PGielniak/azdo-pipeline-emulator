@@ -4,10 +4,17 @@ Phase: P1 · Depends on: E00-S04 (S01-T01 gates the engine behind the expansion 
 Primary grounding set: docs/07 is the authority; the repo's own rule 5 (docs/06 §5 dated decisions) and rule 3 (mark `[~]`, never delete) govern the bookkeeping.
 
 > **This epic is the deliberate counterpart of the re-orientation.** The simplification (docs/07)
-> keeps the ~39 completed tasks as an *offline fallback* and deletes a large amount of *planned*
-> (not-yet-built) scope. This epic makes that demotion concrete and records the revisited decisions.
-> It is scheduled **first** (P1) so the reimplementation is off the critical path before new work
-> builds on the wrong foundation.
+> keeps the completed reimplementation as an *offline fallback* and removes a large amount of
+> *planned* (not-yet-built) scope. This epic makes that demotion concrete and records the revisited
+> decisions. It is scheduled **first** (P1) so the reimplementation is off the critical path before
+> new work builds on the wrong foundation.
+>
+> **Reconciliation update (2026-08-22, after rebasing onto the parallel E03/E06 work):** the local
+> template engine (E03-S01..S05) and bash runtime (E06) are now **substantially complete** — not
+> merely planned — so they are retained as the *offline fallback* rather than reimplemented from
+> scratch, and the `[~]` sweep below marks scope, not completed work. The old E14 fidelity epic was
+> folded: real-task mode → E07, the rest (container jobs, sandbox, `--parallel`, `--shell-at`)
+> deferred here.
 
 ## E12-S01 — As the project owner, the reimplementation is retained as a fallback, not deleted, and is off the critical path.
 Acceptance: `convert` uses the service by default; the retained engine is reachable only behind an explicit flag.

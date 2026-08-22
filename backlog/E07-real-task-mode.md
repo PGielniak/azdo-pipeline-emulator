@@ -8,6 +8,10 @@ Primary grounding set: `microsoft/azure-pipelines-task-lib` (`node/` — the `IN
 > now inverted (PLAN D4): script steps run natively, and **every other task runs its real
 > implementation** against an emulated `azure-pipelines-task-lib`, or stubs. One emulation host
 > serves all tasks instead of N transpilers.
+>
+> **Absorbs the old `E14-S01` (real-task mode).** The fidelity/DX epic E14 was folded here: its
+> real-task story is this epic; its container-jobs/sandbox/parallel/`--shell-at` scope is deferred
+> (see E12-cleanup). The old E09/E11 task transpilers are superseded (see E12-cleanup).
 
 ## E07-S01 — As a pipeline developer, non-script tasks run their *real* implementation locally, so complex tasks behave faithfully without a transpiler.
 Acceptance: a marketplace/in-box Node task executes via the `INPUT_*` host and its `##vso` output feeds the runtime.

@@ -9,6 +9,13 @@ Status: **Design / planning (revised)** · Date: 2026-08-22 · Working CLI name:
 > In one sentence: **the hardest 60% of the original plan (reimplementing the server-side template
 > engine and compile-time expression language) is work the Azure DevOps service already does for
 > free, so we stop reimplementing it and delegate it.**
+>
+> **Reconciliation addendum (2026-08-22).** After this revision, the branch was rebased onto
+> parallel work that had *already built* most of the local template engine (E03) and bash runtime
+> (E06). So those two are **retained as a completed offline fallback** rather than reimplemented:
+> the `preview`-delegation path below remains the *default*, but the local engine is now a working
+> fallback, not a cost to be avoided. The framing in §2–§7 stands; the "cut the reimplementation"
+> argument now reads as "stop *extending* it, keep what exists as fallback".
 
 ---
 
