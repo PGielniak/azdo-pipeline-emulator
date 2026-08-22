@@ -818,3 +818,190 @@ deployment jobs and made available for your deployment." Downloading *all* artif
 `$(Pipeline.Workspace)` is exactly the no-artifact-name branch of C-E06-087, so the injected step is
 `azdo_artifact_download` with no `--artifact`, and each artifact lands at
 `$(Pipeline.Workspace)/<name>` — the same layout the `download` keyword produces (C-E06-084).
+
+## E06-S05-T02 — checkout (self) modes and options
+
+Sources pinned for this pass: the `steps.checkout` schema page (`git_commit_id`
+`d089fd2dbb54483ec611eeb478e3eff14be74393`, `ms.date` 2026-07-29), the predefined-variables page
+(`git_commit_id` `1eeaa8de39f8b7130d8eb45ec907d9e47d6f5a32`, `ms.date` 2026-02-13),
+`microsoft/azure-pipelines-agent` @ `42bde98bea7bb3b9e186d693e3b1554249e93a38`
+(`src/Agent.Plugins/GitSourceProvider.cs`, `src/Agent.Plugins/GitCliManager.cs`,
+`src/Agent.Sdk/Util/StringUtil.cs`) and git 2.47.3 as installed here for the two local experiments.
+The checkout step is **not** a task with a `main.ts`: `checkout` compiles to the
+`6d15af64-176c-496d-b583-fd2ae21d4df4` (`Get sources`) job step whose implementation is the
+repository plugin, so the option → git-flag mapping is read from `GitCliManager`, which carries the
+resulting command line in a comment above each method.
+
+[C-E06-097] The agent's `fetch` command line is
+`git fetch [--force] {--tags|--no-tags} --prune [--prune-tags] [--progress] --no-recurse-submodules
+origin [--depth=N|--unshallow] [--filter=…] [<refspec>…]`. `--force` is added from git 2.20,
+`--prune-tags` from git 2.17, `--progress` unless the quiet-checkout knob is set. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/GitCliManager.cs#L197-L236
+(checked 2026-08-21) — "// git fetch --tags --prune --progress --no-recurse-submodules [--depth=15]
+origin [+refs/pull/*:refs/remote/pull/*]" and "string options = $\"{forceTag} {tags} --prune
+{pruneTags} {progress} --no-recurse-submodules {remoteName} {depth} …\"".
+
+[C-E06-098] `fetchDepth` is parsed with `int.TryParse`; a value that is **not** a non-negative
+integer silently becomes `0`, and `0` means *no* `--depth` flag. When the depth is `0` **and** the
+local repository is already shallow (`.git/shallow` exists), the agent adds `--unshallow` instead. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/GitSourceProvider.cs#L338-L342
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/GitCliManager.cs#L230-L234
+(checked 2026-08-21) — "if (!int.TryParse(executionContext.GetInput(…FetchDepth), out fetchDepth) ||
+fetchDepth < 0) { fetchDepth = 0; }" / "string depth = fetchDepth > 0 ? $\"--depth={fetchDepth}\" :
+(File.Exists(Path.Combine(repositoryPath, \".git\", \"shallow\")) ? \"--unshallow\" :
+string.Empty);". The doc page's "Setting `fetchDepth: 0` fetches all history" agrees; the source
+adds that `fetchDepth: abc` and `fetchDepth: -1` are the *same* thing as `0`, which the page does
+not say.
+
+[C-E06-099] **The agent defaults `fetchTags` to `true` when the input is absent**, the opposite of
+the doc page's "For new pipelines created after Azure DevOps sprint release 209, the default for
+syncing tags is `false`." Both are correct: the sprint-209 default is a *pipeline setting* that the
+**server** materializes into the step input, so the agent only ever sees the empty-input case for
+pipelines whose setting was never written. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/GitSourceProvider.cs#L359-L360
+(checked 2026-08-21) — "// default fetchTags to true unless it's specifically set to false / bool
+fetchTags = StringUtil.ConvertToBoolean(executionContext.GetInput(…FetchTags), true);" vs
+https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/steps-checkout — "For existing
+pipelines created before the release of Azure DevOps sprint 209 … the default for syncing tags
+remains … `true`. For new pipelines created after Azure DevOps sprint release 209, the default for
+syncing tags is `false`." A converter reading only the YAML cannot know the pipeline's age or its
+settings-UI state; see docs/06 §5 decision 40.
+
+[C-E06-100] Checkout booleans are parsed by `StringUtil.ConvertToBoolean`, which accepts
+`1`/`true`/`$true` and `0`/`false`/`$false` **case-insensitively** and maps *every other value*,
+including `yes`, `no` and `on`, to the caller's default rather than to an error. `clean` and `lfs`
+and `persistCredentials` pass no default, so their default is `false`; `fetchTags` passes `true`. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Sdk/Util/StringUtil.cs#L56-L76
+(checked 2026-08-21) — "public static bool ConvertToBoolean(string value, bool defaultValue = false)
+{ if (string.IsNullOrEmpty(value)) { return defaultValue; } switch (value.ToLowerInvariant()) { case
+\"1\": case \"true\": case \"$true\": return true; case \"0\": case \"false\": case \"$false\":
+return false; default: return defaultValue; } }". So `clean: yes` does **not** clean and
+`fetchTags: yes` **does** sync tags — the same literal resolves in opposite directions.
+
+[C-E06-101] `clean: true` runs `git clean -ffdx` **and then** `git reset --hard HEAD`, in that
+order, on the existing repository — and only on an existing one; the agent's fallback when either
+command fails is to delete the source folder outright. With submodules enabled it additionally runs
+`git submodule foreach --recursive "git clean -ffdx"` then `git submodule foreach --recursive "git
+reset --hard HEAD"`. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/GitSourceProvider.cs#L655-L713
+(checked 2026-08-21) — "// When repo.clean is selected for a git repo, execute git clean -ffdx and
+git reset --hard HEAD on the current repo. This will help us save the time to reclone the entire
+repo." and the `softCleanSucceed` chain ending in "Unable to run \"git clean -ffdx\" and \"git reset
+--hard HEAD\" successfully, delete source folder instead.". `-ffdx` is used from git 2.4 and `-fdx`
+below it (`GitCliManager.cs#L377-L393`).
+
+[C-E06-102] The checkout sequence for a *fresh* directory is `git init <path>` → `git remote add
+origin <url>` → `git fetch …` → `git checkout --progress --force <committish>`; it is **not** a
+`git clone`. The committish is the **commit** (`sourceVersion`) whenever one is known and the branch
+is not a PR ref, so a normal self checkout ends in **detached HEAD**. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/GitSourceProvider.cs#L716-L740
+and `#L1068-L1088` and
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/GitCliManager.cs#L357-L374
+(checked 2026-08-21) — "// if sourceVersion provide, just use that for checkout, since when you
+checkout a commit, it will end up in detached head." / "else { sourcesToBuild = sourceVersion; }" /
+"// git checkout -f --progress <commitId/branch>".
+
+[C-E06-103] `submodules` accepts `''`/`false` (none), `recursive` (nested) and any other truthy
+value (top level only); enabling it runs `git submodule sync [--recursive]` and then
+`git submodule update --init --force [--depth=N] [--recursive]`, reusing the same `fetchDepth`. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/GitSourceProvider.cs#L299-L317
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/GitCliManager.cs#L449-L481
+(checked 2026-08-21) — "// input Submodules can be ['', true, false, recursive] / // '' or false
+indicate don't checkout submodules / // true indicate checkout top level submodules / // recursive
+indicate checkout submodules recursively" and "// git submodule update --init --force [--depth=15]
+[--recursive]".
+
+[C-E06-104] `lfs` has two separate effects, and the *disabled* one is the load-bearing one: when
+`lfs` is false the agent exports `GIT_LFS_SKIP_SMUDGE=1` into the environment of every git command,
+because a user-level or system-level LFS config would otherwise pull assets down anyway. When it is
+true the agent runs `git lfs fetch` up front, and **a failure there is a warning, not a step
+failure** — the checkout continues and lets `git checkout` smudge the files instead. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/GitSourceProvider.cs#L407-L411
+and `#L1091-L1108` (checked 2026-08-21) — "// Git-lfs will try to pull down asset if any of the
+local/user/system setting exist. If customer didn't enable `LFS` in their pipeline definition, we
+will use ENV to disable LFS fetch/checkout. / if (!gitLfsSupport) { gitEnv[\"GIT_LFS_SKIP_SMUDGE\"]
+= \"1\"; }" and "Git lfs fetch failed with exit code: {exitCode_lfsFetch}. … Checkout will continue.
+\"git checkout\" will fetch lfs files, however this could cause poor performance on old versions of
+git.". This is what the task's "lfs skipped if unavailable w/ warning" **Done** criterion is
+grounded in: the agent's own LFS failure path warns and proceeds.
+
+[C-E06-105] `path` is resolved under `$(Pipeline.Workspace)`, and escaping that root with `../`
+requires an explicit opt-in variable. —
+https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/steps-checkout (checked 2026-08-21) —
+"**`path`** string. Where to put the repository. The root directory is $(Pipeline.Workspace). By
+default this folder must be under the agent working directory structure. To set a path outside of
+the agent working directory, set a pipeline variable named
+`AZP_AGENT_ALLOW_WORK_DIRECTORY_REPOSITORIES` to true, and use the prefix `../` at the start of your
+checkout path." docs/04 §8 says "within `Agent.BuildDirectory`", which is the *same directory* —
+"**`Pipeline.Workspace`** … This variable has the same value as `Agent.BuildDirectory`" — so §8 is
+imprecise, not wrong, and is left as written with this claim attached.
+
+[C-E06-106] Variable seeding shapes: `Build.SourceBranch` is the **full ref**
+(`refs/heads/main`), `Build.SourceBranchName` is only its **last path segment** — so
+`refs/heads/feature/tools` yields `tools`, not `feature/tools` — `Build.SourceVersion` is the commit
+ID, and `Build.SourceVersionMessage` is "the first line or 200 characters, whichever is shorter". —
+https://learn.microsoft.com/azure/devops/pipelines/build/variables (checked 2026-08-21) — "Git repo
+branch: `refs/heads/main`" / "The last path segment in the ref. For example, in `refs/heads/main`
+this value is `main`. In `refs/heads/feature/tools`, this value is `tools`." / "Git: The commit ID."
+/ "We truncate the message to the first line or 200 characters, whichever is shorter."
+
+[C-E06-107] With a single self checkout, `Build.SourcesDirectory` and `Build.Repository.LocalPath`
+are the **same** path; they diverge only under multi-checkout with a custom self path, which is
+E06-S05-T03's subject. —
+https://learn.microsoft.com/azure/devops/pipelines/build/variables (checked 2026-08-21) — "If you
+check out only one Git repository, this path is the exact path to the code. If you check out
+multiple repositories, the behavior is as follows (and might differ from the value of the
+Build.SourcesDirectory variable) …". `Build.Repository.Provider` for a git repository on a
+non-Azure-DevOps server is the literal `Git` (same page: "`Git`: Git repository hosted on an
+external server"), which is what a local source directory is emulated as.
+
+[C-E06-108] If no `checkout` step is present the implicit default is `self` for a **job** and
+`none` for a **deployment job**. —
+https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/steps-checkout (checked 2026-08-21) —
+"If no `checkout` step is present, it defaults to `self` for `jobs.job.step.checkout` and `none` for
+`jobs.deployment.steps.checkout`." Injecting that implicit step is the **emitter's** job (E05), so
+this claim is recorded here and reflected in docs/04 §8; the runtime function is only ever called
+for a checkout that the emitter decided exists. It sharpens docs/04 §8's looser "Default when steps
+exist".
+
+[C-E06-109] **Experiment (local, git 2.47.3, 2026-08-21).** `git clone --depth 1 <local-path>`
+prints "warning: --depth is ignored in local clones; use file:// instead." and produces a **complete**
+history (3 of 3 commits, no `.git/shallow`); the same clone from `file://<abs-path>` produces 1
+commit. Transcript: `research/experiments/E06-checkout/local-shallow-clone.md`. Consequence for
+`clone` mode: the emulated remote URL must be `file://<source>` or `fetchDepth` is silently a no-op,
+and `file://` also forgoes git's local hardlink/alternates fast path — the reason docs/04 §8's
+"reference clone" wording is corrected to the agent's own `init` + `remote add` + `fetch` +
+`checkout` sequence (C-E06-102, docs/06 §5 decision 40).
+
+[C-E06-110] **Delta, deliberately not implemented.** `fetchFilter` (partial clone: `blob:none`,
+`tree:0`), `sparseCheckoutDirectories`/`sparseCheckoutPatterns` and `persistCredentials` are on the
+`steps-checkout` page and are **not** in this task's **Do** list. The first two are pure fetch/
+checkout performance controls whose absence changes only how much data is present locally — for a
+`file://` source repo the whole history is already on disk — and `persistCredentials` needs the
+`SYSTEM_ACCESSTOKEN` credential helper that E08 owns. All four are accepted and ignored with a
+`degraded` note rather than rejected, so a pipeline that sets them still runs. `workspaceRepo` is
+already grounded at C-E06-026/027 (it retargets `System.DefaultWorkingDirectory`) and is not
+re-grounded here.
+
+[C-E06-111] **`fetchTags: false` does not actually stop tags from being fetched.** The agent puts
+`--no-tags` and `--prune-tags` on the *same* command line (C-E06-097), and git documents
+`--prune-tags` as "a shorthand for providing the explicit tag refspec along with `--prune`",
+"equivalent to having `refs/tags/*:refs/tags/*` declared in the refspecs of the remote" — an
+explicit refspec that overrides `--no-tags`' automatic-tag-following suppression. `--prune-tags` is
+added whenever git ≥ 2.17 **and** the `DisableFetchPruneTags` knob is false, which is its built-in
+default. — https://git-scm.com/docs/git-fetch (checked 2026-08-22) — "--prune-tags … This option is
+a shorthand for providing the explicit tag refspec along with `--prune`" / "--no-tags … This option
+disables this automatic tag following." and
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Sdk/Knob/AgentKnobs.cs#L103-L108
+(checked 2026-08-22) — "public static readonly Knob DisableFetchPruneTags = new Knob(…, new
+BuiltInDefaultKnobSource(\"false\"));". Verified locally: a fetch with
+`--no-tags --prune --prune-tags` brings `v2.0.0` down anyway
+(`research/experiments/E06-checkout/local-shallow-clone.md`). The `steps-checkout` page's entire
+"Sync tags" section — "To reduce the amount of data fetched or pulled from a Git repository,
+Microsoft has added a new option to checkout to control the behavior of syncing tags" — therefore
+oversells what `fetchTags: false` achieves on a default-knob agent. The runtime reproduces the
+agent's command line rather than the page's promise (BACKLOG §3 source hierarchy) and says so under
+`System.Debug`; suppressing `--prune-tags` to make `fetchTags: false` "work" would be a divergence
+invented to match documentation prose.

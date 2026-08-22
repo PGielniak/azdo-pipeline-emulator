@@ -2838,3 +2838,420 @@ azdo_artifact_download() {
 azdo_artifact_auto_download() {
   azdo_artifact_download "$@"
 }
+
+# E06-S05-T02 — checkout emulation for the `self` repository (docs/04 §8).
+#
+# The hosted implementation is not a task with a `main.ts`: `checkout` compiles to the `Get sources`
+# job step, so the option → git-flag mapping below is read from the agent's `GitCliManager`
+# (C-E06-097..104). Three of the six options have a *hosted* default that no YAML file records — the
+# clean/shallow-fetch/sync-tags pipeline settings — so this library uses the agent's own
+# empty-input defaults, which are `clean=false`, `fetchDepth=0` and `fetchTags=true`
+# (C-E06-099/100, docs/06 §5 decision 40).
+
+# Reproduces `StringUtil.ConvertToBoolean`: `1/true/$true` and `0/false/$false` case-insensitively,
+# and *every other value* — `yes`, `no`, `on` — silently becomes the caller's default rather than an
+# error (C-E06-100). That is why `clean: yes` does not clean while `fetchTags: yes` does sync tags.
+azdo__checkout_bool() {
+  local value="$1" fallback="$2"
+  # shellcheck disable=SC2016 # `$true`/`$false` are literal PowerShell-shaped inputs the agent accepts.
+  case "${value,,}" in
+    1 | true | '$true') printf 'true\n' ;;
+    0 | false | '$false') printf 'false\n' ;;
+    *) printf '%s\n' "$fallback" ;;
+  esac
+}
+
+# `int.TryParse` semantics: anything that is not a non-negative integer — including `abc` and `-1` —
+# is the same as `0`, which means "no --depth flag" (C-E06-098).
+azdo__checkout_fetch_depth() {
+  local value="$1"
+  if [[ "$value" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$((10#$value))"
+  else
+    printf '0\n'
+  fi
+}
+
+# `''`/`false` → none, `recursive` → nested, any other truthy value → top level (C-E06-103).
+azdo__checkout_submodules() {
+  local value="$1"
+  if [[ -z "$value" ]]; then
+    printf 'none\n'
+    return 0
+  fi
+  if [[ "${value,,}" == recursive ]]; then
+    printf 'recursive\n'
+    return 0
+  fi
+  if [[ "$(azdo__checkout_bool "$value" false)" == true ]]; then
+    printf 'top\n'
+  else
+    printf 'none\n'
+  fi
+}
+
+# Every git command runs with `GIT_LFS_SKIP_SMUDGE=1` unless `lfs: true` was requested, because a
+# user- or system-level LFS config would otherwise pull assets down behind the pipeline's back
+# (C-E06-104). The flag is read from `azdo_checkout`'s `local` through bash's dynamic scoping so it
+# does not have to be threaded through every call site.
+azdo__checkout_git() {
+  if [[ "${azdo__checkout_lfs_enabled:-false}" == true ]]; then
+    git "$@"
+  else
+    GIT_LFS_SKIP_SMUDGE=1 git "$@"
+  fi
+}
+
+azdo__checkout_git_version_ge() {
+  local want_major="$1" want_minor="$2" version major minor
+  version="$(git --version 2>/dev/null)" || return 1
+  version="${version##* }"
+  major="${version%%.*}"
+  minor="${version#*.}"
+  minor="${minor%%.*}"
+  [[ "$major" =~ ^[0-9]+$ ]] && [[ "$minor" =~ ^[0-9]+$ ]] || return 1
+  ((major > want_major)) && return 0
+  ((major == want_major)) && ((minor >= want_minor))
+}
+
+azdo__checkout_note() {
+  printf 'azdo-emu: %s (degraded)\n' "$1"
+}
+
+# The source repository the `self` checkout is emulated from: the local clone the project was
+# converted in. `--source` wins, then AZDO_SELF_REPO, which the generated runner exports beside
+# AZDO_STATE_DIR. E08 replaces the "current state of this repo" pin with the lockfile's origin+commit.
+azdo__checkout_source() {
+  local source="${1:-${AZDO_SELF_REPO-}}" resolved
+  if [[ -z "$source" ]]; then
+    printf '%s\n' 'azdo_checkout: no self repository; pass --source or set AZDO_SELF_REPO' >&2
+    return 1
+  fi
+  if [[ ! -d "$source" ]]; then
+    printf 'azdo_checkout: self repository does not exist: %s\n' "$source" >&2
+    return 1
+  fi
+  resolved="$(cd "$source" && pwd -P)" || return 1
+  if ! git -C "$resolved" rev-parse --git-dir >/dev/null 2>&1; then
+    printf 'azdo_checkout: not a git repository: %s\n' "$resolved" >&2
+    return 1
+  fi
+  if ! git -C "$resolved" rev-parse --verify -q HEAD >/dev/null 2>&1; then
+    printf 'azdo_checkout: self repository has no commits: %s\n' "$resolved" >&2
+    return 1
+  fi
+  printf '%s\n' "$resolved"
+}
+
+# `path` is resolved under `$(Pipeline.Workspace)` and escaping that root needs an explicit opt-in
+# on the agent (C-E06-105); here it is simply refused. The guard is load-bearing beyond parity:
+# `clean` runs `git clean -ffdx` and `copy` empties its target, so a path that escaped the workspace
+# would let a pipeline delete the user's own files. Multi-checkout layout (`s/<repoName>`) is
+# E06-S05-T03; a single self checkout lands in `s/`.
+azdo__checkout_target() {
+  local path="${1-}" workspace resolved parent
+  workspace="$(azdo__artifact_workspace)" || return 1
+  workspace="${workspace%/}"
+  [[ -n "$path" ]] || path='s'
+  if [[ "$path" == /* ]]; then
+    resolved="$path"
+  else
+    resolved="$workspace/$path"
+  fi
+  mkdir -p "$resolved" 2>/dev/null || :
+  if [[ -d "$resolved" ]]; then
+    resolved="$(cd "$resolved" && pwd -P)" || return 1
+  else
+    parent="$(cd "${resolved%/*}" 2>/dev/null && pwd -P)" || {
+      printf 'azdo_checkout: checkout path is not creatable: %s\n' "$path" >&2
+      return 1
+    }
+    resolved="$parent/${resolved##*/}"
+  fi
+  workspace="$(cd "$workspace" 2>/dev/null && pwd -P)" || {
+    printf 'azdo_checkout: Pipeline.Workspace does not exist\n' >&2
+    return 1
+  }
+  if [[ "$resolved" != "$workspace" ]] && [[ "$resolved" != "$workspace"/* ]]; then
+    printf 'azdo_checkout: checkout path escapes Pipeline.Workspace: %s\n' "$path" >&2
+    return 1
+  fi
+  printf '%s\n' "$resolved"
+}
+
+# `git clean -ffdx` **and then** `git reset --hard HEAD`, in that order, plus the submodule pair when
+# submodules are enabled (C-E06-101). `-fdx` below git 2.4.
+azdo__checkout_clean() {
+  local target="$1" submodules="$2" flags='-ffdx'
+  azdo__checkout_git_version_ge 2 4 || flags='-fdx'
+  azdo__checkout_git -C "$target" clean "$flags" || return 1
+  azdo__checkout_git -C "$target" reset --hard HEAD || return 1
+  if [[ "$submodules" != none ]]; then
+    azdo__checkout_git -C "$target" submodule foreach --recursive "git clean $flags" || return 1
+    azdo__checkout_git -C "$target" submodule foreach --recursive 'git reset --hard HEAD' || return 1
+  fi
+}
+
+# `git submodule sync [--recursive]` then `git submodule update --init --force [--depth=N]
+# [--recursive]`, reusing the checkout's own fetch depth (C-E06-103).
+azdo__checkout_submodule_update() {
+  local target="$1" submodules="$2" depth="$3"
+  local -a sync=(submodule sync) update=(submodule update --init --force)
+  if [[ "$submodules" == recursive ]]; then
+    sync+=(--recursive)
+  fi
+  if ((depth > 0)); then
+    update+=("--depth=$depth")
+  fi
+  if [[ "$submodules" == recursive ]]; then
+    update+=(--recursive)
+  fi
+  azdo__checkout_git -C "$target" "${sync[@]}" || return 1
+  azdo__checkout_git -C "$target" "${update[@]}" || return 1
+}
+
+# The agent's fetch line (C-E06-097). `--force` from git 2.20, `--prune-tags` from 2.17; `--depth=N`
+# when a depth was asked for, `--unshallow` when it was not and the local repo is already shallow
+# (C-E06-098).
+azdo__checkout_fetch() {
+  local target="$1" remote="$2" fetch_tags="$3" depth="$4"
+  local -a options=()
+  azdo__checkout_git_version_ge 2 20 && options+=(--force)
+  if [[ "$fetch_tags" == true ]]; then
+    options+=(--tags)
+  else
+    options+=(--no-tags)
+  fi
+  options+=(--prune)
+  if azdo__checkout_git_version_ge 2 17; then
+    # `--prune-tags` is a shorthand for the explicit `refs/tags/*:refs/tags/*` refspec, and an
+    # explicit refspec beats `--no-tags`. The agent passes both, with the knob that would suppress
+    # `--prune-tags` defaulting to off, so `fetchTags: false` does not in fact stop tags from being
+    # synced (C-E06-111). Reproduced rather than "fixed": inventing a divergence to match the doc
+    # page's prose would make the local run disagree with the hosted one.
+    options+=(--prune-tags)
+    [[ "$fetch_tags" == true ]] ||
+      azdo__debug_note 'fetchTags: false is requested, but the agent also passes --prune-tags, which re-adds the refs/tags/* refspec — tags are still synced (C-E06-111)'
+  fi
+  options+=(--no-recurse-submodules "$remote")
+  if ((depth > 0)); then
+    options+=("--depth=$depth")
+  elif [[ -f "$target/.git/shallow" ]]; then
+    options+=(--unshallow)
+  fi
+  azdo__checkout_git -C "$target" fetch "${options[@]}"
+}
+
+# `clone` — the agent's own sequence: `git init` → `git remote add origin` → `git fetch` →
+# `git checkout --progress --force <commit>`, ending at a detached HEAD (C-E06-102). The remote is
+# `file://<source>` and not the bare path, because git silently ignores `--depth` for a local-path
+# clone (C-E06-109) — which would make `fetchDepth` a no-op that reports success.
+azdo__checkout_mode_clone() {
+  local source="$1" target="$2" committish="$3" clean="$4" fetch_tags="$5" depth="$6" submodules="$7"
+  local -a checkout=(checkout --force)
+  mkdir -p "$target" || return 1
+  if [[ -d "$target/.git" ]] && [[ "$clean" == true ]]; then
+    azdo__checkout_clean "$target" "$submodules" || return 1
+  fi
+  if [[ ! -d "$target/.git" ]]; then
+    azdo__checkout_git init -q "$target" || return 1
+    azdo__checkout_git -C "$target" remote add origin "file://$source" || return 1
+  else
+    azdo__checkout_git -C "$target" remote set-url origin "file://$source" || return 1
+  fi
+  azdo__checkout_fetch "$target" origin "$fetch_tags" "$depth" || return 1
+  azdo__checkout_git_version_ge 2 7 && checkout+=(--progress)
+  azdo__checkout_git -C "$target" "${checkout[@]}" "$committish" || return 1
+  if [[ "$submodules" != none ]]; then
+    azdo__checkout_submodule_update "$target" "$submodules" "$depth" || return 1
+  fi
+}
+
+# `copy` — the working tree as it is on disk, uncommitted changes included, which is the entire
+# point of the mode (docs/04 §8). Copied with `tar` rather than `rsync`: rsync is not part of any
+# base image this project targets and is absent from this container, while `tar` is POSIX and
+# preserves modes, symlinks and hardlinks (docs/06 §5 decision 40).
+azdo__checkout_mode_copy() {
+  local source="$1" target="$2"
+  mkdir -p "$target" || return 1
+  find "$target" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + || return 1
+  tar -cf - -C "$source" . | tar -xf - -C "$target" || return 1
+}
+
+# `worktree` — a detached worktree of the source repository. Re-running is the interesting case:
+# `git worktree add` refuses a non-empty path and a branch that is already checked out elsewhere, so
+# the previous worktree is removed and pruned first and `--detach` sidesteps the branch conflict.
+azdo__checkout_mode_worktree() {
+  local source="$1" target="$2" committish="$3"
+  git -C "$source" worktree prune >/dev/null 2>&1 || :
+  if [[ -e "$target" ]]; then
+    git -C "$source" worktree remove --force "$target" >/dev/null 2>&1 || :
+    git -C "$source" worktree prune >/dev/null 2>&1 || :
+  fi
+  if [[ -e "$target" ]] && [[ -n "$(find "$target" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
+    printf 'azdo_checkout: worktree target is not empty and could not be released: %s\n' "$target" >&2
+    return 1
+  fi
+  rmdir "$target" 2>/dev/null || :
+  azdo__checkout_git -C "$source" worktree add --detach "$target" "$committish" || return 1
+}
+
+# Seeded, never overwritten: docs/04 §8 makes these overridable through `.env` so a local run can
+# simulate another branch or PR, and an override that the checkout then clobbered would be useless.
+azdo__checkout_seed_var() {
+  local name="$1" value="$2" current
+  current="$(azdo_var "$name")" || return 1
+  [[ -z "$current" ]] || return 0
+  azdo_var_set "$name" "$value"
+}
+
+azdo_checkout() {
+  local repository='self' mode='clone' source_input='' path='' target source
+  local clean_input='' depth_input='' tags_input='' lfs_input='' submodules_input=''
+  local clean fetch_tags depth submodules committish ref branch_name message uri name
+  local azdo__checkout_lfs_enabled=false
+  while (($# > 0)); do
+    case "$1" in
+      --repository)
+        repository="${2-}"
+        shift 2 || return 2
+        ;;
+      --mode)
+        mode="${2-}"
+        shift 2 || return 2
+        ;;
+      --source)
+        source_input="${2-}"
+        shift 2 || return 2
+        ;;
+      --path)
+        path="${2-}"
+        shift 2 || return 2
+        ;;
+      --clean)
+        clean_input="${2-}"
+        shift 2 || return 2
+        ;;
+      --fetch-depth)
+        depth_input="${2-}"
+        shift 2 || return 2
+        ;;
+      --fetch-tags)
+        tags_input="${2-}"
+        shift 2 || return 2
+        ;;
+      --lfs)
+        lfs_input="${2-}"
+        shift 2 || return 2
+        ;;
+      --submodules)
+        submodules_input="${2-}"
+        shift 2 || return 2
+        ;;
+      # Grounded and deliberately not implemented (C-E06-110): accepted so a pipeline that sets them
+      # still runs, and reported rather than silently dropped.
+      --fetch-filter | --sparse-checkout-directories | --sparse-checkout-patterns | --persist-credentials)
+        [[ -z "${2-}" ]] || azdo__checkout_note "checkout option ${1#--} is not emulated; ignored"
+        shift 2 || return 2
+        ;;
+      *)
+        printf 'usage: azdo_checkout [--repository self] [--mode clone|copy|worktree] [--source <dir>] [--path <p>] [--clean <v>] [--fetch-depth <v>] [--fetch-tags <v>] [--lfs <v>] [--submodules <v>]\n' >&2
+        return 2
+        ;;
+    esac
+  done
+
+  # `checkout: none` is a skip, and any other repository is E06-S05-T03's multi-checkout layout.
+  if [[ "$repository" == none ]]; then
+    return 0
+  fi
+  if [[ "$repository" != self ]]; then
+    printf 'azdo_checkout: only the self repository is emulated; got %s\n' "$repository" >&2
+    return 1
+  fi
+  case "$mode" in
+    clone | copy | worktree) ;;
+    *)
+      printf 'azdo_checkout: unknown checkout mode: %s\n' "$mode" >&2
+      return 2
+      ;;
+  esac
+
+  clean="$(azdo__checkout_bool "$clean_input" false)"
+  fetch_tags="$(azdo__checkout_bool "$tags_input" true)"
+  depth="$(azdo__checkout_fetch_depth "$depth_input")"
+  submodules="$(azdo__checkout_submodules "$submodules_input")"
+  azdo__checkout_lfs_enabled="$(azdo__checkout_bool "$lfs_input" false)"
+
+  source="$(azdo__checkout_source "$source_input")" || return 1
+  target="$(azdo__checkout_target "$path")" || return 1
+
+  # Read before the checkout so an `.env` override of Build.SourceVersion actually selects the
+  # commit, and re-seeded after it so an unset one records what was checked out.
+  committish="$(azdo_var 'Build.SourceVersion')" || return 1
+  if [[ -z "$committish" ]]; then
+    committish="$(git -C "$source" rev-parse HEAD)" || return 1
+  fi
+  ref="$(azdo_var 'Build.SourceBranch')" || return 1
+  if [[ -z "$ref" ]]; then
+    ref="$(git -C "$source" symbolic-ref -q HEAD || :)"
+    if [[ -z "$ref" ]]; then
+      azdo__checkout_note 'self repository is at a detached HEAD; Build.SourceBranch is unset — set it in .env to simulate a branch'
+    fi
+  fi
+
+  if [[ "$azdo__checkout_lfs_enabled" == true ]] && ! git lfs version >/dev/null 2>&1; then
+    # The agent's own LFS pre-fetch failure is a warning and the checkout continues (C-E06-104);
+    # a missing git-lfs binary is the local shape of the same situation.
+    azdo__logging_record_issue warning \
+      'lfs: true was requested but git-lfs is not installed; LFS files are left as pointers and the checkout continues.' || return 1
+    azdo__checkout_lfs_enabled=false
+  fi
+
+  case "$mode" in
+    clone)
+      azdo__checkout_mode_clone "$source" "$target" "$committish" "$clean" "$fetch_tags" "$depth" "$submodules" || return 1
+      ;;
+    copy)
+      # Every fetch-shaped option is meaningless for a working-tree copy, and `clean` is worse than
+      # meaningless: `git clean -ffdx` would delete exactly the uncommitted work the mode exists to
+      # test. Reported, not silently honored (docs/06 §5 decision 40).
+      [[ "$clean" != true ]] || azdo__checkout_note 'checkout mode copy ignores clean: true; it would delete the uncommitted changes this mode exists to run'
+      ((depth == 0)) || azdo__checkout_note 'checkout mode copy ignores fetchDepth; the working tree is copied, not fetched'
+      [[ -z "$tags_input" ]] || azdo__checkout_note 'checkout mode copy ignores fetchTags; the working tree is copied, not fetched'
+      [[ "$submodules" == none ]] || azdo__checkout_note 'checkout mode copy inherits submodule contents from the source working tree'
+      azdo__checkout_mode_copy "$source" "$target" || return 1
+      ;;
+    worktree)
+      ((depth == 0)) || azdo__checkout_note 'checkout mode worktree ignores fetchDepth; no remote is fetched'
+      [[ -z "$tags_input" ]] || azdo__checkout_note 'checkout mode worktree ignores fetchTags; no remote is fetched'
+      azdo__checkout_mode_worktree "$source" "$target" "$committish" || return 1
+      [[ "$clean" != true ]] || azdo__checkout_clean "$target" "$submodules" || return 1
+      if [[ "$submodules" != none ]]; then
+        azdo__checkout_submodule_update "$target" "$submodules" "$depth" || return 1
+      fi
+      ;;
+  esac
+
+  branch_name="${ref##*/}"
+  message="$(git -C "$source" log -1 --pretty=%B "$committish" 2>/dev/null | head -n 1)"
+  message="${message:0:200}"
+  uri="$(git -C "$source" config --get remote.origin.url 2>/dev/null || :)"
+  [[ -n "$uri" ]] || uri="file://$source"
+  name="${source##*/}"
+
+  azdo__checkout_seed_var 'Build.SourceVersion' "$committish" || return 1
+  azdo__checkout_seed_var 'Build.SourceVersionMessage' "$message" || return 1
+  [[ -z "$ref" ]] || azdo__checkout_seed_var 'Build.SourceBranch' "$ref" || return 1
+  [[ -z "$branch_name" ]] || azdo__checkout_seed_var 'Build.SourceBranchName' "$branch_name" || return 1
+  azdo__checkout_seed_var 'Build.Repository.Name' "$name" || return 1
+  azdo__checkout_seed_var 'Build.Repository.Uri' "$uri" || return 1
+  # `Git`, not `TfsGit`: "Git repository hosted on an external server" is the closest true statement
+  # about a local source directory (C-E06-107).
+  azdo__checkout_seed_var 'Build.Repository.Provider' 'Git' || return 1
+  azdo__checkout_seed_var 'Build.Repository.Clean' "$clean" || return 1
+  # Equal for a single self checkout; they diverge only under the multi-checkout rules E06-S05-T03
+  # owns (C-E06-107).
+  azdo__checkout_seed_var 'Build.Repository.LocalPath' "$target" || return 1
+  azdo__checkout_seed_var 'Build.SourcesDirectory' "$target" || return 1
+}
