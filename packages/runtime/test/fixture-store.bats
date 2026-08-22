@@ -28,9 +28,13 @@ setup() {
   [ "$first" != "$second" ]
   [ -d "$first" ]
   [ -z "$(ls -A "$first")" ]
-  # Both must sit under the per-test tmpdir, which bats removes for us.
-  [[ "$first" == "$BATS_TEST_TMPDIR"/* ]]
-  [[ "$second" == "$BATS_TEST_TMPDIR"/* ]]
+  # Both must sit under the per-test tmpdir, which bats removes for us — compared in its *physical*
+  # spelling, because that is what the helper now returns (E11-S01-T04) and on macOS the tmpdir
+  # reaches us through `/var`, a symlink to `/private/var`.
+  local tmpdir
+  tmpdir="$(cd "$BATS_TEST_TMPDIR" && pwd -P)"
+  [[ "$first" == "$tmpdir"/* ]]
+  [[ "$second" == "$tmpdir"/* ]]
 }
 
 @test "azdo_emu_copy_fixture copies contents and preserves the executable bit" {

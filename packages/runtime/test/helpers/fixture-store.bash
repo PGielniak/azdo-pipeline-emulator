@@ -58,7 +58,11 @@ azdo_emu_scratch_dir() {
     dir="$base/$name.$((suffix++))"
   done
   mkdir -p "$dir"
-  printf '%s\n' "$dir"
+  # Hand back the *physical* path: the runtime resolves with `pwd -P`, and on macOS the bats tmpdir
+  # lives under `/var/folders/…` where `/var` is a symlink to `/private/var`, so an unresolved path
+  # here makes every equality check against runtime output fail for a spelling difference rather
+  # than a defect. No-op wherever the tmpdir is already physical. (E11-S01-T04)
+  (cd "$dir" && pwd -P)
 }
 
 # azdo_emu_copy_fixture <name> [dest] — copy a fixture into a writable scratch directory and echo

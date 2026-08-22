@@ -1743,6 +1743,10 @@ prepare_checkout() {
   local name="$1"
   local root="$BATS_TEST_TMPDIR/$name"
   mkdir -p "$root/workspace"
+  # Physical path, or every assertion below compares two spellings of the same directory: on macOS
+  # `$BATS_TEST_TMPDIR` sits under `/var/folders/…`, where `/var` is a symlink to `/private/var`,
+  # while the runtime resolves with `pwd -P` on purpose (`core.sh`). Linux no-op. (E11-S01-T04)
+  root="$(cd "$root" && pwd -P)"
   checkout_source="$root/src"
   checkout_workspace="$root/workspace"
   mkdir -p "$checkout_source"
@@ -1943,7 +1947,10 @@ prepare_checkout() {
   [ -f "$target/two.txt" ]
   [ ! -e "$target/untracked.txt" ]
   # The source repository is left with exactly one registered worktree besides itself.
-  [ "$(git -C "$checkout_source" worktree list | wc -l)" = 2 ]
+  # `-eq`, not `=`: BSD `wc` pads its count with leading spaces, so the string form of this
+  # comparison passes on Linux and fails on macOS for the padding alone (E11-S01-T04; line 554
+  # already uses the numeric form).
+  [ "$(git -C "$checkout_source" worktree list | wc -l)" -eq 2 ]
 
   # `--detach` earns its place only when the committish is a *branch name*, which `.env` can make
   # it: docs/04 §8 says Build.SourceVersion is overridable to simulate another revision, and
