@@ -14,15 +14,13 @@ out/
 ├── pipeline.expanded.yml         # the fully resolved YAML (≈ service "final YAML")
 ├── expansion-map.json            # provenance: expanded node → source file:line chain
 ├── manifest.json                 # machine-readable graph + metadata (§11)
-├── coverage.md                   # how much of the pipeline this project reproduces (§13)
-├── coverage.json                 # same, machine-readable — drives --min-coverage
 ├── azdo-emu.lock.json            # pins: template repo SHAs, artifact run IDs (docs/05)
 ├── fetch-artifacts.sh            # optional refresh of downloaded artifacts
 ├── lib/
 │   ├── runtime.sh                # step runner, var store, ##vso parser, artifacts, checkout
 │   ├── expr.sh                   # compiled expression helpers actually used
-│   └── sandbox.sh                # sandbox-mode wrapper: whole-run container lifecycle (§9, D11)
-├── environment/                  # sandbox image: pinned default image ref + optional Dockerfile (§9, D11)
+│   └── sandbox.sh                # DEFERRED (D9 revised, E12-S02-T02) — not emitted: sandbox wrapper (§9)
+├── environment/                  # DEFERRED (D9 revised, E12-S02-T02) — not emitted: sandbox image (§9)
 ├── handlers/                     # user drop-in task handlers (docs/03 §4)
 ├── stages/
 │   └── 010-Build/
@@ -44,7 +42,9 @@ out/
     └── run-3/
         ├── state/                # vars/, outputs/, results/, path.d/
         ├── logs/                 # per-step logs + summary
-        └── Build/BuildJob/       # = Pipeline.Workspace for that job: s/ a/ b/ tmp/ TestResults/
+        └── workspace/            # = Pipeline.Workspace, ONE per run, shared by every job (D8 revised,
+                                  #   E12-S02-T02): s/ a/ b/ tmp/ TestResults/. The per-job level
+                                  #   (`<stage>/<job>/…`) is deferred fidelity — see §3.
 ```
 
 Numbering (`010-`) leaves gaps for hand-inserted debugging steps. Names are slugged `displayName` (fallback: task name).
@@ -52,7 +52,7 @@ Numbering (`010-`) leaves gaps for hand-inserted debugging steps. Names are slug
 ## 2. Entry points & debugging UX
 
 ```
-./run.sh [--sandbox|--host] [--env-file f] [--parallel] [--keep-going] [--list]
+./run.sh [--env-file f] [--parallel] [--keep-going] [--list]   # runs on the host (D9 revised); --sandbox is deferred, §9
 ./stages/010-Build/run-stage.sh
 ./stages/010-Build/jobs/010-BuildJob/run-job.sh
     [--from-step 030] [--to-step 050] [--only-step 030]
@@ -67,14 +67,14 @@ Key debugging affordances (the point of the tool):
 - Every step file is standalone-readable: header comments carry displayName, source provenance, condition source text, fidelity tier, and warnings.
 - `run.sh --list` prints the tree with ids, conditions, and fidelity — a table of contents for the pipeline.
 - End-of-run summary table (step, result, duration, log path), mirroring the ADO UI's job view.
-- **Sandboxed by default (D11)**: every entry point accepts `--sandbox|--host` (default `auto`: sandbox when docker/podman is present and the job targets Linux). The script re-executes itself inside the run's sandbox container; `--only-step`, `--resume` and `--shell-at` re-enter the *same* container, so iteration speed and state survive isolation. Spec: §9.
+- **Host execution by default (D9, revised — was "sandboxed by default", D11)**: the run executes on this machine. The sandbox is **deferred** (E12-S02-T02, docs/07 §6): no entry point takes `--sandbox|--host` today and no wrapper is emitted. The design it would implement — re-executing each entry point inside one long-lived container per run, with `--only-step`/`--resume`/`--shell-at` re-entering the *same* container — is kept in §9 for whoever picks it up.
 
 ## 3. Job execution model
 
 `run.sh` topologically orders stages (then jobs) honoring `dependsOn`; ties broken by YAML order; sequential by default (`--parallel` opt-in, P6). For each job:
 
 1. Evaluate job condition (compiled; against dependency results/outputs). Skipped → record `Skipped`, continue.
-2. Create workspace `<run>/<stage>/<job>/{s,a,b,tmp,TestResults}` (or reuse with `--resume`; `workspace.clean` honored).
+2. Use the run's **shared** workspace `<run>/workspace/{s,a,b,tmp,TestResults}` — created once per run, reused by every job, and the value of `Pipeline.Workspace`/`Agent.BuildDirectory` for all of them (D8 revised, E12-S02-T02; `config output.sharedWorkspace: true`). Reuse across runs with `--resume`; `workspace.clean` honored. **Deferred fidelity:** faithful per-job isolation (`<run>/<stage>/<job>/…`, `sharedWorkspace: false`) and a shared tool cache. The consequence is stated rather than left implicit — jobs see each other's files, so a pipeline relying on a clean workspace per job behaves differently here and the emitter records it in the README's warnings list.
 3. Evaluate `$[ ]` runtime-expression variables (compiled) into the job's variable store; seed predefined variables.
 4. Run steps in order via `run_step` (§5).
 5. Aggregate job result (`Succeeded`, `SucceededWithIssues`, `Failed`); persist to `state/results/<stage>/<job>`; enforce job `timeoutInMinutes` as a deadline passed to steps.
@@ -198,14 +198,23 @@ The two bottom rows are the counter-intuitive ones and they are not bugs: the ag
 
 `workspaceRepo: true` retargets `System.DefaultWorkingDirectory` to one checkout's directory (C-E06-026/027). Choosing the winner means scanning the whole job's step list before any checkout runs, so it is set at job setup by the emitter; `azdo_checkout` accepts the option and reports it as not emulated at the step level (C-E06-120).
 
-## 9. Execution environments & OS targets: sandbox, container jobs, services (sandbox: P2; container jobs: P6; Windows host: future)
+## 9. Execution environments & OS targets: sandbox, container jobs, services (sandbox: **deferred**; container jobs: P6; Windows host: future)
 
-- **Sandbox execution environment (D11)** — isolation for the *whole run*, independent of any `container:` in the YAML. Default `auto`: when a container runtime (docker/podman, auto-detected in that order) is present and the job targets Linux, every entry point re-executes itself inside **one long-lived sandbox container per run** (`create`/`start` once; `--only-step`/`--resume`/`--shell-at` `exec` back into it, TTY preserved). Mounts: project root bind-mounted at the **identical absolute path** (same invariant as container jobs — scripts, state store, logs and artifacts are the same files in both environments, so `--sandbox` and `--host` runs are interchangeable) plus a named volume over the tool cache (`Agent.ToolsDirectory`, D9). `.env` is sourced only inside the sandbox; nothing is installed on or exported to the host. `--host` opts out; `--sandbox` errors if no runtime is found.
+> **Deferred, not current (E12-S02-T02, 2026-08-22).** PLAN **D9 (revised, was D11)** makes host
+> execution the default and defers the container sandbox; docs/07 §6 is the reasoning. The sandbox
+> bullet below — and every "default `auto`" in it — describes a design that is **not built and not
+> emitted**: `output.execution.environment` defaults to `host`, `auto` is gone from the enum, and no
+> `lib/sandbox.sh` or `environment/` is produced (§1). It is kept verbatim, per BACKLOG rule 3,
+> because it is the spec whoever revives the sandbox at P6 inherits. **No backlog story carries it**
+> — the E14-S04 tasks it names were cut with E14 (docs/07 §6). Container jobs and the target-OS
+> rules in the rest of this section are unaffected.
+
+- **Sandbox execution environment (D11 — deferred, see the banner above)** — isolation for the *whole run*, independent of any `container:` in the YAML. Default `auto`: when a container runtime (docker/podman, auto-detected in that order) is present and the job targets Linux, every entry point re-executes itself inside **one long-lived sandbox container per run** (`create`/`start` once; `--only-step`/`--resume`/`--shell-at` `exec` back into it, TTY preserved). Mounts: project root bind-mounted at the **identical absolute path** (same invariant as container jobs — scripts, state store, logs and artifacts are the same files in both environments, so `--sandbox` and `--host` runs are interchangeable) plus a named volume over the tool cache (`Agent.ToolsDirectory`, D9). `.env` is sourced only inside the sandbox; nothing is installed on or exported to the host. `--host` opts out; `--sandbox` errors if no runtime is found.
   - **Image resolution**: config `output.execution.image` / emitted `environment/Dockerfile` → default per-`vmImage` mapping to a hosted-approximation image (exact default image: VERIFY at E14-S04-T02 against `actions/runner-images` manifests; act-style approximation images evaluated there). Chosen image+digest recorded in `manifest.json` and the lockfile; `doctor --sandbox` runs its checks *inside the image* instead of against the host.
-  - **Docker-using pipelines** (`Docker@2`, container jobs, `docker` in scripts): `output.execution.dockerSocket: auto|share|none`. `share` mounts the host socket — job/tool containers become *siblings* of the sandbox (path-correct, because the project mount is host-backed at the same absolute path) at a documented isolation cost (README + coverage warning). `auto` shares only when the manifest says the pipeline needs docker. `none` degrades docker-dependent steps with remediation notes. Docker-in-Docker is deliberately not the default (evaluated in E14-S04-T03).
+  - **Docker-using pipelines** (`Docker@2`, container jobs, `docker` in scripts): `output.execution.dockerSocket: auto|share|none`. `share` mounts the host socket — job/tool containers become *siblings* of the sandbox (path-correct, because the project mount is host-backed at the same absolute path) at a documented isolation cost (recorded in the README's warnings list). `auto` shares only when the manifest says the pipeline needs docker. `none` degrades docker-dependent steps with remediation notes. Docker-in-Docker is deliberately not the default (evaluated in E14-S04-T03).
   - macOS- and Windows-targeted jobs cannot be sandboxed on a Linux engine → host mode + warning (target-OS rules below unchanged).
 - Per-job **target OS** from `pool` (`vmImage: windows-*` etc.) or `--target-os`. Linux/macOS jobs → bash emission. Windows-targeted jobs today: bash emission whose PowerShell steps run via `pwsh` on the Linux host (`degraded`; cmd-specific steps flagged). A native Windows-host script set (`run-job.ps1`, `steps/*.ps1`) is the deferred "Future — Windows host" phase (decision 2026-07-30); the emitter's per-target-OS backend seam exists from day one so it bolts on without rework.
-- **Container jobs**: `docker run -d` the job container with the workspace bind-mounted at the *same absolute path* (scripts unchanged inside/outside), steps executed via `docker exec` with the step env file; `services:` started on a shared network with alias names; `resources.containers` registry auth via `.env`. From inside the sandbox, container jobs run as siblings via socket passthrough (E14-S04-T03).
+- **Container jobs**: `docker run -d` the job container with the workspace bind-mounted at the *same absolute path* (scripts unchanged inside/outside), steps executed via `docker exec` with the step env file; `services:` started on a shared network with alias names; `resources.containers` registry auth via `.env`. From inside the sandbox, container jobs would run as siblings via socket passthrough — deferred with the sandbox (E12-S02-T02; the E14-S04-T03 it named was cut).
 - `step.target: <container|host>` honored per step.
 
 ## 10. `.env.example` synthesis
@@ -244,12 +253,16 @@ The generated README must state this `.env` contract verbatim in substance:
 
 ## 11. `manifest.json` (drives `doctor`, `--list`, tooling)
 
+Each step carries a **`disposition`** (`native | real-task | stub`) beside its fidelity label — the
+E07-S03-T01 registry's output, and since E12-S02-T03 the only per-task classification there is.
+
 ```json
 { "pipeline": {"name": "...", "parameters": {"baked": {"deployEnv": "dev"}}},
   "stages": [{ "id": "Build", "dependsOn": [], "condition": {"source": "succeeded()"},
     "jobs": [{ "id": "BuildJob", "kind": "agent", "targetOs": "linux",
       "steps": [{ "id": "030", "displayName": "Build solution", "task": "DotNetCoreCLI@2",
-        "fidelity": "equivalent", "file": "stages/010-Build/jobs/010-BuildJob/steps/030-build-solution.sh",
+        "fidelity": "equivalent", "disposition": "real-task",
+        "file": "stages/010-Build/jobs/010-BuildJob/steps/030-build-solution.sh",
         "source": {"file": "templates/build.yml", "line": 14, "via": ["azure-pipelines.yml:22"]},
         "warnings": [] }]}]}],
   "env": [{"name": "SC_MY_AZURE_SUB_CLIENT_SECRET", "secret": true, "origin": "service connection 'my-azure-sub'"}],
@@ -257,14 +270,20 @@ The generated README must state this `.env` contract verbatim in substance:
   "warnings": [], "unsupported": [] }
 ```
 
-## 12. Sample emitted step (illustrative)
+## 12. Sample emitted steps (illustrative)
+
+Two shapes, and only two (PLAN D4 revised — E12-S02-T03 dropped the per-task transpiler): a **script
+step**, emitted natively as readable bash, and **everything else**, emitted as a dispatch to
+real-task mode or a stub (E07). The header block is identical in both — it is the debugging surface.
+
+**(a) Script step — native.**
 
 ```bash
 #!/usr/bin/env bash
-# ── Step 030 · "Build solution" · DotNetCoreCLI@2 (command: build) ─────────────
+# ── Step 030 · "Build solution" · script ───────────────────────────────────────
 # from: templates/build.yml:14  (via azure-pipelines.yml:22 «template: templates/build.yml»)
 # condition: succeeded()        continueOnError: false     timeout: job default
-# fidelity: equivalent — transpiled to `dotnet build`; see README §fidelity
+# fidelity: exact — script steps run verbatim; see README §fidelity
 # NOTE: $(buildConfiguration) below is an ADO macro — run_step expands it just-in-time.
 set -euo pipefail
 source "$AZDO_EMU_LIB/runtime.sh"
@@ -276,9 +295,40 @@ azdo_match '**/*.sln' | while IFS= read -r project; do
 done
 ```
 
-The generated project's `README.md` repeats the fidelity table for its steps, lists all warnings, documents `.env` filling, states the tool prereqs (`azdo-emu doctor` re-checks them), and embeds the coverage summary (§13).
+**(b) Non-script task — real-task dispatch.** The body is a call, not a translation: the step's
+resolved inputs go to the task's own implementation via the `INPUT_*` contract (E07-S01-T02), whose
+`##vso[ ]` output the runtime parses like any other step's (§6). A task that cannot be fetched
+degrades to a stub that dumps the same resolved inputs and exits per `tasks.unknown` (docs/03 §4) —
+the fidelity label then reads `stub`.
 
-## 13. Coverage report (`coverage.md` / `coverage.json`)
+```bash
+#!/usr/bin/env bash
+# ── Step 040 · "Publish package" · DotNetCoreCLI@2 (command: push) ─────────────
+# from: templates/build.yml:21  (via azure-pipelines.yml:22 «template: templates/build.yml»)
+# condition: succeeded()        continueOnError: false     timeout: job default
+# fidelity: equivalent — real-task mode (Microsoft's own task code; needs node); see README §fidelity
+# NOTE: inputs below keep their $( ) macros — the dispatcher expands them before setting INPUT_*.
+set -euo pipefail
+source "$AZDO_EMU_LIB/runtime.sh"
+
+# Illustrative only — the dispatcher's exact call surface is E07-S01-T02's to fix.
+"$AZDO_EMU_LIB/run_task.sh" 'DotNetCoreCLI@2' \
+  --input command=push \
+  --input packagesToPush='$(Build.ArtifactStagingDirectory)/*.nupkg' \
+  --input nuGetFeedType=internal
+```
+
+The generated project's `README.md` repeats the fidelity table for its steps, lists all warnings, documents `.env` filling, states the tool prereqs (`azdo-emu doctor` re-checks them), and carries the ranked warnings/unsupported list that replaced the coverage summary (§13).
+
+## 13. Coverage report (`coverage.md` / `coverage.json`) — *superseded by docs/07*
+
+> **Superseded 2026-08-22 (E12-S02-T01, PLAN D10 revised, [docs/07 §6](07-simplification-review.md)).**
+> The weighted metric, both `coverage.*` files, the `convert` one-liner and the `--min-coverage`
+> gate are **dropped**: no conversion emits them and the CLI has neither the flag nor exit code 3.
+> What survives is the **ranked warnings/unsupported list** in the generated `README.md` plus the
+> per-step fidelity *labels* (PLAN §6) — E05-S02-T02 owns it. The rest of this section is retained
+> as the record of the v1 design (BACKLOG rule 3: annotate, never delete); the ranked gap list below
+> is the shape the warnings list inherits, minus the arithmetic.
 
 Every conversion answers, per pipeline: **how much of the original does this project actually reproduce?**
 
@@ -290,10 +340,11 @@ Metric definition:
 
 `coverage.md` contains: headline % + tier histogram; per-stage/per-job breakdown table; a **ranked gap list** (location, task, tier, reason, concrete remediation — "drop an executable at `handlers/Foo@2`", "install `pwsh` ≥ 7.4", "fill `SC_X_*` in `.env`"); the excluded-constructs list. `coverage.json` mirrors it for tooling (derived from `manifest.json` step fidelity data).
 
-`convert` ends with a one-liner:
+`convert` ended with a one-liner:
 
 ```
 Coverage: 87.2% — 41 steps · 33 full · 5 degraded · 3 stubbed   (details: coverage.md)
 ```
 
-`--min-coverage <pct>` fails conversion (exit code 3) below the threshold — usable as a CI gate.
+~~`--min-coverage <pct>` fails conversion (exit code 3) below the threshold — usable as a CI gate.~~
+*(Dropped with the metric — see the banner above. Exit code 3 no longer exists; `packages/cli/src/exit.ts` reserves 0/1/2.)*

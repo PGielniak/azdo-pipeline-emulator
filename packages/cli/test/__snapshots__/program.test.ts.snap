@@ -78,6 +78,9 @@ Options:
   -o, --out <dir>           output directory for the generated project
   --parameter <name=value>  runtime parameter (repeatable); \`name=@file.json\`
                             for a complex value
+  --offline-expand          expand with the retained local template engine
+                            instead of the service (degraded fallback) (default:
+                            false)
   -h, --help                display help for command
 "
 `;

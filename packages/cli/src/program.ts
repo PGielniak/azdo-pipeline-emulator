@@ -92,6 +92,15 @@ export function createProgram(io: Io): Command {
       'runtime parameter (repeatable); `name=@file.json` for a complex value',
       collectParameter,
     )
+    // E12-S01-T01 — the expansion gate. Expansion is the service's by default (PLAN D3); this flag
+    // is the *only* way to reach the retained local template engine, and the conversion it produces
+    // is labelled degraded (docs/07 §6). Its behaviour lives in `resolveExpansion`
+    // (`@azdo-emu/fetch`); `convert`'s body binds it in E10-S02-T01.
+    .option(
+      '--offline-expand',
+      'expand with the retained local template engine instead of the service (degraded fallback)',
+      false,
+    )
     .action(() => {
       throw new NotImplementedError('convert', 'E13-S02-T01 (flag surface) on top of E05');
     });

@@ -106,9 +106,6 @@ describe('config loader (E13-S01-T02)', () => {
       expect(
         expectCliError(() => loadSource('output:\n  sharedWorkspace: yes please\n')).message,
       ).toContain('expected true or false');
-      expect(expectCliError(() => loadSource('coverage:\n  min: high\n')).message).toContain(
-        'expected a number',
-      );
       expect(expectCliError(() => loadSource('auth: interactive\n')).message).toContain(
         'expected a mapping',
       );
@@ -118,12 +115,6 @@ describe('config loader (E13-S01-T02)', () => {
       const error = expectCliError(() => loadSource('output:\n  checkoutMode: symlink\n'));
       expect(error.message).toContain('expected one of clone, copy, worktree');
       expect(error.message).toContain('"symlink"');
-    });
-
-    it('rejects a coverage percentage outside 0–100', () => {
-      expect(expectCliError(() => loadSource('coverage:\n  min: 120\n')).message).toContain(
-        'between 0 and 100',
-      );
     });
 
     it('requires `path` on a repository override', () => {
@@ -158,17 +149,15 @@ describe('config loader (E13-S01-T02)', () => {
           'repositories:',
           '  templates: { path: ../pipeline-templates }',
           'variableGroups: { listNames: true }',
-          'coverage: { min: 0 }',
           'tasks:',
           '  unknown: stub',
           '  overrides: { "SonarQubePrepare@5": skip }',
-          '  execute: []',
           'output:',
           '  targetOs: linux',
           '  checkoutMode: clone',
-          '  sharedWorkspace: false',
+          '  sharedWorkspace: true',
           '  execution:',
-          '    environment: auto',
+          '    environment: host',
           '    image: null',
           '    dockerSocket: auto',
           '',
@@ -285,23 +274,10 @@ describe('precedence matrix — CLI > config > defaults (docs/06 §2)', () => {
       expected: { cli: false, config: true, default: true },
     },
     {
-      key: 'coverage.min',
-      cli: { minCoverage: 80 },
-      config: { coverage: { min: 60 } },
-      read: (s) => s.coverage.min,
-      expected: { cli: 80, config: 60, default: 0 },
-    },
-    {
       key: 'tasks.unknown',
       config: { tasks: { unknown: 'fail' } },
       read: (s) => s.tasks.unknown,
       expected: { config: 'fail', default: 'stub' },
-    },
-    {
-      key: 'tasks.execute',
-      config: { tasks: { execute: ['Npm@1'] } },
-      read: (s) => s.tasks.execute,
-      expected: { config: ['Npm@1'], default: [] },
     },
     {
       key: 'output.targetOs',
@@ -319,16 +295,19 @@ describe('precedence matrix — CLI > config > defaults (docs/06 §2)', () => {
     },
     {
       key: 'output.sharedWorkspace',
-      config: { output: { sharedWorkspace: true } },
+      config: { output: { sharedWorkspace: false } },
       read: (s) => s.output.sharedWorkspace,
-      expected: { config: true, default: false },
+      expected: { config: false, default: true },
     },
     {
+      // E12-S02-T02 — `auto` is gone and the default is `host`, so `ExecutionEnvironment` has only
+      // two members. The *config* value is the one held off the default on purpose: the failure this
+      // row has to catch after the flip is a resolver that answers `host` without reading the config.
       key: 'output.execution.environment',
       cli: { execEnv: 'host' },
       config: { output: { execution: { environment: 'sandbox' } } },
       read: (s) => s.output.execution.environment,
-      expected: { cli: 'host', config: 'sandbox', default: 'auto' },
+      expected: { cli: 'host', config: 'sandbox', default: 'host' },
     },
     {
       key: 'output.execution.image',
@@ -352,9 +331,7 @@ describe('precedence matrix — CLI > config > defaults (docs/06 §2)', () => {
       'auth.azdo',
       'auth.github',
       'variableGroups.listNames',
-      'coverage.min',
       'tasks.unknown',
-      'tasks.execute',
       'output.targetOs',
       'output.checkoutMode',
       'output.sharedWorkspace',
@@ -409,9 +386,16 @@ describe('precedence matrix — CLI > config > defaults (docs/06 §2)', () => {
       expect(settings.tasks.overrides).toEqual({ 'SonarQubePrepare@5': 'skip' });
     });
 
-    it('a list-valued key replaces rather than merging', () => {
-      const { settings } = resolveSettings({}, { tasks: { execute: ['Npm@1'] } });
-      expect(settings.tasks.execute).toEqual(['Npm@1']);
+    // E12-S02-T03 removed `tasks.execute`, which was the only list-valued *key*; the rule it
+    // guarded (C-E13-012 — only maps merge, everything else replaces) still binds, and a list can
+    // still appear as a `parameters` *value*, so the case is re-pointed there rather than dropped.
+    it('a list value replaces rather than merging, entry by entry', () => {
+      const { settings } = resolveSettings(
+        { parameters: { regions: ['westeurope'] } },
+        { parameters: { regions: ['eastus', 'westus'], other: 'kept' } },
+      );
+      expect(settings.parameters['regions']).toEqual(['westeurope']);
+      expect(settings.parameters['other']).toBe('kept');
     });
   });
 
@@ -428,13 +412,16 @@ describe('precedence matrix — CLI > config > defaults (docs/06 §2)', () => {
     expect(resolveSettings({}, {}).sources['output.execution.image']).toBe('default');
   });
 
-  it('an explicit `false`/`0` from the CLI still wins over the config', () => {
-    // The classic falsy-value bug: `||`-style precedence would drop these.
-    const { settings } = resolveSettings(
-      { groupNames: false, minCoverage: 0 },
-      { variableGroups: { listNames: true }, coverage: { min: 60 } },
+  it('an explicit falsy value from the CLI still wins over the config', () => {
+    // The classic falsy-value bug: `||`-style precedence would drop these. `coverage.min: 0` was
+    // this test's numeric exemplar until E12-S02-T01 removed the key; no numeric scalar is left in
+    // the surface, so the empty string stands in for it alongside the boolean.
+    const { settings, sources } = resolveSettings(
+      { groupNames: false, sandboxImage: '' },
+      { variableGroups: { listNames: true }, output: { execution: { image: 'ubuntu:24.04' } } },
     );
     expect(settings.variableGroups.listNames).toBe(false);
-    expect(settings.coverage.min).toBe(0);
+    expect(settings.output.execution.image).toBe('');
+    expect(sources['output.execution.image']).toBe('cli');
   });
 });

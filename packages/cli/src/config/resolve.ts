@@ -17,7 +17,6 @@ export interface CliSettings {
   readonly execEnv?: ResolvedSettings['output']['execution']['environment'] | undefined;
   readonly sandboxImage?: string | undefined;
   readonly groupNames?: boolean | undefined;
-  readonly minCoverage?: number | undefined;
 }
 
 /** Which layer a value came from — surfaced by `--json` and by `doctor` (E13-S04). */
@@ -75,13 +74,9 @@ export function resolveSettings(cli: CliSettings, config: AzdoEmuConfig): Resolu
         DEFAULTS.variableGroups.listNames,
       ),
     },
-    coverage: {
-      min: pick('coverage.min', cli.minCoverage, config.coverage?.min, DEFAULTS.coverage.min),
-    },
     tasks: {
       unknown: pick('tasks.unknown', undefined, config.tasks?.unknown, DEFAULTS.tasks.unknown),
       overrides: { ...DEFAULTS.tasks.overrides, ...config.tasks?.overrides },
-      execute: pick('tasks.execute', undefined, config.tasks?.execute, DEFAULTS.tasks.execute),
     },
     output: {
       targetOs: pick(

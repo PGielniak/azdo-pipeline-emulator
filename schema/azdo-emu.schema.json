@@ -65,19 +65,6 @@
         }
       }
     },
-    "coverage": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "min": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 100,
-          "default": 0,
-          "description": "Fail conversion (exit 3) when the coverage report is below this percentage. 0 = report only."
-        }
-      }
-    },
     "tasks": {
       "type": "object",
       "additionalProperties": false,
@@ -85,7 +72,7 @@
         "unknown": {
           "enum": ["stub", "fail", "prompt"],
           "default": "stub",
-          "description": "What to do with a task that has no handler."
+          "description": "What to do with a task that cannot run for real (no package, no metadata)."
         },
         "overrides": {
           "type": "object",
@@ -94,13 +81,6 @@
             "enum": ["skip", "stub", "fail"]
           },
           "examples": [{ "SonarQubePrepare@5": "skip" }]
-        },
-        "execute": {
-          "type": "array",
-          "description": "Tasks to run in high-fidelity real-task mode.",
-          "items": { "type": "string" },
-          "default": [],
-          "examples": [["Npm@1"]]
         }
       }
     },
@@ -120,28 +100,28 @@
         },
         "sharedWorkspace": {
           "type": "boolean",
-          "default": false,
-          "description": "Share one workspace across jobs instead of isolating each job."
+          "default": true,
+          "description": "One shared workspace per run (D8). false isolates each job — deferred fidelity, not implemented yet."
         },
         "execution": {
           "type": "object",
           "additionalProperties": false,
-          "description": "Where the generated project executes (sandbox isolation).",
+          "description": "Where the generated project executes. Host execution is the default (D9); the container sandbox is deferred.",
           "properties": {
             "environment": {
-              "enum": ["auto", "sandbox", "host"],
-              "default": "auto",
-              "description": "auto = sandbox when docker/podman is present, otherwise host."
+              "enum": ["host", "sandbox"],
+              "default": "host",
+              "description": "host = run on this machine (default). sandbox = container isolation, deferred and not implemented yet."
             },
             "image": {
               "type": ["string", "null"],
               "default": null,
-              "description": "Override the default vmImage-to-container-image mapping."
+              "description": "Override the default vmImage-to-container-image mapping (sandbox only; deferred with it)."
             },
             "dockerSocket": {
               "enum": ["auto", "share", "none"],
               "default": "auto",
-              "description": "Host docker-socket passthrough for pipelines that use docker."
+              "description": "Host docker-socket passthrough for pipelines that use docker (sandbox only; deferred with it)."
             }
           }
         }

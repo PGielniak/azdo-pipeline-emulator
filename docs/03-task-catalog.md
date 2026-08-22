@@ -2,7 +2,26 @@
 
 How individual tasks become script code. Source of truth for behavior: `microsoft/azure-pipelines-tasks` (each task's `task.json` + TypeScript implementation) and the tasks reference docs. Fidelity tiers per PLAN.md §6.
 
-## 1. Handler architecture (converter-side)
+> **Re-scoped 2026-08-22 by E12-S02-T03 (PLAN D4 revised, docs/07 §5).** The per-task *transpiler*
+> is dropped: we do not hand-write a bash emitter per task. Non-script tasks run their **real**
+> implementation against an emulated `azure-pipelines-task-lib` (§6, promoted from "P6, opt-in" to
+> the default) or **stub** (§4) — E07 owns both, and E07-S03-T01's disposition registry
+> (`native | real-task | stub`) replaces the handler registry of §1. What stays live here: §2 input
+> normalization (it feeds the `INPUT_*` materialization of E07-S01-T02), §4 unknown-task policy and
+> user handlers (E07-S02), §5 service connections (E08), and §3 **as a prioritization and fidelity
+> reference** — which tasks matter first, what their local equivalents are, and where the ambient-auth
+> model applies. §1 and §3's "Strategy" column are archived as *transpilation* plans; nothing reads
+> them as an emitter spec any more.
+
+## 1. Handler architecture (converter-side) — **archived (E12-S02-T03)**
+
+> Superseded by E07-S03-T01's **task disposition registry** (`name@major → native | real-task | stub`).
+> No `TaskHandler`/`emit` interface is built: script steps are emitted natively by E05, everything
+> else is dispatched to §6 or stubbed. The `EmittedStep` payload below is *not* dead, though — its
+> four channels (script body, `envRequired`, `tools`, `warnings`) are still what a step contributes
+> to `.env.example` (E05-S02-T01), `doctor`, and the generated README's warnings list
+> (E05-S02-T02); they are produced per *disposition*, not per hand-written handler. Kept verbatim
+> for that shape and for the record.
 
 ```ts
 interface TaskHandler {
@@ -18,9 +37,12 @@ interface EmittedStep {
 }
 ```
 
-Handlers are pure: normalized inputs in, script text out — trivially unit-testable. Registry keyed by `Name@major` (task GUIDs also recognized, since YAML may reference tasks by GUID).
+Handlers are pure: normalized inputs in, script text out — trivially unit-testable. Registry keyed by `Name@major` (task GUIDs also recognized, since YAML may reference tasks by GUID). *(Archived. The `Name@major` **keying** survives in E07-S03-T01's disposition registry — including GUID recognition, which the expansion makes unavoidable: the service rewrites `checkout`/`download` shortcuts to task GUIDs, C-E12-019/020.)*
 
-## 2. Input normalization (before handlers run)
+## 2. Input normalization (before a task is dispatched) — **live**
+
+> Unchanged by E12-S02-T03. Normalized inputs are what E07-S01-T02 turns into `INPUT_<NAME>` env for
+> a real task, what a stub dumps (§4), and what the `connectedService:*` contract of §5 reads.
 
 Per `task.json` of the referenced major version:
 - **Defaults** applied for unspecified inputs; **aliases** resolved to canonical names; `required` enforced (convert error, server-style).
@@ -28,9 +50,16 @@ Per `task.json` of the referenced major version:
 - Metadata source: a **pinned snapshot** of in-the-box `task.json`s vendored at converter build time from `microsoft/azure-pipelines-tasks`; marketplace tasks fetched per-org at convert time (`GET {org}/_apis/distributedtask/tasks` — docs/05) and cached. No metadata available → stub with raw inputs.
 - Glob-type inputs (`projects`, `Contents`, …) use **minimatch** semantics. Runtime provides `azdo_match <pattern>…` implementing the minimatch subset used by tasks (`**`, `*`, `?`, `!` negation lines, `;`/newline multi-patterns) on bash `globstar` + filters; exotic patterns → warning (`degraded`).
 
-## 3. The catalog
+## 3. The catalog — **reference, not an emitter spec (E12-S02-T03)**
 
-Grouped; **bold** = must-have for MVP-adjacent phases. "Strategy" describes the emitted script.
+> Retained for what it still decides: **which tasks matter first** (the group D priority below is a
+> user decision, docs/06 §5 item 2), each task's **fidelity expectation**, its **tool prerequisites**
+> for `doctor`, and the **ambient-auth model** the service-connection contract (§5) implements.
+> The "Strategy" column is archived as a *transpilation* plan — under PLAN D4 (revised) these tasks
+> run their real implementation (§6) or stub, so read a strategy as "what the task does and what it
+> would need locally", never as "the bash we emit for it".
+
+Grouped; **bold** = must-have for MVP-adjacent phases. "Strategy" describes what the task does locally *(archived as an emission plan — see the banner above)*.
 
 Priority (decision 2026-07-30): **group D — the Azure/Kubernetes deployment set — lands in P4, before general toolchains** (group C → P5). Shell steps (`Bash`, `PowerShell`, `pwsh`) are already core in P2.
 
@@ -104,13 +133,18 @@ Priority (decision 2026-07-30): **group D — the Azure/Kubernetes deployment se
 | `gitversion/setup+execute` (GitTools) | run `dotnet-gitversion` if installed, else stub |
 | Others | unknown-task policy (§4) |
 
-## 4. Unknown-task policy & user handlers
+## 4. Unknown-task policy & user handlers — **live**
 
-Default: **stub** — the step logs `##[warning] Task 'X@n' has no local handler`, dumps its fully resolved inputs as JSON to the log, result per config (`skip` default / `fail` / `prompt`).
+**Order of resolution (E07-S03-T01, revised 2026-08-22 by E12-S02-T03):** a task is `native` (its
+handler is a plain script → the E05 script path), else **real-task mode** (§6), else — package
+unavailable, no metadata, or `tasks.overrides` says so — **stub**. "Unknown" below is therefore the
+*fallback* case, not the default for every non-script task.
+
+Stub behavior: the step logs `##[warning] Task 'X@n' was stubbed — no runnable implementation locally` (reworded by E12-S02-T03: "no local handler" was transpiler-era vocabulary, and under real-task mode the reason is a missing *package*, not a missing handler), dumps its fully resolved inputs as JSON to the log, result per config (`skip` default / `fail` / `prompt`).
 
 Drop-in escape hatch: before stubbing, the runtime looks for an executable at `<out>/handlers/<TaskName>@<major>` (and `~/.azdo-emu/handlers/…`). It is invoked with the **real task-lib env contract**: inputs as `INPUT_<UPPERCASENAME>`, endpoint data as `ENDPOINT_*` from `.env`, standard `##vso` output honored. A handler written for us is therefore shaped like a real task — and real-task knowledge transfers.
 
-## 5. Service connections (`connectedService:*` inputs)
+## 5. Service connections (`connectedService:*` inputs) — **live** (E08)
 
 Never resolvable via API by design → structured `.env` contract per connection, generated from usage:
 
@@ -125,6 +159,14 @@ SC_MY_AZURE_SUB_CLIENT_SECRET=
 
 Runtime helper `azdo_sc_login <name> <kind>` implements the mode switch once; handlers call it.
 
-## 6. High-fidelity execution mode (P6, opt-in)
+## 6. Real-task execution mode — **the default path for non-script tasks (E07-S01)**
 
-For tasks where transpilation is lossy (complex marketplace tasks, `DotNetCoreCLI` edge behaviors): download the **real task package** (in-the-box tasks are MIT; per-org fetch `GET {org}/_apis/distributedtask/tasks/{id}/{version}` returns the zip) and execute its Node target with an emulated agent host: `INPUT_*`/`ENDPOINT_*`/`SECRET_*` env, `azure-pipelines-task-lib` command protocol on stdout (which our `##vso` parser already speaks), tool cache pointed at `Agent.ToolsDirectory`. Per-task opt-in via config (`tasks.execute: ["Npm@1"]`). Requires Node at run time — the only mode that adds a runtime dependency, clearly marked in the generated README.
+> **Promoted 2026-08-22 by E12-S02-T03** from "P6, opt-in" (PLAN D3's deferred high-fidelity mode) to
+> the default disposition for every task that is not a script step, per PLAN D4 (revised) and
+> docs/07 §5 phase 2. There is no allowlist to opt into any more: the old `tasks.execute` config key
+> was the transpiler-era shape (real-task mode as the exception) and was removed with this task.
+> Opting *out* stays possible per task via `tasks.overrides: { "Name@major": skip|stub|fail }`.
+> Cost, stated plainly: this is the one mode that adds a **run-time Node dependency**, and the
+> generated README must say so (E05-S02-T02) — `doctor` checks it (E10-S03).
+
+For every non-script task (and especially where a hand-written equivalent would be lossy — complex marketplace tasks, `DotNetCoreCLI` edge behaviors): download the **real task package** (in-the-box tasks are MIT; per-org fetch `GET {org}/_apis/distributedtask/tasks/{id}/{version}` returns the zip) and execute its Node target with an emulated agent host: `INPUT_*`/`ENDPOINT_*`/`SECRET_*` env, `azure-pipelines-task-lib` command protocol on stdout (which our `##vso` parser already speaks), tool cache pointed at `Agent.ToolsDirectory`. Requires Node at run time — the only mode that adds a runtime dependency, clearly marked in the generated README.
