@@ -10,7 +10,7 @@ cd local-run && cp .env.example .env    # fill secrets / service connections
 
 Resolves templates (including from other Azure DevOps / GitHub repos), multi-repo checkouts and pipeline artifacts at convert time using Azure DevOps interactive sign-in or GitHub auth. Everything secret becomes a documented `.env` entry — never baked into scripts.
 
-**Status: planning → ready to implement.** Start with [PLAN.md](PLAN.md) (architecture, decisions, roadmap). Implementation work is broken down in **[BACKLOG.md](BACKLOG.md)** (session pick-up protocol, grounding rules, epic index → `backlog/E00`–`E15`); primary sources live in [research/REFERENCES.md](research/REFERENCES.md). Detail design docs:
+**Status: planning → ready to implement.** Start with [PLAN.md](PLAN.md) (architecture, decisions, roadmap). Implementation work is broken down in **[BACKLOG.md](BACKLOG.md)** (session pick-up protocol, grounding rules, epic index → `backlog/E00`–`E12`); primary sources live in [research/REFERENCES.md](research/REFERENCES.md). Detail design docs:
 
 1. [Pipeline model & schema coverage](docs/01-pipeline-model-and-schema.md)
 2. [Template & expression engine](docs/02-template-and-expression-engine.md)

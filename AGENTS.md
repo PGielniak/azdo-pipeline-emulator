@@ -18,7 +18,7 @@ When the user says "work", "continue", "next task", or names a task ID (`E02-S01
 ## Non-negotiable rules
 
 1. **Grounding Protocol (BACKLOG.md §3) is mandatory.** Never implement Azure DevOps behavior from memory. Every behavior needs a claim entry in `research/` citing an official doc page or commit-pinned GitHub source; undocumented behavior needs an experiment (oracle preview / real run / task source reading) *before* coding. Use the **grounding** skill.
-2. **Decisions already made — do not relitigate** (record in `docs/06` §5): on-prem ADO Server out of scope; Windows host deferred (seam reserved, E15); variable groups → `.env.example` names-only, never values; priority task set = the Azure/K8s deployment group (E10); every conversion emits a coverage report; converter is TypeScript/Node ≥ 22, output is dependency-free bash.
+2. **Decisions already made — do not relitigate** (record in `docs/06` §5): on-prem ADO Server out of scope; Windows host deferred; variable groups → `.env.example` names-only, never values; priority task set = the Azure/K8s deployment group (E08); every conversion emits a warnings/unsupported list; expansion is delegated to the service (`preview` endpoint, see `docs/07-simplification-review.md`); converter is TypeScript/Node ≥ 22, output is dependency-free bash.
 3. **Evidence before checkmarks.** A task is `[x]` only when its **Done** criteria are met, tests pass, and its claims/evidence exist. Partial work → leave `[ ]` or mark `[!]` with a note; never silently skip a Done criterion.
 4. **Secret hygiene.** No tokens/secret values in code, fixtures, research notes, logs, or the lockfile. Live REST samples must be redacted before committing. `.env` values are user-owned; never fetch variable-group values.
 5. **Docs are load-bearing.** If implementation reveals a design error in `PLAN.md`/`docs/`, update the doc **and** add a dated note in `docs/06` §5 decisions record — don't let code and docs drift apart silently.
@@ -43,10 +43,10 @@ When the user says "work", "continue", "next task", or names a task ID (`E02-S01
 |---|---|
 | `PLAN.md` | Master architecture, decisions D1–D10, fidelity tiers, roadmap |
 | `docs/01`–`06` | Detailed design (schema, engine, tasks, runtime, auth, CLI/testing) |
-| `BACKLOG.md` + `backlog/E00`–`E15` | Work protocol + all stories/tasks (160 tasks; every task has a **Ground** field) |
+| `BACKLOG.md` + `backlog/E00`–`E12` | Work protocol + all stories/tasks (every task has a **Ground** field) |
 | `research/` | Grounding evidence: REFERENCES.md, claim notes, experiments |
 | `CHANGELOG-BACKLOG.md` | Append-only progress log |
-| `.Codex/skills/` | work-next-task, grounding, oracle-experiment, backlog-status |
+| `.agents/skills/` | work-next-task, grounding, oracle-experiment, backlog-status |
 
 ## Environment notes
 
