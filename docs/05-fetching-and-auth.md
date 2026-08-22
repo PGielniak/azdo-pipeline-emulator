@@ -115,6 +115,12 @@ is gitignored), and `provenance.json` holds the lock entry. `--frozen` resolves 
 cache and raises `ExpansionCacheMissError` on a miss, so a `--frozen` re-convert is byte-identical
 and fully offline.
 
+**`--offline-expand` writes neither (E12-S01-T01, added 2026-08-22).** The retained local template
+engine is the degraded fallback (PLAN D3/D4), and its output is not the service's: `resolveExpansion`
+(`packages/fetch/src/expansion-source.ts`) skips the expansion cache *and* the `expansion` lock entry
+on that arm, because a lock entry carries an api-version and a pipeline id the local engine never
+touched. The manifest still records the mode and both hashes, marked `degraded: true`.
+
 - `convert --frozen`: fully offline, errors if anything required is missing from cache — reproducible regeneration.
 - `convert --update [alias|artifact|all]`: re-resolve pins.
 - `fetch-artifacts.sh --refresh` in the output re-downloads pinned (or latest, `--latest`) artifacts.

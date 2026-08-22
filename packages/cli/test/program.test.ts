@@ -229,6 +229,36 @@ describe('CLI scaffold (E13-S01-T01)', () => {
     });
   });
 
+  describe('--offline-expand (E12-S01-T01)', () => {
+    /** Parse a convert invocation and read one of its options, ignoring the not-implemented
+     *  action that follows. `convert`'s body binds the flag to `resolveExpansion` in E10-S02-T01;
+     *  what this asserts is that the gate exists on the surface and is off unless asked for. */
+    function option(name: string, ...argv: string[]): unknown {
+      const program = createProgram({ out: () => {}, err: () => {} });
+      const convert = program.commands.find((command) => command.name() === 'convert')!;
+      try {
+        program.parse(['convert', 'azure-pipelines.yml', '-o', 'out', ...argv], { from: 'user' });
+      } catch {
+        // NotImplementedError — the flag has already been parsed by then.
+      }
+      return convert.opts()[name];
+    }
+
+    it('defaults to false, so the service is the expansion path (PLAN D3)', () => {
+      expect(option('offlineExpand')).toBe(false);
+    });
+
+    it('is true only when explicitly passed', () => {
+      expect(option('offlineExpand', '--offline-expand')).toBe(true);
+    });
+
+    it('advertises itself as degraded in --help, not as an equal alternative', () => {
+      const { out } = cli('convert', '--help');
+      expect(out).toContain('--offline-expand');
+      expect(out).toContain('degraded fallback');
+    });
+  });
+
   describe('global options', () => {
     it('--json is accepted before the command and defaults to false', () => {
       const program = createProgram({ out: () => {}, err: () => {} });
