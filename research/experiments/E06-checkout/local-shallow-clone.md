@@ -77,6 +77,50 @@ suppression. This is the agent's own flag combination (C-E06-097), with the `Dis
 knob at its built-in default of `false` — so `fetchTags: false` on a hosted agent does not stop
 tags from being synced (C-E06-111).
 
+## Transcript — submodules over a `file://` origin (2026-08-22)
+
+```console
+$ git -C src submodule add <TMP>/sub vendor/sub
+Cloning into '<TMP>/src/vendor/sub'...
+fatal: transport 'file' not allowed
+fatal: clone of '<TMP>/sub' into submodule path '<TMP>/src/vendor/sub' failed
+$ echo $?
+128
+
+$ git -C src -c protocol.file.allow=always submodule add <TMP>/sub vendor/sub
+Cloning into '<TMP>/src/vendor/sub'...
+done.
+
+$ # the emulated checkout, then the agent's submodule sequence verbatim
+$ git -C t submodule update --init --force
+Submodule 'vendor/sub' (<TMP>/sub) registered for path 'vendor/sub'
+fatal: transport 'file' not allowed
+Failed to clone 'vendor/sub' a second time, aborting
+$ echo $?
+1
+
+$ git -C t -c protocol.file.allow=always submodule update --init --force
+Submodule path 'vendor/sub': checked out 'f0a9045…'
+$ ls t/vendor/sub
+inner
+s.txt
+$ ls t/vendor/sub/inner        # one level only, as documented
+$ git -C t -c protocol.file.allow=always submodule update --init --force --recursive
+$ ls t/vendor/sub/inner
+d.txt
+
+$ git -C t submodule foreach --recursive "git clean -ffdx"   # no relaxation needed
+Entering 'vendor/sub'
+Entering 'vendor/sub/inner'
+$ echo $?
+0
+```
+
+Since CVE-2022-39253 git refuses the `file` transport for submodule clones. The emulator's origin
+is `file://` by construction, so `submodules: true` fails outright without
+`-c protocol.file.allow=always`; the hosted agent never meets this because its submodule URLs are
+https. `submodule foreach` clones nothing and needs no relaxation. See C-E06-112 and decision 40f.
+
 ## Findings
 
 1. **`--depth` is silently ignored for a local *path* clone.** `d1` asked for depth 1 and got the

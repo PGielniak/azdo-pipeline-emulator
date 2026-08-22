@@ -2949,34 +2949,56 @@ azdo__checkout_source() {
 # would let a pipeline delete the user's own files. Multi-checkout layout (`s/<repoName>`) is
 # E06-S05-T03; a single self checkout lands in `s/`.
 azdo__checkout_target() {
-  local path="${1-}" workspace resolved parent
+  local path="${1-}" workspace resolved segment depth=0
+  local -a parts=() stack=()
   workspace="$(azdo__artifact_workspace)" || return 1
-  workspace="${workspace%/}"
+  workspace="$(cd "${workspace%/}" 2>/dev/null && pwd -P)" || {
+    printf 'azdo_checkout: Pipeline.Workspace does not exist\n' >&2
+    return 1
+  }
   [[ -n "$path" ]] || path='s'
   if [[ "$path" == /* ]]; then
     resolved="$path"
   else
     resolved="$workspace/$path"
   fi
-  mkdir -p "$resolved" 2>/dev/null || :
-  if [[ -d "$resolved" ]]; then
-    resolved="$(cd "$resolved" && pwd -P)" || return 1
-  else
-    parent="$(cd "${resolved%/*}" 2>/dev/null && pwd -P)" || {
-      printf 'azdo_checkout: checkout path is not creatable: %s\n' "$path" >&2
-      return 1
-    }
-    resolved="$parent/${resolved##*/}"
-  fi
-  workspace="$(cd "$workspace" 2>/dev/null && pwd -P)" || {
-    printf 'azdo_checkout: Pipeline.Workspace does not exist\n' >&2
-    return 1
-  }
-  if [[ "$resolved" != "$workspace" ]] && [[ "$resolved" != "$workspace"/* ]]; then
-    printf 'azdo_checkout: checkout path escapes Pipeline.Workspace: %s\n' "$path" >&2
-    return 1
-  fi
+  # Normalized *lexically*, before anything is created: `mkdir -p` first would leave an empty
+  # directory outside the workspace on its way to refusing the path.
+  IFS='/' read -r -a parts <<<"$resolved"
+  for segment in "${parts[@]}"; do
+    case "$segment" in
+      '' | .) ;;
+      ..)
+        if ((depth > 0)); then
+          depth=$((depth - 1))
+          stack=("${stack[@]:0:depth}")
+        fi
+        ;;
+      *)
+        stack+=("$segment")
+        depth=$((depth + 1))
+        ;;
+    esac
+  done
+  resolved="/$(
+    IFS=/
+    printf '%s' "${stack[*]}"
+  )"
+  azdo__checkout_inside "$resolved" "$workspace" "$path" || return 1
+  mkdir -p "$resolved" || return 1
+  resolved="$(cd "$resolved" && pwd -P)" || return 1
+  # Re-checked after the physical resolve, because a symlinked segment can point out of the
+  # workspace even when every lexical segment stayed inside it.
+  azdo__checkout_inside "$resolved" "$workspace" "$path" || return 1
   printf '%s\n' "$resolved"
+}
+
+azdo__checkout_inside() {
+  local candidate="$1" workspace="$2" reported="$3"
+  if [[ "$candidate" != "$workspace" ]] && [[ "$candidate" != "$workspace"/* ]]; then
+    printf 'azdo_checkout: checkout path escapes Pipeline.Workspace: %s\n' "$reported" >&2
+    return 1
+  fi
 }
 
 # `git clean -ffdx` **and then** `git reset --hard HEAD`, in that order, plus the submodule pair when
@@ -2996,7 +3018,14 @@ azdo__checkout_clean() {
 # [--recursive]`, reusing the checkout's own fetch depth (C-E06-103).
 azdo__checkout_submodule_update() {
   local target="$1" submodules="$2" depth="$3"
-  local -a sync=(submodule sync) update=(submodule update --init --force)
+  # `-c protocol.file.allow=always` is a **local relaxation with no agent counterpart** (C-E06-112,
+  # docs/06 §5 decision 40f). Since CVE-2022-39253 git refuses the `file` transport for submodule
+  # clones, and the emulated origin is `file://<source>` by construction (C-E06-109) — so without
+  # it every `submodules: true` fails with "transport 'file' not allowed". The hosted agent never
+  # meets this because its remotes are https. Scoped to the submodule commands, over repositories
+  # the user already has on disk.
+  local -a sync=(-c protocol.file.allow=always submodule sync)
+  local -a update=(-c protocol.file.allow=always submodule update --init --force)
   if [[ "$submodules" == recursive ]]; then
     sync+=(--recursive)
   fi

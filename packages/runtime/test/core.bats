@@ -2101,3 +2101,75 @@ prepare_checkout() {
   run -0 azdo_checkout --mode clone --sparse-checkout-patterns ''
   [[ "$output" != *sparse* ]]
 }
+
+# A source repository whose `vendor/sub` submodule itself contains `inner`, so `true` and
+# `recursive` are distinguishable. `protocol.file.allow=always` is needed even to *build* this
+# fixture — the same restriction the runtime has to relax (C-E06-112).
+prepare_checkout_submodules() {
+  local name="$1"
+  local root="$BATS_TEST_TMPDIR/$name"
+  local inner="$root/inner" sub="$root/sub"
+  prepare_checkout "$name"
+  for repo in "$inner" "$sub"; do
+    mkdir -p "$repo"
+    git -C "$repo" init -q -b main .
+    git -C "$repo" config user.email 'bats@example.invalid'
+    git -C "$repo" config user.name 'bats'
+  done
+  printf 'deep\n' >"$inner/deep.txt"
+  git -C "$inner" add -A
+  git -C "$inner" commit -q -m inner
+  printf 'shallow\n' >"$sub/sub.txt"
+  git -C "$sub" -c protocol.file.allow=always submodule add -q "$inner" inner
+  git -C "$sub" add -A
+  git -C "$sub" commit -q -m sub
+  git -C "$checkout_source" -c protocol.file.allow=always submodule add -q "$sub" vendor/sub
+  git -C "$checkout_source" commit -q -m 'add submodule'
+}
+
+@test "submodules: true takes one level and recursive takes the nested one (C-E06-103/112)" {
+  prepare_checkout_submodules submodules
+  local target="$checkout_workspace/s"
+
+  # Without the option the submodule directory is registered but empty — `--no-recurse-submodules`
+  # is on every fetch and nothing initializes it.
+  run -0 azdo_checkout --mode clone
+  [ -d "$target/vendor/sub" ]
+  [ ! -e "$target/vendor/sub/sub.txt" ]
+
+  # `true` is one level: the top-level submodule's own files arrive, the nested one does not.
+  run -0 azdo_checkout --mode clone --submodules true
+  [ -f "$target/vendor/sub/sub.txt" ]
+  [ ! -e "$target/vendor/sub/inner/deep.txt" ]
+
+  # `recursive` reaches the nested submodule. This is the only assertion that separates the
+  # `--recursive` arms of `submodule sync` and `submodule update` from their plain forms.
+  run -0 azdo_checkout --mode clone --submodules recursive
+  [ -f "$target/vendor/sub/inner/deep.txt" ]
+
+  # `yes` is not a recognized boolean, so it means no submodules at all (C-E06-100).
+  prepare_checkout_submodules submodulesyes
+  run -0 azdo_checkout --mode clone --submodules yes
+  [ ! -e "$checkout_workspace/s/vendor/sub/sub.txt" ]
+}
+
+@test "clean with submodules cleans inside them too (C-E06-101)" {
+  prepare_checkout_submodules submoduleclean
+  local target="$checkout_workspace/s"
+  run -0 azdo_checkout --mode clone --submodules recursive
+
+  printf 'stale\n' >"$target/vendor/sub/untracked.txt"
+  printf 'stale\n' >"$target/vendor/sub/inner/untracked.txt"
+  printf 'edited\n' >"$target/vendor/sub/sub.txt"
+
+  # `git clean -ffdx` on the outer repo does not descend into a submodule work tree; the agent
+  # runs a separate `submodule foreach --recursive` pair for exactly that reason, and only when
+  # submodules are enabled.
+  run -0 azdo__checkout_clean "$target" none
+  [ -f "$target/vendor/sub/untracked.txt" ]
+
+  run -0 azdo__checkout_clean "$target" recursive
+  [ ! -e "$target/vendor/sub/untracked.txt" ]
+  [ ! -e "$target/vendor/sub/inner/untracked.txt" ]
+  [ "$(cat "$target/vendor/sub/sub.txt")" = shallow ]
+}

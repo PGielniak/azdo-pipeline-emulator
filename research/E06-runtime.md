@@ -1005,3 +1005,29 @@ oversells what `fetchTags: false` achieves on a default-knob agent. The runtime 
 agent's command line rather than the page's promise (BACKLOG §3 source hierarchy) and says so under
 `System.Debug`; suppressing `--prune-tags` to make `fetchTags: false` "work" would be a divergence
 invented to match documentation prose.
+
+[C-E06-112] **Local relaxation with no agent counterpart: `-c protocol.file.allow=always` on the
+submodule commands.** Since CVE-2022-39253, git refuses the `file` (and bare local path) transport
+for *submodule* clones by default. The emulated `clone` origin is `file://<source>` by construction
+(C-E06-109), so `git submodule update --init --force` against it fails outright — measured here on
+git 2.47.3: "fatal: transport 'file' not allowed / fatal: clone of '…/sub' into submodule path
+'…/t/vendor/sub' failed … Failed to clone 'vendor/sub' a second time, aborting", exit 1. The hosted
+agent never meets this because its submodule URLs are https; the restriction is a consequence of the
+emulator's own `file://` decision, not a behavior to reproduce. Adding
+`-c protocol.file.allow=always` to `submodule sync`/`submodule update` restores the agent's outcome
+(transcript: `research/experiments/E06-checkout/local-shallow-clone.md`). `submodule foreach` needs
+no relaxation — it iterates already-initialized submodules and clones nothing. Recorded as
+docs/06 §5 decision 40f rather than as parity: it is a deliberate widening, scoped to the submodule
+commands, over repositories the user already has on local disk.
+
+[C-E06-113] **Known limitation, recorded not implemented.** docs/04 §8 offers `Build.SourceBranch`
+as an `.env` override "to simulate other branches/PRs". The *branch* half is real — the override is
+read before the checkout and, together with `Build.SourceVersion`, selects what lands. The **PR**
+half is labelling only: the agent detects a `refs/pull/*` ref and switches to a different refspec
+set, fetching `+refs/heads/*:refs/remotes/origin/*` plus the PR ref and checking out the *remote*
+ref rather than the commit —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/GitSourceProvider.cs#L1020-L1046
+(checked 2026-08-22) — "if (IsPullRequest(sourceBranch)) { … additionalFetchSpecs.Add(\"+refs/heads/*:refs/remotes/origin/*\"); additionalFetchSpecs.Add($\"+{sourceBranch}:{GetRemoteRefName(sourceBranch)}\"); }".
+A local source repository has no merge ref to fetch, so setting `Build.SourceBranch` to a PR ref
+labels the run without reproducing the merge commit the hosted build would have. Out of this task's
+**Do** field; docs/04 §8 now scopes the promise.
