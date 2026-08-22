@@ -105,6 +105,14 @@ azdo__write_var_unchecked() {
     readonly=true
   fi
 
+  # Registration keys off the *merged* flag, not the caller's argument: the agent registers inside
+  # Variables.Set, after the same sticky-secret merge, so a plain write onto a secret variable
+  # registers its replacement value too (C-E06-123). Every writer — the store API, `.env` load,
+  # scope copies, the logging handlers — therefore registers exactly once, here.
+  if [[ "$secret" = true && -n "$value" ]]; then
+    azdo_mask_register "$value" || return
+  fi
+
   value_tmp="$(mktemp "$var_dir/.value.XXXXXX")" || return
   meta_tmp="$(mktemp "$var_dir/.meta.XXXXXX")" || {
     rm -f -- "$value_tmp"
@@ -600,6 +608,18 @@ AZDO_ENV_LOADER
         else
           load_status=$?
           break 2
+        fi
+        # `.env` secrets are this runtime's job-message variables (C-E06-013), so they also get the
+        # six transformed registrations the worker adds before the job starts (C-E06-124). The store
+        # already registered the raw value; a whitespace-only value stops here, exactly as the
+        # agent's IsNullOrWhiteSpace guard does.
+        if [[ "$secret" = true ]]; then
+          if azdo__mask_register_job_variable "${declaration_values[$index]}"; then
+            :
+          else
+            load_status=$?
+            break 2
+          fi
         fi
         break
       fi
@@ -1171,9 +1191,9 @@ azdo_logging_property() {
 #
 # Store masker inputs outside shell variables so registration in the logging-parser subprocess is
 # visible to the downstream mask filter and to later steps. Empty values are ignored exactly as in
-# TaskCommandHelper.AddSecret (C-E06-053). E06-S06-T01 owns the broader initial-secret and
-# cross-line hardening pass; this seam provides the immediate task.setvariable behavior required
-# here.
+# TaskCommandHelper.AddSecret (C-E06-053), and a value shorter than the effective minimum is not
+# stored at all (C-E06-127) — the agent's add-then-RemoveShortSecretsFromDictionary order is
+# observably the same here because the minimum is fixed for the whole run (C-E06-128).
 azdo_mask_register() {
   (($# == 1)) || {
     printf '%s\n' 'usage: azdo_mask_register <value>' >&2
@@ -1181,7 +1201,9 @@ azdo_mask_register() {
   }
   [[ -n "$1" ]] || return 0
 
-  local state_dir mask_dir mask_tmp mask_path old_umask
+  local state_dir mask_dir mask_tmp mask_path old_umask minimum
+  azdo__mask_min_length minimum || return
+  ((${#1} >= minimum)) || return 0
   state_dir="$(azdo__state_dir)" || return
   mask_dir="$state_dir/masks"
   mkdir -p "$mask_dir" || return
@@ -1200,39 +1222,223 @@ azdo_mask_register() {
   mv -- "$mask_tmp" "$mask_path"
 }
 
+# azdo__mask_min_length <destination-variable>
+#
+# Effective minimum length of a registered value. `AZP_IGNORE_SECRETS_SHORTER_THAN` is the agent's
+# knob (built-in default 0) and LoggedSecretMasker caps whatever it is handed at 6, warning once
+# when the request was higher (C-E06-128). The knob is read with Int32.Parse rather than TryParse,
+# so a non-numeric value is a hard failure on the agent; refusing to register is the local
+# equivalent, and it fails loud instead of silently masking nothing.
+azdo__mask_min_length() {
+  (($# == 1)) || {
+    printf '%s\n' 'usage: azdo__mask_min_length <destination-variable>' >&2
+    return 2
+  }
+
+  local requested="${AZP_IGNORE_SECRETS_SHORTER_THAN:-0}" state_dir warning_marker
+  [[ "$requested" =~ ^-?[0-9]+$ ]] || {
+    printf 'AZP_IGNORE_SECRETS_SHORTER_THAN must be an integer, got: %s\n' "$requested" >&2
+    return 2
+  }
+  if ((requested > 6)); then
+    state_dir="$(azdo__state_dir)" || return
+    warning_marker="$state_dir/masks/.min-length-warning"
+    if [[ ! -e "$warning_marker" ]]; then
+      mkdir -p "$state_dir/masks" || return
+      : >"$warning_marker" || return
+      printf '##[warning]The value of the minimum length of the secrets is too high. Maximum value is set: %s\n' 6
+    fi
+    requested=6
+  fi
+  printf -v "$1" '%s' "$requested"
+}
+
+# azdo__mask_register_user_supplied <value>
+#
+# AddUserSuppliedSecret: the value, the same value stripped of surrounding quote characters, and the
+# same value stripped of leading/trailing CR, LF and spaces (C-E06-125). `String.Trim(char)` removes
+# every leading and trailing occurrence, which is why both loops run to exhaustion.
+azdo__mask_register_user_supplied() {
+  (($# == 1)) || {
+    printf '%s\n' 'usage: azdo__mask_register_user_supplied <value>' >&2
+    return 2
+  }
+
+  local value="$1" quote trimmed
+  azdo_mask_register "$value" || return
+  for quote in "'" '"'; do
+    if [[ "$value" == "$quote"*"$quote" ]]; then
+      trimmed="$value"
+      while [[ "$trimmed" == "$quote"* ]]; do trimmed="${trimmed#"$quote"}"; done
+      while [[ "$trimmed" == *"$quote" ]]; do trimmed="${trimmed%"$quote"}"; done
+      azdo_mask_register "$trimmed" || return
+    fi
+  done
+  trimmed="$value"
+  while [[ "$trimmed" == [$'\r\n ']* ]]; do trimmed="${trimmed#?}"; done
+  while [[ "$trimmed" == *[$'\r\n '] ]]; do trimmed="${trimmed%?}"; done
+  azdo_mask_register "$trimmed"
+}
+
+# azdo__mask_register_job_variable <value>
+#
+# InitializeSecretMasker's treatment of a secret job variable: the raw value, the value with `%`,
+# CR and LF escaped the way the agent renders variables in debug output, the CR/LF-only escaping for
+# runs with `%` escaping disabled, the UTF-8 base64 of the value, and that base64 through both
+# escape passes — each of the six through AddUserSuppliedSecret (C-E06-124). A whitespace-only value
+# is skipped entirely here, while the store still registers it raw (C-E06-123): the two guards are
+# IsNullOrWhiteSpace and IsNullOrEmpty respectively.
+azdo__mask_register_job_variable() {
+  (($# == 1)) || {
+    printf '%s\n' 'usage: azdo__mask_register_job_variable <value>' >&2
+    return 2
+  }
+
+  local value="$1" escaped base64_value
+  [[ -n "${value//[[:space:]]/}" ]] || return 0
+
+  azdo__mask_register_user_supplied "$value" || return
+  escaped="${value//%/%AZP25}"
+  escaped="${escaped//$'\r'/%0D}"
+  escaped="${escaped//$'\n'/%0A}"
+  azdo__mask_register_user_supplied "$escaped" || return
+  escaped="${value//$'\r'/%0D}"
+  escaped="${escaped//$'\n'/%0A}"
+  azdo__mask_register_user_supplied "$escaped" || return
+
+  base64_value="$(printf '%s' "$value" | base64 | tr -d '\n')" || return
+  azdo__mask_register_user_supplied "$base64_value" || return
+  escaped="${base64_value//%/%AZP25}"
+  escaped="${escaped//$'\r'/%0D}"
+  escaped="${escaped//$'\n'/%0A}"
+  azdo__mask_register_user_supplied "$escaped" || return
+  escaped="${base64_value//$'\r'/%0D}"
+  escaped="${escaped//$'\n'/%0A}"
+  azdo__mask_register_user_supplied "$escaped"
+}
+
+# Registered values, cached per process against the state directory they were read from. Mask files
+# are immutable once renamed into place, so a file already read never has to be read again; only the
+# directory listing is repeated, which is what lets `task.setsecret` in the parser subprocess reach
+# the mask filter on the very next line (C-E06-058).
+AZDO__MASK_CACHE_STATE_DIR=''
+AZDO__MASK_CACHE_FILES=()
+AZDO__MASK_VALUES=()
+
+# shellcheck disable=SC2120 # Internal loader; it intentionally accepts no arguments.
+azdo__mask_load_values() {
+  (($# == 0)) || {
+    printf '%s\n' 'usage: azdo__mask_load_values' >&2
+    return 2
+  }
+
+  local state_dir mask_dir file known value index seen
+  local -a mask_files=()
+  state_dir="$(azdo__state_dir)" || return
+  if [[ "$state_dir" != "$AZDO__MASK_CACHE_STATE_DIR" ]]; then
+    AZDO__MASK_CACHE_STATE_DIR="$state_dir"
+    AZDO__MASK_CACHE_FILES=()
+    AZDO__MASK_VALUES=()
+  fi
+  mask_dir="$state_dir/masks"
+  [[ -d "$mask_dir" ]] || return 0
+
+  shopt -s nullglob
+  mask_files=("$mask_dir"/mask.*)
+  shopt -u nullglob
+
+  for file in "${mask_files[@]}"; do
+    seen=false
+    for known in "${AZDO__MASK_CACHE_FILES[@]}"; do
+      if [[ "$known" = "$file" ]]; then
+        seen=true
+        break
+      fi
+    done
+    [[ "$seen" = false ]] || continue
+    AZDO__MASK_CACHE_FILES+=("$file")
+    # The registered value is read byte-exactly: reading only its first line would mask that line on
+    # its own, which the agent never does for a multiline secret (C-E06-131).
+    azdo__read_file_exact "$file" value || return
+    [[ -n "$value" ]] || continue
+    seen=false
+    for ((index = 0; index < ${#AZDO__MASK_VALUES[@]}; index++)); do
+      if [[ "${AZDO__MASK_VALUES[$index]}" = "$value" ]]; then
+        seen=true
+        break
+      fi
+    done
+    [[ "$seen" = false ]] || continue
+    AZDO__MASK_VALUES+=("$value")
+  done
+}
+
+# azdo__mask_line <line> <destination-variable>
+#
+# Every occurrence of every registered value becomes a character range; ranges that overlap *or*
+# touch merge into one, and each merged range is replaced by a single `***` (C-E06-126). Replacing
+# value by value instead would emit `a******h` where the agent emits `a***h`, and would let the
+# first replacement hide a second value that straddles it.
 azdo__mask_line() {
   (($# == 2)) || {
     printf '%s\n' 'usage: azdo__mask_line <line> <destination-variable>' >&2
     return 2
   }
 
-  local state_dir mask_dir mask_file secret mask_result="$1" index other swap
-  local -a mask_files=() secrets=()
-  state_dir="$(azdo__state_dir)" || return
-  mask_dir="$state_dir/masks"
-  if [[ -d "$mask_dir" ]]; then
-    shopt -s nullglob
-    mask_files=("$mask_dir"/mask.*)
-    shopt -u nullglob
-  fi
-  for mask_file in "${mask_files[@]}"; do
-    secret=''
-    IFS= read -r secret <"$mask_file" || [[ -n "$secret" ]] || continue
-    [[ -n "$secret" ]] && secrets+=("$secret")
+  # Locals are named apart from the plausible destination names a caller might pass: `printf -v`
+  # into a name this function also declares `local` would write to the local and leave the caller's
+  # variable unset.
+  local mask_line="$1" mask_value mask_rest mask_prefix mask_at mask_from mask_i mask_j
+  local -a mask_starts=() mask_ends=()
+  # shellcheck disable=SC2119 # The loader intentionally accepts no arguments.
+  azdo__mask_load_values || return
+
+  for mask_value in "${AZDO__MASK_VALUES[@]}"; do
+    mask_at=0
+    while ((mask_at <= ${#mask_line})); do
+      mask_rest="${mask_line:mask_at}"
+      [[ "$mask_rest" == *"$mask_value"* ]] || break
+      mask_prefix="${mask_rest%%"$mask_value"*}"
+      mask_from=$((mask_at + ${#mask_prefix}))
+      mask_starts+=("$mask_from")
+      mask_ends+=("$((mask_from + ${#mask_value}))")
+      mask_at=$((mask_from + ${#mask_value}))
+    done
   done
 
-  # Mask longer registered values first so an overlapping shorter value cannot expose the suffix
-  # of a longer secret. Each replacement still matches only the complete registered value.
-  for ((index = 0; index < ${#secrets[@]}; index++)); do
-    for ((other = index + 1; other < ${#secrets[@]}; other++)); do
-      if ((${#secrets[$other]} > ${#secrets[$index]})); then
-        swap="${secrets[$index]}"
-        secrets[index]="${secrets[$other]}"
-        secrets[other]="$swap"
+  if ((${#mask_starts[@]} == 0)); then
+    printf -v "$2" '%s' "$mask_line"
+    return 0
+  fi
+
+  for ((mask_i = 0; mask_i < ${#mask_starts[@]}; mask_i++)); do
+    for ((mask_j = mask_i + 1; mask_j < ${#mask_starts[@]}; mask_j++)); do
+      if ((mask_starts[mask_j] < mask_starts[mask_i])); then
+        mask_from="${mask_starts[$mask_i]}"
+        mask_starts[mask_i]="${mask_starts[$mask_j]}"
+        mask_starts[mask_j]="$mask_from"
+        mask_from="${mask_ends[$mask_i]}"
+        mask_ends[mask_i]="${mask_ends[$mask_j]}"
+        mask_ends[mask_j]="$mask_from"
       fi
     done
-    mask_result="${mask_result//"${secrets[$index]}"/***}"
   done
+
+  local mask_result='' mask_done=0
+  local mask_open="${mask_starts[0]}" mask_close="${mask_ends[0]}"
+  for ((mask_i = 1; mask_i <= ${#mask_starts[@]}; mask_i++)); do
+    if ((mask_i < ${#mask_starts[@]} && mask_starts[mask_i] <= mask_close)); then
+      ((mask_ends[mask_i] > mask_close)) && mask_close="${mask_ends[$mask_i]}"
+      continue
+    fi
+    mask_result+="${mask_line:mask_done:mask_open-mask_done}***"
+    mask_done="$mask_close"
+    if ((mask_i < ${#mask_starts[@]})); then
+      mask_open="${mask_starts[$mask_i]}"
+      mask_close="${mask_ends[$mask_i]}"
+    fi
+  done
+  mask_result+="${mask_line:mask_done}"
   printf -v "$2" '%s' "$mask_result"
 }
 
@@ -1270,7 +1476,7 @@ azdo__logging_bool_property() {
 }
 
 azdo__logging_task_setvariable() {
-  local name secret output readonly_flag stored_name var_path
+  local name secret output readonly_flag
   if ! azdo_logging_property variable name || [[ -z "$name" ]]; then
     printf "%s\n" "Required field 'variable' is missing in ##vso[task.setvariable] command." >&2
     return 1
@@ -1288,17 +1494,11 @@ azdo__logging_task_setvariable() {
   # process, reproducing the current-versus-following-task boundary (C-E06-050/051). Output writes
   # reuse the step-qualified same-job and cross-job paths from C-E06-005/052; the store enforces
   # the strict read-only policy established by C-E06-006.
+  # Secret registration is the store's job (C-E06-123), including the sticky case where this
+  # command omits `isSecret` over an already-secret variable.
   azdo_var_set \
     "$name" "$AZDO_LOGGING_MESSAGE" "$secret" "$output" "$readonly_flag" \
-    "${AZDO_VAR_SCOPE:-pipeline}" || return
-  stored_name="$name"
-  if [[ "$output" = true ]]; then
-    stored_name="${AZDO_STEP_NAME:-}.$name"
-  fi
-  var_path="$(azdo__var_path "$stored_name" "${AZDO_VAR_SCOPE:-pipeline}")" || return
-  if azdo__meta_flag_is_true "$var_path.meta" secret; then
-    azdo_mask_register "$AZDO_LOGGING_MESSAGE" || return
-  fi
+    "${AZDO_VAR_SCOPE:-pipeline}"
 }
 
 # E06-S04-T03 — command-scoped state. Handlers run inside the logging-stream subshell, so every

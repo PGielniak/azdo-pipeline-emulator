@@ -1200,3 +1200,152 @@ repositories consumed by the job are available as a template context object call
 `resources.repositories`." A converted pipeline is never triggered, so `self` is the triggering
 repository by construction and a non-`self` checkout only places files. `resources.repositories`
 as a template context object belongs to E03/E04, not to the runtime.
+
+## E06-S06-T01 — secret masking
+
+[C-E06-122] **Masking happens on the way out, once per written line, and covers everything the
+agent writes — not only task stdout.** `ExecutionContext.Write` masks the concatenation of the tag
+and the message before it reaches either the server logger or the on-disk log, and `AddIssue` masks
+the issue message before it is recorded. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Worker/ExecutionContext.cs#L768-L790
+(checked 2026-08-22) — "public long Write(string tag, string inputMessage, bool canMaskSecrets =
+true) { string message = canMaskSecrets ? HostContext.SecretMasker.MaskSecrets($\"{tag}
+{inputMessage}\") : inputMessage;" — and
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Worker/ExecutionContext.cs#L442
+— "issue.Message = HostContext.SecretMasker.MaskSecrets(issue.Message);". The unit of masking is
+therefore **one output line**: nothing in the agent buffers two lines to look for a secret spanning
+them. The emulator's `azdo_mask_stream` is line-wise for the same reason, and it sits upstream of
+the `tee`, so the console and `logs/**.log` receive identical masked bytes (docs/04 §3).
+
+[C-E06-123] **Every secret variable write registers its value with the masker, keyed off the
+*merged* secret flag rather than the caller's argument.** `Variables.Set` first forces `secret` true
+when the existing variable is already secret, and only then registers. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Worker/Variables.cs#L426-L441
+(checked 2026-08-22) — "secret = secret || (_expanded.ContainsKey(name) && _expanded[name].Secret);
+// Register the secret. Secret masker handles duplicates gracefully. / if (secret &&
+!string.IsNullOrEmpty(val)) { _secretMasker.AddValue(val, $\"Variables_Set_{name}\"); }". This is
+why registration belongs in the emulator's *store* (`azdo__write_var_unchecked`, after the sticky
+merge of C-E06-056) and not in the `task.setvariable` handler: a non-secret write onto a secret
+variable is registered by the agent, and every other writer — `.env` load, `azdo_var_set`, scope
+copies — gets the same treatment for free. The guard is `IsNullOrEmpty`, so a whitespace-only
+secret value *is* registered here (contrast C-E06-124).
+
+[C-E06-124] **Job-message secret variables are additionally registered in six transformed forms.**
+Before the job runs, the worker walks the message variables and registers, for each secret with a
+non-whitespace value: the raw value; the value with `%`→`%AZP25`, CR→`%0D`, LF→`%0A`; the value with
+only CR/LF escaped; its UTF-8 base64; and that base64 through the same two escape passes. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Worker/Worker.cs#L172-L213
+(checked 2026-08-22) — "if (variable.Value.IsSecret && !string.IsNullOrWhiteSpace(variable.Value
+.Value)) { … AddUserSuppliedSecret(variable.Value.Value); // also, we escape some characters for
+variables when we print them out in debug mode. We need to add the escaped version of these secrets
+as well / var escapedSecret = variable.Value.Value.Replace(\"%\", \"%AZP25\").Replace(\"\\r\",
+\"%0D\").Replace(\"\\n\", \"%0A\"); … var base64Secret = Convert.ToBase64String(System.Text
+.Encoding.UTF8.GetBytes(variable.Value.Value)); …". The emulator's job-message variables are the
+`.env`/manifest secrets (C-E06-013), so `azdo_env_load` is where this belongs. The skip condition
+differs from C-E06-123's on purpose: `IsNullOrWhiteSpace` here versus `IsNullOrEmpty` there, so a
+whitespace-only secret is registered raw by the store and gets **no** variants.
+
+[C-E06-125] **Each of those registrations is itself three registrations.**
+`AddUserSuppliedSecret` adds the value, a copy trimmed of surrounding `'` or `"` when the value both
+starts and ends with that character, and a copy trimmed of CR/LF/space at both ends. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Worker/Worker.cs#L152-L170
+(checked 2026-08-22) — "// for variables, it is possible that they are used inside a shell which
+would strip off surrounding quotes / so, if the value is surrounded by quotes, add a quote-timmed
+version of the secret to our masker as well / This addresses issue #2525 / foreach (var quoteChar in
+_quoteLikeChars) { if (secret.StartsWith(quoteChar) && secret.EndsWith(quoteChar)) { HostContext
+.SecretMasker.AddValue(secret.Trim(quoteChar), …); } } / // Here we add a trimmed secret value to
+the dictionary in case of a possible leak through external tools. / var trimChars = new char[] {
+'\\r', '\\n', ' ' };" with `_quoteLikeChars` = `{ '\'', '"' }` (L26). `String.Trim(char)` removes
+*every* leading and trailing occurrence, not one.
+
+[C-E06-126] **Masking replaces merged character ranges, not substrings one value at a time:
+overlapping *and* adjacent matches collapse into a single `***`.** —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Test/L0/SecretMaskerTests/SecretMaskerL0.cs#L441-L470
+(checked 2026-08-22) — "// a naive replacement would replace \"def\" first, and never find \"bcd\",
+resulting in \"abc***g\" / or it would replace \"bcd\" first, and never find \"def\", resulting in
+\"a***efg\" / Assert.Equal(\"a***g\", result);" and "// two adjacent secrets are basically one big
+secret / Assert.Equal(\"a***h\", result);" (`AddValue("efg")` + `AddValue("bcd")` over
+`"abcdefgh"`). The L0 table pinned as the emulator's conformance fixture, same file, is:
+`def`/`abcdefg` → `abc***g` (L384); `def`/`abcdefgdef` → `abc***g***` (L398); `abc`/`abcabcdef` →
+`***def` (L412); `bcd`+`fgh`/`abcdefghi` → `a***e***i` (L426); `def`+`bcd`/`abcdefg` → `a***g`
+(L441); `efg`+`bcd`/`abcdefgh` → `a***h` (L459); empty input → empty (L358); no registered values →
+input unchanged (L373). The data cannot by itself separate range-merging from "replace, then
+collapse repeated `***`", but collapsing would corrupt a literal `******` in ordinary output, so the
+emulator merges ranges (docs/06 §5 decision 42).
+
+[C-E06-127] **A registered value shorter than the effective minimum is never added, and values
+already added are dropped when the minimum rises.** —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Test/L0/SecretMaskerTests/SecretMaskerL0.cs#L547-L594
+(checked 2026-08-22) — "secretMasker.MinSecretLength = 3; secretMasker.AddValue(\"efg\");
+secretMasker.AddValue(\"bcd\"); … Assert.Equal(\"a***h\", result); / secretMasker.MinSecretLength =
+4; secretMasker.RemoveShortSecretsFromDictionary(); … Assert.Equal(input, result2);". The comparison
+is `length < minimum` → skipped (a 3-character value survives a minimum of 3), a negative minimum
+adds everything (L530), and a minimum set above every registered length leaves the input untouched
+(L476). Encoded forms are length-filtered individually rather than inheriting their source value's
+fate (L617-L663).
+
+[C-E06-128] **The minimum comes from `AZP_IGNORE_SECRETS_SHORTER_THAN`, defaults to 0, and is
+capped at 6 with a warning.** —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Sdk/Knob/AgentKnobs.cs#L421-L426
+(checked 2026-08-22) — "public static readonly Knob MaskedSecretMinLength = new Knob(nameof(
+MaskedSecretMinLength), \"Specify the length of the secrets, which, if shorter, will be ignored in
+the logs.\", new RuntimeKnobSource(\"AZP_IGNORE_SECRETS_SHORTER_THAN\"), new EnvironmentKnobSource(
+\"AZP_IGNORE_SECRETS_SHORTER_THAN\"), new BuiltInDefaultKnobSource(\"0\"));" — the cap is
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Sdk/SecretMasking/LoggedSecretMasker.cs#L83-L104
+— "// We don't allow to skip secrets longer than 5 characters. / // Note: the secret that will be
+ignored is of length n-1. / public static int MinSecretLengthLimit => 6;" — and the warning is
+raised once at job start,
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Worker/ExecutionContext.cs#L603-L611
+— "var minSecretLen = AgentKnobs.MaskedSecretMinLength.GetValue(this).AsInt(); HostContext
+.SecretMasker.MinSecretLength = minSecretLen; if (HostContext.SecretMasker.MinSecretLength <
+minSecretLen) { warnings.Add(StringUtil.Loc(\"MinSecretsLengtLimitWarning\", …)); } HostContext
+.SecretMasker.RemoveShortSecretsFromDictionary();" with `"MinSecretsLengtLimitWarning": "The value
+of the minimum length of the secrets is too high. Maximum value is set: {0}"`
+(`src/Misc/layoutbin/en-US/strings.json` L420, same pin). `KnobValue.AsInt()` is `Int32.Parse`, not
+`TryParse` (`src/Agent.Sdk/Knob/KnobValue.cs`), so a non-numeric value is a job-start exception
+rather than a silent 0 — the emulator refuses to register instead of masking nothing. Registering
+under the already-known minimum is observably equivalent to the agent's add-then-`RemoveShort`
+order, because the knob is fixed for the whole job.
+
+[C-E06-129] **Delta, deliberately not implemented: the three global value encoders.** Every masker
+the agent builds carries `ValueEncoders.JsonStringEscape`, `UriDataEscape` and `BackslashEscape`, so
+a registered secret is also masked in those encodings. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Microsoft.VisualStudio.Services.Agent/HostContext.cs#L187-L223
+(checked 2026-08-22) — "secretMasker.AddValueEncoder(ValueEncoders.JsonStringEscape, …);
+secretMasker.AddValueEncoder(ValueEncoders.UriDataEscape, …); secretMasker.AddValueEncoder(
+ValueEncoders.BackslashEscape, …);". `ValueEncoders` itself lives in the **closed**
+`Microsoft.TeamFoundation.DistributedTask.Logging` assembly — the same situation as the expression
+engine (C-E00-012) and the attachment-type constants (C-E06-079) — and the only visible behavior is
+one L0 example each: `SecretMaskerL0.cs` L222-L256 shows JSON escaping of CR/LF/tab/backslash/quote,
+percent-encoding of a space, and, for `BackslashEscape`, a registered `abc\\def\'\"ghi\t` also
+matching `abc\def'"ghi<TAB>` — i.e. it *un*escapes. One example per encoder cannot pin a general
+rule, so the emulator registers no encoded forms and records the gap here. The `%AZP25`/base64
+variants of C-E06-124 are **not** encoders: they are literal, fully visible `Worker.cs` source.
+
+[C-E06-130] **Delta, deferred to E08: the URL-credential regex.** Independently of any registered
+value, the agent masks the password segment of a `scheme://user:pass@host` authority. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Microsoft.VisualStudio.Services.Agent/AdditionalMaskingRegexes.cs
+(checked 2026-08-22) — "// URLs can contain secrets if they have a userinfo part / in the authority.
+example: https://user:pass@example.com / … It only matches on the password part. / private static
+string urlSecretPattern = \"(?<=//[^:/?#\\n]+:)\" + urlMatch + \"(?=@)\";" with L0 cases
+`https://user:pass@example.com` → `https://user:***@example.com` and
+`https://simpledomain@example.com` unchanged (`SecretMaskerL0.cs` L96-L155). Two reasons it is not
+in this task: the **Do** field scopes the masker to *registered values*, and bash ERE has no
+lookaround, so the pattern needs capture-group emulation. Its motivating case is a credentialed
+remote URL, which is `persistCredentials` — already deferred to E08 (C-E06-110) — so it is filed
+as a new follow-up task, E06-S06-T03, at the end of this story rather than folded in here.
+
+[C-E06-131] **Parity, not a delta: a secret split across two output lines is masked on neither.**
+Masking is per line (C-E06-122) and the agent registers no per-line fragment of a multiline secret —
+`AddUserSuppliedSecret` only *end*-trims CR/LF (C-E06-125) — so a two-line secret echoed as two
+lines survives both the agent and the emulator. The doc page states the general rule this follows
+from: — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/set-secret-variables
+(checked 2026-08-22) — "We make an effort to mask secrets from appearing in Azure Pipelines output,
+but you still need to take precautions. Never echo secrets as output. … We never mask substrings of
+secrets. If, for example, \"abc123\" is set as a secret, \"abc\" isn't masked from the logs. This is
+to avoid masking secrets at too granular of a level, making the logs unreadable. For this reason,
+secrets should not contain structured data." The `%0D`/`%0A` forms of C-E06-124 are the agent's
+compensation: the *escaped* single-line rendering of a multiline secret **is** masked. The
+emulator's pre-existing masker read only the first line of each registered value, which masked that
+line alone — stricter than the agent and inconsistent with "never mask substrings"; it now reads
+registered values exactly (`azdo__read_file_exact`).

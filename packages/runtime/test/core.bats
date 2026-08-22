@@ -2451,3 +2451,198 @@ prepare_checkout_extra() {
   [[ "$output" == *'workspaceRepo is not emulated here'* ]]
   [[ "$output" == *'(degraded)'* ]]
 }
+
+# E06-S06-T01 — secret masking.
+
+# Registers values into a private state directory and masks one line through them, so each row of
+# the agent's own SecretMaskerL0 table starts from an empty masker.
+mask_row() {
+  local line="$1" masked
+  shift
+  AZDO_STATE_DIR="$(azdo_emu_scratch_dir "mask-$BATS_SUITE_TEST_NUMBER-$RANDOM")"
+  export AZDO_STATE_DIR
+  AZDO__MASK_CACHE_STATE_DIR=''
+  local value
+  for value in "$@"; do
+    azdo_mask_register "$value"
+  done
+  azdo__mask_line "$line" masked
+  printf '%s\n' "$masked"
+}
+
+@test "masking merges overlapping and adjacent matches into one *** (C-E06-126)" {
+  # microsoft/azure-pipelines-agent src/Test/L0/SecretMaskerTests/SecretMaskerL0.cs L358-L470,
+  # ported row for row.
+  [ "$(mask_row 'abcdefg' def)" = 'abc***g' ]
+  [ "$(mask_row 'abcdefgdef' def)" = 'abc***g***' ]
+  [ "$(mask_row 'abcabcdef' abc)" = '***def' ]
+  [ "$(mask_row 'abcdefghi' bcd fgh)" = 'a***e***i' ]
+  # A naive per-value replacement would print `abc***g` or `a***efg` here.
+  [ "$(mask_row 'abcdefg' def bcd)" = 'a***g' ]
+  # Two adjacent secrets are basically one big secret: `a******h` would be wrong.
+  [ "$(mask_row 'abcdefgh' efg bcd)" = 'a***h' ]
+  [ "$(mask_row 'abcdefgh123' bc defg h12)" = 'a***3' ]
+  [ "$(mask_row '' abcd)" = '' ]
+  [ "$(mask_row 'abcdefg')" = 'abcdefg' ]
+
+  # Registration order does not decide the outcome, and a value that is not present changes nothing.
+  [ "$(mask_row 'abcdefg' bcd def)" = 'a***g' ]
+  [ "$(mask_row 'abcdefg' xyz)" = 'abcdefg' ]
+}
+
+@test "registered values shorter than the effective minimum are ignored (C-E06-127/128)" {
+  local masked
+
+  AZP_IGNORE_SECRETS_SHORTER_THAN=3 azdo_mask_register efg
+  AZP_IGNORE_SECRETS_SHORTER_THAN=3 azdo_mask_register bcd
+  azdo__mask_line 'abcdefgh' masked
+  [ "$masked" = 'a***h' ]
+
+  AZDO_STATE_DIR="$(azdo_emu_scratch_dir mask-min-high)"
+  AZDO__MASK_CACHE_STATE_DIR=''
+  AZP_IGNORE_SECRETS_SHORTER_THAN=4 azdo_mask_register efg
+  azdo__mask_line 'abcdefgh' masked
+  [ "$masked" = 'abcdefgh' ]
+
+  # A negative minimum registers everything; the built-in default is 0.
+  AZP_IGNORE_SECRETS_SHORTER_THAN=-3 azdo_mask_register bcd
+  azdo__mask_line 'abcdefgh' masked
+  [ "$masked" = 'a***efgh' ]
+
+  # The request is capped at 6 and warned about once, so a six-character value is always masked.
+  AZDO_STATE_DIR="$(azdo_emu_scratch_dir mask-min-capped)"
+  AZDO__MASK_CACHE_STATE_DIR=''
+  run -0 env AZP_IGNORE_SECRETS_SHORTER_THAN=99 bash -c \
+    'source "$1"; azdo_mask_register sixchr; azdo_mask_register five5; azdo__mask_line "a-sixchr-five5" masked; printf "%s\n" "$masked"' \
+    _ "$(azdo_emu_runtime_dir)/lib/core.sh"
+  [ "$output" = \
+    $'##[warning]The value of the minimum length of the secrets is too high. Maximum value is set: 6\na-***-five5' ]
+
+  # Int32.Parse, not TryParse: a non-numeric knob refuses to register instead of masking nothing.
+  AZP_IGNORE_SECRETS_SHORTER_THAN=lots
+  run -2 azdo_mask_register wide-open-secret
+  [[ "$output" == *'must be an integer'* ]]
+  unset AZP_IGNORE_SECRETS_SHORTER_THAN
+}
+
+@test "the variable store registers every secret value it writes (C-E06-123)" {
+  local masked
+
+  azdo_var_set env-secret 'store-registered-value' true
+  azdo__mask_line 'saw store-registered-value here' masked
+  [ "$masked" = 'saw *** here' ]
+
+  # A later non-secret write onto a secret variable keeps the flag and registers the replacement,
+  # which is the case a handler-side registration keyed on the passed flag would miss.
+  azdo_var_set env-secret 'replacement-value' false
+  azdo__mask_line 'saw replacement-value here' masked
+  [ "$masked" = 'saw *** here' ]
+
+  # The store's guard is IsNullOrEmpty, so a whitespace-only secret is registered here.
+  azdo_var_set blank-secret '     ' true
+  azdo__mask_line 'gap[     ]' masked
+  [ "$masked" = 'gap[***]' ]
+
+  # A public variable is not registered, whatever its value looks like.
+  azdo_var_set public-value 'plainly-visible' false
+  azdo__mask_line 'saw plainly-visible here' masked
+  [ "$masked" = 'saw plainly-visible here' ]
+}
+
+@test ".env secrets are registered in the six job-variable forms (C-E06-124/125)" {
+  local env_file="$BATS_TEST_TMPDIR/secrets.env" masked encoded
+  cat >"$env_file" <<'ENV'
+QUOTED='"wrapped-secret-value"'
+PERCENT='has%percent'
+SPACED='  padded-secret-value  '
+PLAIN=not-a-secret-value
+ENV
+  AZDO_MANIFEST_ENV=('QUOTED=true' 'PERCENT=true' 'SPACED=true' 'PLAIN=false')
+  azdo_env_load "$env_file"
+
+  # The raw value, and the same value with the surrounding quote characters stripped: a shell that
+  # ate the quotes must not be able to print the inside.
+  azdo__mask_line 'value="wrapped-secret-value" end' masked
+  [ "$masked" = 'value=*** end' ]
+  azdo__mask_line 'value=wrapped-secret-value end' masked
+  [ "$masked" = 'value=*** end' ]
+
+  # The debug-rendering escape of `%`, and the base64 the agent registers alongside it.
+  azdo__mask_line 'value=has%AZP25percent end' masked
+  [ "$masked" = 'value=*** end' ]
+  encoded="$(printf '%s' 'has%percent' | base64)"
+  azdo__mask_line "value=$encoded end" masked
+  [ "$masked" = 'value=*** end' ]
+
+  # The CR/LF/space-trimmed copy, for the leak through an external tool that strips padding.
+  azdo__mask_line 'value=[padded-secret-value] end' masked
+  [ "$masked" = 'value=[***] end' ]
+
+  azdo__mask_line 'value=not-a-secret-value end' masked
+  [ "$masked" = 'value=not-a-secret-value end' ]
+}
+
+@test "a whitespace-only .env secret gets no variant registrations (C-E06-124)" {
+  local env_file="$BATS_TEST_TMPDIR/blank.env" masked encoded
+  cat >"$env_file" <<'ENV'
+BLANK='   '
+ENV
+  AZDO_MANIFEST_ENV=('BLANK=true')
+  azdo_env_load "$env_file"
+
+  # IsNullOrWhiteSpace stops the job-variable pass, so the store's raw registration is all there is.
+  azdo__mask_line 'gap[   ]' masked
+  [ "$masked" = 'gap[***]' ]
+  encoded="$(printf '%s' '   ' | base64)"
+  azdo__mask_line "value=$encoded end" masked
+  [ "$masked" = "value=$encoded end" ]
+  # The CR/LF/space-trimmed form of a blank value is empty, and an empty value is never registered.
+  azdo__mask_line 'untouched' masked
+  [ "$masked" = 'untouched' ]
+}
+
+@test "a multiline secret is masked escaped but not line by line (C-E06-131)" {
+  local env_file="$BATS_TEST_TMPDIR/multiline.env" masked
+  cat >"$env_file" <<'ENV'
+MULTILINE='first-secret-line
+second-secret-line'
+ENV
+  AZDO_MANIFEST_ENV=('MULTILINE=true')
+  azdo_env_load "$env_file"
+
+  # Agent parity: masking is per output line and no per-line fragment is ever registered, so each
+  # half of the secret survives on its own. Reading only the first line of the registered value —
+  # which the pre-T01 masker did — would mask this and contradict "we never mask substrings".
+  azdo__mask_line 'first-secret-line' masked
+  [ "$masked" = 'first-secret-line' ]
+  azdo__mask_line 'second-secret-line' masked
+  [ "$masked" = 'second-secret-line' ]
+
+  # The escaped single-line rendering is registered, and it is masked.
+  azdo__mask_line 'value=first-secret-line%0Asecond-secret-line end' masked
+  [ "$masked" = 'value=*** end' ]
+
+  # The whole value on one line still matches.
+  azdo__mask_line "$(printf 'x%sy' $'first-secret-line\nsecond-secret-line')" masked
+  [ "$masked" = 'x***y' ]
+}
+
+@test "step stdout, stderr and the log file are all masked (C-E06-122)" {
+  local source_file="$BATS_TEST_TMPDIR/leaky-step.sh" marker='env-supplied-secret-value'
+  prepare_run_step
+  azdo_var_set leaky "$marker" true
+  printf '%s\n' \
+    "printf 'OUT=%s\\n' '$marker'" \
+    "printf 'ERR=%s\\n' '$marker' >&2" >"$source_file"
+
+  run -0 run_test_step masked-stdio "$source_file" 10
+
+  [ "$output" = $'OUT=***\nERR=***' ]
+  ! grep -F "$marker" "$AZDO_LOG_DIR/masked-stdio.log"
+
+  # failOnStderr routes stderr through a second tee before it reaches the masker.
+  run -0 run_result_step masked-stderr-branch "$source_file" true true 0 10
+  [ "$output" = \
+    $'OUT=***\nERR=***\n##[error]Bash wrote one or more lines to the standard error stream.' ]
+  ! grep -F "$marker" "$AZDO_LOG_DIR/masked-stderr-branch.log"
+}
