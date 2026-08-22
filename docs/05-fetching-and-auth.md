@@ -2,6 +2,13 @@
 
 Everything that leaves the local machine happens **at convert time** through this layer. Reference: learn.microsoft.com/rest/api/azure/devops/.
 
+> **Revised 2026-08-22 (E12-S03-T01).** Under PLAN **D3** the `preview` call is no longer an optional
+> extra for remote-resource pipelines — it is the **expansion step of every conversion**, so this
+> layer sits on the critical path of `convert` (docs/07 §7 risk 1). Execution stays offline: the
+> expanded YAML is frozen into the output and the expansion is cached and pinned (§4). Phase labels
+> in this file (`P3`, `P6`, …) are the **archived** P0–P6 roadmap — see docs/06 §4 for the live
+> three-phase plan and the old→new mapping.
+
 ## 1. Authentication
 
 ### Azure DevOps (three modes, auto-selected in this order unless configured)
@@ -32,9 +39,9 @@ Anonymous fallback for public repos (tarball download without auth).
 | Classic build artifacts fallback | `GET {org}/{proj}/_apis/build/builds/{buildId}/artifacts` |
 | Pipeline definition lookup (name → id, yaml path/repo) | `GET {org}/{proj}/_apis/build/definitions?name=…` |
 | Variable groups (names only) | `GET {org}/{proj}/_apis/distributedtask/variablegroups?groupName={n}` — used solely to list variable **names** for `.env.example`; values (secret or not) are never consumed (decision 2026-07-30) |
-| Installed task metadata (marketplace `task.json`) | `GET {org}/_apis/distributedtask/tasks` (list; filter by name/version) and `GET …/tasks/{taskId}/{version}` (zip, for P6 execution mode) |
+| Installed task metadata (marketplace `task.json`) | `GET {org}/_apis/distributedtask/tasks` (list; filter by name/version) and `GET …/tasks/{taskId}/{version}` (zip — **real-task mode**, the default non-script path since E12-S02-T03; archived-roadmap P4, docs/03 §6) |
 | Org YAML schema (validation incl. marketplace inputs) | `GET {org}/_apis/distributedtask/yamlschema?api-version=7.1` — **org-scoped, no project segment**; optional `validateTaskNames=false` (C-E01-029/033) |
-| **Oracle**: server-side final YAML | `POST {org}/{proj}/_apis/pipelines/{pipelineId}/preview` body `{"previewRun": true, "yamlOverride": …, "templateParameters": …}` → `finalYaml` |
+| **Expansion** (the product path, PLAN D3): server-side final YAML | `POST {org}/{proj}/_apis/pipelines/{pipelineId}/preview` body `{"previewRun": true, "yamlOverride": …, "templateParameters": …}` → `finalYaml`. Same call still serves as the *test* oracle (docs/02 §8, docs/06 §3); client `packages/fetch/src/{oracle,expand}.ts` |
 | GitHub repo snapshot | `GET https://api.github.com/repos/{owner}/{repo}/tarball/{ref}` (or `git clone`); ref→SHA via `GET …/commits/{ref}` |
 
 ## 3. Repo alias resolution
@@ -54,7 +61,7 @@ Anonymous fallback for public repos (tarball download without auth).
 <out>/.cache/
   repos/<host>/<org-or-owner>/<project>/<repo>/<sha>/...      # bare mirror or extracted snapshot
   artifacts/<pipelineAlias>/<runId>/<artifactName>/...
-  tasks/<TaskName>@<version>/task.json (+ zip in P6)
+  tasks/<TaskName>@<version>/task.json (+ zip for real-task mode)
   schema/yamlschema-<org>.json
   expansion/<requestHash>/final.yml (+ provenance.json)       # preview expansion, E00-S04
 ```
@@ -132,4 +139,10 @@ touched. The manifest still records the mode and both hashes, marked `degraded: 
 - Generated `.gitignore` covers `.env`, `.work/`, `.artifacts/`, `.cache/` — cached repo snapshots may contain private source; treated as secret-adjacent.
 - Runtime log masking for all `.env` values flagged secret + `task.setsecret` additions (docs/04 §5).
 - Convert-time linter warns on plaintext secrets spotted in YAML (heuristic, opt-out).
-- `--offline` conversion works with zero auth for pipelines that need no remote resources.
+- **`--offline` is now a composition, not a standalone mode (revised 2026-08-22, E12-S03-T01).** With
+  the service performing expansion, a zero-network `convert` is only reachable two ways, both already
+  specified: `--frozen` over a warm expansion cache (§4 — byte-identical re-convert, no auth), or
+  `--offline-expand`, which never calls the service at all and produces a **degraded** conversion
+  (PLAN D3/D4, docs/06 §1). The bare `--offline` flag in docs/06 §1 means "make no network call" and
+  therefore requires one of those two to be satisfiable — the exact wiring and its error message are
+  **E10-S02-T01**'s to fix; nothing here invents new flag semantics.

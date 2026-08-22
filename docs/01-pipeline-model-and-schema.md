@@ -11,7 +11,7 @@ Scope: what we parse, how faithfully, and how the semantic model is shaped. Grou
   - Only a single document per file: a *second* document is rejected (C-E01-024). A **document marker is not a separator** — a lone leading `---`, and a trailing `...`, are accepted by the service and must not be rejected (C-E01-025).
   - All three checks live in one module, `packages/engine/src/frontend/quirks.ts`, with the conformance table `SERVER_QUIRKS`; transcripts under `research/experiments/E01-quirks/` and `research/experiments/E01-directive-duplicates/` (regenerate with `pnpm oracle-quirks` and `pnpm duplicate-key-survey`). The service positions only the duplicate-key error; ours carry a source range in all three cases, deliberately exceeding it (C-E01-026).
   - Expressions `${{ … }}` are *not* YAML syntax — they are plain strings (or mapping keys) at parse time. The front end does not evaluate them; it only reuses the template engine's directive classifier to apply the duplicate-key exception above (C-E01-038).
-- Schema validation runs twice: on the raw root file (loose — templates make many things optional) and on the fully expanded DOM (strict). Validator is generated from the pinned official JSON schema; org-fetched schema (which includes installed marketplace tasks) is used when authenticated.
+- Schema validation runs **once, strictly, over the expanded pipeline** — the service's `finalYaml` (PLAN **D3**, E00-S04) or, under `--offline-expand`, the fallback engine's output. *Revised 2026-08-22 (E12-S03-T01).* The original loose pass over the raw root file is dropped: with the service performing expansion, validating the unexpanded file is the server's own job and a local loose pass could only disagree with the authority (E01-S02-T02, re-scoped by E12-S01-T02; the wiring into `convert` is E10-S02-T01). Validator is generated from the pinned official JSON schema; org-fetched schema (which includes installed marketplace tasks) is used when authenticated.
 - Every schema violation reports `file:line:col`, the JSON-path in the document, and the allowed alternatives (the schema is a huge `oneOf`; we post-process to produce readable messages).
 - The validator is a **guided walk** over the schema, not a stock JSON-Schema run (E01-S02-T01, `packages/engine/src/frontend/validate.ts`). The vendored file's acceptance semantics are only half draft-07: the VS Code-extension keywords `firstProperty` / `ignoreCase` / `aliases` decide which branch applies and which names match, and pipeline values are strings — YAML booleans/numbers/empty values satisfy `type: string`, and `${{ }}` / `$( )` / `$[ ]` values are exempt from type checks (C-E01-015..018, mirroring `microsoft/azure-pipelines-language-server`). Stock ajv over the raw file both rejects valid pipelines and emits >1000 errors per typo (C-E01-019); it stays in use only as the vendored-file integrity check.
 - Where the docs and the vendored schema disagree, **the docs win** and the fix is recorded as a correction applied at load time (`DOCUMENTED_CORRECTIONS`) with its claim — currently one: `target` on task steps (C-E01-011). Re-check these on every schema refresh (E00-S02-T01 tooling).
@@ -22,16 +22,20 @@ Scope: what we parse, how faithfully, and how the semantic model is shaped. Grou
 
 Tiers per PLAN.md §6 (`exact / equivalent / degraded / stub / unsupported`). Phase = roadmap phase where it lands.
 
+> **Phase labels here are the archived P0–P6 roadmap** (docs/06 §4), kept verbatim because committed
+> changelog entries cite them by number. The live plan is the three-phase P1–P3 roadmap of PLAN §7;
+> docs/06 §4 carries the old→new mapping (E12-S03-T01, 2026-08-22).
+
 | Construct | Tier | Phase | Local semantics |
 |---|---|---|---|
 | `trigger`, `pr`, `schedules` | parsed, ignored | P0 | Recorded in manifest; never executed |
 | `name` (run-number format) | equivalent | P2 | Evaluated at run start; `$(Rev:.r)` / `$(Date:…)` / counters from local state file → `Build.BuildNumber` |
 | `appendCommitMessageToRunName`, `lockBehavior` | parsed, ignored | P0 | Manifest note |
 | `pool` (name / vmImage / demands) | metadata | P2 | Drives `--target-os` inference + `doctor` expectations; `pool: server` switches to server-task emulation (docs/03 group F) |
-| `parameters` (runtime parameters) | exact | P1 | Bound at convert time from `--parameter`/config/defaults; `values:` and type validation enforced |
+| `parameters` (runtime parameters) | exact | P1 | **Bound by the service** (PLAN D3): `--parameter`/config/defaults supply the values, which the bundler passes through as the request's `templateParameters` (E03-S06-T03, docs/02 §5.1); `values:`/type validation and the missing/extra-parameter errors are the service's, and reach us as a `rejected` expansion. The local typed binder (docs/02 §5) is fallback-only (E03-S02-T02) |
 | `variables` (all forms) | exact/equivalent | P1/P3 | §4 below |
 | `stages` / `jobs` / `steps` + single-job & single-stage shorthands | exact | P1 | Normalized to full stages→jobs→steps tree |
-| `extends` template | exact | P1 | docs/02 |
+| `extends` template | exact | P1 | Resolved by the **service** (PLAN D3) — the bundler only inlines the *target file*; docs/02 §2/§4 are fallback-only |
 | `resources.repositories` | exact | P3 | Template resolution + `checkout` source; fetched & pinned |
 | `resources.pipelines` | equivalent | P3 | Artifact download at convert time (pinned runId); `trigger:` ignored; `resources.pipeline.*` runtime context populated from pinned run metadata |
 | `resources.containers` | equivalent | P6 | Docker images + registry login from `.env` |
@@ -41,7 +45,7 @@ Tiers per PLAN.md §6 (`exact / equivalent / degraded / stub / unsupported`). Ph
 ## 3. Stages, jobs, steps
 
 ### Stages
-`stage`, `displayName`, `dependsOn` (string/list/empty for parallel), `condition`, `variables`, `pool`, `jobs`, `templateContext` — all `exact` (P1/P2). `isSkippable`, `lockBehavior` → parsed, ignored.
+`stage`, `displayName`, `dependsOn` (string/list/empty for parallel), `condition`, `variables`, `pool`, `jobs` — all `exact` (P1/P2). `templateContext` never reaches us: it is a compile-time payload the service consumes while expanding, and the expanded YAML no longer contains it (E03-S02-T04 demoted 2026-08-22; noted here by E12-S03-T01). `isSkippable`, `lockBehavior` → parsed, ignored.
 
 ### Jobs (`job`)
 | Field | Tier | Notes |
@@ -76,7 +80,7 @@ Every shorthand normalizes to a canonical task invocation before the step is dis
 | `download:` / `downloadBuild:` / `getPackage:` | `DownloadPipelineArtifact@2` / `DownloadBuildArtifacts@1` / `DownloadPackage@1` | docs/03 |
 | `publish:` | `PublishPipelineArtifact@1` | |
 | `task:` | as-is | Inputs completed with `task.json` defaults & alias resolution (docs/03 §2) |
-| `template:` | expanded by engine | docs/02 |
+| `template:` | expanded by the **service** | Local `@self` files are inlined into the expansion request by the bundler (docs/02 §5, E03-S06); the local expander is the `--offline-expand` fallback |
 | `reviewApp:` | stub | |
 
 Common step fields — all `exact`, enforced by the runtime: `name` (identifier for output vars), `displayName`, `condition`, `continueOnError`, `enabled`, `env`, `timeoutInMinutes`, `retryCountOnTaskFailure`, `workingDirectory`, `failOnStderr`, `target` (`host`/container name → P6; `commands: restricted` → parsed, ignored with note).
@@ -92,7 +96,7 @@ variables:                 # list form — ORDER MATTERS and is preserved
     value: v
     readonly: true
   - group: my-vars         # variable group (Library)
-  - template: vars.yml     # variables template (may take parameters)
+  - template: vars.yml     # variables template (may take parameters) — expanded by the service; see §2's `template:` row
 ```
 
 ### Scoping & precedence (exact)
@@ -102,7 +106,7 @@ Root → stage → job; inner scope wins on name collision; within one list, lat
 
 | Syntax | Evaluated | Where allowed | Missing var behaves | Our implementation |
 |---|---|---|---|---|
-| `${{ variables.x }}` compile-time | During template expansion, before anything runs | Anywhere in YAML | Empty string | Evaluated at **convert time** (docs/02) |
+| `${{ variables.x }}` compile-time | During template expansion, before anything runs | Anywhere in YAML | Empty string | Resolved by the **service** before we parse (PLAN D3); already gone from the expanded YAML. The local evaluator runs only under `--offline-expand` (docs/02 §2) |
 | `$[ variables.x ]` runtime expression | At job dispatch, must be the **entire** RHS | Variable values, conditions | Empty string | Compiled to shell, evaluated at **job start** locally |
 | `$(x)` macro | Just before a task executes; textual substitution in task inputs only | Task inputs (incl. inline script bodies), `env:` values | Left **literally** as `$(x)` | Runtime textual expansion in `run_step` (docs/04 §5) — unmatched left literal, same as agent |
 
@@ -122,17 +126,19 @@ Decision (2026-07-30): variable groups are **never value-resolved** — every `-
 
 ## 5. Predefined variables → local mapping
 
-Workspace layout per run mirrors the agent (`_work/1` ≡ our `.work/run-<n>/<stage>/<job>`):
+Workspace layout per run mirrors the agent (`_work/1` ≡ our `.work/run-<n>/workspace`), with **one shared
+workspace per run** rather than one per job (D8 revised, E12-S02-T02; docs/04 §1/§3 own the layout).
+`<ws>` below = `<out>/.work/run-<n>/workspace`.
 
 | Variable | Local value |
 |---|---|
-| `Pipeline.Workspace`, `Agent.BuildDirectory` | `<out>/.work/run-<n>/<stage>/<job>` |
+| `Pipeline.Workspace`, `Agent.BuildDirectory` | `<out>/.work/run-<n>/workspace` — created once per run, reused by every job (D8 revised); per-job isolation is deferred fidelity (docs/04 §3) |
 | `Build.SourcesDirectory`, `System.DefaultWorkingDirectory`, `Build.Repository.LocalPath` | `<ws>/s` (multi-checkout: repos under `<ws>/s/<repoName>`, per agent rules) |
 | `Build.ArtifactStagingDirectory`, `Build.StagingDirectory` | `<ws>/a` |
 | `Build.BinariesDirectory` | `<ws>/b` |
 | `Common.TestResultsDirectory` | `<ws>/TestResults` |
 | `Agent.TempDirectory` | `<ws>/tmp` |
-| `Agent.ToolsDirectory` | `~/.azdo-emu/tools` (shared tool cache, hosted-agent-style) |
+| `Agent.ToolsDirectory` | `~/.azdo-emu/tools` — the variable is set, but the **shared tool cache itself is deferred with the per-job workspace** (D8 revised, E12-S02-T02): nothing populates it, so a task that consults it finds an empty directory |
 | `Agent.OS` / `Agent.OSArchitecture` | From `--target-os` (default: host) → `Linux`/`Darwin`/`Windows_NT`, `X64`/`ARM64` |
 | `Agent.JobName`, `Agent.Name`, `Agent.MachineName` | Job id / `azdo-emu-local` / hostname |
 | `Build.BuildId`, `Build.BuildNumber` | Monotonic counter in `<out>/.work/.state/` + `name:` format evaluation |

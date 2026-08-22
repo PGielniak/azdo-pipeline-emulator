@@ -1,18 +1,44 @@
 # 02 — Template & expression engine
 
-The hard core of the project: reimplementing what the Azure DevOps service does between "YAML files in repos" and "final expanded pipeline". References: templates doc (…/process/templates), expressions doc (…/process/expressions), runtime-parameters doc, and — corrected 2026-07-30 (C-E00-012/013) — the C# engine sources in the `actions/runner` fork (`src/Sdk/DTExpressions2`, `DTObjectTemplating`, `DTPipelines`) as the open behavioral reference; `microsoft/azure-pipelines-agent` itself has no engine sources (it consumes the closed expressions NuGet; runtime conditions evaluated in `src/Agent.Worker/ExpressionManager.cs`). Parity is verified against the real service via the preview endpoint (§8), which outranks the fork on any divergence.
+Originally the hard core of the project: reimplementing what the Azure DevOps service does between
+"YAML files in repos" and "final expanded pipeline". **Since the 2026-08-22 re-orientation the
+service does that for us** (PLAN **D3**) — what is still ours is the *runtime* expression half of §6
+and the bundler of §5.1. References: templates doc (…/process/templates), expressions doc (…/process/expressions), runtime-parameters doc, and — corrected 2026-07-30 (C-E00-012/013) — the C# engine sources in the `actions/runner` fork (`src/Sdk/DTExpressions2`, `DTObjectTemplating`, `DTPipelines`) as the open behavioral reference; `microsoft/azure-pipelines-agent` itself has no engine sources (it consumes the closed expressions NuGet; runtime conditions evaluated in `src/Agent.Worker/ExpressionManager.cs`). Parity is verified against the real service via the preview endpoint (§8), which outranks the fork on any divergence.
+
+> **Status — half live, half fallback (revised 2026-08-22, E12-S03-T01).** PLAN **D3** makes the
+> Pipelines `preview` endpoint the expansion step (docs/07 §4), so everything the *service* performs
+> at compile time — template resolution, `extends`, `${{ }}` evaluation, the directives, parameter
+> binding, server limits — is no longer ours to perform on the default path. Read the sections with
+> this table beside them:
+>
+> | Section | Status on the active path |
+> |---|---|
+> | §1 phase model | **live** as a description of *when* things happen — but the "Happens (us)" compile-time cell is now "the service, during `convert`" |
+> | §2 expansion algorithm · §3 interpolation · §4 directives | **fallback-only** — built, tested and retained, reachable only through `--offline-expand` (E12-S01-T01), whose entry point is still missing (E03-S04-T02) |
+> | §5 template resolution | resolution *semantics* are fallback-only; the reference **forms** are live input to the **bundler** (§5.1), which is on the default path |
+> | §6 expression language | **split** — the runtime slots (`$[ ]`, job/stage/step `condition:`, `$( )` macros, `dependencies.*`/`stageDependencies.*`) are local and live (PLAN **D6**); the compile-time `${{ }}` evaluator is fallback-only |
+> | §7 provenance | the expansion origin map is fallback-only; on the default path provenance is the bundler's (E03-S07-T01) |
+> | §8 | **live, re-scoped** — the preview endpoint is the *expansion source*, not a test-only oracle |
+>
+> Nothing here is deleted (BACKLOG rule 3): the fallback is complete enough to cross-check the
+> service wherever both answers exist (PLAN §8, E11-S02).
 
 ## 1. When things evaluate (the phase model)
 
 | Phase | Happens (service) | Happens (us) | Constructs |
 |---|---|---|---|
-| Compile time | Server, at queue | `azdo-emu convert` | template includes/`extends`, parameter binding, `${{ }}` expressions, `${{ if/elseif/else }}`, `${{ each }}`, `${{ insert }}` |
+| Compile time | Server, at queue | **the service**, called by `azdo-emu convert` (`--offline-expand`: the local walk of §2) | template includes/`extends`, parameter binding, `${{ }}` expressions, `${{ if/elseif/else }}`, `${{ each }}`, `${{ insert }}` |
 | Job dispatch | Server, when job is about to run | job start in `run-job.sh` | `$[ ]` runtime expressions (variable values), stage/job `condition:`, `dependencies` / `stageDependencies` contexts, `counter()` |
 | Step execution | Agent, per step | `run_step` | `$(macro)` textual substitution in task inputs; step `condition:` |
 
-Consequence of doing compile-time at convert: a converted project is a snapshot of one parameter set. Changing a **runtime parameter** requires re-convert (fast, offline with `--frozen`) — or not: for parameters only used in *runtime* positions we pass them through to `.env`. The README of the generated project lists which parameters were baked in.
+Consequence of resolving compile time at convert: a converted project is a snapshot of one parameter set. Changing a **runtime parameter** requires re-convert (fast, offline with `--frozen`) — or not: for parameters only used in *runtime* positions we pass them through to `.env`. The README of the generated project lists which parameters were baked in.
 
-## 2. Expansion algorithm
+## 2. Expansion algorithm — **fallback-only (E12-S03-T01)**
+
+> **Not on the active path.** The service performs this walk (PLAN D3); the algorithm below is the
+> retained offline engine (`packages/engine/src/template/`), reachable only via `--offline-expand`.
+> Its whole-document entry point is **E03-S04-T02** — until that lands the flag refuses with a
+> message naming it (E12-S01-T01).
 
 ```
 expand(rootFile, cliParameters):
@@ -39,7 +65,11 @@ walk(node, ctx):                                  # depth-first over the DOM
 
 Server limits enforced identically so we fail where the server would: max distinct files, max nesting depth, max expanded size (exact current numbers pulled from the docs at implementation time and encoded as named constants with doc links).
 
-## 3. Scalar interpolation rules (exact server semantics)
+## 3. Scalar interpolation rules (exact server semantics) — **fallback-only (E12-S03-T01)**
+
+> Grounded and implemented, but exercised only by `--offline-expand` and by the conformance
+> cross-check (E11-S02): on the default path the service has already applied these rules and the
+> expanded YAML contains no `${{ }}` at all.
 
 Implemented in `packages/engine/src/template/interpolate.ts` (E03-S01-T05) and grounded by 35 live
 preview probes under `research/experiments/E03-interpolation/` (C-E03-175..194). The expressions
@@ -88,7 +118,11 @@ that distinguishes *positions* is measured, because neither doc states it.
   ${{ insert }}` keeps its text and is rejected by the *schema*, so an interpolator that evaluated
   it would emit `Unrecognized value: 'insert'`, a sentence the service does not produce.
 
-## 4. Directives
+## 4. Directives — **fallback-only (E12-S03-T01)**
+
+> Same status as §2/§3: the service resolves every directive before we parse. Retained because the
+> measured contract below is what the offline fallback must reproduce, and because it is the
+> reference for triaging a service-drift report (E11-S03-T02).
 
 **Conditional insertion** — mapping keys / sequence items `${{ if C }}:`, `${{ elseif C }}:`,
 `${{ else }}:`. Chains resolve in document order and the winning branch's body is spliced into the
@@ -181,7 +215,12 @@ correctly and the position rule wrongly (C-E03-162).
 - **Directives are recognized on mapping keys and one-key sequence items only** — never on a scalar value, where `${{ if … }}` is rejected `Unexpected value '<raw>'` with no expression error at all.
 - **Position sensitivity is real but narrow, and the template-expressions doc's statement about it is wrong.** That doc says expressions are expanded "only for `stages`, `jobs`, `steps`, and `containers`" and not inside `trigger` — but `trigger: [${{ 'main' }}]` expands, as does an expression in `pool.demands`, and an `if` directive expands in `pool.demands` and in root `variables:`. Exactly one position rejects a directive with its own sentence, `A template expression is not allowed in this context`: inside `resources.repositories`. Inside `trigger:` a directive is simply left unexpanded and then fails schema validation. So the gate is a per-position attribute with one measured member and is modelled as a seam, not as a table extrapolated from the doc's list.
 
-## 5. Template resolution
+## 5. Template resolution — **fallback-only, except the reference forms (E12-S03-T01)**
+
+> The *forms* below are live: the **bundler** (§5.1) has to recognise every one of them in the raw
+> document. The *resolution semantics* — per-file base directories, cross-repo rules, cycle
+> detection, typed parameter binding, per-file compile-time contexts — are the service's on the
+> default path and are retained for `--offline-expand`.
 
 Reference forms, all supported (P1 local, P3 remote):
 
@@ -202,7 +241,33 @@ Reference forms, all supported (P1 local, P3 remote):
 - `templateContext` on stages/jobs/steps passes an arbitrary payload into templates iterating over `*List` parameters — supported as opaque data.
 - Cycle detection on (file, repo, commit) tuples; depth counter for the server limit.
 
-## 6. The expression language
+### 5.1 The bundler (live — the default path's only local template work)
+
+PLAN §2 goal 2 and docs/07 §5 Phase 1: the user edits template files locally, so the expansion
+request must carry them. The bundler is a **mechanical inliner, not an expander** — it never
+evaluates `${{ }}`, never resolves a directive, and never binds a parameter; it only makes the
+service see the user's uncommitted bytes. Scope per task, none of it invented here:
+
+| Mechanic | Owner | Note |
+|---|---|---|
+| Detect `extends.template` and stage/job/step `- template:` references (incl. `@self`) in the raw DOM, with `file:line` | E03-S06-T01 | reference forms are §5's, above |
+| Resolve each `@self`/relative reference against the **local working tree** and inline it, recursing into nested references; report cycles | E03-S06-T02 | pins *our* inlining mechanics against the committed multi-file form by oracle probe |
+| Pass `parameters:` / `templateParameters` through to the `preview` request — binding stays the service's | E03-S06-T03 | request shape C-E00-018 |
+| Cross-repo (`@other`) references: convert-time **diagnostic**, never a silent wrong expansion | E03-S06-T04 | v1 answer is "resolves against the committed repo; see E09" |
+| Write the exact (redacted) `yamlOverride` plus a `local path → inlined location` map and file hashes into the output | E03-S07-T01 | file names are that task's to fix — docs/04 §1 does not pin them |
+| Missing-file and cycle diagnostics in the E01 diagnostic shape | E03-S07-T02 | |
+
+The bundled override is what `expand()` sends (docs/05 §2/§4); everything after that comes back as
+`finalYaml`.
+
+## 6. The expression language — **split: runtime live, compile-time fallback (E12-S03-T01)**
+
+> The **shell backend and the runtime slots are the live half** — `$[ ]`, job/stage/step
+> `condition:`, `dependencies.*`/`stageDependencies.*` outputs, status functions and `$( )` macros
+> are evaluated by the *agent* at run time and cannot be delegated to `preview` (PLAN **D6**). The
+> **eval backend's compile-time use** (`${{ }}` slots, parameter binding) is fallback-only; the same
+> evaluator is still live where it serves a runtime slot at convert time (e.g. compiling a
+> condition, or the degraded convert-time evaluation described at the end of this section).
 
 One implementation, two backends:
 - **Eval backend** (convert time): full evaluator over the typed DOM.
@@ -280,14 +345,26 @@ Anything the shell backend cannot express falls back to **convert-time evaluatio
 
 ## 7. Provenance
 
+> **Re-scoped 2026-08-22 (E12-S03-T01).** The origin map below is produced by the *local* expansion
+> and is therefore fallback-only (its emitter is E03-S04-T02). On the default path the service
+> returns `finalYaml` with no provenance of its own, so the attributable unit is the **bundler's**
+> map (§5.1, E03-S07-T01: `local path → inlined location` + file hashes) plus the positions the
+> front end reads off the expanded document. Step-header "from:" comments are therefore only as
+> precise as that map — docs/04 §12's sample shows the fallback's fuller form.
+
 Expansion maintains an origin map: every output DOM node → stack of `(file, line, repo@sha, templateParams-hash)`. Uses: step-header comments (`# from: templates/build.yml:14 (via azure-pipelines.yml:22)`), error messages, `expansion-map.json` next to `pipeline.expanded.yml`, and the manifest. This is a first-class feature — debugging template-heavy pipelines is exactly where users bleed time.
 
-## 8. Oracle verification (the parity contract)
+## 8. The expansion contract (was: oracle verification) — **live, re-scoped (E12-S03-T01)**
+
+> The endpoint below is no longer a *test-only* oracle: it is the product's expansion step (PLAN
+> **D3**, docs/07 §4), consumed through `expand()`/`expandCached()` (E00-S04, docs/05 §2/§4).
+> "Parity" with it is therefore true by construction on the default path; what remains to check is
+> (a) **service drift** over time and (b) the **fallback's** agreement when it is used.
 
 `POST {org}/{project}/_apis/pipelines/{pipelineId}/preview?api-version=7.1` with `{"previewRun": true, "yamlOverride": "<candidate yaml>", "templateParameters": {…}}` returns the service's `finalYaml` **without running anything**. (api-version 7.1 and the single-field `{finalYaml}` response confirmed live in E00-S03-T02, C-E00-022; requires a real pipeline definition to hang the preview on — the harness maintains one dummy definition in the test org.) Client: `packages/fetch/src/oracle.ts`.
 
 Three live-verified traps the harness must respect (C-E00-024/025/026, transcripts in `research/experiments/oracle-spike/`): an **empty `yamlOverride` returns 200** carrying the *committed* YAML rather than erroring, so a fixture generated from an empty override is silently wrong; an **invalid PAT returns 302** to a sign-in page, not 401, so the HTTP client must not follow redirects; and a **missing `pipelineId` returns 500**, not 404, so 5xx here must not be blindly retried as transient.
 
-- `azdo-emu preview-diff <yaml>`: expands locally, fetches `finalYaml`, normalizes both (key order, insignificant whitespace, server-injected defaults), semantic-diffs, exits non-zero on drift.
+- ~~`azdo-emu preview-diff <yaml>`~~ — **removed from the CLI surface** (E03-S05-T02 demoted 2026-08-22; command dropped from `packages/cli/src/program.ts` and docs/06 §1 by E12-S03-T01): with the service *as* the expansion there is nothing to diff on the default path. Its two jobs moved — service-drift detection to the nightly re-expansion harness (**E11-S03-T01**), fallback parity to conformance (**E11-S02**). The normalizer it was built on (E03-S05-T01) stays: the nightly compares normalized expansions.
 - CI: nightly corpus run (docs/06 §3). Every ambiguity we resolve empirically becomes a permanent fixture pair so regressions in *our* engine — or behavior changes in *their* service — surface immediately.
-- Known ambiguity backlog to resolve via oracle, tracked as fixtures: compile-time variable visibility across template files; declaration-order effects in `variables` lists mixing `group`/`template`/inline; `extends` + nested `extends`; empty-`dependsOn` parallelism defaults in conditions context. **Closed:** `each` over object parameters key ordering (authored order, unsorted, C-E03-145) and Boolean stringification casing in keys (`True`, C-E03-190/192).
+- Known ambiguity backlog, tracked as fixtures — **fallback-only since 2026-08-22 (E12-S03-T01)**: every item below is a question about whether the *local* engine agrees with the service, not about what the shipped conversion does (the service answers it by producing `finalYaml`). They are E11-S02 conformance cases now: compile-time variable visibility across template files; declaration-order effects in `variables` lists mixing `group`/`template`/inline; `extends` + nested `extends`; empty-`dependsOn` parallelism defaults in conditions context. **Closed:** `each` over object parameters key ordering (authored order, unsorted, C-E03-145) and Boolean stringification casing in keys (`True`, C-E03-190/192).
