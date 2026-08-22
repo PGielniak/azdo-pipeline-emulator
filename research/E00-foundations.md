@@ -44,6 +44,35 @@ bash ≥ 4 per PLAN D2; E06 tests must ensure a bash ≥ 4 interpreter on macOS 
   — https://github.com/bats-core/bats-core/blob/ae4b94d7cc35f62468297791aa4ab8c3af7377ba/README.md (checked 2026-07-30)
   — "Bats is a TAP-compliant testing framework for Bash 3.2 or above."
 
+### Addendum 2026-08-23 (E11-S01-T03) — the second half of C-E00-005 was never built
+
+C-E00-005 says two things, and only the first was acted on. "bats runs on 3.2" shaped the CI
+invocation; "**E06 tests must ensure a bash ≥ 4 interpreter on macOS CI**" was never implemented,
+and could not be noticed: the macOS job failed at an earlier step on every run until E03-S02-T05
+made its vitest step green, at which point it reached bats for the first time and produced ~30
+`bad substitution` failures on `${value,,}` / `${repository,,}` in `packages/runtime/lib/core.sh`.
+The claim was right; the workflow simply did not carry it out. C-E00-005 itself is unchanged — it
+was never wrong.
+
+[C-E00-028] The `macos-latest` runner label resolves to the **macOS 26 arm64** image, whose only
+Bash is **3.2.57(1)-release** — the system bash Apple has shipped since 2007 — so anything on a
+macOS runner that does not explicitly install another bash runs on 3.2, below PLAN D2's floor.
+  — https://github.com/actions/runner-images/blob/main/README.md (checked 2026-08-23)
+  — "arm64 | `macos-latest`, `macos-26` or `macos-26-xlarge` | [macOS-26-arm64]"
+  — https://github.com/actions/runner-images/blob/8d3ea005fa2d87f3cbc9255c27fdfed9e901a043/images/macos/macos-26-arm64-Readme.md
+    (source pin checked 2026-08-23) — "Bash 3.2.57(1)-release"
+
+[C-E00-029] The same image ships **Homebrew 6.0.13**, and no Homebrew-provided bash is preinstalled
+— so `brew install bash` is the available route to a modern interpreter, and the installed binary
+has to be put *ahead* of `/bin` on PATH for anything to pick it up. Prepending Homebrew's bin
+directory via `$GITHUB_PATH` is what selects the interpreter for bats, whose `#!/usr/bin/env bash`
+shebang resolves through PATH (C-E00-005's bats reference).
+  — https://github.com/actions/runner-images/blob/8d3ea005fa2d87f3cbc9255c27fdfed9e901a043/images/macos/macos-26-arm64-Readme.md
+    (source pin checked 2026-08-23) — "Homebrew 6.0.13" is listed under package management; the
+    image's tool list names no second bash.
+  — corroborated in situ: the pre-existing `brew install shellcheck` step in `.github/workflows/ci.yml`
+    proves Homebrew is usable on this image without setup.
+
 ## E00-S01-T03 — Grounding Protocol enforcement artifacts
 
 Ground: **N/A by explicit task definition** — the source is BACKLOG.md §3 itself (meta-task; the

@@ -24,9 +24,20 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: System ShellCheck (the npm wrapper's anonymous GitHub download gets rate-limited on shared runners)
+      # ShellCheck: the npm wrapper's anonymous GitHub download gets rate-limited on shared runners.
+      # bash: the macos-latest image (macOS 26 arm64) ships **only** bash 3.2.57 — 2007, pre-GPLv3 —
+      # while `packages/runtime` targets bash >= 4 (PLAN D2, CLAUDE.md). C-E00-005 recorded that
+      # requirement on 2026-07-30 ("E06 tests must ensure a bash >= 4 interpreter on macOS CI") and
+      # nothing implemented it; until E03-S02-T05 the macOS job never reached the bats step to find
+      # out (C-E00-028/029, E11-S01-T03).
+      - name: System ShellCheck + a bash the runtime actually supports
         run: |
-          if [ "$RUNNER_OS" = "macOS" ]; then brew install shellcheck; fi
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            brew install shellcheck bash
+            # `$GITHUB_PATH` applies to *later* steps, which is what bats needs: its `#!/usr/bin/env
+            # bash` resolves through PATH, so this is what picks the interpreter for the suite.
+            echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+          fi
           echo "SHELLCHECK=$(command -v shellcheck)" >> "$GITHUB_ENV"
       - run: pnpm build
       - run: pnpm typecheck
@@ -39,6 +50,18 @@ jobs:
         run: |
           mkdir -p reports
           pnpm vitest run --coverage --reporter=default --reporter=junit --outputFile.junit=reports/vitest-junit.xml
+      # Fail loudly *here* rather than as ~30 `bad substitution` lines inside the suite: bats itself
+      # runs on 3.2 (C-E00-005), so a missing modern bash does not break bats — it breaks every test
+      # that touches `${var,,}` and friends, which reads like a runtime bug and is not one.
+      - name: 'Runtime interpreter (PLAN D2: lib + emitted scripts target bash >= 4)'
+        run: |
+          interpreter="$(command -v bash)"
+          major="$("$interpreter" -c 'echo "${BASH_VERSINFO[0]}"')"
+          echo "bats will run under $interpreter — $("$interpreter" --version | head -n 1)"
+          if [ "$major" -lt 4 ]; then
+            echo "::error::bash $major is below the runtime floor of 4 (PLAN D2, C-E00-005). On macOS the ShellCheck+bash step above installs one; check that it ran and that Homebrew's bin directory precedes /bin in PATH." >&2
+            exit 1
+          fi
       - name: Runtime tests (bats, junit report) # C-E00-003/004: dir invocation + --report-formatter
         run: |
           mkdir -p reports

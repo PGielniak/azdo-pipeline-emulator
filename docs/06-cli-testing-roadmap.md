@@ -87,6 +87,13 @@ Implemented in `packages/cli/src/config/` (E10-S01-T02): discovery is **beside t
 | L1 Expression unit | Full function/coercion table (~300 cases from the expressions doc + oracle-resolved edge cases) | Table-driven; same tables run against **both** backends (eval + compiled-shell via bats) so the two can never diverge |
 | L2 Expansion goldens | Fixture YAML in → expanded YAML out | Snapshot tests; fixtures include every directive, template type, parameter type, nesting patterns. **Re-scoped 2026-08-22 (E12-S03-T01):** on the default path the golden *is* the service's pinned `finalYaml` (`fixtures/oracle/`), so these snapshots now exercise the **offline fallback** and its agreement with that pin — conformance work (E11-S02), not a gate on the shipped conversion |
 | L3 **Service drift** | The pinned `finalYaml` still matches what the service returns *today* | **Re-scoped 2026-08-22 (E12-S03-T01):** expansion parity is true by construction now (PLAN D3), so what is tested is drift, not agreement — nightly re-expansion of the corpus against the test org (E11-S03-T01, PAT in CI secret), normalized (E03-S05-T01) and diffed against `fixtures/oracle/`; a mismatch is **triaged** (E11-S03-T02), never auto-accepted, and becomes a fixture update plus, where the fallback disagrees too, an L2 case. `preview-diff` was the old vehicle and is gone (§1) |
+> **CI interpreter (E11-S01-T03, 2026-08-23).** L4 runs on the version the runtime targets, **bash
+> ≥ 4** (PLAN D2): `macos-latest` ships only bash 3.2.57 (C-E00-028), so the workflow installs a
+> modern bash and puts Homebrew's bin ahead of `/bin` for the bats step (C-E00-029), with an
+> explicit interpreter check in front of it — a missing bash 4 otherwise reads as ~30 runtime bugs
+> (`bad substitution`) rather than as one environment fault. bats itself is happy on 3.2
+> (C-E00-005), which is exactly why this needed saying out loud.
+
 | L4 Runtime unit | `runtime.sh` behaviors: setvariable/isoutput propagation, prependpath, masking, macro edge cases (unmatched literal), conditions vs results, continueOnError/failOnStderr/retries, artifact flow, deps outputs across jobs/stages | bats-core; runs in CI on ubuntu + macos |
 | L5 E2E | Convert & run sample apps (dotnet, node, python, docker) in containers approximating hosted images | Docker; assert artifacts produced, exit codes, key log lines |
 | L6 Real-run parity spot checks (**the only layer that can validate what the oracle cannot see** — see the two limits below) | Same fixture pipeline run in real ADO and locally; compare artifact contents, produced variables, step result sequence | Manual-triggered CI job (costs real pipeline minutes); release gate for majors |
