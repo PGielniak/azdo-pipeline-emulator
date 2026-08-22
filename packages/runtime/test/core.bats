@@ -1947,7 +1947,10 @@ prepare_checkout() {
   [ -f "$target/two.txt" ]
   [ ! -e "$target/untracked.txt" ]
   # The source repository is left with exactly one registered worktree besides itself.
-  [ "$(git -C "$checkout_source" worktree list | wc -l)" = 2 ]
+  # `-eq`, not `=`: BSD `wc` pads its count with leading spaces, so the string form of this
+  # comparison passes on Linux and fails on macOS for the padding alone (E11-S01-T04; line 554
+  # already uses the numeric form).
+  [ "$(git -C "$checkout_source" worktree list | wc -l)" -eq 2 ]
 
   # `--detach` earns its place only when the committish is a *branch name*, which `.env` can make
   # it: docs/04 §8 says Build.SourceVersion is overridable to simulate another revision, and
