@@ -253,12 +253,16 @@ The generated README must state this `.env` contract verbatim in substance:
 
 ## 11. `manifest.json` (drives `doctor`, `--list`, tooling)
 
+Each step carries a **`disposition`** (`native | real-task | stub`) beside its fidelity label — the
+E07-S03-T01 registry's output, and since E12-S02-T03 the only per-task classification there is.
+
 ```json
 { "pipeline": {"name": "...", "parameters": {"baked": {"deployEnv": "dev"}}},
   "stages": [{ "id": "Build", "dependsOn": [], "condition": {"source": "succeeded()"},
     "jobs": [{ "id": "BuildJob", "kind": "agent", "targetOs": "linux",
       "steps": [{ "id": "030", "displayName": "Build solution", "task": "DotNetCoreCLI@2",
-        "fidelity": "equivalent", "file": "stages/010-Build/jobs/010-BuildJob/steps/030-build-solution.sh",
+        "fidelity": "equivalent", "disposition": "real-task",
+        "file": "stages/010-Build/jobs/010-BuildJob/steps/030-build-solution.sh",
         "source": {"file": "templates/build.yml", "line": 14, "via": ["azure-pipelines.yml:22"]},
         "warnings": [] }]}]}],
   "env": [{"name": "SC_MY_AZURE_SUB_CLIENT_SECRET", "secret": true, "origin": "service connection 'my-azure-sub'"}],
@@ -266,14 +270,20 @@ The generated README must state this `.env` contract verbatim in substance:
   "warnings": [], "unsupported": [] }
 ```
 
-## 12. Sample emitted step (illustrative)
+## 12. Sample emitted steps (illustrative)
+
+Two shapes, and only two (PLAN D4 revised — E12-S02-T03 dropped the per-task transpiler): a **script
+step**, emitted natively as readable bash, and **everything else**, emitted as a dispatch to
+real-task mode or a stub (E07). The header block is identical in both — it is the debugging surface.
+
+**(a) Script step — native.**
 
 ```bash
 #!/usr/bin/env bash
-# ── Step 030 · "Build solution" · DotNetCoreCLI@2 (command: build) ─────────────
+# ── Step 030 · "Build solution" · script ───────────────────────────────────────
 # from: templates/build.yml:14  (via azure-pipelines.yml:22 «template: templates/build.yml»)
 # condition: succeeded()        continueOnError: false     timeout: job default
-# fidelity: equivalent — transpiled to `dotnet build`; see README §fidelity
+# fidelity: exact — script steps run verbatim; see README §fidelity
 # NOTE: $(buildConfiguration) below is an ADO macro — run_step expands it just-in-time.
 set -euo pipefail
 source "$AZDO_EMU_LIB/runtime.sh"
@@ -283,6 +293,29 @@ azdo_match '**/*.sln' | while IFS= read -r project; do
   dotnet build "$project" --configuration "$(buildConfiguration)" --no-restore
   azdo_endgroup
 done
+```
+
+**(b) Non-script task — real-task dispatch.** The body is a call, not a translation: the step's
+resolved inputs go to the task's own implementation via the `INPUT_*` contract (E07-S01-T02), whose
+`##vso[ ]` output the runtime parses like any other step's (§6). A task that cannot be fetched
+degrades to a stub that dumps the same resolved inputs and exits per `tasks.unknown` (docs/03 §4) —
+the fidelity label then reads `stub`.
+
+```bash
+#!/usr/bin/env bash
+# ── Step 040 · "Publish package" · DotNetCoreCLI@2 (command: push) ─────────────
+# from: templates/build.yml:21  (via azure-pipelines.yml:22 «template: templates/build.yml»)
+# condition: succeeded()        continueOnError: false     timeout: job default
+# fidelity: equivalent — real-task mode (Microsoft's own task code; needs node); see README §fidelity
+# NOTE: inputs below keep their $( ) macros — the dispatcher expands them before setting INPUT_*.
+set -euo pipefail
+source "$AZDO_EMU_LIB/runtime.sh"
+
+# Illustrative only — the dispatcher's exact call surface is E07-S01-T02's to fix.
+"$AZDO_EMU_LIB/run_task.sh" 'DotNetCoreCLI@2' \
+  --input command=push \
+  --input packagesToPush='$(Build.ArtifactStagingDirectory)/*.nupkg' \
+  --input nuGetFeedType=internal
 ```
 
 The generated project's `README.md` repeats the fidelity table for its steps, lists all warnings, documents `.env` filling, states the tool prereqs (`azdo-emu doctor` re-checks them), and carries the ranked warnings/unsupported list that replaced the coverage summary (§13).

@@ -50,10 +50,12 @@ export interface AzdoEmuConfig {
   readonly parameters?: Readonly<Record<string, ParameterValue>>;
   readonly repositories?: Readonly<Record<string, { readonly path: string }>>;
   readonly variableGroups?: { readonly listNames?: boolean };
+  // E12-S02-T03 — `tasks.execute` (the opt-in allowlist for real-task mode) is gone with the
+  // per-task transpiler: real-task mode is the default for every non-script task (PLAN D4 revised,
+  // docs/03 §6). `overrides` is how a task opts back *out*.
   readonly tasks?: {
     readonly unknown?: UnknownTaskPolicy;
     readonly overrides?: Readonly<Record<string, TaskOverride>>;
-    readonly execute?: readonly string[];
   };
   readonly output?: {
     readonly targetOs?: TargetOs;
@@ -78,7 +80,6 @@ export interface ResolvedSettings {
   readonly tasks: {
     readonly unknown: UnknownTaskPolicy;
     readonly overrides: Readonly<Record<string, TaskOverride>>;
-    readonly execute: readonly string[];
   };
   readonly output: {
     readonly targetOs: TargetOs;
@@ -100,7 +101,7 @@ export const DEFAULTS: ResolvedSettings = {
   parameters: {},
   repositories: {},
   variableGroups: { listNames: true },
-  tasks: { unknown: 'stub', overrides: {}, execute: [] },
+  tasks: { unknown: 'stub', overrides: {} },
   output: {
     targetOs: 'linux',
     checkoutMode: 'clone',

@@ -77,7 +77,6 @@ export function resolveSettings(cli: CliSettings, config: AzdoEmuConfig): Resolu
     tasks: {
       unknown: pick('tasks.unknown', undefined, config.tasks?.unknown, DEFAULTS.tasks.unknown),
       overrides: { ...DEFAULTS.tasks.overrides, ...config.tasks?.overrides },
-      execute: pick('tasks.execute', undefined, config.tasks?.execute, DEFAULTS.tasks.execute),
     },
     output: {
       targetOs: pick(

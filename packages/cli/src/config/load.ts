@@ -33,7 +33,7 @@ export const CONFIG_KEYS = {
   root: ['organization', 'project', 'auth', 'parameters', 'repositories', 'variableGroups', 'tasks', 'output'], // prettier-ignore
   auth: ['azdo', 'github'],
   variableGroups: ['listNames'],
-  tasks: ['unknown', 'overrides', 'execute'],
+  tasks: ['unknown', 'overrides'],
   output: ['targetOs', 'checkoutMode', 'sharedWorkspace', 'execution'],
   execution: ['environment', 'image', 'dockerSocket'],
   repositoryOverride: ['path'],
@@ -146,7 +146,6 @@ function validate(value: unknown, ctx: Ctx): AzdoEmuConfig {
     ctx,
   );
   const overridesRecord = optionalRecord(tasks?.['overrides'], ['tasks', 'overrides'], ctx);
-  const execute = stringList(tasks?.['execute'], ['tasks', 'execute'], ctx);
   const overrides = overridesRecord
     ? Object.fromEntries(
         Object.entries(overridesRecord).map(([task, action]) => [
@@ -155,11 +154,10 @@ function validate(value: unknown, ctx: Ctx): AzdoEmuConfig {
         ]),
       )
     : undefined;
-  if (unknownPolicy !== undefined || overrides !== undefined || execute !== undefined) {
+  if (unknownPolicy !== undefined || overrides !== undefined) {
     config.tasks = {
       ...(unknownPolicy ? { unknown: unknownPolicy } : {}),
       ...(overrides ? { overrides } : {}),
-      ...(execute ? { execute } : {}),
     };
   }
 
@@ -231,16 +229,6 @@ function boolean(value: unknown, at: Path, ctx: Ctx): boolean | undefined {
     throw error(at, `expected true or false, found ${describe(value)}`, ctx);
   }
   return value;
-}
-
-function stringList(value: unknown, at: Path, ctx: Ctx): string[] | undefined {
-  if (value === undefined || value === null) return undefined;
-  if (!Array.isArray(value)) throw error(at, `expected a list, found ${describe(value)}`, ctx);
-  return value.map((entry, index) => {
-    const text = string(entry, [...at, index], ctx);
-    if (text === undefined) throw error([...at, index], 'expected a string', ctx);
-    return text;
-  });
 }
 
 function choice<T extends string>(

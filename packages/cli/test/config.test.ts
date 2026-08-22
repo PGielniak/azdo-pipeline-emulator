@@ -152,7 +152,6 @@ describe('config loader (E13-S01-T02)', () => {
           'tasks:',
           '  unknown: stub',
           '  overrides: { "SonarQubePrepare@5": skip }',
-          '  execute: []',
           'output:',
           '  targetOs: linux',
           '  checkoutMode: clone',
@@ -281,12 +280,6 @@ describe('precedence matrix — CLI > config > defaults (docs/06 §2)', () => {
       expected: { config: 'fail', default: 'stub' },
     },
     {
-      key: 'tasks.execute',
-      config: { tasks: { execute: ['Npm@1'] } },
-      read: (s) => s.tasks.execute,
-      expected: { config: ['Npm@1'], default: [] },
-    },
-    {
       key: 'output.targetOs',
       cli: { targetOs: 'macos' },
       config: { output: { targetOs: 'windows' } },
@@ -339,7 +332,6 @@ describe('precedence matrix — CLI > config > defaults (docs/06 §2)', () => {
       'auth.github',
       'variableGroups.listNames',
       'tasks.unknown',
-      'tasks.execute',
       'output.targetOs',
       'output.checkoutMode',
       'output.sharedWorkspace',
@@ -394,9 +386,16 @@ describe('precedence matrix — CLI > config > defaults (docs/06 §2)', () => {
       expect(settings.tasks.overrides).toEqual({ 'SonarQubePrepare@5': 'skip' });
     });
 
-    it('a list-valued key replaces rather than merging', () => {
-      const { settings } = resolveSettings({}, { tasks: { execute: ['Npm@1'] } });
-      expect(settings.tasks.execute).toEqual(['Npm@1']);
+    // E12-S02-T03 removed `tasks.execute`, which was the only list-valued *key*; the rule it
+    // guarded (C-E13-012 — only maps merge, everything else replaces) still binds, and a list can
+    // still appear as a `parameters` *value*, so the case is re-pointed there rather than dropped.
+    it('a list value replaces rather than merging, entry by entry', () => {
+      const { settings } = resolveSettings(
+        { parameters: { regions: ['westeurope'] } },
+        { parameters: { regions: ['eastus', 'westus'], other: 'kept' } },
+      );
+      expect(settings.parameters['regions']).toEqual(['westeurope']);
+      expect(settings.parameters['other']).toBe('kept');
     });
   });
 

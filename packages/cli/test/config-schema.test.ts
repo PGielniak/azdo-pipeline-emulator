@@ -52,7 +52,7 @@ const DOCUMENTED_EXAMPLE = {
   parameters: { deployEnv: 'dev' },
   repositories: { templates: { path: '../pipeline-templates' } },
   variableGroups: { listNames: true },
-  tasks: { unknown: 'stub', overrides: { 'SonarQubePrepare@5': 'skip' }, execute: [] },
+  tasks: { unknown: 'stub', overrides: { 'SonarQubePrepare@5': 'skip' } },
   output: {
     targetOs: 'linux',
     checkoutMode: 'clone',
@@ -86,7 +86,10 @@ describe('committed config schema (E13-S01-T02, C-E13-011)', () => {
       ['value outside an enum', { output: { checkoutMode: 'symlink' } }],
       ['repository override without a path', { repositories: { templates: {} } }],
       ['task override outside its enum', { tasks: { overrides: { 'X@1': 'ignore' } } }],
-      ['execute holding a non-string', { tasks: { execute: [42] } }],
+      // E12-S02-T03 removed `tasks.execute` — with it went the table's only *list* case
+      // ('execute holding a non-string'). No key of docs/06 §2 is list-valued any more, so the
+      // schema's `items` keyword and the loader's list check have no surface left to guard.
+      ['unknown key under an object that forbids them', { tasks: { execute: [] } }],
     ];
 
     for (const [reason, document] of REJECTED) {
@@ -136,7 +139,6 @@ describe('committed config schema (E13-S01-T02, C-E13-011)', () => {
     expect(at('auth', 'github')['default']).toBe(DEFAULTS.auth.github);
     expect(at('variableGroups', 'listNames')['default']).toBe(DEFAULTS.variableGroups.listNames);
     expect(at('tasks', 'unknown')['default']).toBe(DEFAULTS.tasks.unknown);
-    expect(at('tasks', 'execute')['default']).toEqual(DEFAULTS.tasks.execute);
     expect(at('output', 'targetOs')['default']).toBe(DEFAULTS.output.targetOs);
     expect(at('output', 'checkoutMode')['default']).toBe(DEFAULTS.output.checkoutMode);
     expect(at('output', 'sharedWorkspace')['default']).toBe(DEFAULTS.output.sharedWorkspace);

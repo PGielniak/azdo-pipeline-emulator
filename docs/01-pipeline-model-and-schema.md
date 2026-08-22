@@ -64,7 +64,7 @@ Tiers per PLAN.md §6 (`exact / equivalent / degraded / stub / unsupported`). Ph
 - Output variables from deployment jobs use the strategy-qualified naming quirk (`outputs['<lifecycle-hook>.<step>.<var>']`, plus job-name nuances between runOnce and matrix) — encode per docs and verify with the oracle (docs/06 §3).
 
 ### Steps — normalization table
-Every shorthand normalizes to a canonical task invocation before task handlers run:
+Every shorthand normalizes to a canonical task invocation before the step is dispatched (docs/03 §2):
 
 | Shorthand | Canonical | Notes |
 |---|---|---|
@@ -155,8 +155,8 @@ Job      { id, kind: agent|server|deployment, matrixKey?, dependsOn[], condition
            variables, container?, services{}, workspace, timeout, steps[] }
 Step     { id (ordinal), name?, displayName, task: {name, version}, inputs{},  // fully defaulted
            condition?, env{}, continueOnError, timeout, retryCount, workingDir?,
-           fidelity, handler, provenance {file,line}, warnings[] }
+           fidelity, disposition: native|real-task|stub, provenance {file,line}, warnings[] }
 ```
-Invariants after model build: no template/`${{ }}` remnants; every `task:` matched to a handler (or stub); matrix expanded; dependency graphs acyclic & references valid (missing `dependsOn` target = convert error, same as server); every referenced variable classified (inline / group / .env-required / predefined).
+Invariants after model build: no template/`${{ }}` remnants; every `task:` carries a **disposition** — `native` (script handler → emitted bash), `real-task` (E07-S01), or `stub` — never a per-task handler, which E12-S02-T03 dropped (PLAN D4 revised, docs/03 §1); matrix expanded; dependency graphs acyclic & references valid (missing `dependsOn` target = convert error, same as server); every referenced variable classified (inline / group / .env-required / predefined).
 
 The model serializes to `manifest.json` (docs/04 §11) and drives both emission and `doctor`.

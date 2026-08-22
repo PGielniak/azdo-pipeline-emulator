@@ -100,8 +100,8 @@ Recorded here so a later change does not "fix" the overlap by splitting it.
 
 [C-E13-008] The config surface is **docs/06 §2** (internal design): `organization`, `project`,
 `auth.{azdo,github}`, `parameters`, `repositories.<alias>.path`, `variableGroups.listNames`,
-`coverage.min` *(removed 2026-08-22 — see the addendum below)*,
-`tasks.{unknown,overrides,execute}`, `output.{targetOs,checkoutMode,sharedWorkspace}`,
+`coverage.min` *(removed 2026-08-22 — see the addenda below)*,
+`tasks.{unknown,overrides,execute}` *(`execute` removed 2026-08-22 — see the addenda below)*, `output.{targetOs,checkoutMode,sharedWorkspace}`,
 `output.execution.{environment,image,dockerSocket}` — "next to the pipeline, all keys optional;
 CLI > config > defaults". docs/06 §1's flag list contains **no `--config` flag**, so discovery is by
 convention (beside the pipeline file) and not overridable at this task's scope.
@@ -110,6 +110,15 @@ convention (beside the pipeline file) and not overridable at this task's scope.
     loader's `CONFIG_KEYS`, and from `schema/azdo-emu.schema.json` with the coverage metric it gated
     (docs/06 §5 decision 43). The surface this claim enumerates is otherwise unchanged, and the
     "all keys optional; CLI > config > defaults" rule it pins is untouched.
+  — **Addendum 2026-08-22 (E12-S02-T03).** `tasks.execute` was removed the same way (docs/06 §2,
+    `CONFIG_KEYS`, `AzdoEmuConfig`/`ResolvedSettings`/`DEFAULTS`, the JSON schema). It was the
+    opt-in allowlist for the high-fidelity mode that PLAN D3 deferred to P6; PLAN D4 (revised) makes
+    that mode the **default** for every non-script task, so an allowlist cannot express the surface
+    any more — opting *out* is `tasks.overrides` (docs/06 §5 decision 45). `tasks.{unknown,overrides}`
+    stand, and the precedence rule this claim pins is again untouched. Side effect worth recording:
+    `execute` was the config surface's only **list-valued key**, so C-E13-012's "lists replace
+    wholesale" clause now has no key to demonstrate it (it still holds for list-valued `parameters`
+    *values*, which is where the test moved).
 
 ### Runtime parameters — what the CLI layer may and may not do
 

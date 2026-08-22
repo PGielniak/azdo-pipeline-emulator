@@ -72,7 +72,7 @@
         "unknown": {
           "enum": ["stub", "fail", "prompt"],
           "default": "stub",
-          "description": "What to do with a task that has no handler."
+          "description": "What to do with a task that cannot run for real (no package, no metadata)."
         },
         "overrides": {
           "type": "object",
@@ -81,13 +81,6 @@
             "enum": ["skip", "stub", "fail"]
           },
           "examples": [{ "SonarQubePrepare@5": "skip" }]
-        },
-        "execute": {
-          "type": "array",
-          "description": "Tasks to run in high-fidelity real-task mode.",
-          "items": { "type": "string" },
-          "default": [],
-          "examples": [["Npm@1"]]
         }
       }
     },
