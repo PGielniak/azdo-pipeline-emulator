@@ -88,8 +88,8 @@ describe('CLI scaffold (E13-S01-T01)', () => {
   });
 
   describe('exit-code policy (docs/06 §1, C-E13-007)', () => {
-    it('reserves 0/1/2/3 and nothing else', () => {
-      expect(EXIT).toEqual({ ok: 0, error: 1, strict: 2, coverage: 3 });
+    it('reserves 0/1/2 and nothing else', () => {
+      expect(EXIT).toEqual({ ok: 0, error: 1, strict: 2 });
     });
 
     it('a CliError carries its own code, message and hint to stderr', () => {
@@ -97,9 +97,6 @@ describe('CLI scaffold (E13-S01-T01)', () => {
       expect(new CliError('boom').exitCode).toBe(EXIT.error);
       expect(new CliError('too many warnings', { exitCode: EXIT.strict }).exitCode).toBe(
         EXIT.strict,
-      );
-      expect(new CliError('coverage 41% < 60%', { exitCode: EXIT.coverage }).exitCode).toBe(
-        EXIT.coverage,
       );
       expect(createProgram(io).name()).toBe(PROGRAM_NAME); // program builds without touching process
     });

@@ -5,6 +5,10 @@
 // (C-E13-007/004). Every command reports failure by throwing a CliError — never by calling
 // process.exit — so the whole surface stays testable in-process.
 
+// The set was `0/1/2/3` when C-E13-007 was recorded; `3` (below `--min-coverage`) went with the
+// coverage metric in E12-S02-T01 (PLAN D10 revised, docs/07 §6). The decision C-E13-007 records —
+// usage errors reuse `1` rather than inventing a code outside the documented set — is unchanged.
+
 /** Exit codes the CLI is allowed to produce (docs/06 §1). */
 export const EXIT = {
   /** Success. */
@@ -13,8 +17,6 @@ export const EXIT = {
   error: 1,
   /** Warnings promoted to errors by `--strict`. */
   strict: 2,
-  /** Coverage below `--min-coverage`. */
-  coverage: 3,
 } as const;
 
 export type ExitCode = (typeof EXIT)[keyof typeof EXIT];

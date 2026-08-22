@@ -46,7 +46,6 @@ export interface AzdoEmuConfig {
   readonly parameters?: Readonly<Record<string, ParameterValue>>;
   readonly repositories?: Readonly<Record<string, { readonly path: string }>>;
   readonly variableGroups?: { readonly listNames?: boolean };
-  readonly coverage?: { readonly min?: number };
   readonly tasks?: {
     readonly unknown?: UnknownTaskPolicy;
     readonly overrides?: Readonly<Record<string, TaskOverride>>;
@@ -72,7 +71,6 @@ export interface ResolvedSettings {
   readonly parameters: Readonly<Record<string, ParameterValue>>;
   readonly repositories: Readonly<Record<string, { readonly path: string }>>;
   readonly variableGroups: { readonly listNames: boolean };
-  readonly coverage: { readonly min: number };
   readonly tasks: {
     readonly unknown: UnknownTaskPolicy;
     readonly overrides: Readonly<Record<string, TaskOverride>>;
@@ -98,7 +96,6 @@ export const DEFAULTS: ResolvedSettings = {
   parameters: {},
   repositories: {},
   variableGroups: { listNames: true },
-  coverage: { min: 0 },
   tasks: { unknown: 'stub', overrides: {}, execute: [] },
   output: {
     targetOs: 'linux',

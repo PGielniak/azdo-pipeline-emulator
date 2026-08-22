@@ -52,7 +52,6 @@ const DOCUMENTED_EXAMPLE = {
   parameters: { deployEnv: 'dev' },
   repositories: { templates: { path: '../pipeline-templates' } },
   variableGroups: { listNames: true },
-  coverage: { min: 0 },
   tasks: { unknown: 'stub', overrides: { 'SonarQubePrepare@5': 'skip' }, execute: [] },
   output: {
     targetOs: 'linux',
@@ -85,8 +84,6 @@ describe('committed config schema (E13-S01-T02, C-E13-011)', () => {
       ['wrong scalar type', { project: 42 }],
       ['wrong mapping type', { auth: 'interactive' }],
       ['value outside an enum', { output: { checkoutMode: 'symlink' } }],
-      ['coverage above 100', { coverage: { min: 120 } }],
-      ['coverage below 0', { coverage: { min: -1 } }],
       ['repository override without a path', { repositories: { templates: {} } }],
       ['task override outside its enum', { tasks: { overrides: { 'X@1': 'ignore' } } }],
       ['execute holding a non-string', { tasks: { execute: [42] } }],
@@ -102,9 +99,10 @@ describe('committed config schema (E13-S01-T02, C-E13-011)', () => {
 
   it('rejects for the reason it claims, not vacuously', () => {
     // "Both returned false" is only agreement if the schema is failing at the node in question.
-    expect(validate({ coverage: { min: -1 } })).toBe(false);
+    // `coverage.min` supplied the numeric-range exemplar until E12-S02-T01 removed the key.
+    expect(validate({ project: 42 })).toBe(false);
     expect(validate.errors?.map((error) => `${error.instancePath} ${error.keyword}`)).toContain(
-      '/coverage/min minimum',
+      '/project type',
     );
     expect(validate({ output: { targetOS: 'linux' } })).toBe(false);
     expect(validate.errors?.map((error) => `${error.instancePath} ${error.keyword}`)).toContain(
@@ -120,7 +118,6 @@ describe('committed config schema (E13-S01-T02, C-E13-011)', () => {
     expect(propertiesOf(schema)).toEqual([...CONFIG_KEYS.root].sort());
     expect(propertiesOf(definitions['auth'])).toEqual([...CONFIG_KEYS.auth].sort());
     expect(propertiesOf(definitions['variableGroups'])).toEqual([...CONFIG_KEYS.variableGroups].sort()); // prettier-ignore
-    expect(propertiesOf(definitions['coverage'])).toEqual([...CONFIG_KEYS.coverage].sort());
     expect(propertiesOf(definitions['tasks'])).toEqual([...CONFIG_KEYS.tasks].sort());
     expect(propertiesOf(definitions['output'])).toEqual([...CONFIG_KEYS.output].sort());
     expect(
@@ -138,7 +135,6 @@ describe('committed config schema (E13-S01-T02, C-E13-011)', () => {
     expect(at('auth', 'azdo')['default']).toBe(DEFAULTS.auth.azdo);
     expect(at('auth', 'github')['default']).toBe(DEFAULTS.auth.github);
     expect(at('variableGroups', 'listNames')['default']).toBe(DEFAULTS.variableGroups.listNames);
-    expect(at('coverage', 'min')['default']).toBe(DEFAULTS.coverage.min);
     expect(at('tasks', 'unknown')['default']).toBe(DEFAULTS.tasks.unknown);
     expect(at('tasks', 'execute')['default']).toEqual(DEFAULTS.tasks.execute);
     expect(at('output', 'targetOs')['default']).toBe(DEFAULTS.output.targetOs);

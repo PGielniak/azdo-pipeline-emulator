@@ -14,8 +14,6 @@ out/
 ├── pipeline.expanded.yml         # the fully resolved YAML (≈ service "final YAML")
 ├── expansion-map.json            # provenance: expanded node → source file:line chain
 ├── manifest.json                 # machine-readable graph + metadata (§11)
-├── coverage.md                   # how much of the pipeline this project reproduces (§13)
-├── coverage.json                 # same, machine-readable — drives --min-coverage
 ├── azdo-emu.lock.json            # pins: template repo SHAs, artifact run IDs (docs/05)
 ├── fetch-artifacts.sh            # optional refresh of downloaded artifacts
 ├── lib/
@@ -202,7 +200,7 @@ The two bottom rows are the counter-intuitive ones and they are not bugs: the ag
 
 - **Sandbox execution environment (D11)** — isolation for the *whole run*, independent of any `container:` in the YAML. Default `auto`: when a container runtime (docker/podman, auto-detected in that order) is present and the job targets Linux, every entry point re-executes itself inside **one long-lived sandbox container per run** (`create`/`start` once; `--only-step`/`--resume`/`--shell-at` `exec` back into it, TTY preserved). Mounts: project root bind-mounted at the **identical absolute path** (same invariant as container jobs — scripts, state store, logs and artifacts are the same files in both environments, so `--sandbox` and `--host` runs are interchangeable) plus a named volume over the tool cache (`Agent.ToolsDirectory`, D9). `.env` is sourced only inside the sandbox; nothing is installed on or exported to the host. `--host` opts out; `--sandbox` errors if no runtime is found.
   - **Image resolution**: config `output.execution.image` / emitted `environment/Dockerfile` → default per-`vmImage` mapping to a hosted-approximation image (exact default image: VERIFY at E14-S04-T02 against `actions/runner-images` manifests; act-style approximation images evaluated there). Chosen image+digest recorded in `manifest.json` and the lockfile; `doctor --sandbox` runs its checks *inside the image* instead of against the host.
-  - **Docker-using pipelines** (`Docker@2`, container jobs, `docker` in scripts): `output.execution.dockerSocket: auto|share|none`. `share` mounts the host socket — job/tool containers become *siblings* of the sandbox (path-correct, because the project mount is host-backed at the same absolute path) at a documented isolation cost (README + coverage warning). `auto` shares only when the manifest says the pipeline needs docker. `none` degrades docker-dependent steps with remediation notes. Docker-in-Docker is deliberately not the default (evaluated in E14-S04-T03).
+  - **Docker-using pipelines** (`Docker@2`, container jobs, `docker` in scripts): `output.execution.dockerSocket: auto|share|none`. `share` mounts the host socket — job/tool containers become *siblings* of the sandbox (path-correct, because the project mount is host-backed at the same absolute path) at a documented isolation cost (recorded in the README's warnings list). `auto` shares only when the manifest says the pipeline needs docker. `none` degrades docker-dependent steps with remediation notes. Docker-in-Docker is deliberately not the default (evaluated in E14-S04-T03).
   - macOS- and Windows-targeted jobs cannot be sandboxed on a Linux engine → host mode + warning (target-OS rules below unchanged).
 - Per-job **target OS** from `pool` (`vmImage: windows-*` etc.) or `--target-os`. Linux/macOS jobs → bash emission. Windows-targeted jobs today: bash emission whose PowerShell steps run via `pwsh` on the Linux host (`degraded`; cmd-specific steps flagged). A native Windows-host script set (`run-job.ps1`, `steps/*.ps1`) is the deferred "Future — Windows host" phase (decision 2026-07-30); the emitter's per-target-OS backend seam exists from day one so it bolts on without rework.
 - **Container jobs**: `docker run -d` the job container with the workspace bind-mounted at the *same absolute path* (scripts unchanged inside/outside), steps executed via `docker exec` with the step env file; `services:` started on a shared network with alias names; `resources.containers` registry auth via `.env`. From inside the sandbox, container jobs run as siblings via socket passthrough (E14-S04-T03).
@@ -276,9 +274,17 @@ azdo_match '**/*.sln' | while IFS= read -r project; do
 done
 ```
 
-The generated project's `README.md` repeats the fidelity table for its steps, lists all warnings, documents `.env` filling, states the tool prereqs (`azdo-emu doctor` re-checks them), and embeds the coverage summary (§13).
+The generated project's `README.md` repeats the fidelity table for its steps, lists all warnings, documents `.env` filling, states the tool prereqs (`azdo-emu doctor` re-checks them), and carries the ranked warnings/unsupported list that replaced the coverage summary (§13).
 
-## 13. Coverage report (`coverage.md` / `coverage.json`)
+## 13. Coverage report (`coverage.md` / `coverage.json`) — *superseded by docs/07*
+
+> **Superseded 2026-08-22 (E12-S02-T01, PLAN D10 revised, [docs/07 §6](07-simplification-review.md)).**
+> The weighted metric, both `coverage.*` files, the `convert` one-liner and the `--min-coverage`
+> gate are **dropped**: no conversion emits them and the CLI has neither the flag nor exit code 3.
+> What survives is the **ranked warnings/unsupported list** in the generated `README.md` plus the
+> per-step fidelity *labels* (PLAN §6) — E05-S02-T02 owns it. The rest of this section is retained
+> as the record of the v1 design (BACKLOG rule 3: annotate, never delete); the ranked gap list below
+> is the shape the warnings list inherits, minus the arithmetic.
 
 Every conversion answers, per pipeline: **how much of the original does this project actually reproduce?**
 
@@ -290,10 +296,11 @@ Metric definition:
 
 `coverage.md` contains: headline % + tier histogram; per-stage/per-job breakdown table; a **ranked gap list** (location, task, tier, reason, concrete remediation — "drop an executable at `handlers/Foo@2`", "install `pwsh` ≥ 7.4", "fill `SC_X_*` in `.env`"); the excluded-constructs list. `coverage.json` mirrors it for tooling (derived from `manifest.json` step fidelity data).
 
-`convert` ends with a one-liner:
+`convert` ended with a one-liner:
 
 ```
 Coverage: 87.2% — 41 steps · 33 full · 5 degraded · 3 stubbed   (details: coverage.md)
 ```
 
-`--min-coverage <pct>` fails conversion (exit code 3) below the threshold — usable as a CI gate.
+~~`--min-coverage <pct>` fails conversion (exit code 3) below the threshold — usable as a CI gate.~~
+*(Dropped with the metric — see the banner above. Exit code 3 no longer exists; `packages/cli/src/exit.ts` reserves 0/1/2.)*

@@ -85,6 +85,14 @@ which also happens to be commander's own default (C-E13-004), so the two agree w
 Recorded here so a later change does not "fix" the overlap by splitting it.
   — docs/06 §1 — "exit codes 0 ok / 1 conversion errors / 2 warnings-as-errors (`--strict`) / 3 below
     `--min-coverage`"
+  — **Addendum 2026-08-22 (E12-S02-T01).** The quoted excerpt is accurate as of the 2026-08-11 check;
+    docs/06 §1 was revised on 2026-08-22 and the documented set is now **`0` ok / `1` conversion
+    errors / `2` warnings-as-errors** — `3` went with the weighted coverage metric and the
+    `--min-coverage` gate (PLAN D10 revised, docs/07 §6, docs/06 §5 decision 43). `EXIT.coverage` is
+    removed from `packages/cli/src/exit.ts`. **The decision this claim records is unchanged:** usage
+    errors still reuse `1` rather than a code outside the documented set, and that is still
+    commander's own default (C-E13-004). The original quote is left verbatim rather than rewritten,
+    per the Grounding Protocol — a claim records what a source said on the date it was read.
 
 ## E13-S01-T02 — config loader & precedence
 
@@ -92,11 +100,16 @@ Recorded here so a later change does not "fix" the overlap by splitting it.
 
 [C-E13-008] The config surface is **docs/06 §2** (internal design): `organization`, `project`,
 `auth.{azdo,github}`, `parameters`, `repositories.<alias>.path`, `variableGroups.listNames`,
-`coverage.min`, `tasks.{unknown,overrides,execute}`, `output.{targetOs,checkoutMode,sharedWorkspace}`,
+`coverage.min` *(removed 2026-08-22 — see the addendum below)*,
+`tasks.{unknown,overrides,execute}`, `output.{targetOs,checkoutMode,sharedWorkspace}`,
 `output.execution.{environment,image,dockerSocket}` — "next to the pipeline, all keys optional;
 CLI > config > defaults". docs/06 §1's flag list contains **no `--config` flag**, so discovery is by
 convention (beside the pipeline file) and not overridable at this task's scope.
   — docs/06 §2 (checked 2026-08-11)
+  — **Addendum 2026-08-22 (E12-S02-T01).** `coverage.min` was removed from docs/06 §2, from the
+    loader's `CONFIG_KEYS`, and from `schema/azdo-emu.schema.json` with the coverage metric it gated
+    (docs/06 §5 decision 43). The surface this claim enumerates is otherwise unchanged, and the
+    "all keys optional; CLI > config > defaults" rule it pins is untouched.
 
 ### Runtime parameters — what the CLI layer may and may not do
 

@@ -106,9 +106,6 @@ describe('config loader (E13-S01-T02)', () => {
       expect(
         expectCliError(() => loadSource('output:\n  sharedWorkspace: yes please\n')).message,
       ).toContain('expected true or false');
-      expect(expectCliError(() => loadSource('coverage:\n  min: high\n')).message).toContain(
-        'expected a number',
-      );
       expect(expectCliError(() => loadSource('auth: interactive\n')).message).toContain(
         'expected a mapping',
       );
@@ -118,12 +115,6 @@ describe('config loader (E13-S01-T02)', () => {
       const error = expectCliError(() => loadSource('output:\n  checkoutMode: symlink\n'));
       expect(error.message).toContain('expected one of clone, copy, worktree');
       expect(error.message).toContain('"symlink"');
-    });
-
-    it('rejects a coverage percentage outside 0–100', () => {
-      expect(expectCliError(() => loadSource('coverage:\n  min: 120\n')).message).toContain(
-        'between 0 and 100',
-      );
     });
 
     it('requires `path` on a repository override', () => {
@@ -158,7 +149,6 @@ describe('config loader (E13-S01-T02)', () => {
           'repositories:',
           '  templates: { path: ../pipeline-templates }',
           'variableGroups: { listNames: true }',
-          'coverage: { min: 0 }',
           'tasks:',
           '  unknown: stub',
           '  overrides: { "SonarQubePrepare@5": skip }',
@@ -285,13 +275,6 @@ describe('precedence matrix — CLI > config > defaults (docs/06 §2)', () => {
       expected: { cli: false, config: true, default: true },
     },
     {
-      key: 'coverage.min',
-      cli: { minCoverage: 80 },
-      config: { coverage: { min: 60 } },
-      read: (s) => s.coverage.min,
-      expected: { cli: 80, config: 60, default: 0 },
-    },
-    {
       key: 'tasks.unknown',
       config: { tasks: { unknown: 'fail' } },
       read: (s) => s.tasks.unknown,
@@ -352,7 +335,6 @@ describe('precedence matrix — CLI > config > defaults (docs/06 §2)', () => {
       'auth.azdo',
       'auth.github',
       'variableGroups.listNames',
-      'coverage.min',
       'tasks.unknown',
       'tasks.execute',
       'output.targetOs',
@@ -428,13 +410,16 @@ describe('precedence matrix — CLI > config > defaults (docs/06 §2)', () => {
     expect(resolveSettings({}, {}).sources['output.execution.image']).toBe('default');
   });
 
-  it('an explicit `false`/`0` from the CLI still wins over the config', () => {
-    // The classic falsy-value bug: `||`-style precedence would drop these.
-    const { settings } = resolveSettings(
-      { groupNames: false, minCoverage: 0 },
-      { variableGroups: { listNames: true }, coverage: { min: 60 } },
+  it('an explicit falsy value from the CLI still wins over the config', () => {
+    // The classic falsy-value bug: `||`-style precedence would drop these. `coverage.min: 0` was
+    // this test's numeric exemplar until E12-S02-T01 removed the key; no numeric scalar is left in
+    // the surface, so the empty string stands in for it alongside the boolean.
+    const { settings, sources } = resolveSettings(
+      { groupNames: false, sandboxImage: '' },
+      { variableGroups: { listNames: true }, output: { execution: { image: 'ubuntu:24.04' } } },
     );
     expect(settings.variableGroups.listNames).toBe(false);
-    expect(settings.coverage.min).toBe(0);
+    expect(settings.output.execution.image).toBe('');
+    expect(sources['output.execution.image']).toBe('cli');
   });
 });

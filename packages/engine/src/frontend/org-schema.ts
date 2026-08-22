@@ -121,8 +121,9 @@ export function parseOrgSchema(text: string): { document?: unknown; problems: st
  * Task names a schema document knows, in document order.
  *
  * Ordering is *not* stable across calls to the service (C-E01-034), so compare these as sets. Two
- * callers need this: the swap test, and the coverage report (E07), which reports how many task
- * references were resolvable against the catalog actually in use.
+ * callers need this: the swap test, and the generated README's warnings list (E05-S02-T02), which
+ * names the task references that were not resolvable against the catalog actually in use. (The
+ * weighted coverage report that used to be the second caller was dropped in E12-S02-T01.)
  */
 export function taskNames(schema: JsonSchema): string[] {
   const definitions = schema['definitions'];

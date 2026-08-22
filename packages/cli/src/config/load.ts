@@ -30,10 +30,9 @@ export const CONFIG_FILE_NAME = 'azdo-emu.yaml';
 
 /** Accepted keys per mapping. Exported so the committed JSON schema can be checked against it. */
 export const CONFIG_KEYS = {
-  root: ['organization', 'project', 'auth', 'parameters', 'repositories', 'variableGroups', 'coverage', 'tasks', 'output'], // prettier-ignore
+  root: ['organization', 'project', 'auth', 'parameters', 'repositories', 'variableGroups', 'tasks', 'output'], // prettier-ignore
   auth: ['azdo', 'github'],
   variableGroups: ['listNames'],
-  coverage: ['min'],
   tasks: ['unknown', 'overrides', 'execute'],
   output: ['targetOs', 'checkoutMode', 'sharedWorkspace', 'execution'],
   execution: ['environment', 'image', 'dockerSocket'],
@@ -96,14 +95,12 @@ function validate(value: unknown, ctx: Ctx): AzdoEmuConfig {
   const output = optionalRecord(root['output'], ['output'], ctx);
   const execution = optionalRecord(output?.['execution'], ['output', 'execution'], ctx);
   const variableGroups = optionalRecord(root['variableGroups'], ['variableGroups'], ctx);
-  const coverage = optionalRecord(root['coverage'], ['coverage'], ctx);
 
   if (auth) known(auth, ['auth'], CONFIG_KEYS.auth, ctx);
   if (tasks) known(tasks, ['tasks'], CONFIG_KEYS.tasks, ctx);
   if (output) known(output, ['output'], CONFIG_KEYS.output, ctx);
   if (execution) known(execution, ['output', 'execution'], CONFIG_KEYS.execution, ctx);
   if (variableGroups) known(variableGroups, ['variableGroups'], CONFIG_KEYS.variableGroups, ctx);
-  if (coverage) known(coverage, ['coverage'], CONFIG_KEYS.coverage, ctx);
 
   const config: Mutable<AzdoEmuConfig> = {};
   assign(config, 'organization', string(root['organization'], ['organization'], ctx));
@@ -141,14 +138,6 @@ function validate(value: unknown, ctx: Ctx): AzdoEmuConfig {
 
   const listNames = boolean(variableGroups?.['listNames'], ['variableGroups', 'listNames'], ctx);
   if (listNames !== undefined) config.variableGroups = { listNames };
-
-  const min = number(coverage?.['min'], ['coverage', 'min'], ctx);
-  if (min !== undefined) {
-    if (min < 0 || min > 100) {
-      throw error(['coverage', 'min'], `must be a percentage between 0 and 100, got ${min}`, ctx);
-    }
-    config.coverage = { min };
-  }
 
   const unknownPolicy = choice(
     tasks?.['unknown'],
@@ -240,14 +229,6 @@ function boolean(value: unknown, at: Path, ctx: Ctx): boolean | undefined {
   if (value === undefined || value === null) return undefined;
   if (typeof value !== 'boolean') {
     throw error(at, `expected true or false, found ${describe(value)}`, ctx);
-  }
-  return value;
-}
-
-function number(value: unknown, at: Path, ctx: Ctx): number | undefined {
-  if (value === undefined || value === null) return undefined;
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw error(at, `expected a number, found ${describe(value)}`, ctx);
   }
   return value;
 }
