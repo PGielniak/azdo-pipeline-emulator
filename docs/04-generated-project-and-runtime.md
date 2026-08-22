@@ -159,12 +159,28 @@ the same output through the persisted dependency path (C-E06-050..052; hosted ru
 
 | Form | Behavior |
 |---|---|
-| `checkout: self` | Default when steps exist. Modes (config `--checkout-mode`): `clone` (default; from lockfile-pinned origin+commit via local reference clone — fast, honest) / `copy` (rsync current working tree — for testing uncommitted changes) / `worktree` (git worktree of current repo) |
+| `checkout: self` | Modes (config `--checkout-mode`): `clone` (default) / `copy` / `worktree` — see the table below |
 | `checkout: none` | Skip |
-| `checkout: <alias>` / github repo | Clone from `.cache/repos/...` bare mirror (pinned SHA) into `s/` or `s/<name>` (multi-checkout path rules per agent docs) |
-| Options | `fetchDepth` (shallow), `fetchTags`, `lfs`, `submodules` (incl. recursive), `path` (within `Agent.BuildDirectory`), `clean`; `persistCredentials` → git credential helper wired to `SYSTEM_ACCESSTOKEN` from `.env` |
+| `checkout: <alias>` / github repo | Clone from `.cache/repos/...` bare mirror (pinned SHA) into `s/` or `s/<name>` (multi-checkout path rules per agent docs, E06-S05-T03) |
+| Options | `fetchDepth` (shallow), `fetchTags`, `lfs`, `submodules` (incl. recursive), `path` (rooted at `$(Pipeline.Workspace)`, which is the same directory as `Agent.BuildDirectory` — C-E06-105), `clean`; `persistCredentials` → git credential helper wired to `SYSTEM_ACCESSTOKEN` from `.env` (E08) |
+| Implicit step | No `checkout` at all means `self` in a job and `none` in a deployment job (C-E06-108); injecting it is the emitter's job |
 
-`Build.SourceBranch`/`SourceVersion`/`Repository.Name` seeded from the resolved repo state; overridable via `.env` to simulate other branches/PRs.
+`clone` reproduces the agent's own four-step sequence — `git init`, `git remote add origin file://<source>`, `git fetch`, `git checkout --force <commit>`, ending at a **detached HEAD** (C-E06-102). The remote is a `file://` URL and not the bare path because git silently ignores `--depth` for a local-path remote, which would make `fetchDepth` a no-op that reports success (C-E06-109); the cost is git's hardlink/alternates fast path. `copy` copies the work tree with `tar` (not `rsync` — decision 40d), `.git` included, so uncommitted changes and `git describe` both work. `worktree` adds a detached `git worktree` of the source repo, releasing and pruning the previous one so a re-run works.
+
+Options are not orthogonal to modes; most cells outside `clone` are honest no-ops, and each one says so rather than staying silent:
+
+| | `clone` | `copy` | `worktree` |
+|---|---|---|---|
+| `clean` | `git clean -ffdx` then `git reset --hard HEAD`, that order, on an *existing* checkout; plus the submodule pair (C-E06-101) | **refused** with a `degraded` note — it would delete the uncommitted work the mode exists to run (decision 40c) | honored (the checkout is a real repo) |
+| `fetchDepth` | `--depth=N`; `0`/negative/non-numeric all mean full, and `0` over an already-shallow repo means `--unshallow` (C-E06-098) | no-op, announced | no-op, announced |
+| `fetchTags` | `--tags`/`--no-tags` — but `--prune-tags` re-adds the tag refspec, so `false` still syncs tags (C-E06-111, decision 40a) | no-op, announced | no-op, announced |
+| `lfs` | `false` exports `GIT_LFS_SKIP_SMUDGE=1` to every git command; `true` without a `git-lfs` binary is a **warning** and the checkout continues (C-E06-104) | inherited from the source tree | objects come from the source repo |
+| `submodules` | `git submodule sync [--recursive]` then `update --init --force [--depth=N] [--recursive]` (C-E06-103) | inherited from the source tree | same as `clone` |
+| `path` | rooted at `$(Pipeline.Workspace)`; a path resolving outside it is **refused**, because `clean` and `copy` both delete inside the target (decision 40e) | | |
+
+Defaults for an unset option are the agent's empty-input defaults — `clean=false`, `fetchDepth=0`, `fetchTags=true` — not the pipeline-settings-UI defaults the doc page describes, which no YAML file records (C-E06-099/100, decision 40). Booleans follow `ConvertToBoolean`: only `1/true/$true` and `0/false/$false` are recognized, so `clean: yes` does not clean while `fetchTags: yes` does sync tags (C-E06-100). `fetchFilter`, `sparseCheckoutDirectories`, `sparseCheckoutPatterns` and `persistCredentials` are accepted and reported as not emulated (C-E06-110).
+
+`Build.SourceBranch`/`SourceVersion`/`SourceBranchName`/`SourceVersionMessage` and `Build.Repository.*` are seeded from the resolved repo state and **never overwritten**, so an `.env` override survives the checkout; `Build.SourceVersion` is read *before* the checkout, so an override selects the commit that lands. `Build.SourcesDirectory` and `Build.Repository.LocalPath` are equal for a single self checkout and diverge only under the multi-checkout rules (C-E06-107).
 
 ## 9. Execution environments & OS targets: sandbox, container jobs, services (sandbox: P2; container jobs: P6; Windows host: future)
 
