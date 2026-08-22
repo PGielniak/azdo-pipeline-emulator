@@ -80,8 +80,8 @@ docs/04 → E05+E06+E07 · docs/05 → E03+E09 · docs/06 → E10+E11 · docs/07
 
 ## 5. Execution order
 
-- **P1 (Thin expansion):** E12 (cleanup/demotion — do first so the reimplementation is off the path)
-  → E00-S04 (expansion client) → E01 → E03 (bundler) → E10-S01 (CLI skeleton).
+- **P1 (Thin expansion):** E00-S04 (expansion client — first: E12-S01-T01 gates the engine behind
+  it) → E12 (cleanup/demotion) → E01 → E03 (bundler) → E10-S01 (CLI skeleton).
 - **P2 (Script-native runner):** E06 → E04 → E05 → E02 (runtime expressions, lands with E06's
   fixture store) → E10-S02. E11-S01 harness bootstrap runs with E00-S04.
 - **P3 (Task breadth):** E09 → E07 (real-task mode + stubs) → E08 (deployment set) → E10-S03/S04

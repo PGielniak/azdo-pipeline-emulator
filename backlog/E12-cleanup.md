@@ -1,6 +1,6 @@
 # E12 — Cleanup & demotion of the v1 reimplementation
 
-Phase: P1 · Depends on: — · Design: docs/07 (the simplification review)
+Phase: P1 · Depends on: E00-S04 (S01-T01 gates the engine behind the expansion path) · Design: docs/07 (the simplification review)
 Primary grounding set: docs/07 is the authority; the repo's own rule 5 (docs/06 §5 dated decisions) and rule 3 (mark `[~]`, never delete) govern the bookkeeping.
 
 > **This epic is the deliberate counterpart of the re-orientation.** The simplification (docs/07)

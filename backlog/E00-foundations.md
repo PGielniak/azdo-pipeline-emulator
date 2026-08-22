@@ -54,7 +54,7 @@ Acceptance: a scripted call returns the service's final YAML for an arbitrary YA
 ## E00-S04 — As the owner of `convert`, expansion is a first-class service call with provenance and cache, not a test-only helper.
 Acceptance: `convert` obtains `finalYaml` from the service; the request/response and its hash are cached so `--frozen` re-converts offline.
 
-- [ ] **E00-S04-T01 — Expansion service API**
+- [x] **E00-S04-T01 — Expansion service API** *(done 2026-08-22: `packages/fetch/src/expand.ts` — `expand()` wraps `preview()` and returns a discriminated `ExpansionOutcome` (`expanded` → `{finalYaml, provenance}`), `provenanceFor()` and `expansionRequestHash()` (sha256, content-addressed). Re-exported from `packages/fetch/src/index.ts` so `convert` can import it. Grounding reused the live C-E00-017/018/023..025 claims — no new service behavior, so no new oracle calls. Tests: `packages/fetch/test/expand.test.ts` (8 tests) + existing oracle tests = 26 green; fetch typecheck clean. Redacted example pair: `research/experiments/E00-expansion/expand-example.md`.)*
   **Do:** add `packages/fetch/src/expand.ts` exposing `expand({ yamlOverride, templateParameters? }) → { finalYaml, provenance }`, wrapping the existing `preview()` client; provenance records api-version, pipelineId, request hash and redaction.
   **Ground:** C-E00-017/018 (route, body, `finalYaml`); docs/07 §4.
   **Done:** unit tests with injected fetch; a committed redacted expansion pair under `research/experiments/`; `expand()` wired so `convert` can call it.
