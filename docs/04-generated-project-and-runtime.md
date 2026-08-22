@@ -161,9 +161,10 @@ the same output through the persisted dependency path (C-E06-050..052; hosted ru
 |---|---|
 | `checkout: self` | Modes (config `--checkout-mode`): `clone` (default) / `copy` / `worktree` — see the table below |
 | `checkout: none` | Skip |
-| `checkout: <alias>` / github repo | Clone from `.cache/repos/...` bare mirror (pinned SHA) into `s/` or `s/<name>` (multi-checkout path rules per agent docs, E06-S05-T03) |
+| `checkout: <alias>` / github repo | Clone from `.cache/repos/...` bare mirror (pinned SHA, E08) into the layout below; seeds no `Build.*` variables, because that family describes the *triggering* repository and a converted pipeline's is always `self` (C-E06-121) |
 | Options | `fetchDepth` (shallow), `fetchTags`, `lfs`, `submodules` (incl. recursive), `path` (rooted at `$(Pipeline.Workspace)`, which is the same directory as `Agent.BuildDirectory` — C-E06-105), `clean`; `persistCredentials` → git credential helper wired to `SYSTEM_ACCESSTOKEN` from `.env` (E08) |
 | Implicit step | No `checkout` at all means `self` in a job and `none` in a deployment job (C-E06-108); injecting it is the emitter's job |
+| Layout | One checkout in the job → `s`; **two or more** → `s/<repoName>` for every repository, `self` included; an explicit `path:` overrides both and is rooted at `$(Pipeline.Workspace)`, *not* at `s` (C-E06-114) |
 
 `clone` reproduces the agent's own four-step sequence — `git init`, `git remote add origin file://<source>`, `git fetch`, `git checkout --force <commit>`, ending at a **detached HEAD** (C-E06-102). The remote is a `file://` URL and not the bare path because git silently ignores `--depth` for a local-path remote, which would make `fetchDepth` a no-op that reports success (C-E06-109); the cost is git's hardlink/alternates fast path. `copy` copies the work tree with `tar` (not `rsync` — decision 40d), `.git` included, so uncommitted changes and `git describe` both work. `worktree` adds a detached `git worktree` of the source repo, releasing and pruning the previous one so a re-run works.
 
@@ -180,7 +181,22 @@ Options are not orthogonal to modes; most cells outside `clone` are honest no-op
 
 Defaults for an unset option are the agent's empty-input defaults — `clean=false`, `fetchDepth=0`, `fetchTags=true` — not the pipeline-settings-UI defaults the doc page describes, which no YAML file records (C-E06-099/100, decision 40). Booleans follow `ConvertToBoolean`: only `1/true/$true` and `0/false/$false` are recognized, so `clean: yes` does not clean while `fetchTags: yes` does sync tags (C-E06-100). `fetchFilter`, `sparseCheckoutDirectories`, `sparseCheckoutPatterns` and `persistCredentials` are accepted and reported as not emulated (C-E06-110).
 
-`Build.SourceBranch`/`SourceVersion`/`SourceBranchName`/`SourceVersionMessage` and `Build.Repository.*` are seeded from the resolved repo state and **never overwritten**, so an `.env` override survives the checkout; `Build.SourceVersion` is read *before* the checkout, so an override selects the commit that lands. `Build.SourcesDirectory` and `Build.Repository.LocalPath` are equal for a single self checkout and diverge only under the multi-checkout rules (C-E06-107). The override simulates another **branch or commit**, not a pull request: the agent switches to a different refspec set for a `refs/pull/*` ref and checks out the remote merge ref, and a local source repository has no merge ref to fetch, so a PR value labels the run without reproducing the merge commit (C-E06-113).
+`Build.SourceBranch`/`SourceVersion`/`SourceBranchName`/`SourceVersionMessage` and `Build.Repository.*` are seeded from the resolved repo state and **never overwritten**, so an `.env` override survives the checkout; `Build.SourceVersion` is read *before* the checkout, so an override selects the commit that lands. `Build.SourcesDirectory` and `Build.Repository.LocalPath` are equal for a single self checkout and diverge under the multi-checkout rules below (C-E06-107). The override simulates another **branch or commit**, not a pull request: the agent switches to a different refspec set for a `refs/pull/*` ref and checks out the remote merge ref, and a local source repository has no merge ref to fetch, so a PR value labels the run without reproducing the merge commit (C-E06-113).
+
+### 8.1 Multi-checkout layout
+
+Which layout applies is a **job-level** fact — how many `checkout` steps the job has — so it is decided where the agent decides it. The agent computes `HasMultipleCheckouts` once during job preparation and hands the answer to every component that needs it (C-E06-115); here the emitter, which knows the step list statically, exports `AZDO_HAS_MULTIPLE_CHECKOUTS` per job beside `AZDO_STATE_DIR`, and `azdo_checkout` reads it (docs/06 §5 decision 41). The runtime never counts checkouts: the first of two would otherwise behave as a single one.
+
+| | one checkout in the job | two or more |
+|---|---|---|
+| files, no `path:` | `s` | `s/<repoName>` — for **every** repository, `self` included (C-E06-114) |
+| files, with `path:` | `<workspace>/<path>` | `<workspace>/<path>` — `path` is rooted at `$(Pipeline.Workspace)` = `$(Agent.BuildDirectory)`, never at `s` |
+| `Build.SourcesDirectory` | follows the files, `path:` included | **stays `s`**, even when `path:` moved the files (C-E06-116) |
+| `Build.Repository.LocalPath` | follows the files, `path:` included | **stays `s`** — one level *above* where `self` actually is — unless `self`'s `path:` differs from the default `s/<repoName>` (C-E06-117) |
+
+The two bottom rows are the counter-intuitive ones and they are not bugs: the agent keeps them for backward compatibility, and a `path:` spelled out as exactly `s/<repoName>` counts as the default, so it changes nothing. `<repoName>` is the repository resource's `name` property put through git's own clone-directory reduction — `MyGitHubOrgOrUser/MyGitHubRepo` becomes `MyGitHubRepo` — and not the `checkout:` alias (C-E06-118); the emitter passes it as `--repo-name`, and a name that would reduce to `.`, `..`, `/` or nothing is refused rather than resolved. Adding a second `checkout` to a working pipeline silently moves the first repository from `s` to `s/<repoName>`, which breaks any step that hardcoded the old path (C-E06-119) — the emulator reproduces that break rather than smoothing it over, because the hosted service does too.
+
+`workspaceRepo: true` retargets `System.DefaultWorkingDirectory` to one checkout's directory (C-E06-026/027). Choosing the winner means scanning the whole job's step list before any checkout runs, so it is set at job setup by the emitter; `azdo_checkout` accepts the option and reports it as not emulated at the step level (C-E06-120).
 
 ## 9. Execution environments & OS targets: sandbox, container jobs, services (sandbox: P2; container jobs: P6; Windows host: future)
 

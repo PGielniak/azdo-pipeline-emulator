@@ -2176,3 +2176,278 @@ prepare_checkout_submodules() {
   [ ! -e "$target/vendor/sub/inner/untracked.txt" ]
   [ "$(cat "$target/vendor/sub/sub.txt")" = shallow ]
 }
+
+# --- E06-S05-T03 — multi-checkout layout --------------------------------------------------------
+
+# A second (or third) source repository beside the fixture's `self`, each carrying one file named
+# after itself so a layout assertion can name the repository it expects to find.
+prepare_checkout_extra() {
+  local name="$1" dir="$BATS_TEST_TMPDIR/extra/$1"
+  mkdir -p "$dir"
+  git -C "$dir" init -q -b main .
+  git -C "$dir" config user.email 'bats@example.invalid'
+  git -C "$dir" config user.name 'bats'
+  printf '%s\n' "$name" >"$dir/$name.txt"
+  git -C "$dir" add -A
+  git -C "$dir" commit -q -m "$name commit"
+  printf '%s\n' "$dir"
+}
+
+@test "the checkout folder name is git's clone-directory algorithm, not basename (C-E06-118)" {
+  # The agent's own L0 table (RepositoryUtilL0.cs#L396-L451), ported wholesale. Two rows carry the
+  # orderings that are easy to invert in a rewrite: the *last* `@` wins, and the port trim fires
+  # only when no `/` was found — which is why `.../test:1234` keeps the digits it looks like a port.
+  [ "$(azdo__checkout_clone_directory 'host:foo')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'host:foo.git')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'host:foo/.git')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'ssh://host/foo')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'ssh://host/foo.git')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'ssh://host/foo/.git')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'ssh://host/foo/')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'ssh://host/foo///')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'ssh://host/foo/.git/')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'ssh://host/foo.git/')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'ssh://host/foo.git///')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'ssh://host/foo///.git/')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'ssh://host/foo/.git///')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'host:foo/')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'host:foo///')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'host:foo.git/')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'host:foo/.git/')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'host:foo.git///')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'host:foo///.git/')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'host:foo/.git///')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'host:foo/repo')" = repo ]
+
+  # Omitting the path defaults to the host name, and auth material never becomes a directory.
+  [ "$(azdo__checkout_clone_directory 'ssh://host/')" = host ]
+  [ "$(azdo__checkout_clone_directory 'ssh://host:1234/')" = host ]
+  [ "$(azdo__checkout_clone_directory 'ssh://user@host/')" = host ]
+  [ "$(azdo__checkout_clone_directory 'host:/')" = host ]
+  [ "$(azdo__checkout_clone_directory 'ssh://user:password@host/')" = host ]
+  [ "$(azdo__checkout_clone_directory 'ssh://user:password@host:1234/')" = host ]
+  [ "$(azdo__checkout_clone_directory 'ssh://user:passw@rd@host:1234/')" = host ]
+  [ "$(azdo__checkout_clone_directory 'user@host:/')" = host ]
+  [ "$(azdo__checkout_clone_directory 'user:password@host:/')" = host ]
+  [ "$(azdo__checkout_clone_directory 'user:passw@rd@host:/')" = host ]
+  [ "$(azdo__checkout_clone_directory 'ssh://user:password@host/test:1234')" = 1234 ]
+  [ "$(azdo__checkout_clone_directory 'ssh://user:password@host/test:1234.git')" = 1234 ]
+
+  # The doc page's own worked example: the *name* property's last segment, not the alias.
+  [ "$(azdo__checkout_clone_directory 'MyGitHubOrgOrUser/MyGitHubRepo')" = MyGitHubRepo ]
+  [ "$(azdo__checkout_clone_directory 'MyFirstProject/repo1_name')" = repo1_name ]
+  [ "$(azdo__checkout_clone_directory 'alias')" = alias ]
+
+  # A trailing `@` is *not* auth material: `SkipLastIndexOf` treats a match sitting on the last
+  # index as not found, so the name keeps it and only the `/` segmentation applies.
+  [ "$(azdo__checkout_clone_directory 'proj/repo@')" = 'repo@' ]
+  [ "$(azdo__checkout_clone_directory 'a/b@')" = 'b@' ]
+
+  # No agent counterpart: a name whose folder would be `.`/`..`/`/` is refused rather than
+  # resolved, because `s/..` is the workspace and `clean` deletes inside whatever it resolves to.
+  run -1 azdo__checkout_clone_directory ''
+  run -1 azdo__checkout_clone_directory '..'
+  run -1 azdo__checkout_clone_directory 'ssh://host/foo/../'
+  run -1 azdo__checkout_clone_directory '/'
+  # C# throws out of `Substring` on this one; a bash arithmetic error is not a usable diagnostic.
+  run -1 azdo__checkout_clone_directory 'x://'
+  [[ "$output" == *'does not yield a usable directory'* ]]
+}
+
+@test "AZDO_HAS_MULTIPLE_CHECKOUTS is the job setting, read as a checkout boolean (C-E06-115)" {
+  # The agent computes HasMultipleCheckouts once at job preparation; the emitter knows the same
+  # step list statically, so the runtime reads an answer rather than counting anything.
+  unset AZDO_HAS_MULTIPLE_CHECKOUTS
+  [ "$(azdo__checkout_has_multiple)" = false ]
+  AZDO_HAS_MULTIPLE_CHECKOUTS=true
+  [ "$(azdo__checkout_has_multiple)" = true ]
+  AZDO_HAS_MULTIPLE_CHECKOUTS=TRUE
+  [ "$(azdo__checkout_has_multiple)" = true ]
+  # ConvertToBoolean again (C-E06-100): `yes` is not a boolean, so it falls back to false.
+  AZDO_HAS_MULTIPLE_CHECKOUTS=yes
+  [ "$(azdo__checkout_has_multiple)" = false ]
+  AZDO_HAS_MULTIPLE_CHECKOUTS=''
+  [ "$(azdo__checkout_has_multiple)" = false ]
+}
+
+@test "a single checkout lands in s, self or not (C-E06-114)" {
+  prepare_checkout singlelayout
+  local tools
+  tools="$(prepare_checkout_extra tools)"
+
+  # One checkout in the job: `s`, and the repository name is not used at all.
+  run -0 azdo_checkout --mode clone --repo-name 'MyProject/CurrentRepo'
+  [ -f "$checkout_workspace/s/two.txt" ]
+  [ ! -e "$checkout_workspace/s/CurrentRepo" ]
+  [ "$(azdo_var 'Build.SourcesDirectory')" = "$checkout_workspace/s" ]
+  [ "$(azdo_var 'Build.Repository.LocalPath')" = "$checkout_workspace/s" ]
+  # The seeded name is the `name` property the emitter passed, not the folder it reduces to.
+  [ "$(azdo_var 'Build.Repository.Name')" = 'MyProject/CurrentRepo' ]
+
+  # "A single checkout step that isn't self or none: the designated repository is checked out
+  # instead of self" — same `s`, and it does not disturb the self-shaped variables.
+  prepare_checkout singlealias
+  run -0 azdo_checkout --repository tools --source "$tools"
+  [ -f "$checkout_workspace/s/tools.txt" ]
+  [ -z "$(azdo_var 'Build.Repository.Name')" ]
+  [ -z "$(azdo_var 'Build.SourcesDirectory')" ]
+}
+
+@test "multiple checkouts put every repository including self in s/<repoName> (C-E06-114/118)" {
+  prepare_checkout multilayout
+  local tools code
+  tools="$(prepare_checkout_extra tools)"
+  code="$(prepare_checkout_extra code)"
+  export AZDO_HAS_MULTIPLE_CHECKOUTS=true
+
+  # The doc page's own example shape: `self` named CurrentRepo alongside `tools` and `code`, and
+  # the folder comes from the repository *name*, so `MyProject/CurrentRepo` becomes `CurrentRepo`
+  # while the `--repository` alias (`self`, `toolsAlias`) is never a directory.
+  run -0 azdo_checkout --mode clone --repo-name 'MyProject/CurrentRepo'
+  run -0 azdo_checkout --repository toolsAlias --repo-name 'MyProject/tools' --source "$tools"
+  run -0 azdo_checkout --repository codeAlias --repo-name "https://host/x/code.git" --source "$code"
+
+  [ -f "$checkout_workspace/s/CurrentRepo/two.txt" ]
+  [ -f "$checkout_workspace/s/tools/tools.txt" ]
+  [ -f "$checkout_workspace/s/code/code.txt" ]
+  [ ! -e "$checkout_workspace/s/toolsAlias" ]
+  [ ! -e "$checkout_workspace/s/two.txt" ]
+
+  # Three `azdo_checkout` calls share one variable store, and the two non-`self` ones ran last, so
+  # this also pins that a later checkout does not disturb what `self` seeded.
+  [ "$(azdo_var 'Build.SourcesDirectory')" = "$checkout_workspace/s" ]
+  [ "$(azdo_var 'Build.Repository.Name')" = 'MyProject/CurrentRepo' ]
+}
+
+@test "the layout does not depend on which checkout runs first (C-E06-115)" {
+  prepare_checkout multiorder
+  local tools
+  tools="$(prepare_checkout_extra tools)"
+  export AZDO_HAS_MULTIPLE_CHECKOUTS=true
+
+  # The agent resolves HasMultipleCheckouts in job preparation, before any checkout runs, so the
+  # `self`-last ordering has to land exactly where the `self`-first one did. A runtime that derived
+  # the flag by counting the checkouts it had already performed would put this `tools` in `s` and
+  # only then discover the job had two.
+  run -0 azdo_checkout --repository tools --source "$tools"
+  run -0 azdo_checkout --mode clone --repo-name CurrentRepo
+
+  [ -f "$checkout_workspace/s/tools/tools.txt" ]
+  [ -f "$checkout_workspace/s/CurrentRepo/two.txt" ]
+  [ ! -e "$checkout_workspace/s/tools.txt" ]
+  [ "$(azdo_var 'Build.Repository.LocalPath')" = "$checkout_workspace/s" ]
+  [ "$(azdo_var 'Build.SourcesDirectory')" = "$checkout_workspace/s" ]
+}
+
+@test "under multi-checkout Build.Repository.LocalPath stays at s, one level above self (C-E06-117)" {
+  prepare_checkout multivars
+  local tools
+  tools="$(prepare_checkout_extra tools)"
+  export AZDO_HAS_MULTIPLE_CHECKOUTS=true
+
+  run -0 azdo_checkout --mode clone --repo-name CurrentRepo
+  run -0 azdo_checkout --repository tools --source "$tools"
+
+  # This is the assertion that looks wrong and is not: self's files are in `s/CurrentRepo`, and the
+  # agent deliberately leaves both variables at `s` for backward compatibility (PR #3237). Seeding
+  # either of them from the resolved checkout target would produce `s/CurrentRepo` and pass every
+  # other test in this file.
+  [ -f "$checkout_workspace/s/CurrentRepo/two.txt" ]
+  [ "$(azdo_var 'Build.Repository.LocalPath')" = "$checkout_workspace/s" ]
+  [ "$(azdo_var 'Build.SourcesDirectory')" = "$checkout_workspace/s" ]
+}
+
+@test "path is rooted at Pipeline.Workspace and overrides both layout defaults (C-E06-114)" {
+  prepare_checkout pathroot
+  export AZDO_HAS_MULTIPLE_CHECKOUTS=true
+
+  # Relative to `$(Agent.BuildDirectory)` = `$(Pipeline.Workspace)`, **not** to `s` — so `tools`
+  # means `<workspace>/tools` and not `<workspace>/s/tools`, under multi-checkout as under single.
+  run -0 azdo_checkout --mode clone --repo-name CurrentRepo --path tools
+  [ -f "$checkout_workspace/tools/two.txt" ]
+  [ ! -e "$checkout_workspace/s/tools" ]
+  [ ! -e "$checkout_workspace/s/CurrentRepo" ]
+}
+
+@test "a path under multi-checkout moves Build.Repository.LocalPath but never Build.SourcesDirectory (C-E06-116/117)" {
+  prepare_checkout multipath
+  export AZDO_HAS_MULTIPLE_CHECKOUTS=true
+
+  run -0 azdo_checkout --mode clone --repo-name CurrentRepo --path custom
+  [ -f "$checkout_workspace/custom/two.txt" ]
+  # `UpdateDirectory` rewrites the tracking config's SourcesDirectory only when the job tracks
+  # exactly one repository, so `s` survives a `path` here — and `s` must exist even though no
+  # checkout ever targeted it.
+  [ -d "$checkout_workspace/s" ]
+  [ "$(azdo_var 'Build.SourcesDirectory')" = "$checkout_workspace/s" ]
+  # A custom path *is* the one case that moves LocalPath off `s`.
+  [ "$(azdo_var 'Build.Repository.LocalPath')" = "$checkout_workspace/custom" ]
+
+  # The same `path` in a single-checkout job moves both, because then the count is one.
+  prepare_checkout singlepath
+  unset AZDO_HAS_MULTIPLE_CHECKOUTS
+  run -0 azdo_checkout --mode clone --repo-name CurrentRepo --path custom
+  [ "$(azdo_var 'Build.SourcesDirectory')" = "$checkout_workspace/custom" ]
+  [ "$(azdo_var 'Build.Repository.LocalPath')" = "$checkout_workspace/custom" ]
+}
+
+@test "writing path: s/<repoName> under multi-checkout is the default, not a custom path (C-E06-117)" {
+  prepare_checkout defaultpath
+  export AZDO_HAS_MULTIPLE_CHECKOUTS=true
+
+  # `IsCheckoutToCustomPath` compares the resolved `path` against the resolved default rather than
+  # testing whether the input was present, so spelling the default out changes nothing. This is
+  # exactly the self+path+second-repo combination the task's Ground field flagged as ambiguous.
+  run -0 azdo_checkout --mode clone --repo-name CurrentRepo --path 's/CurrentRepo'
+  [ -f "$checkout_workspace/s/CurrentRepo/two.txt" ]
+  [ "$(azdo_var 'Build.Repository.LocalPath')" = "$checkout_workspace/s" ]
+  [ "$(azdo_var 'Build.SourcesDirectory')" = "$checkout_workspace/s" ]
+
+  # And a path that only *normalizes* to the default is still the default, because the comparison
+  # is `Path.GetFullPath` on both sides.
+  prepare_checkout defaultpathdotted
+  run -0 azdo_checkout --mode clone --repo-name CurrentRepo --path './s/./CurrentRepo'
+  [ "$(azdo_var 'Build.Repository.LocalPath')" = "$checkout_workspace/s" ]
+}
+
+@test "a non-self checkout needs its own source and seeds no Build.* variables (C-E06-121)" {
+  prepare_checkout nonself
+  local tools
+  tools="$(prepare_checkout_extra tools)"
+  export AZDO_HAS_MULTIPLE_CHECKOUTS=true
+
+  # AZDO_SELF_REPO is set by the fixture; falling back to it for an alias would produce a green run
+  # with the self repository's files under someone else's name.
+  run -1 azdo_checkout --repository tools
+  [[ "$output" == *'needs --source'* ]]
+
+  # A Build.SourceVersion belonging to `self` must not select the commit of a foreign repository.
+  azdo_var_set 'Build.SourceVersion' "$(git -C "$checkout_source" rev-parse HEAD)"
+  run -0 azdo_checkout --repository tools --source "$tools"
+  [ -f "$checkout_workspace/s/tools/tools.txt" ]
+  [ -z "$(azdo_var 'Build.Repository.Name')" ]
+  [ -z "$(azdo_var 'Build.SourcesDirectory')" ]
+  [ -z "$(azdo_var 'Build.Repository.LocalPath')" ]
+  [ "$(azdo_var 'Build.SourceVersion')" = "$(git -C "$checkout_source" rev-parse HEAD)" ]
+
+  # `self` is matched the way IsPrimaryRepositoryName matches it.
+  prepare_checkout selfcased
+  run -0 azdo_checkout --repository SELF --repo-name CurrentRepo
+  [ "$(azdo_var 'Build.Repository.LocalPath')" = "$checkout_workspace/s" ]
+  [ -f "$checkout_workspace/s/CurrentRepo/two.txt" ]
+
+  run -2 azdo_checkout --repository ''
+}
+
+@test "workspaceRepo is reported and left to the emitter, like the other layout deltas (C-E06-120)" {
+  prepare_checkout workspacerepo
+
+  # The agent picks the workspaceRepo winner by scanning the whole job's step list before any
+  # checkout runs, so a single step cannot honor it; `false` is not worth a note.
+  run -0 azdo_checkout --mode copy --workspace-repo false
+  [[ "$output" != *workspaceRepo* ]]
+
+  run -0 azdo_checkout --mode copy --workspace-repo true
+  [[ "$output" == *'workspaceRepo is not emulated here'* ]]
+  [[ "$output" == *'(degraded)'* ]]
+}

@@ -1031,3 +1031,172 @@ https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693
 A local source repository has no merge ref to fetch, so setting `Build.SourceBranch` to a PR ref
 labels the run without reproducing the merge commit the hosted build would have. Out of this task's
 **Do** field; docs/04 §8 now scopes the promise.
+
+## E06-S05-T03 — multi-checkout layout
+
+Sources pinned for this pass: the multi-repo-checkout page (`git_commit_id`
+`a9ee075785637d668c69557d66708bfa49943233`, `ms.date` 2026-04-22) and
+`microsoft/azure-pipelines-agent` @ `42bde98bea7bb3b9e186d693e3b1554249e93a38`
+(`src/Agent.Plugins/RepositoryPlugin.cs`, `src/Agent.Sdk/Util/RepositoryUtil.cs`,
+`src/Agent.Worker/Build/BuildJobExtension.cs`, `src/Agent.Worker/Build/BuildDirectoryManager.cs`,
+`src/Agent.Worker/Build/TrackingConfig.cs`, `src/Test/L0/Util/RepositoryUtilL0.cs`).
+
+The task's **Ground** field asks for "one ambiguous combination (self+path+second repo)" to be
+settled by a real run. **No hosted run was possible: this environment has no `AZDO_ORG_URL` /
+`AZDO_PROJECT` / `AZDO_PAT`** (same situation E06-S05-T01 recorded). It did not need one. The
+combination is ambiguous only in the *doc page*, which says nothing about what `Build.SourcesDirectory`
+and `Build.Repository.LocalPath` become when a `path` is combined with multiple checkouts; the agent
+answers it exactly, in one named method per variable — `RepositoryPlugin.GetRepoPath` for the
+directory, `BuildJobExtension.GetDefaultRepoLocalPathValue` and
+`BuildDirectoryManager.UpdateDirectory` for the two variables — and BACKLOG §3 puts agent source
+above the docs for runtime behavior. C-E06-116/117/118 are read from those methods, so the
+experiment a run would have performed is replaced by the code that would have produced its result.
+
+[C-E06-114] **The layout rule.** With a single `checkout` step (or none), sources land in `s` under
+`$(Agent.BuildDirectory)`; with **multiple** `checkout` steps every repository lands in
+`s/<repositoryName>`, `self` included. —
+https://learn.microsoft.com/azure/devops/pipelines/repos/multi-repo-checkout (checked 2026-08-22) —
+"**Single repository**: If you have a single `checkout` step in your job, or you have no checkout
+step which is equivalent to `checkout: self`, your source code is checked out into a directory
+called `s` located as a subfolder of `$(Agent.BuildDirectory)`." / "**Multiple repositories**: If you
+have multiple `checkout` steps in your job, your source code is checked out into directories named
+after the repositories as a subfolder of `s` in `$(Agent.BuildDirectory)`. If
+`$(Agent.BuildDirectory)` is `C:\agent\_work\1` and your repositories are named `tools` and `code`,
+your code is checked out to `C:\agent\_work\1\s\tools` and `C:\agent\_work\1\s\code`." / "To check
+out `self` as one of the repositories, use `checkout: self` as one of the `checkout` steps." The
+same three branches, in the same order, in the plugin that performs the checkout —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/RepositoryPlugin.cs#L152-L182
+(checked 2026-08-22) — "if (!string.IsNullOrEmpty(path)) { // When the checkout task provides a
+path, always use that one / expectRepoPath = IOUtil.ResolvePath(buildDirectory, path); … } else if
+(HasMultipleCheckouts(executionContext)) { // When there are multiple checkout tasks (and this one
+didn't set the path), default to directory 1/s/<repoName> / expectRepoPath =
+Path.Combine(buildDirectory, sourcesDirectory, RepositoryUtil.GetCloneDirectory(repo)); } else { //
+When there's a single checkout task that doesn't have path set, default to sources directory 1/s /
+expectRepoPath = Path.Combine(buildDirectory, sourcesDirectory); }". Note the precedence: an
+explicit `path` wins over **both** defaults, and is resolved against `buildDirectory` — the same
+`$(Agent.BuildDirectory)` = `$(Pipeline.Workspace)` root the single-checkout case already uses
+(C-E06-105), *not* against `s`. The page agrees: "If a `path` is specified for a `checkout` step,
+that path is used, relative to `$(Agent.BuildDirectory)`."
+
+Nothing on either side defends against two repositories whose names *reduce* to the same folder —
+`org-a/tools` and `org-b/tools` both want `s/tools`, which is legal YAML. The agent tries to move
+the existing directory aside and, when that fails, deletes it outright with a warning (same file,
+L198-218 — "Unable move and reuse existing repository to required location." followed by
+`DeleteDirectoryWithRetry(expectRepoPath)`), so the second checkout destroys the first there too.
+The emulator's `copy` mode empties its target and `clone` mode fetches into whatever is already
+present; neither is worse than the agent's outcome, and no guard is added, because refusing a
+collision the service accepts would fail a pipeline that runs. Recorded so the shared-target case
+is a known equivalence rather than an untested corner.
+
+[C-E06-115] **`HasMultipleCheckouts` is a job-level setting, not something the checkout step
+derives.** It is computed once during job preparation and read identically by the plugin that places
+the repository, by the extension that seeds the variables and by the directory manager. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Sdk/Util/RepositoryUtil.cs#L32-L45
+(checked 2026-08-22) — "/// Returns true if the dictionary contains the 'HasMultipleCheckouts' key
+and the value is set to 'true'. / public static bool HasMultipleCheckouts(Dictionary<string, string>
+jobSettings) { if (jobSettings != null && jobSettings.TryGetValue(WellKnownJobSettings.
+HasMultipleCheckouts, out string hasMultipleCheckoutsText))". Consequence for the emulator: the flag
+belongs to the *job*, so the runtime receives it (`AZDO_HAS_MULTIPLE_CHECKOUTS`, docs/06 §5
+decision 41) rather than counting steps — the emitter knows the step list statically, exactly as the
+server does. `self` is matched case-insensitively as the primary repository alias (same file,
+`IsPrimaryRepositoryName` / `DefaultPrimaryRepositoryName = "self"`).
+
+[C-E06-116] **`Build.SourcesDirectory` stays at `s` for every multi-checkout job — including when a
+`path` moved the repository.** The tracking config's `SourcesDirectory` is `<buildDir>/s` at
+construction, and the only code that rewrites it to a checkout's own path refuses to when more than
+one repository is tracked. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Worker/Build/BuildDirectoryManager.cs#L174-L183
+(checked 2026-08-22) — "// Also update the SourcesDirectory on the tracking info if there is only
+one repo. / if (trackingConfig.RepositoryTrackingInfo.Count == 1) { … trackingConfig.SourcesDirectory
+= relativeRepoPath; }" and
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Worker/Build/BuildJobExtension.cs#L187
+(checked 2026-08-22) — "executionContext.SetVariable(Constants.Variables.Build.SourcesDirectory,
+Path.Combine(_workDirectory, trackingConfig.SourcesDirectory), isFilePath: true);". So a single
+checkout with `path: custom` moves `Build.SourcesDirectory` to `<workspace>/custom`, and the same
+`path` in a two-checkout job leaves it at `<workspace>/s` while the files land in
+`<workspace>/custom`. This is the half of the ambiguous combination the doc page never states.
+
+[C-E06-117] **`Build.Repository.LocalPath` does *not* follow `self` into `s/<selfName>`.** Under
+multiple checkouts with default paths it stays at `s` — the parent of where `self` actually is —
+and only a **custom** `path` on the `self` checkout moves it. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Worker/Build/BuildJobExtension.cs#L361-L389
+(checked 2026-08-22) — "// For saving backward compatibility with the behavior of the
+Build.RepoLocalPath that was before this PR https://github.com/microsoft/azure-pipelines-agent/pull/3237
+… // This is the only case where the value of Build.RepoLocalPath variable is not pointing to the
+root of sources directory /s. // The new logic is not affecting single checkout jobs and jobs with
+multiple checkouts and default paths for Self repository / if (RepositoryUtil.HasMultipleCheckouts(…))
+{ var selfCheckoutTask = GetSelfCheckoutTask(steps); if (IsCheckoutToCustomPath(trackingConfig,
+repoInfo, selfCheckoutTask)) { selfRepoPath = trackingConfig.RepositoryTrackingInfo.Where(repo =>
+RepositoryUtil.IsPrimaryRepositoryName(repo.Identifier)).Select(props => props.SourcesDirectory).
+FirstOrDefault(); } } // For single checkout jobs and multicheckout jobs with default paths set
+selfRepoPath to the default sources directory / if (selfRepoPath == null) { selfRepoPath =
+trackingConfig.SourcesDirectory; }". "Custom" is defined by comparison against the default, not by
+the presence of the input — same file, `IsCheckoutToCustomPath`: "return selfCheckoutTask != null &&
+selfCheckoutTask.Inputs.TryGetValue(PipelineConstants.CheckoutTaskInputs.Path, out path) &&
+!string.Equals(Path.GetFullPath(Path.Combine(trackingConfig.BuildDirectory, path)),
+defaultRepoCheckoutPath, IOUtil.FilePathStringComparison);" with "string defaultRepoCheckoutPath =
+Path.GetFullPath(Path.Combine(trackingConfig.SourcesDirectory, selfRepoName));". So writing
+`path: s/<selfName>` explicitly under multi-checkout is **not** custom and `Build.Repository.LocalPath`
+stays `s`. C-E06-107's "equal for a single self checkout, diverge only under multi-checkout" is
+therefore precise but understated: they diverge under multi-checkout even though `self` moved, and
+they diverge in the *opposite* direction to the intuition that `LocalPath` tracks the files.
+
+[C-E06-118] **The folder name is the repository's `name`, run through git's own clone-directory
+algorithm — not the `checkout:` alias.** — the doc page (checked 2026-08-22) — "If no `path` is
+specified in the `checkout` step, the name of the repository is used for the folder, not the
+`repository` value which is used to reference the repository in the `checkout` step." and its worked
+example, where `name: MyGitHubOrgOrUser/MyGitHubRepo` produces the folder `MyGitHubRepo`. The
+algorithm behind that last-segment reduction, with its documented fallback order —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Sdk/Util/RepositoryUtil.cs#L190-L252
+(checked 2026-08-22) — "/// Returns the folder name that would be created by calling 'git.exe clone'.
+… /// The repo name is used if provided, then repo url, and finally repo alias." / "// The logic
+here was inspired by what git.exe does / … // skip any kind of scheme … // skip any auth info (ends
+with @) … // trim any slashes or \".git\" extension … // skip everything before the last path
+segment (ends with /) … if (!slashFound) { // No slashes means we only have a host name, remove any
+trailing port number … } // Colons can also be path separators, so skip past the last colon". Two
+orderings in there are easy to invert and are pinned by the agent's own L0 table
+(`src/Test/L0/Util/RepositoryUtilL0.cs#L396-L451`, checked 2026-08-22): the **last** `@` wins, so
+`ssh://user:passw@rd@host:1234/` → `host`; and the port trim fires **only when no slash was found**,
+so `ssh://user:password@host/test:1234` → `1234`. The whole table is ported to bats as the
+conformance fixture for the bash port.
+
+[C-E06-119] **Adding a second checkout silently moves the first one.** — the doc page (checked
+2026-08-22) — "If you are using default paths, adding a second repository `checkout` step changes
+the default path of the code for the first repository. For example, the code for a repository named
+`tools` would be checked out to `C:\agent\_work\1\s` when `tools` is the only repository, but if a
+second repository is added, `tools` would then be checked out to `C:\agent\_work\1\s\tools`. If you
+have any steps that depend on the source code being in the original location, those steps must be
+updated." This is why the emulator's coverage report should surface a multi-checkout job: a pipeline
+whose scripts hardcode `$(Build.SourcesDirectory)/src` breaks on the real service too, and the
+emulator reproducing the break is correct behavior, not a bug to smooth over.
+
+[C-E06-120] **Delta, deliberately not implemented here: `workspaceRepo`.** Under multi-checkout,
+`System.DefaultWorkingDirectory` is retargeted to the repository whose checkout sets
+`workspaceRepo: true`, and falls back to `s` when no checkout does. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Worker/Build/BuildJobExtension.cs#L392-L446
+(checked 2026-08-22) — "if (RepositoryUtil.HasMultipleCheckouts(executionContext.JobSettings)) { //
+get checkout task for default working director repo / var defaultWorkingDirectoryCheckoutTask =
+GetDefaultWorkingDirectoryCheckoutTask(steps); …" / "public static TaskStep
+GetDefaultWorkingDirectoryCheckoutTask(IList<JobStep> steps) { return steps.Select(x => x as
+TaskStep).Where(task => task.IsCheckoutTask() && task.Inputs.TryGetValue(Pipelines.
+PipelineConstants.CheckoutTaskInputs.WorkspaceRepo, out string isDefaultWorkingDirectoryCheckout) &&
+StringUtil.ConvertToBoolean(isDefaultWorkingDirectoryCheckout)).FirstOrDefault(); }". The selection
+scans the **whole step list**, which is emitter knowledge and not available to a single
+`azdo_checkout` invocation — the agent resolves it in job preparation, before any checkout runs.
+`workspaceRepo` was already grounded at C-E06-026/027 for what it *does*; this claim records who
+owns it. `azdo_checkout` accepts and reports it like the four T02 deltas (C-E06-110) so a pipeline
+that sets it still runs, and E05 wires `System.DefaultWorkingDirectory` at job setup.
+
+[C-E06-121] **Non-`self` repositories seed no `Build.*` variables.** The `Build.Repository.*` and
+`Build.Source*` family describes exactly one repository — the triggering one, which is `self` unless
+a multi-repo resource trigger fired. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Worker/Build/BuildJobExtension.cs#L151-L159
+(checked 2026-08-22) — "executionContext.SetVariable(Constants.Variables.Build.RepoName,
+repoInfo.TriggeringRepository.Properties.Get<string>(Pipelines.RepositoryPropertyNames.Name));" —
+and the doc page (checked 2026-08-22) — "When you check out multiple repositories, some details
+about the `self` repository are available as variables. When you use multi-repo triggers, some of
+those variables have information about the triggering repository instead. Details about all of the
+repositories consumed by the job are available as a template context object called
+`resources.repositories`." A converted pipeline is never triggered, so `self` is the triggering
+repository by construction and a non-`self` checkout only places files. `resources.repositories`
+as a template context object belongs to E03/E04, not to the runtime.

@@ -2918,13 +2918,22 @@ azdo__checkout_note() {
   printf 'azdo-emu: %s (degraded)\n' "$1"
 }
 
-# The source repository the `self` checkout is emulated from: the local clone the project was
+# The source repository a checkout is emulated from: for `self`, the local clone the project was
 # converted in. `--source` wins, then AZDO_SELF_REPO, which the generated runner exports beside
 # AZDO_STATE_DIR. E08 replaces the "current state of this repo" pin with the lockfile's origin+commit.
+# AZDO_SELF_REPO is *only* a fallback for `self`: a non-`self` alias that silently checked out the
+# self repository would produce a green run with the wrong files in it.
 azdo__checkout_source() {
-  local source="${1:-${AZDO_SELF_REPO-}}" resolved
+  local source="$1" repository="${2:-self}" resolved
+  if [[ -z "$source" ]] && [[ "$repository" == self ]]; then
+    source="${AZDO_SELF_REPO-}"
+  fi
   if [[ -z "$source" ]]; then
-    printf '%s\n' 'azdo_checkout: no self repository; pass --source or set AZDO_SELF_REPO' >&2
+    if [[ "$repository" == self ]]; then
+      printf '%s\n' 'azdo_checkout: no self repository; pass --source or set AZDO_SELF_REPO' >&2
+    else
+      printf 'azdo_checkout: repository %s needs --source; only self falls back to AZDO_SELF_REPO\n' "$repository" >&2
+    fi
     return 1
   fi
   if [[ ! -d "$source" ]]; then
@@ -2943,27 +2952,152 @@ azdo__checkout_source() {
   printf '%s\n' "$resolved"
 }
 
+# E06-S05-T03 — the folder name a repository gets under multi-checkout is its `name` property run
+# through git's own clone-directory algorithm, not the `checkout:` alias and not `basename`
+# (C-E06-118). Ported from `RepositoryUtil.GetCloneDirectory`: strip a scheme, skip past the *last*
+# `@` (so `ssh://user:passw@rd@host/` keeps `host`), trim trailing slashes and one `.git`, take the
+# last `/`- then `:`-separated segment, and trim a trailing `:<digits>` port **only** when no slash
+# was found at all (so `.../test:1234` keeps `1234`). The agent's own L0 table is the conformance
+# fixture in `test/core.bats`.
+
+# Last index of `ch` within the inclusive range, or -1 — `RepositoryUtil.FinalIndexOf`, including
+# its out-of-range guard.
+azdo__checkout_final_index_of() {
+  local buffer="$1" ch="$2" start="$3" end="$4" len=${#1} i
+  if ((start < 0 || end < 0 || start >= len || end >= len)); then
+    printf '%s\n' -1
+    return 0
+  fi
+  for ((i = end; i >= start; i--)); do
+    if [[ "${buffer:i:1}" == "$ch" ]]; then
+      printf '%s\n' "$i"
+      return 0
+    fi
+  done
+  printf '%s\n' -1
+}
+
+# `RepositoryUtil.SkipLastIndexOf`: the new start is one past the match, and a match sitting **on**
+# `end` counts as not found — that is what keeps `host:/` and `ssh://host/` resolving to `host`.
+# Prints "<index> <found>" because the `/` caller needs the flag and the others do not.
+azdo__checkout_skip_last_index_of() {
+  local buffer="$1" ch="$2" start="$3" end="$4" index
+  index="$(azdo__checkout_final_index_of "$buffer" "$ch" "$start" "$end")"
+  if ((index >= 0 && index < end)); then
+    printf '%s true\n' "$((index + 1))"
+  else
+    printf '%s false\n' "$start"
+  fi
+}
+
+# `RepositoryUtil.TrimSlashesAndExtension`: trailing slashes/whitespace, then at most one `.git`
+# (case-insensitively), then trailing slashes/whitespace again — the second pass is what makes
+# `ssh://host/foo///.git/` and `ssh://host/foo/.git///` both reduce to `foo`.
+azdo__checkout_trim_slashes_and_extension() {
+  local buffer="$1" end="$2" len=${#1} char
+  if ((end < 0 || end >= len)); then
+    printf '%s\n' "$end"
+    return 0
+  fi
+  while ((end > 0)); do
+    char="${buffer:end:1}"
+    [[ "$char" == / || "$char" == [[:space:]] ]] || break
+    end=$((end - 1))
+  done
+  if ((end - 3 >= 0)) && [[ "${buffer:end-3:4}" == [.][Gg][Ii][Tt] ]]; then
+    end=$((end - 4))
+  fi
+  while ((end > 0)); do
+    char="${buffer:end:1}"
+    [[ "$char" == / || "$char" == [[:space:]] ]] || break
+    end=$((end - 1))
+  done
+  printf '%s\n' "$end"
+}
+
+# `RepositoryUtil.TrimPortNumber`: only reached when the name had no `/`, and only trims when what
+# follows the last colon is empty or all digits.
+azdo__checkout_trim_port_number() {
+  local buffer="$1" end="$2" start="$3" last_colon rest
+  last_colon="$(azdo__checkout_final_index_of "$buffer" ':' "$start" "$end")"
+  if ((last_colon >= 0)); then
+    rest="${buffer:last_colon+1:end-last_colon}"
+    if ((last_colon == end)) || { [[ -n "$rest" ]] && [[ "$rest" =~ ^[0-9]+$ ]]; }; then
+      printf '%s\n' "$((last_colon - 1))"
+      return 0
+    fi
+  fi
+  printf '%s\n' "$end"
+}
+
+azdo__checkout_clone_directory() {
+  local name="$1" start end found prefix directory
+  if [[ -z "$name" ]]; then
+    printf 'azdo_checkout: repository name must not be empty\n' >&2
+    return 1
+  fi
+  end=$((${#name} - 1))
+  if [[ "$name" == *'://'* ]]; then
+    prefix="${name%%://*}"
+    start=$((${#prefix} + 3))
+  else
+    start=0
+  fi
+  read -r start found < <(azdo__checkout_skip_last_index_of "$name" '@' "$start" "$end")
+  end="$(azdo__checkout_trim_slashes_and_extension "$name" "$end")"
+  read -r start found < <(azdo__checkout_skip_last_index_of "$name" '/' "$start" "$end")
+  if [[ "$found" == false ]]; then
+    end="$(azdo__checkout_trim_port_number "$name" "$end" "$start")"
+  fi
+  read -r start found < <(azdo__checkout_skip_last_index_of "$name" ':' "$start" "$end")
+  # C# throws `ArgumentOutOfRangeException` out of `Substring` here — `x://` is the shortest input
+  # that reaches it. Refused with the message below rather than with a bash arithmetic error.
+  if ((end < start)); then
+    directory=''
+  else
+    directory="${name:start:end-start+1}"
+  fi
+  # No agent counterpart: the agent's repository names come from the service, this one can come from
+  # a directory basename or a `--repo-name` the emitter passed through. A `.`/`..`/`/` segment would
+  # resolve `s/<name>` back out of `s` — and `clean` deletes inside whatever it resolves to.
+  case "$directory" in
+    '' | . | .. | */*)
+      printf 'azdo_checkout: repository name does not yield a usable directory: %s\n' "$name" >&2
+      return 1
+      ;;
+  esac
+  printf '%s\n' "$directory"
+}
+
+# The agent computes `HasMultipleCheckouts` **once, at job preparation**, from the job's step list,
+# and the plugin that places the repository, the extension that seeds the variables and the
+# directory manager all read that one setting (C-E06-115). The emitter knows the same step list
+# statically, so it exports the answer per job beside AZDO_STATE_DIR rather than having the runtime
+# count anything (docs/06 §5 decision 41).
+azdo__checkout_has_multiple() {
+  azdo__checkout_bool "${AZDO_HAS_MULTIPLE_CHECKOUTS-}" false
+}
+
 # `path` is resolved under `$(Pipeline.Workspace)` and escaping that root needs an explicit opt-in
 # on the agent (C-E06-105); here it is simply refused. The guard is load-bearing beyond parity:
 # `clean` runs `git clean -ffdx` and `copy` empties its target, so a path that escaped the workspace
-# would let a pipeline delete the user's own files. Multi-checkout layout (`s/<repoName>`) is
-# E06-S05-T03; a single self checkout lands in `s/`.
-azdo__checkout_target() {
-  local path="${1-}" workspace resolved segment depth=0
+# would let a pipeline delete the user's own files.
+#
+# The default the caller passes in is `s` for a single checkout and `s/<repoName>` when the job has
+# more than one (C-E06-114); an explicit `path` wins over both and, like the default, is resolved
+# against `$(Pipeline.Workspace)` — **not** against `s` (C-E06-114).
+# `Path.GetFullPath(Path.Combine(base, path))`: purely lexical, no filesystem access. It has to be,
+# for two reasons — `mkdir -p` first would leave an empty directory outside the workspace on its way
+# to refusing the path, and the agent's own default-vs-custom `path` comparison (C-E06-117) compares
+# two path *strings*, one of which may name a directory that will never exist.
+azdo__checkout_normalize() {
+  local base="$1" path="$2" resolved segment depth=0
   local -a parts=() stack=()
-  workspace="$(azdo__artifact_workspace)" || return 1
-  workspace="$(cd "${workspace%/}" 2>/dev/null && pwd -P)" || {
-    printf 'azdo_checkout: Pipeline.Workspace does not exist\n' >&2
-    return 1
-  }
-  [[ -n "$path" ]] || path='s'
   if [[ "$path" == /* ]]; then
     resolved="$path"
   else
-    resolved="$workspace/$path"
+    resolved="$base/$path"
   fi
-  # Normalized *lexically*, before anything is created: `mkdir -p` first would leave an empty
-  # directory outside the workspace on its way to refusing the path.
   IFS='/' read -r -a parts <<<"$resolved"
   for segment in "${parts[@]}"; do
     case "$segment" in
@@ -2980,10 +3114,21 @@ azdo__checkout_target() {
         ;;
     esac
   done
-  resolved="/$(
+  printf '/%s\n' "$(
     IFS=/
     printf '%s' "${stack[*]}"
   )"
+}
+
+azdo__checkout_target() {
+  local path="${1-}" fallback="${2-s}" workspace resolved
+  workspace="$(azdo__artifact_workspace)" || return 1
+  workspace="$(cd "${workspace%/}" 2>/dev/null && pwd -P)" || {
+    printf 'azdo_checkout: Pipeline.Workspace does not exist\n' >&2
+    return 1
+  }
+  [[ -n "$path" ]] || path="$fallback"
+  resolved="$(azdo__checkout_normalize "$workspace" "$path")" || return 1
   azdo__checkout_inside "$resolved" "$workspace" "$path" || return 1
   mkdir -p "$resolved" || return 1
   resolved="$(cd "$resolved" && pwd -P)" || return 1
@@ -3134,10 +3279,52 @@ azdo__checkout_seed_var() {
   azdo_var_set "$name" "$value"
 }
 
+# The mode dispatch, shared by `self` and every other alias: the layout rules differ between them
+# but what lands in the directory does not. `azdo__checkout_lfs_enabled` is the caller's local,
+# reached through bash's dynamic scoping (C-E06-104), and is cleared here when the warning fires.
+azdo__checkout_place() {
+  local mode="$1" source="$2" target="$3" committish="$4" clean="$5" fetch_tags="$6" depth="$7"
+  local submodules="$8" tags_input="$9"
+
+  if [[ "$azdo__checkout_lfs_enabled" == true ]] && ! git lfs version >/dev/null 2>&1; then
+    # The agent's own LFS pre-fetch failure is a warning and the checkout continues (C-E06-104);
+    # a missing git-lfs binary is the local shape of the same situation.
+    azdo__logging_record_issue warning \
+      'lfs: true was requested but git-lfs is not installed; LFS files are left as pointers and the checkout continues.' || return 1
+    azdo__checkout_lfs_enabled=false
+  fi
+
+  case "$mode" in
+    clone)
+      azdo__checkout_mode_clone "$source" "$target" "$committish" "$clean" "$fetch_tags" "$depth" "$submodules" || return 1
+      ;;
+    copy)
+      # Every fetch-shaped option is meaningless for a working-tree copy, and `clean` is worse than
+      # meaningless: `git clean -ffdx` would delete exactly the uncommitted work the mode exists to
+      # test. Reported, not silently honored (docs/06 §5 decision 40).
+      [[ "$clean" != true ]] || azdo__checkout_note 'checkout mode copy ignores clean: true; it would delete the uncommitted changes this mode exists to run'
+      ((depth == 0)) || azdo__checkout_note 'checkout mode copy ignores fetchDepth; the working tree is copied, not fetched'
+      [[ -z "$tags_input" ]] || azdo__checkout_note 'checkout mode copy ignores fetchTags; the working tree is copied, not fetched'
+      [[ "$submodules" == none ]] || azdo__checkout_note 'checkout mode copy inherits submodule contents from the source working tree'
+      azdo__checkout_mode_copy "$source" "$target" || return 1
+      ;;
+    worktree)
+      ((depth == 0)) || azdo__checkout_note 'checkout mode worktree ignores fetchDepth; no remote is fetched'
+      [[ -z "$tags_input" ]] || azdo__checkout_note 'checkout mode worktree ignores fetchTags; no remote is fetched'
+      azdo__checkout_mode_worktree "$source" "$target" "$committish" || return 1
+      [[ "$clean" != true ]] || azdo__checkout_clean "$target" "$submodules" || return 1
+      if [[ "$submodules" != none ]]; then
+        azdo__checkout_submodule_update "$target" "$submodules" "$depth" || return 1
+      fi
+      ;;
+  esac
+}
+
 azdo_checkout() {
   local repository='self' mode='clone' source_input='' path='' target source
-  local clean_input='' depth_input='' tags_input='' lfs_input='' submodules_input=''
+  local clean_input='' depth_input='' tags_input='' lfs_input='' submodules_input='' name_input=''
   local clean fetch_tags depth submodules committish ref branch_name message uri name
+  local multiple clone_directory workspace_root sources_root default_path local_path
   local azdo__checkout_lfs_enabled=false
   while (($# > 0)); do
     case "$1" in
@@ -3177,6 +3364,21 @@ azdo_checkout() {
         submodules_input="${2-}"
         shift 2 || return 2
         ;;
+      # The repository resource's `name` property — the folder name multi-checkout uses, and the
+      # value `Build.Repository.Name` reports (C-E06-118/121). The emitter passes the YAML's; the
+      # fallback for `self` is the source directory's own basename.
+      --repo-name)
+        name_input="${2-}"
+        shift 2 || return 2
+        ;;
+      # Grounded and deliberately not implemented (C-E06-120): `workspaceRepo` retargets
+      # `System.DefaultWorkingDirectory`, and the agent picks the winner by scanning the whole job's
+      # step list before any checkout runs. That is E05's knowledge, not one step's.
+      --workspace-repo)
+        [[ "$(azdo__checkout_bool "${2-}" false)" != true ]] ||
+          azdo__checkout_note 'checkout option workspaceRepo is not emulated here; System.DefaultWorkingDirectory is set at job setup'
+        shift 2 || return 2
+        ;;
       # Grounded and deliberately not implemented (C-E06-110): accepted so a pipeline that sets them
       # still runs, and reported rather than silently dropped.
       --fetch-filter | --sparse-checkout-directories | --sparse-checkout-patterns | --persist-credentials)
@@ -3184,20 +3386,23 @@ azdo_checkout() {
         shift 2 || return 2
         ;;
       *)
-        printf 'usage: azdo_checkout [--repository self] [--mode clone|copy|worktree] [--source <dir>] [--path <p>] [--clean <v>] [--fetch-depth <v>] [--fetch-tags <v>] [--lfs <v>] [--submodules <v>]\n' >&2
+        printf 'usage: azdo_checkout [--repository self|<alias>] [--repo-name <name>] [--mode clone|copy|worktree] [--source <dir>] [--path <p>] [--clean <v>] [--fetch-depth <v>] [--fetch-tags <v>] [--lfs <v>] [--submodules <v>]\n' >&2
         return 2
         ;;
     esac
   done
 
-  # `checkout: none` is a skip, and any other repository is E06-S05-T03's multi-checkout layout.
+  # `checkout: none` is a skip. Any other alias is a real repository the job also checks out; it
+  # differs from `self` only in where its files come from and in seeding no variables (C-E06-121).
   if [[ "$repository" == none ]]; then
     return 0
   fi
-  if [[ "$repository" != self ]]; then
-    printf 'azdo_checkout: only the self repository is emulated; got %s\n' "$repository" >&2
-    return 1
+  if [[ -z "$repository" ]]; then
+    printf '%s\n' 'azdo_checkout: --repository must not be empty' >&2
+    return 2
   fi
+  # `IsPrimaryRepositoryName` is case-insensitive (C-E06-115).
+  [[ "${repository,,}" != self ]] || repository='self'
   case "$mode" in
     clone | copy | worktree) ;;
     *)
@@ -3212,8 +3417,35 @@ azdo_checkout() {
   submodules="$(azdo__checkout_submodules "$submodules_input")"
   azdo__checkout_lfs_enabled="$(azdo__checkout_bool "$lfs_input" false)"
 
-  source="$(azdo__checkout_source "$source_input")" || return 1
-  target="$(azdo__checkout_target "$path")" || return 1
+  source="$(azdo__checkout_source "$source_input" "$repository")" || return 1
+
+  # Layout (C-E06-114): one checkout in the job puts it in `s`; two or more put every repository —
+  # `self` included — in `s/<repoName>`; an explicit `path` overrides both and is rooted at
+  # `$(Pipeline.Workspace)`, not at `s`.
+  name="$name_input"
+  [[ -n "$name" ]] || name="${source##*/}"
+  clone_directory="$(azdo__checkout_clone_directory "$name")" || return 1
+  multiple="$(azdo__checkout_has_multiple)"
+  workspace_root="$(azdo__artifact_workspace)" || return 1
+  workspace_root="${workspace_root%/}"
+  sources_root="$workspace_root/s"
+  if [[ "$multiple" == true ]]; then
+    default_path="s/$clone_directory"
+  else
+    default_path='s'
+  fi
+  target="$(azdo__checkout_target "$path" "$default_path")" || return 1
+
+  # A non-`self` checkout places files and nothing else: every `Build.*` variable below describes
+  # the *triggering* repository, which in a converted pipeline is always `self` (C-E06-121). Its
+  # commit is its own HEAD — `Build.SourceVersion` is `self`'s, and honoring it here would check a
+  # foreign repository out at a commit it has never heard of.
+  if [[ "$repository" != self ]]; then
+    committish="$(git -C "$source" rev-parse HEAD)" || return 1
+    azdo__checkout_place "$mode" "$source" "$target" "$committish" \
+      "$clean" "$fetch_tags" "$depth" "$submodules" "$tags_input" || return 1
+    return 0
+  fi
 
   # Read before the checkout so an `.env` override of Build.SourceVersion actually selects the
   # commit, and re-seeded after it so an unset one records what was checked out.
@@ -3229,45 +3461,14 @@ azdo_checkout() {
     fi
   fi
 
-  if [[ "$azdo__checkout_lfs_enabled" == true ]] && ! git lfs version >/dev/null 2>&1; then
-    # The agent's own LFS pre-fetch failure is a warning and the checkout continues (C-E06-104);
-    # a missing git-lfs binary is the local shape of the same situation.
-    azdo__logging_record_issue warning \
-      'lfs: true was requested but git-lfs is not installed; LFS files are left as pointers and the checkout continues.' || return 1
-    azdo__checkout_lfs_enabled=false
-  fi
-
-  case "$mode" in
-    clone)
-      azdo__checkout_mode_clone "$source" "$target" "$committish" "$clean" "$fetch_tags" "$depth" "$submodules" || return 1
-      ;;
-    copy)
-      # Every fetch-shaped option is meaningless for a working-tree copy, and `clean` is worse than
-      # meaningless: `git clean -ffdx` would delete exactly the uncommitted work the mode exists to
-      # test. Reported, not silently honored (docs/06 §5 decision 40).
-      [[ "$clean" != true ]] || azdo__checkout_note 'checkout mode copy ignores clean: true; it would delete the uncommitted changes this mode exists to run'
-      ((depth == 0)) || azdo__checkout_note 'checkout mode copy ignores fetchDepth; the working tree is copied, not fetched'
-      [[ -z "$tags_input" ]] || azdo__checkout_note 'checkout mode copy ignores fetchTags; the working tree is copied, not fetched'
-      [[ "$submodules" == none ]] || azdo__checkout_note 'checkout mode copy inherits submodule contents from the source working tree'
-      azdo__checkout_mode_copy "$source" "$target" || return 1
-      ;;
-    worktree)
-      ((depth == 0)) || azdo__checkout_note 'checkout mode worktree ignores fetchDepth; no remote is fetched'
-      [[ -z "$tags_input" ]] || azdo__checkout_note 'checkout mode worktree ignores fetchTags; no remote is fetched'
-      azdo__checkout_mode_worktree "$source" "$target" "$committish" || return 1
-      [[ "$clean" != true ]] || azdo__checkout_clean "$target" "$submodules" || return 1
-      if [[ "$submodules" != none ]]; then
-        azdo__checkout_submodule_update "$target" "$submodules" "$depth" || return 1
-      fi
-      ;;
-  esac
+  azdo__checkout_place "$mode" "$source" "$target" "$committish" \
+    "$clean" "$fetch_tags" "$depth" "$submodules" "$tags_input" || return 1
 
   branch_name="${ref##*/}"
   message="$(git -C "$source" log -1 --pretty=%B "$committish" 2>/dev/null | head -n 1)"
   message="${message:0:200}"
   uri="$(git -C "$source" config --get remote.origin.url 2>/dev/null || :)"
   [[ -n "$uri" ]] || uri="file://$source"
-  name="${source##*/}"
 
   azdo__checkout_seed_var 'Build.SourceVersion' "$committish" || return 1
   azdo__checkout_seed_var 'Build.SourceVersionMessage' "$message" || return 1
@@ -3279,8 +3480,31 @@ azdo_checkout() {
   # about a local source directory (C-E06-107).
   azdo__checkout_seed_var 'Build.Repository.Provider' 'Git' || return 1
   azdo__checkout_seed_var 'Build.Repository.Clean' "$clean" || return 1
-  # Equal for a single self checkout; they diverge only under the multi-checkout rules E06-S05-T03
-  # owns (C-E06-107).
-  azdo__checkout_seed_var 'Build.Repository.LocalPath' "$target" || return 1
-  azdo__checkout_seed_var 'Build.SourcesDirectory' "$target" || return 1
+
+  # Two variables, three rules, none of which is "wherever the files went" (C-E06-116/117).
+  #
+  # `Build.SourcesDirectory` is the tracking config's sources directory. That is `s`, rewritten to a
+  # checkout's own path only when the job tracks exactly **one** repository — so `path:` moves it in
+  # a single-checkout job and leaves it at `s` in a multi-checkout one.
+  #
+  # `Build.Repository.LocalPath` follows it, except for the case the agent kept for backward
+  # compatibility: under multi-checkout it stays at `s` even though `self`'s files are one level
+  # deeper in `s/<repoName>`, and only a `path` that *differs* from that default moves it. Writing
+  # `path: s/<repoName>` explicitly is therefore not custom and changes nothing.
+  if [[ "$multiple" != true ]]; then
+    azdo__checkout_seed_var 'Build.Repository.LocalPath' "$target" || return 1
+    azdo__checkout_seed_var 'Build.SourcesDirectory' "$target" || return 1
+    return 0
+  fi
+  # The sources root is nobody's checkout target once every repository has a `path`, but both
+  # variables still point at it, so it has to exist the way the agent's tracking directory does.
+  mkdir -p "$sources_root" || return 1
+  sources_root="$(cd "$sources_root" && pwd -P)" || return 1
+  local_path="$sources_root"
+  if [[ -n "$path" ]] &&
+    [[ "$(azdo__checkout_normalize "$workspace_root" "$path")" != "$(azdo__checkout_normalize "$workspace_root" "$default_path")" ]]; then
+    local_path="$target"
+  fi
+  azdo__checkout_seed_var 'Build.Repository.LocalPath' "$local_path" || return 1
+  azdo__checkout_seed_var 'Build.SourcesDirectory' "$sources_root" || return 1
 }
