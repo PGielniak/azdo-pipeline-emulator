@@ -10,6 +10,15 @@ Primary grounding set: learn.microsoft.com/azure/devops/pipelines/process/expres
 > be delegated to the service. Compile-time `${{ }}` evaluation is the server's job (PLAN D3); the
 > machinery is retained only as the offline fallback and is demoted off the critical path (see E12).
 > All S01–S05 work carries over and is `[x]`; the full completion detail lives in CHANGELOG-BACKLOG.md.
+>
+> **Demotion sweep result (2026-08-22, E12-S01-T02): nothing in this epic is `[~]`, and that is a
+> finding, not an omission.** The sweep looked for "old E02 compile-time evaluation entry points"
+> and found none to demote: every task here is `[x]` (S03-T02 was already `[~]`, superseded by
+> S03-T04), so there is no unbuilt compile-time scope to cut, and marking delivered code `[~]`
+> would misreport it. The one shared entry point, `evaluateExpression` (S05-T03), serves **both**
+> halves — runtime `$[ ]` on the default path and the offline fallback's `${{ }}` — so it is not a
+> compile-time-only surface either. The demotion is therefore recorded at epic level (above) and
+> nowhere else.
 
 ## E02-S01 — As an engine developer, the documented expression grammar parses into one AST, so runtime conditions and the offline fallback never diverge structurally.
 Acceptance: parser covers the full documented syntax; parse errors match server style.

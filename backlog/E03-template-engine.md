@@ -18,6 +18,14 @@ Acceptance: directive semantics proven by oracle fixture pairs, not by reading a
 > E03-S05-T01 were ever ticked. `main` and this branch agree on the file, so this is the E03 worker's
 > outstanding bookkeeping, not a merge casualty. A cold session told to "take the next unchecked task"
 > will otherwise pick E03-S01-T03, which is finished. Flip these when the E03 lane next runs.
+>
+> **Demotion sweep (2026-08-22, E12-S01-T02) deliberately left these checkboxes alone.** The sweep
+> marks *scope*, not completed work (E12 header), and it cannot certify another lane's Done
+> criteria. What the demotion changes for S01 is its **status, not its state**: the directive engine
+> built here is the offline fallback (PLAN D3/D4), reached only through `--offline-expand`
+> (E12-S01-T01) once E03-S04-T02 gives it a whole-document driver. Nothing in S01 is `[~]` — it is
+> built, proven against oracle pairs, and retained. E03-S01-T02's `[!]` blocker note also predates
+> two `done` entries for it in `CHANGELOG-BACKLOG.md`; that too is the E03 lane's to reconcile.
 
 - [x] **E03-S01-T01 — DOM walker with context stack**
   **Do:** `packages/engine/src/template/walk.ts`: depth-first mapping/sequence walk, per-file context frames (parameters, file variables), directive-key detection.
@@ -66,6 +74,12 @@ Acceptance: directive semantics proven by oracle fixture pairs, not by reading a
 ## E03-S02 — As a pipeline developer, includes/`extends` with typed parameters resolve like the service, so multi-file pipelines just work.
 Acceptance: reference forms, parameter typing, and `extends` restrictions all enforced with service-matching errors.
 
+> **Demoted to fallback scope (2026-08-22, E12-S01-T02).** Same treatment as S01: T01/T02 are built
+> but unchecked (T01 recorded `done`, T02 only `in-progress` — see the S01 drift note) and are
+> retained as the offline fallback; T03/T04 were never built and are `[~]`. The **default** path
+> reaches template files by *bundling* them for the service (E03-S06/S07), not by interpreting them
+> here.
+
 - [ ] **E03-S02-T01 — Reference resolution (`relative`, `/root`, `@alias`, `@self`)**
   **Do:** resolver with per-file base dir, repo-context switching on `@alias` (fetcher interface injected; local-FS impl now, remote in E08), cycle detection on (repo, commit, path).
   **Ground:** templates doc "Use other repositories" + resources doc `repositories`; oracle can't exercise cross-repo without setup — add a two-repo fixture in the test org and capture `finalYaml` proving path resolution + `@self` semantics.
@@ -75,11 +89,11 @@ Acceptance: reference forms, parameter typing, and `extends` restrictions all en
   **Ground:** template-parameters + runtime-parameters docs (quote type list and coercion notes); oracle probes for: passing number to string, boolean literals accepted (`true`/`True`?), object deep shape — transcripts + claims.
   **Done:** binding test matrix per type × (default/provided/missing/wrong-type); errors snapshot-compared to service phrasing collected via oracle.
   *Status note (2026-08-21, recorded by E06-S04-T04): an unfinished 755-line `packages/engine/src/template/parameters.ts` from the 2026-08-20 in-progress session survives on branch `claude/e06-s04-t03`, swept in by the crash-recovery commit `f76a47b` ("auto-save checkpoint"). It is **not on `main`**, is imported by nothing, and has no tests, so it counts as ~247 wholly uncovered statements and is the sole reason `pnpm test:unit` fails its coverage thresholds on that branch (1,439/1,439 tests pass; `main` measures 93.4% statements against the same numerator). Left in place rather than deleted — finishing or discarding it is this task's call; it is recoverable from `f76a47b` either way. Thresholds were **not** lowered.*
-- [ ] **E03-S02-T03 — `extends` semantics**
+- [~] **E03-S02-T03 — `extends` semantics** — *Demoted 2026-08-22 (E12-S01-T02, docs/07 §6): `extends` is compile-time semantics the **service** performs (PLAN D3). The default path is the preview expansion (E00-S04) fed by the bundler (E03-S06/S07), which inlines the `extends` **target file** rather than interpreting the keyword. Retained fallback scope: build only if the offline engine is pursued (E03-S04-T02).*
   **Do:** expansion of the target with root restrictions enforced (which root keys are legal beside `extends`); nested `extends` behavior.
   **Ground:** templates doc "Extend from a template" (+ security section); oracle probes: illegal root key beside extends → capture error; nested extends → capture result. Claims per rule.
   **Done:** fixtures matching service for legal/illegal cases.
-- [ ] **E03-S02-T04 — `templateContext` passthrough**
+- [~] **E03-S02-T04 — `templateContext` passthrough** — *Demoted 2026-08-22 (E12-S01-T02, docs/07 §6): an opaque compile-time payload the service resolves before it ever reaches us; the expanded `finalYaml` no longer contains it. Retained fallback scope only.*
   **Do:** opaque payload attached to stage/job/step items iterated in templates; reachable in expressions per doc.
   **Ground:** templates doc "templateContext" section + yaml-schema keyword page; one oracle fixture using it with a jobList.
   **Done:** golden matches oracle.
@@ -87,12 +101,12 @@ Acceptance: reference forms, parameter typing, and `extends` restrictions all en
 ## E03-S03 — As an engine developer, compile-time variable visibility follows empirically proven rules, so the murkiest area of the service is encoded as tested policy, not guesses.
 Acceptance: policy function backed by an experiment matrix.
 
-- [ ] **E03-S03-T01 — Visibility experiment matrix**
+- [~] **E03-S03-T01 — Visibility experiment matrix** — *Demoted 2026-08-22 (E12-S01-T02, docs/07 §6): compile-time `${{ variables.* }}` visibility is decided by the service; only the **runtime** expression half stays local (PLAN D6). The matrix would now be documentation of the service's behavior, not a specification we implement. Retained fallback scope; the carried-in cell below (C-E12-024) stays as evidence.*
   **Do:** design & run oracle experiments: `${{ variables.x }}` read in root vs included template vs nested template; variable declared before/after use; variables from `variables:` templates; stage-level vs root-level. ≥ 12 cells; store inputs+`finalYaml`.
   **Ground:** the experiments **are** the grounding (docs are known-incomplete here — note the doc gap with links to what the templates/variables docs do say).
   **Done:** `research/E03-visibility.md` table: cell → observed behavior → claim ID.
   *Note (2026-08-11, E12-S01-T02): one cell is already answered and should be carried in, plus a thirteenth the Do list doesn't name — **job-level scoping**: `${{ variables.x }}` read inside a job that overrides `x` resolves to the **job's** value, not the pipeline-level one (C-E12-024, `fixtures/oracle/04-variable-layers.final.yml:55`). Corpus entry 04 is a ready-made input for the matrix.*
-- [ ] **E03-S03-T02 — `compileTimeVariableScope()` policy implementation**
+- [~] **E03-S03-T02 — `compileTimeVariableScope()` policy implementation** — *Demoted 2026-08-22 (E12-S01-T02, docs/07 §6): same reason as T01 — the policy exists only inside the offline fallback's walker. Retained fallback scope; it cannot start before T01 either way.*
   **Do:** single policy function consumed by the walker; every branch annotated with the claim ID from T01.
   **Ground:** exclusively the T01 experiment claims (`research/E03-visibility.md`) — no branch may exist without a cell citation; templates/variables doc statements (where they exist) linked alongside as secondary support.
   **Done:** all T01 cells reproduced by engine tests; divergence from any future oracle run fails CI (cells become permanent oracle fixtures).
@@ -100,26 +114,37 @@ Acceptance: policy function backed by an experiment matrix.
 ## E03-S04 — As a pipeline developer, expansion enforces the same limits and produces the same final document the service would, with provenance for debugging.
 Acceptance: limits enforced; `pipeline.expanded.yml` + `expansion-map.json` emitted; strict validation runs post-expansion.
 
-- [ ] **E03-S04-T01 — Server limits**
+> **Split by the demotion sweep (2026-08-22, E12-S01-T02).** The story's premise — *we* produce the
+> final document — is the service's job now (PLAN D3). T01 is demoted; T02 stays as the offline
+> fallback's entry point (its only consumer is `--offline-expand`); T03 stays and re-points at the
+> service's `finalYaml`. `pipeline.expanded.yml` itself is still emitted on the default path — the
+> service's expansion, frozen by the emitter (E05).
+
+- [~] **E03-S04-T01 — Server limits** — *Demoted 2026-08-22 (E12-S01-T02, docs/07 §6): the service enforces its own limits and reports a breach through the preview response, which `expand()` surfaces as a `rejected` outcome (E00-S04-T01). Re-implementing the numbers locally would only be able to disagree with the authority. Retained fallback scope.*
   **Do:** named constants for max file count / nesting depth / expanded size with enforcement + our error messages referencing the doc.
   **Ground:** templates doc "Imposed limits" section — quote exact current numbers into claims (do **not** trust the numbers in design docs; they are placeholders).
   **Done:** limit tests at boundary±1; constants file cites claims.
-- [ ] **E03-S04-T02 — Expanded-YAML emitter + provenance map**
+- [ ] **E03-S04-T02 — Expanded-YAML emitter + provenance map** — *Retained 2026-08-22 (E12-S01-T02): **not** demoted, because it is the offline fallback's missing entry point. The engine's directive visitors are driven end-to-end today only by the test harness `packages/engine/test/template/fixture-harness.ts`; this task is what promotes that into `src/`. Its one consumer is the `--offline-expand` port shipped by E12-S01-T01, which refuses with a message naming this task until it lands. Off the critical path — the default expansion never calls it.*
   **Do:** stable-ordered YAML serialization of the expanded DOM; `expansion-map.json` mapping node paths → source stack (file, line, repo@sha, template-params hash) per docs/02 §7.
   **Ground:** compare serialization choices against oracle `finalYaml` formatting (key order, flow vs block) and encode the normalizer accordingly (feeds E03-S05).
   **Done:** map covers 100% of emitted nodes on corpus; spot-check tool prints provenance for a chosen line.
-- [ ] **E03-S04-T03 — Strict post-expansion validation wiring** (with E01-S02-T02)
+- [ ] **E03-S04-T03 — Strict post-expansion validation wiring** (with E01-S02-T02) — *Re-pointed 2026-08-22 (E12-S01-T02): **not** demoted — it now validates the **service's** `finalYaml` (E00-S04), not a locally-expanded DOM, which is also what unblocks E01-S02-T02. The provenance half of the Done criteria depends on E03-S04-T02 and is fallback-only.*
   **Ground:** vendored official schema + its provenance (E00-S02-T01); confirm the service also rejects the injected mutations by submitting 3 of them through the oracle preview and recording the error responses.
   **Done:** corpus expansions validate; injected mutations fail with pointers into expanded YAML + original source via provenance; 3 mutation cases matched against recorded service errors.
 
 ## E03-S05 — As the project owner, `preview-diff` proves our engine against the service continuously, so parity drift is detected within a day.
 Acceptance: normalize-and-diff pipeline usable locally and in CI.
 
+> **Story premise superseded (2026-08-22, E12-S01-T02).** There is no default-path engine to prove:
+> the service *is* the expansion. T01's normalizer is built and stays useful (comparing any two
+> expansions, fallback included); T02, the `preview-diff` command, is demoted — drift detection is
+> now E11-S03-T01's nightly re-expansion.
+
 - [x] **E03-S05-T01 — Normalizer** *(done 2026-08-11. `packages/engine/src/normalize/normalize.ts` — `normalizeExpandedYaml()` returning `{value, text, applied, errors}`: a path-addressable canonical structure for E03-S05-T02's semantic diff plus a stable serialization, with the exercised rule ids reported. Eight rules N1–N8, each citing its claim and its corpus sample; catalogue in `research/E03-normalizer.md`, evidence in `research/experiments/E03-normalizer/survey.md` (`pnpm normalizer-survey`). **The canonical target was established, not chosen**: re-submitting each committed `finalYaml` as `yamlOverride` returns it byte-for-byte — 10/10 fixpoint modulo the single output-only shape `trigger:/pr: {enabled: false}`, which the service emits and then **refuses to read back** (C-E03-001/002). Scope boundary held deliberately: the normalizer does **not** expand — no `stages: __default` wrapping, no shortcut→task desugaring — because doing expansion here would let a broken expander pass `preview-diff`. 49 tests; idempotence over every golden is a real gate, not a formality (it caught list-item rules re-wrapping their own output on each pass).)*
   **Do:** canonicalization for both sides: key ordering, insignificant whitespace, server-injected defaults (catalog them as discovered — each injected default gets a claim + normalizer rule).
   **Ground:** empirically from oracle outputs on the corpus; every normalizer rule cites the sample that motivated it.
   **Done:** normalizer idempotent; rule list documented in `research/E03-normalizer.md`.
-- [ ] **E03-S05-T02 — `preview-diff` command**
+- [~] **E03-S05-T02 — `preview-diff` command** — *Demoted 2026-08-22 (E12-S01-T02, docs/07 §6): the command is removed from the CLI surface (E10 epic header): with the service as *the* expansion there is nothing to diff on the default path. Service-drift detection moved to the nightly re-expansion harness (**E11-S03-T01**); parity of the offline fallback, if it is ever built, is E11-S02 conformance work rather than a shipped command. **Left for E12-S03:** `packages/cli/src/program.ts` still registers a `preview-diff` command (its `NotImplementedError` points at "E12-S03-T01 (nightly parity workflow)") and docs/06 §1 still lists it — removing the surface is E12-S02/E12-S03 scope, not this sweep's.*
   **Do:** expand locally → fetch `finalYaml` → normalize both → semantic diff (path-based, colored) → exit code; `--update-fixture` writes the pair into `fixtures/oracle/`.
   **Ground:** preview REST page (already pinned E00-S03); diff behavior spec docs/02 §8.
   **Done:** command green on corpus; used by E12-S03 nightly.

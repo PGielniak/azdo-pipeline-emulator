@@ -1,6 +1,10 @@
 # E04 — Semantic model (expanded pipeline)
 
-Phase: P2 · Depends on: E01, E03 · Design: docs/01 §3–§6
+Phase: P2 · Depends on: **E00-S04** (the service expansion supplies `finalYaml`), E01 · Design: docs/01 §3–§6
+> *Dependency corrected 2026-08-22 (E12-S01-T02): this line still read `E01, E03` — a reference to a
+> locally-computed expansion. E03 is now the offline fallback and this epic's input is the service's
+> `finalYaml` (see the re-scope note below); E03 is a dependency only when `--offline-expand` is used.*
+
 Primary grounding set: yaml-schema per-keyword pages (stages/jobs/steps/pool/strategy) · …/process/phases (jobs) · …/process/stages · …/process/deployment-jobs · …/build/variables (predefined) · …/process/variables.
 
 > **Re-scoped by the simplification (docs/07).** The model is now built from the **service's
@@ -59,5 +63,6 @@ Acceptance: matrix/parallel expansion + graph validation with service-matching d
   **Done:** model tests; quirk claims cited; rolling/canary reserved but unimplemented (E08).
 - [ ] **E04-S03-T04 — `manifest.json` serializer**
   **Do:** versioned schema per docs/04 §11; includes fidelity/warnings/env/tools aggregation hooks (filled by E07/E08).
+  *Pointer added 2026-08-22 (E12-S01-T02): the manifest is also where the **expansion mode** is recorded — E12-S01-T01 already returns a typed `ExpansionManifestEntry` (`service` + api-version/pipelineId/hashes, or `offline` + `degraded: true`) from `resolveExpansion()` with no writer to serialize it. Serializing it is this task's, not new scope; see docs/06 §5 decision 42(b) for the one interaction to handle — an offline re-convert of a service-expanded project leaves a stale `expansion` lockfile entry under the same request hash.*
   **Ground:** docs/04 §11 shape as spec; JSON-schema for the manifest committed.
   **Done:** golden manifests for corpus; schema validation in tests.
