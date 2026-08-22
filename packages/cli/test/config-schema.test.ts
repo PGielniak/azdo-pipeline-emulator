@@ -56,8 +56,8 @@ const DOCUMENTED_EXAMPLE = {
   output: {
     targetOs: 'linux',
     checkoutMode: 'clone',
-    sharedWorkspace: false,
-    execution: { environment: 'auto', image: null, dockerSocket: 'auto' },
+    sharedWorkspace: true,
+    execution: { environment: 'host', image: null, dockerSocket: 'auto' },
   },
 };
 

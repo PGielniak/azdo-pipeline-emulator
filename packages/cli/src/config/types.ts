@@ -7,7 +7,11 @@ export const AZDO_AUTH_MODES = ['interactive', 'az', 'pat'] as const;
 export const GITHUB_AUTH_MODES = ['gh', 'pat'] as const;
 export const TARGET_OS = ['linux', 'windows', 'macos'] as const;
 export const CHECKOUT_MODES = ['clone', 'copy', 'worktree'] as const;
-export const EXECUTION_ENVIRONMENTS = ['auto', 'sandbox', 'host'] as const;
+// E12-S02-T02 — PLAN D9 (revised, was D11): host execution is the default and the container
+// sandbox is *deferred*, so `sandbox` stays selectable (nothing implements it yet) while the
+// old `auto` member is gone — its meaning was literally "sandbox when docker/podman is present",
+// i.e. sandbox-by-default one config key away from the default this task flipped (docs/07 §6).
+export const EXECUTION_ENVIRONMENTS = ['host', 'sandbox'] as const;
 export const DOCKER_SOCKET_MODES = ['auto', 'share', 'none'] as const;
 export const UNKNOWN_TASK_POLICIES = ['stub', 'fail', 'prompt'] as const;
 export const TASK_OVERRIDES = ['skip', 'stub', 'fail'] as const;
@@ -100,7 +104,10 @@ export const DEFAULTS: ResolvedSettings = {
   output: {
     targetOs: 'linux',
     checkoutMode: 'clone',
-    sharedWorkspace: false,
-    execution: { environment: 'auto', image: null, dockerSocket: 'auto' },
+    // E12-S02-T02 — PLAN D8/D9 (revised): one shared workspace per run, executed on the host.
+    // Per-job `Pipeline.Workspace` isolation and the container sandbox are deferred polish; the
+    // keys stay so opting in stays a config change, but neither is the default any more.
+    sharedWorkspace: true,
+    execution: { environment: 'host', image: null, dockerSocket: 'auto' },
   },
 };

@@ -156,9 +156,9 @@ describe('config loader (E13-S01-T02)', () => {
           'output:',
           '  targetOs: linux',
           '  checkoutMode: clone',
-          '  sharedWorkspace: false',
+          '  sharedWorkspace: true',
           '  execution:',
-          '    environment: auto',
+          '    environment: host',
           '    image: null',
           '    dockerSocket: auto',
           '',
@@ -302,16 +302,19 @@ describe('precedence matrix — CLI > config > defaults (docs/06 §2)', () => {
     },
     {
       key: 'output.sharedWorkspace',
-      config: { output: { sharedWorkspace: true } },
+      config: { output: { sharedWorkspace: false } },
       read: (s) => s.output.sharedWorkspace,
-      expected: { config: true, default: false },
+      expected: { config: false, default: true },
     },
     {
+      // E12-S02-T02 — `auto` is gone and the default is `host`, so `ExecutionEnvironment` has only
+      // two members. The *config* value is the one held off the default on purpose: the failure this
+      // row has to catch after the flip is a resolver that answers `host` without reading the config.
       key: 'output.execution.environment',
       cli: { execEnv: 'host' },
       config: { output: { execution: { environment: 'sandbox' } } },
       read: (s) => s.output.execution.environment,
-      expected: { cli: 'host', config: 'sandbox', default: 'auto' },
+      expected: { cli: 'host', config: 'sandbox', default: 'host' },
     },
     {
       key: 'output.execution.image',
