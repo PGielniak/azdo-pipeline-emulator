@@ -1,0 +1,13 @@
+parameters:
+- name: n
+  type: number
+- name: b
+  type: boolean
+- name: o
+  type: object
+- name: l
+  type: stepList
+steps:
+- script: echo probe
+  env:
+    OUT: ${{ convertToJson(parameters) }}

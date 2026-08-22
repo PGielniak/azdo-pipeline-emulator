@@ -43,7 +43,7 @@ When the user says "work", "continue", "next task", or names a task ID (`E02-S01
 |---|---|
 | `PLAN.md` | Master architecture, decisions D1–D10, fidelity tiers, roadmap |
 | `docs/01`–`06` | Detailed design (schema, engine, tasks, runtime, auth, CLI/testing) |
-| `BACKLOG.md` + `backlog/E00`–`E15` | Work protocol + all stories/tasks (160 tasks; every task has a **Ground** field) |
+| `BACKLOG.md` + `backlog/E00`–`E15` | Work protocol + all stories/tasks (161 tasks; every task has a **Ground** field) |
 | `research/` | Grounding evidence: REFERENCES.md, claim notes, experiments |
 | `CHANGELOG-BACKLOG.md` | Append-only progress log |
 | `.claude/skills/` | work-next-task, grounding, oracle-experiment, backlog-status |

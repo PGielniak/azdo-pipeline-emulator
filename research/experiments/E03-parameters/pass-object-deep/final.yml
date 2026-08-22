@@ -1,0 +1,27 @@
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      env:
+        OUT: >-
+          {
+            "s": "text",
+            "n": 3,
+            "f": 0.5,
+            "b": true,
+            "nil": "",
+            "list": [
+              1,
+              "two"
+            ],
+            "nested": {
+              "deep": {
+                "k": "v"
+              }
+            }
+          }
+      inputs:
+        script: echo probe
+

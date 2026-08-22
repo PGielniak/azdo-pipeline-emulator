@@ -1,0 +1,15 @@
+steps:
+- template: /e03-params/bind-object.yml
+  parameters:
+    p:
+      s: text
+      n: 3
+      f: 0.5
+      b: true
+      nil:
+      list:
+      - 1
+      - two
+      nested:
+        deep:
+          k: v

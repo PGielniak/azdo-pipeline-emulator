@@ -1,0 +1,5 @@
+steps:
+- template: /e03-params/bind-step.yml
+  parameters:
+    p:
+      notAStep: 1

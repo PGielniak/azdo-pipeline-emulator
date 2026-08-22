@@ -372,6 +372,21 @@ https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed4672
 (checked 2026-08-21) — "Set progress and current operation for the current task." / "`value` =
 percentage of completion" / "percentComplete = (Int32)Math.Min(Math.Max(progress, 0), 100);".
 
+[C-E06-068] `task.issue` is a registered **alias** of `task.logissue`, not a distinct command: the
+handler declares one alias, and the command manager stores the alias in the same dispatch map
+pointing at the same executor, so both spellings run identical code (a duplicate alias is a hard
+error, confirming one-executor-per-name). The doc page documents only the `task.logissue`
+spelling. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L363-L364
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/WorkerCommandManager.cs#L188-L199
+(checked 2026-08-21) — "public string Name => \"logissue\";" / "public List<string> Aliases =>
+new List<string>() { \"issue\" };" / "_commands[commandExecutor.Name] = commandExecutor; var
+aliasList = commandExecutor.Aliases; if (aliasList != null) { foreach (var alias in
+commandExecutor.Aliases) { ... _commands[alias] = commandExecutor; } }". The emulator dispatches
+`task.logissue | task.issue` to one handler for the same reason.
+
+
 ### Composition and the two docs/04 §6 corrections
 
 C-E06-057/058 fix `task.prependpath` and `task.setsecret` scope; both reuse existing runtime seams
@@ -399,3 +414,938 @@ Two statements in docs/04 §6 did not survive grounding and are corrected in thi
 ANSI colors themselves are a local rendering choice: the hosted agent emits the tags and the web UI
 colors them (C-E06-066), so no source prescribes specific escape sequences. The renderer is a
 separate stream filter placed after the log `tee`, which keeps emitted logs byte-faithful.
+
+## E06-S04-T04 — artifact, attachment and build commands
+
+Sources for this block: the logging-commands doc page (checked 2026-08-21, `ms.date` 2026-03-05,
+docs commit `1481c0d18812667ac57f38b2b70c34d924608ccc`) and the agent pinned at
+`4571a73531e1ea6342ed46723dd39a115b92843b`, the same commit E06-S02..S04 already trace.
+
+[C-E06-069] `artifact.upload` requires a nonempty `artifactname` property; the `containerfolder`
+property is optional and **defaults to the artifact name** when absent or empty. —
+https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#upload-upload-an-artifact
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Build/ArtifactCommandExtension.cs#L149-L161
+(checked 2026-08-21) — "`containerfolder` = folder that the file will upload to, folder will be
+created if needed." / "`artifactname` = artifact name. (Required)" / "if
+(!eventProperties.TryGetValue(ArtifactUploadEventProperties.ArtifactName, out artifactName) ||
+string.IsNullOrEmpty(artifactName)) { throw new Exception(StringUtil.Loc(\"ArtifactNameRequired\"));
+}" / "containerFolder = artifactName;". `ArtifactNameRequired` is "Artifact Name is required."
+(`src/Misc/layoutbin/en-US/strings.json`).
+
+[C-E06-070] `artifact.upload`'s message is a local path that may be **either a file or a
+directory**; a path that is neither fails the command with `PathDoesNotExist`, and a directory
+that contains no files at any depth produces the **warning** `DirectoryIsEmptyForArtifact` and
+returns **successfully** without uploading anything. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Build/ArtifactCommandExtension.cs#L178-L189
+(checked 2026-08-21) — "string fullPath = Path.GetFullPath(localPath); if (!File.Exists(fullPath)
+&& !Directory.Exists(fullPath)) { throw new FileNotFoundException(StringUtil.Loc(\"PathDoesNotExist\",
+localPath)); } else if (Directory.Exists(fullPath) && Directory.EnumerateFiles(fullPath, \"*\",
+SearchOption.AllDirectories).FirstOrDefault() == null) { context.Warning(StringUtil.Loc(
+\"DirectoryIsEmptyForArtifact\", fullPath, artifactName)); return; }". Strings: "Path does not
+exist: {0}" / "Directory '{0}' is empty. Nothing will be added to build artifact '{1}'.". The
+warning travels `context.Warning` → `AddIssue(IssueType.Warning)`, so it is a **counted** warning
+issue exactly like `task.logissue type=warning`
+(https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/ExecutionContext.cs#L1314-L1318,
+C-E06-063). This is the discriminating case for the emulator: the natural implementation makes an
+empty directory a command *failure*, and the agent makes it a successful warning.
+
+[C-E06-071] The uploaded container item path is `<containerfolder>/<path relative to the source's
+parent directory>`: for a **file** source the parent is its containing directory, so the item is
+`<containerfolder>/<basename>`; for a **directory** source the parent is the directory itself, so
+its own name does **not** appear and the items are `<containerfolder>/<relative path inside it>`,
+recursively. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Build/FileContainerServer.cs#L83-L93
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Build/FileContainerServer.cs#L238
+(checked 2026-08-21) — "if (File.Exists(source)) { files = new List<String>() { source };
+_sourceParentDirectory = Path.GetDirectoryName(source); } else { files =
+Directory.EnumerateFiles(source, \"*\", SearchOption.AllDirectories).ToList();
+_sourceParentDirectory = source.TrimEnd(Path.DirectorySeparatorChar,
+Path.AltDirectorySeparatorChar); }" / "string itemPath = (_containerPath.TrimEnd('/') + \"/\" +
+fileToUpload.Remove(0, _sourceParentDirectory.Length + 1)).Replace('\\\\', '/');". Two consequences the emulator encodes: the directory branch **trims trailing separators** off the
+source before taking it as the parent, so an `artifact.upload` written as
+`$(Build.ArtifactStagingDirectory)/` behaves identically to the unslashed spelling (without the trim
+the prefix strip misses and the whole absolute path is nested inside the artifact); and
+`Directory.EnumerateFiles` returns symbolic links as files, where the local `find … -type f` does
+not — a recorded divergence, not reproduced, because a symlinked payload has no meaning in a
+`.artifacts/` tree a later local download copies from.
+
+[C-E06-072] The uploaded files land in the file container at `#/<containerId>/<containerfolder>`,
+and that container path is then associated with the **build artifact named `artifactname`** as a
+`Container`-type resource. The artifact name and the container folder are therefore two distinct
+levels: the name keys the artifact a later download asks for, the folder keys the bytes inside the
+container. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Build/ArtifactCommandExtension.cs#L243-L253
+(checked 2026-08-21) — "var fileContainerFullPath = StringUtil.Format($\"#/{containerId}/{containerPath}\");
+context.Output(StringUtil.Loc(\"UploadToFileContainer\", source, fileContainerFullPath)); ... var
+artifact = await buildHelper.AssociateArtifactAsync(buildId, projectId, name, jobId,
+ArtifactResourceTypes.Container, fileContainerFullPath, propertiesDictionary, cancellationToken);".
+
+[C-E06-073] `artifact.associate` creates a link to an **already existing** artifact rather than
+uploading anything: its message is a server-side location (file-container path, UNC share, TFVC
+path, git ref), and it requires nonempty `artifactname`, `type` and location. —
+https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#associate-initialize-an-artifact
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Build/ArtifactCommandExtension.cs#L29-L86
+(checked 2026-08-21) — "Create a link to an existing Artifact. Artifact location must be a file
+container path, VC path or UNC share path." / "`artifactname` = artifact name (Required)" /
+"`type` = artifact type (Required) `container` | `filepath` | `versioncontrol` | `gitref` |
+`tfvclabel`" / "throw new Exception(StringUtil.Loc(\"ArtifactTypeRequired\"));" / "throw new
+Exception(StringUtil.Loc(\"ArtifactLocationRequired\"));". Strings: "Artifact Type is required." /
+"Artifact location is required." There is nothing local to copy, so the emulator accepts, validates
+and records the association without materializing bytes — the `task.setprogress` pattern (C-E06-067).
+
+[C-E06-074] `task.uploadfile`, `task.uploadsummary` and `task.addattachment` are **one
+implementation**: both upload commands build a two-entry property dictionary and call
+`TaskAddAttachmentCommand.AddAttachment` directly. `uploadfile` supplies type
+`CoreAttachmentType.FileAttachment`, `uploadsummary` supplies `CoreAttachmentType.Summary`, and
+**both derive the attachment name as `Path.GetFileName(data)`** — the doc's shorthand example,
+which shows `uploadsummary` expanding to a custom `name=testsummaryname`, does not match the
+source. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L249-L302
+(checked 2026-08-21) — "uploadSummaryProperties.Add(TaskAddAttachmentEventProperties.Type,
+CoreAttachmentType.Summary); var fileName = Path.GetFileName(data);
+uploadSummaryProperties.Add(TaskAddAttachmentEventProperties.Name, fileName);
+TaskAddAttachmentCommand.AddAttachment(context, uploadSummaryProperties, data);" and the identical
+shape with `CoreAttachmentType.FileAttachment` in `TaskUploadFileCommand`. An empty message is
+rejected before the helper runs, with a command-specific message: `CannotUploadFile` = "Cannot
+upload file because file location is not specified." / `CannotUploadSummary` = "Cannot upload
+summary file, summary file location is not specified."
+
+[C-E06-075] `task.addattachment` requires nonempty `type` **and** `name` properties and a message
+naming a file that **exists on disk**; unlike `artifact.upload`, a directory is not accepted. —
+https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#addattachment-attach-a-file-to-the-build
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L317-L357
+(checked 2026-08-21) — "`type` = attachment type (Required)" / "`name` = attachment name
+(Required)" / "if (!String.IsNullOrEmpty(filePath) && File.Exists(filePath)) { context.QueueAttachFile(
+type, name, filePath); } else { throw new ArgumentNullException(StringUtil.Loc(
+\"MissingAttachmentFile\")); }". Strings: "Can't add task attachment, attachment type is not
+provided." / "Can't add task attachment, attachment name is not provided." / "Cannot upload task
+attachment file, attachment file location is not specified or attachment file does not exist on
+disk."
+
+[C-E06-076] Both `type` and `name` are additionally rejected when they contain any character in
+.NET's `Path.GetInvalidFileNameChars()`, with a message that is **not** localized and enumerates
+the set. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L333-L343
+(checked 2026-08-21) — "char[] s_invalidFileChars = Path.GetInvalidFileNameChars(); if
+(type.IndexOfAny(s_invalidFileChars) != -1) { throw new ArgumentException($\"Type contains invalid
+characters. ({String.Join(\",\", s_invalidFileChars)})\"); }". The set itself is
+platform-dependent in .NET (on Unix it is effectively `\0` and `/`), so the emulator does **not**
+reproduce the Windows set; it reuses the existing, strictly narrower `azdo__valid_store_segment`
+guard (rejects empty, `.`, `..`, `/`, newline, carriage return), which is sound because both values
+become local path segments. Recorded as a deliberate divergence rather than an imported constant.
+
+[C-E06-077] `build.uploadlog` requires a message naming an **existing** file and attaches it as a
+`Log`-type attachment under the fixed name `CustomToolLog`; a missing or absent path fails the
+command. —
+https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#uploadlog-upload-a-log
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Build/BuildCommandExtension.cs#L30-L51
+(checked 2026-08-21) — "Upload user interested log to build's container \"`logs\\tool`\" folder." /
+"if (!string.IsNullOrEmpty(data) && File.Exists(data)) { context.QueueAttachFile(
+CoreAttachmentType.Log, \"CustomToolLog\", data); } else { throw new Exception(StringUtil.Loc(
+\"CustomLogDoesNotExist\", data ?? string.Empty)); }". String: "Log file path is not provided or
+file doesn't exist: '{0}'". docs/04 §6 previously said this command was "ignored with debug note";
+it is a real attachment command and the row is corrected.
+
+[C-E06-078] `build.uploadsummary` still exists on the agent as a **deprecated** back-compat command
+distinct from `task.uploadsummary`: it attaches a `Summary`-type file under the derived name
+`CustomMarkDownSummary-<filename>`. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Build/BuildCommandExtension.cs#L53-L77
+(checked 2026-08-21) — "// ##VSO[build.uploadsummary] command has been deprecated / // Leave the
+implementation on agent for back compat" / "var fileName = Path.GetFileName(data);
+context.QueueAttachFile(CoreAttachmentType.Summary, StringUtil.Format(
+$\"CustomMarkDownSummary-{fileName}\"), data);". The doc page does not list it. String
+`CustomMarkDownSummaryDoesNotExist` = "Markdown summary file path is not provided or file doesn't
+exist: '{0}'".
+
+[C-E06-079] The wire values of the `CoreAttachmentType` constants live in the closed
+`Microsoft.TeamFoundation.DistributedTask.WebApi` assembly, not in any pinned repository — the same
+situation as the expression engine (C-E00-012). Only `Summary` has a documented value: the doc page
+states `task.uploadsummary` is shorthand for `##vso[task.addattachment
+type=Distributedtask.Core.Summary;name=…]`. —
+https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#uploadsummary-add-some-markdown-content-to-the-build-summary
+(checked 2026-08-21) — "It's a short hand form for the command
+`##vso[task.addattachment type=Distributedtask.Core.Summary;name=testsummaryname;]c:\\testsummary.md`".
+The emulator therefore uses `Distributedtask.Core.Summary` verbatim for the two summary commands —
+which makes the documented shorthand identity locally observable — and uses the **C# member names**
+`FileAttachment` and `Log` as local directory segments for the two whose values it cannot cite,
+rather than inventing wire spellings. Recorded as a local naming decision, not a parity claim.
+
+[C-E06-080] `build.updatebuildnumber` requires a nonempty message and sets `Build.BuildNumber` in
+the job's variable set **synchronously and locally** before queueing the server update, so the new
+value is visible to subsequent steps. —
+https://learn.microsoft.com/azure/devops/pipelines/scripts/logging-commands#updatebuildnumber-override-the-automatically-generated-build-number
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Build/BuildCommandExtension.cs#L99-L120
+(checked 2026-08-21) — "if (!String.IsNullOrEmpty(data)) { // update build number within Context.
+context.Variables.Set(BuildVariables.BuildNumber, data); ... } else { throw new Exception(
+StringUtil.Loc(\"BuildNumberRequired\")); }". String: "Build number is required." The message is
+**not** trimmed.
+
+[C-E06-081] That write **bypasses the read-only rule that would otherwise reject it.**
+`build.buildNumber` is a member of `Constants.Variables.ReadOnlyVariables`, and `Variables.IsReadOnly`
+consults that list — but the read-only *check* lives in `TaskSetVariableCommand`, not in
+`Variables.Set`, which only propagates an existing read-only flag onto the replacement. The source
+comment names this command as the reason. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Microsoft.VisualStudio.Services.Agent/Constants.cs#L623
+,
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Variables.cs#L442-L444
+,
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Variables.cs#L650-L658
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/TaskCommandExtension.cs#L629
+(checked 2026-08-21) — "Build.Number," in the `ReadOnlyVariables` list, where
+`Number = \"build.buildNumber\"` / "// Also keep any variables that are already read only as read
+only. // This only really matters for server side system variables that get updated by something
+other than setVariable (e.g. updateBuildNumber). readOnly = readOnly || (_expanded.ContainsKey(name)
+&& _expanded[name].ReadOnly);" / "return Constants.Variables.ReadOnlyVariables.Contains(
+variable.Name, StringComparer.OrdinalIgnoreCase);" / "if (context.Variables.IsReadOnly(name))".
+The emulator enforces read-only in `azdo__write_var` (C-E06-004/006), so this command needs an
+explicit unchecked write that still **preserves** the read-only flag.
+
+[C-E06-082] `build.addbuildtag` **trims** its message before the emptiness check — unlike
+`build.updatebuildnumber`, which does not — and rejects an empty or whitespace-only tag. —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Build/BuildCommandExtension.cs#L150-L175
+(checked 2026-08-21) — "string data = command.Data?.Trim();" / "if (!string.IsNullOrEmpty(data)) {
+... } else { throw new Exception(StringUtil.Loc(\"BuildTagRequired\")); }". String: "Build tag is
+required." Tags are a **set** server-side: the async completion re-reads the build's tags and fails
+only if the requested tag is absent from the returned list under `OrdinalIgnoreCase`
+(`BuildTagAddFailed`), which is why the emulator de-duplicates `state/tags` case-insensitively
+rather than appending blindly. The doc's "You can't use a colon with AddBuildTag" is a
+**server-side** restriction the agent source does not implement; it is recorded here and
+deliberately **not** reproduced as a local rejection.
+
+[C-E06-083] Four preconditions of these commands have no local counterpart and are deliberately not
+reproduced: `artifact.upload`/`artifact.associate` throw
+`UploadArtifactCommandNotSupported`/`AssociateArtifactCommandNotSupported` ("Uploading server
+artifact is not supported in {0}.") outside a `Build` host type; all four artifact/build commands
+assert `System.TeamProjectId`, `Build.BuildId` and (for upload) `Build.ContainerId` through
+`ArgUtil`; the actual transfer runs on the **async command queue** after the handler returns, so a
+transfer failure surfaces at job end rather than at the command; and file paths are first mapped
+through `context.TranslateToHostPath(data)`, which only matters for container jobs (E14). —
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Build/ArtifactCommandExtension.cs#L139-L177
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/4571a73531e1ea6342ed46723dd39a115b92843b/src/Agent.Worker/Build/BuildCommandExtension.cs#L86-L98
+(checked 2026-08-21) — "long? containerId = context.Variables.Build_ContainerId; ArgUtil.NotNull(
+containerId, nameof(containerId));" / "if (!ArtifactCommandExtensionUtil.IsUncSharePath(context,
+localPath) && (context.Variables.System_HostType != HostTypes.Build)) { throw new Exception(
+StringUtil.Loc(\"UploadArtifactCommandNotSupported\", context.Variables.System_HostType)); }" /
+"context.AsyncCommands.Add(commandContext);". The local runtime copies synchronously into
+`.artifacts/`, so a copy failure *is* a command failure — a divergence in timing, not in outcome.
+
+## E06-S05-T01 — pipeline artifact publish and download
+
+Sources pinned for this pass: the *Publish and download pipeline artifacts* doc page
+(`git_commit_id` `1eeaa8de39f8b7130d8eb45ec907d9e47d6f5a32`, `updated_at` 2026-05-07), the
+`steps.download` schema page (`git_commit_id` `d089fd2dbb54483ec611eeb478e3eff14be74393`,
+`ms.date` 2026-07-29), `microsoft/azure-pipelines-tasks` @ `299572e25b6cf14b21c7b60e5228603cbb5ffb42`
+(`PublishPipelineArtifactV1`/`DownloadPipelineArtifactV2` `task.json`) and
+`microsoft/azure-pipelines-agent` @ `42bde98bea7bb3b9e186d693e3b1554249e93a38`. Both tasks are
+`AgentPlugin` tasks — `"AgentPlugin": { "target": "Agent.Plugins.PipelineArtifact.PublishPipelineArtifactTaskV1, Agent.Plugins" }`
+and `"…DownloadPipelineArtifactTaskV2_0_0, Agent.Plugins"` — so the implementation to read is
+`src/Agent.Plugins/PipelineArtifact/PipelineArtifactPluginV1.cs` and `…/PipelineArtifactPluginV2.cs`,
+**not** `PipelineArtifactPlugin.cs`, which holds the older V0 classes of the same shape.
+
+[C-E06-084] The `download` keyword puts artifacts of the **current** pipeline in
+`$(Pipeline.Workspace)/<artifact name>` and artifacts of an associated pipeline resource in
+`$(Pipeline.Workspace)/<pipeline resource identifier>/<artifact name>`. —
+https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/steps-download (checked 2026-08-21)
+— "Artifacts from the current pipeline are downloaded to `$(Pipeline.Workspace)/<artifact name>`.
+Artifacts from the associated pipeline resource are downloaded to
+`$(Pipeline.Workspace)/<pipeline resource identifier>/<artifact name>`." The keyword is a
+server-side shorthand for the task (same page: "Depending on the type of referenced artifact (or
+artifacts), `download` calls Download Pipeline Artifacts …"), so this layout is what the *emitter*
+must pass as `--path`; it is **not** the task's own default, which is C-E06-085.
+
+[C-E06-085] `DownloadPipelineArtifact@2` input defaults are `source`/`buildType` = `current`,
+`artifact`/`artifactName` = empty, `patterns`/`itemPattern` = `**`, and `path` (aliases
+`targetPath`, `downloadPath`, required) = `$(Pipeline.Workspace)`; the task creates the target
+directory when it does not exist. —
+https://github.com/microsoft/azure-pipelines-tasks/blob/299572e25b6cf14b21c7b60e5228603cbb5ffb42/Tasks/DownloadPipelineArtifactV2/task.json
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/PipelineArtifact/PipelineArtifactPluginV2.cs#L310-L317
+(checked 2026-08-21) — "{ \"name\": \"path\", \"aliases\": [ \"targetPath\", \"downloadPath\" ],
+\"defaultValue\": \"$(Pipeline.Workspace)\", \"required\": true }" / "string fullPath =
+Path.GetFullPath(targetPath); bool dirExists = Directory.Exists(fullPath); if (!dirExists) {
+Directory.CreateDirectory(fullPath); }".
+
+[C-E06-086] With an artifact **name** supplied, only that artifact is downloaded, the step fails if
+the artifact does not exist, the file-matching patterns are evaluated relative to the artifact root,
+and the files land directly in `path` with no per-artifact subdirectory. —
+https://learn.microsoft.com/azure/devops/pipelines/artifacts/pipeline-artifacts (checked 2026-08-21)
+— "Only files for that specific artifact are downloaded. If the artifact doesn't exist, the task
+will fail. File matching patterns are evaluated relative to the root of the artifact." and "By
+default, files are downloaded to **$(Pipeline.Workspace)**. If an artifact name wasn't specified, a
+subdirectory will be created for each downloaded artifact." The no-subdirectory half is the
+contrapositive of that second sentence; it is corroborated by
+`ArtifactDownloadParameters.AppendArtifactNameToTargetPath` being consulted **only** on the
+multi-download branch —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/Artifact/FileContainerProvider.cs#L84-L86
+— "var dirPath = downloadParameters.AppendArtifactNameToTargetPath ?
+Path.Combine(downloadParameters.TargetDirectory, buildArtifact.Name) :
+downloadParameters.TargetDirectory;". That file is the **container** provider (build artifacts);
+for pipeline artifacts the same composition happens inside the closed BlobStore
+`DownloadDedupManifestArtifactOptions.CreateWithMultiManifestIds(…, minimatchFilterWithArtifactName:
+…)`, so it is cited as corroboration of the rule, not as the pipeline-artifact code path.
+
+[C-E06-087] With **no** artifact name, every artifact of the run is downloaded, the step does not
+fail when no files match, a subdirectory is created per artifact, and the first segment of each
+pattern is matched against the artifact name. —
+https://learn.microsoft.com/azure/devops/pipelines/artifacts/pipeline-artifacts (checked 2026-08-21)
+— "Multiple artifacts can be downloaded and the task does not fail if no files are found. A
+subdirectory is created for each artifact. File matching patterns should assume the first segment of
+the pattern is (or matches) an artifact name." The agent expresses the same rule as
+`MinimatchFilterWithArtifactName = true` on the download parameters, and its filter helper documents
+the candidate shape it implies —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/Artifact/ArtifactItemFilters.cs#L33-L40
+— "<param name=\"paths\">List of relative paths for items detected in artifact. The relative paths
+start from name of artifact.</param>".
+
+[C-E06-088] An empty `patterns` input is read as `**`, and the value is split into patterns on
+**newline only** (empty entries removed) — not on `;`. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/PipelineArtifact/PipelineArtifactPluginV2.cs#L111-L117
+(checked 2026-08-21) — "// Empty input field \"Matching pattern\" must be recognised as default
+value '**' itemPattern = string.IsNullOrEmpty(itemPattern) ? \"**\" : itemPattern; string[]
+minimatchPatterns = itemPattern.Split(new[] { \"\\n\" }, StringSplitOptions.RemoveEmptyEntries);".
+The `;`-delimited multi-pattern spelling in docs/03 §29 belongs to the `azdo_match` task-input
+surface (E09-S01-T03) and is deliberately **not** accepted here.
+
+[C-E06-089] **Doc/source conflict, source wins.** A relative `path` is resolved against
+`System.DefaultWorkingDirectory`, not against the pipeline workspace, in both the publish and the
+download plugin; the `task.json` help text for the same input says the opposite. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/PipelineArtifact/PipelineArtifactPluginV2.cs#L93-L95
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/PipelineArtifact/PipelineArtifactPluginV1.cs#L86-L97
+and
+https://github.com/microsoft/azure-pipelines-tasks/blob/299572e25b6cf14b21c7b60e5228603cbb5ffb42/Tasks/DownloadPipelineArtifactV2/task.json
+(checked 2026-08-21) — "string defaultWorkingDirectory =
+context.Variables.GetValueOrDefault(\"system.defaultworkingdirectory\").Value; targetPath =
+Path.IsPathFullyQualified(targetPath) ? targetPath : Path.GetFullPath(Path.Combine(
+defaultWorkingDirectory, targetPath));" versus "Directory to download the artifact files to. Can be
+relative to the pipeline workspace directory or absolute." Per BACKLOG §3's source hierarchy
+(Microsoft source code > official docs) the emulator implements the code behavior and records the
+docs as wrong.
+
+[C-E06-090] Pattern list semantics: each pattern is trimmed and skipped when empty; a pattern
+starting with `#` is a comment and skipped; leading `!` characters are counted and stripped, and the
+pattern is an **include** iff that count is even; patterns are then applied **in order** to an
+accumulating map, an include adding its matches and an exclude removing them. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/Artifact/ArtifactItemFilters.cs#L45-L100
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/Artifact/ArtifactItemFilters.cs#L161-L175
+(checked 2026-08-21) — "if (!matchOptions.NoComment && currentPattern.StartsWith('#')) { …
+continue; } … while (negateCount < currentPattern.Length && currentPattern[negateCount] == '!') {
+negateCount++; } … bool isIncludePattern = negateCount == 0 || (negateCount % 2 == 0 &&
+!matchOptions.FlipNegate) || …" / "<param name=\"map\">… Item with path from the hashtable is
+considered as required to be in list after filtering.</param>". The order-sensitivity is
+load-bearing: `!*.md` followed by `**` yields **everything**, because the later include re-adds what
+the exclude removed.
+
+[C-E06-091] `PublishPipelineArtifact@1` takes `path`/`targetPath` (required, default
+`$(Pipeline.Workspace)`), `artifactName`/`artifact` (optional, default empty) and
+`artifactType`/`publishLocation` (default `pipeline`); an empty artifact name falls back to
+`System.JobIdentifier` normalized by deleting every character outside `[a-zA-Z0-9 - .]` and then
+deleting the literal `.default`. —
+https://github.com/microsoft/azure-pipelines-tasks/blob/299572e25b6cf14b21c7b60e5228603cbb5ffb42/Tasks/PublishPipelineArtifactV1/task.json
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/PipelineArtifact/PipelineArtifactPluginV1.cs#L122-L127
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/PipelineArtifact/PipelineArtifactPluginV1.cs#L193-L196
+(checked 2026-08-21) — "if (String.IsNullOrWhiteSpace(artifactName)) { string jobIdentifier =
+context.Variables.GetValueOrDefault(WellKnownDistributedTaskVariables.JobIdentifier).Value; var
+normalizedJobIdentifier = NormalizeJobIdentifier(jobIdentifier); artifactName =
+normalizedJobIdentifier; }" / "jobIdentifier = jobIdentifierRgx.Replace(jobIdentifier,
+string.Empty).Replace(\".default\", string.Empty);" with "new Regex(\"[^a-zA-Z0-9 - .]\", …)". The
+doc page states the same fallback in prose: "**artifact**: (Optional) Name of the artifact to
+publish. If not set, defaults to a unique ID scoped to the job."
+
+[C-E06-092] Publish fails when the resolved target path is neither an existing file nor an existing
+directory. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/PipelineArtifact/PipelineArtifactPluginV1.cs#L134-L141
+(checked 2026-08-21) — "bool isFile = File.Exists(fullPath); bool isDir =
+Directory.Exists(fullPath); if (!isFile && !isDir) { // if local path is neither file nor folder
+throw new FileNotFoundException(StringUtil.Loc(\"PathDoesNotExist\", targetPath)); }". Unlike
+`artifact.upload` (C-E06-070) there is **no** empty-directory special case: publishing an empty
+directory is a plain success.
+
+[C-E06-093] An artifact name is rejected when it contains any of `" : < > | * ? / \` or a character
+below U+0020. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/PipelineArtifact/PipelineArtifactPluginUtil.cs#L12-L27
+(checked 2026-08-21) — "// This collection of invalid characters is based on the characters that are
+illegal in Windows/NTFS filenames. Also prevent files (pipeline artifact names) from containing
+\"/\" or \"\\\" due to the added complexity this introduces for file pattern matching on download."
+This set is neither a superset nor a subset of the emulator's `azdo__valid_store_segment`, so the
+runtime applies **both**: the agent set as the graded parity rule, and the store-segment guard on
+top, which additionally rejects `""`, `.` and `..` — names the agent accepts but which cannot be
+directory names under `.artifacts/`. That extra rejection is a recorded local hardening.
+
+[C-E06-094] Publishing a **directory** places the directory's *contents* at the artifact root: the
+doc's cross-stage example publishes `$(Build.ArtifactStagingDirectory)/scripts` as artifact `drop`
+and then runs `$(Pipeline.Workspace)\drop\test.ps1`, so `scripts/` itself does not appear in the
+downloaded tree. —
+https://learn.microsoft.com/azure/devops/pipelines/artifacts/pipeline-artifacts (checked 2026-08-21)
+— "- publish: '$(Build.ArtifactStagingDirectory)/scripts' displayName: 'Publish script' artifact:
+drop" / "filePath: '$(Pipeline.Workspace)\\drop\\test.ps1'". The **file** case has no citable
+source: the plugin hands `fullPath` straight to the closed BlobStore
+`dedupManifestClient.PublishAsync(source, …)`
+(https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/Artifact/PipelineArtifactServer.cs#L79).
+The emulator therefore reuses the container rule C-E06-071 — a file contributes its basename at the
+artifact root — as an **inference**, flagged here so a later oracle run can falsify it.
+
+[C-E06-095] **Delta, deliberately not implemented.** Publishing honors an `.artifactignore` file in
+the `targetPath` directory, and in its absence Azure Artifacts silently drops the `.git` folder. —
+https://learn.microsoft.com/azure/devops/pipelines/artifacts/pipeline-artifacts (checked 2026-08-21)
+— "Azure Artifacts automatically ignore the `.git` folder path when you don't have a
+*.artifactignore* file. You can bypass this by creating an empty *.artifactignore* file." Both are
+server/BlobStore-side filtering outside the scope of E06-S05-T01's **Do**; `azdo_artifact_publish`
+copies everything under the target path. A local publish of a work tree therefore contains `.git`
+where the service's artifact would not.
+
+[C-E06-096] Artifacts are downloaded automatically **only** in deployment jobs, only for the
+`deploy` lifecycle hook, to `$(Pipeline.Workspace)`, and `download: none` suppresses it. —
+https://learn.microsoft.com/azure/devops/pipelines/artifacts/pipeline-artifacts and
+https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/steps-download (checked 2026-08-21)
+— "Artifacts are only downloaded automatically in deployment jobs. By default, artifacts are
+downloaded to `$(Pipeline.Workspace)`. The download artifact task will be auto injected only when
+using the `deploy` lifecycle hook in your deployment. To stop artifacts from being downloaded
+automatically, add a `download` step and set its value to none." / "All available artifacts from the
+current pipeline and from the associated pipeline resources are automatically downloaded in
+deployment jobs and made available for your deployment." Downloading *all* artifacts to
+`$(Pipeline.Workspace)` is exactly the no-artifact-name branch of C-E06-087, so the injected step is
+`azdo_artifact_download` with no `--artifact`, and each artifact lands at
+`$(Pipeline.Workspace)/<name>` — the same layout the `download` keyword produces (C-E06-084).
+
+## E06-S05-T02 — checkout (self) modes and options
+
+Sources pinned for this pass: the `steps.checkout` schema page (`git_commit_id`
+`d089fd2dbb54483ec611eeb478e3eff14be74393`, `ms.date` 2026-07-29), the predefined-variables page
+(`git_commit_id` `1eeaa8de39f8b7130d8eb45ec907d9e47d6f5a32`, `ms.date` 2026-02-13),
+`microsoft/azure-pipelines-agent` @ `42bde98bea7bb3b9e186d693e3b1554249e93a38`
+(`src/Agent.Plugins/GitSourceProvider.cs`, `src/Agent.Plugins/GitCliManager.cs`,
+`src/Agent.Sdk/Util/StringUtil.cs`) and git 2.47.3 as installed here for the two local experiments.
+The checkout step is **not** a task with a `main.ts`: `checkout` compiles to the
+`6d15af64-176c-496d-b583-fd2ae21d4df4` (`Get sources`) job step whose implementation is the
+repository plugin, so the option → git-flag mapping is read from `GitCliManager`, which carries the
+resulting command line in a comment above each method.
+
+[C-E06-097] The agent's `fetch` command line is
+`git fetch [--force] {--tags|--no-tags} --prune [--prune-tags] [--progress] --no-recurse-submodules
+origin [--depth=N|--unshallow] [--filter=…] [<refspec>…]`. `--force` is added from git 2.20,
+`--prune-tags` from git 2.17, `--progress` unless the quiet-checkout knob is set. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/GitCliManager.cs#L197-L236
+(checked 2026-08-21) — "// git fetch --tags --prune --progress --no-recurse-submodules [--depth=15]
+origin [+refs/pull/*:refs/remote/pull/*]" and "string options = $\"{forceTag} {tags} --prune
+{pruneTags} {progress} --no-recurse-submodules {remoteName} {depth} …\"".
+
+[C-E06-098] `fetchDepth` is parsed with `int.TryParse`; a value that is **not** a non-negative
+integer silently becomes `0`, and `0` means *no* `--depth` flag. When the depth is `0` **and** the
+local repository is already shallow (`.git/shallow` exists), the agent adds `--unshallow` instead. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/GitSourceProvider.cs#L338-L342
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/GitCliManager.cs#L230-L234
+(checked 2026-08-21) — "if (!int.TryParse(executionContext.GetInput(…FetchDepth), out fetchDepth) ||
+fetchDepth < 0) { fetchDepth = 0; }" / "string depth = fetchDepth > 0 ? $\"--depth={fetchDepth}\" :
+(File.Exists(Path.Combine(repositoryPath, \".git\", \"shallow\")) ? \"--unshallow\" :
+string.Empty);". The doc page's "Setting `fetchDepth: 0` fetches all history" agrees; the source
+adds that `fetchDepth: abc` and `fetchDepth: -1` are the *same* thing as `0`, which the page does
+not say.
+
+[C-E06-099] **The agent defaults `fetchTags` to `true` when the input is absent**, the opposite of
+the doc page's "For new pipelines created after Azure DevOps sprint release 209, the default for
+syncing tags is `false`." Both are correct: the sprint-209 default is a *pipeline setting* that the
+**server** materializes into the step input, so the agent only ever sees the empty-input case for
+pipelines whose setting was never written. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/GitSourceProvider.cs#L359-L360
+(checked 2026-08-21) — "// default fetchTags to true unless it's specifically set to false / bool
+fetchTags = StringUtil.ConvertToBoolean(executionContext.GetInput(…FetchTags), true);" vs
+https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/steps-checkout — "For existing
+pipelines created before the release of Azure DevOps sprint 209 … the default for syncing tags
+remains … `true`. For new pipelines created after Azure DevOps sprint release 209, the default for
+syncing tags is `false`." A converter reading only the YAML cannot know the pipeline's age or its
+settings-UI state; see docs/06 §5 decision 40.
+
+[C-E06-100] Checkout booleans are parsed by `StringUtil.ConvertToBoolean`, which accepts
+`1`/`true`/`$true` and `0`/`false`/`$false` **case-insensitively** and maps *every other value*,
+including `yes`, `no` and `on`, to the caller's default rather than to an error. `clean` and `lfs`
+and `persistCredentials` pass no default, so their default is `false`; `fetchTags` passes `true`. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Sdk/Util/StringUtil.cs#L56-L76
+(checked 2026-08-21) — "public static bool ConvertToBoolean(string value, bool defaultValue = false)
+{ if (string.IsNullOrEmpty(value)) { return defaultValue; } switch (value.ToLowerInvariant()) { case
+\"1\": case \"true\": case \"$true\": return true; case \"0\": case \"false\": case \"$false\":
+return false; default: return defaultValue; } }". So `clean: yes` does **not** clean and
+`fetchTags: yes` **does** sync tags — the same literal resolves in opposite directions.
+
+[C-E06-101] `clean: true` runs `git clean -ffdx` **and then** `git reset --hard HEAD`, in that
+order, on the existing repository — and only on an existing one; the agent's fallback when either
+command fails is to delete the source folder outright. With submodules enabled it additionally runs
+`git submodule foreach --recursive "git clean -ffdx"` then `git submodule foreach --recursive "git
+reset --hard HEAD"`. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/GitSourceProvider.cs#L655-L713
+(checked 2026-08-21) — "// When repo.clean is selected for a git repo, execute git clean -ffdx and
+git reset --hard HEAD on the current repo. This will help us save the time to reclone the entire
+repo." and the `softCleanSucceed` chain ending in "Unable to run \"git clean -ffdx\" and \"git reset
+--hard HEAD\" successfully, delete source folder instead.". `-ffdx` is used from git 2.4 and `-fdx`
+below it (`GitCliManager.cs#L377-L393`).
+
+[C-E06-102] The checkout sequence for a *fresh* directory is `git init <path>` → `git remote add
+origin <url>` → `git fetch …` → `git checkout --progress --force <committish>`; it is **not** a
+`git clone`. The committish is the **commit** (`sourceVersion`) whenever one is known and the branch
+is not a PR ref, so a normal self checkout ends in **detached HEAD**. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/GitSourceProvider.cs#L716-L740
+and `#L1068-L1088` and
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/GitCliManager.cs#L357-L374
+(checked 2026-08-21) — "// if sourceVersion provide, just use that for checkout, since when you
+checkout a commit, it will end up in detached head." / "else { sourcesToBuild = sourceVersion; }" /
+"// git checkout -f --progress <commitId/branch>".
+
+[C-E06-103] `submodules` accepts `''`/`false` (none), `recursive` (nested) and any other truthy
+value (top level only); enabling it runs `git submodule sync [--recursive]` and then
+`git submodule update --init --force [--depth=N] [--recursive]`, reusing the same `fetchDepth`. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/GitSourceProvider.cs#L299-L317
+and
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/GitCliManager.cs#L449-L481
+(checked 2026-08-21) — "// input Submodules can be ['', true, false, recursive] / // '' or false
+indicate don't checkout submodules / // true indicate checkout top level submodules / // recursive
+indicate checkout submodules recursively" and "// git submodule update --init --force [--depth=15]
+[--recursive]".
+
+[C-E06-104] `lfs` has two separate effects, and the *disabled* one is the load-bearing one: when
+`lfs` is false the agent exports `GIT_LFS_SKIP_SMUDGE=1` into the environment of every git command,
+because a user-level or system-level LFS config would otherwise pull assets down anyway. When it is
+true the agent runs `git lfs fetch` up front, and **a failure there is a warning, not a step
+failure** — the checkout continues and lets `git checkout` smudge the files instead. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/GitSourceProvider.cs#L407-L411
+and `#L1091-L1108` (checked 2026-08-21) — "// Git-lfs will try to pull down asset if any of the
+local/user/system setting exist. If customer didn't enable `LFS` in their pipeline definition, we
+will use ENV to disable LFS fetch/checkout. / if (!gitLfsSupport) { gitEnv[\"GIT_LFS_SKIP_SMUDGE\"]
+= \"1\"; }" and "Git lfs fetch failed with exit code: {exitCode_lfsFetch}. … Checkout will continue.
+\"git checkout\" will fetch lfs files, however this could cause poor performance on old versions of
+git.". This is what the task's "lfs skipped if unavailable w/ warning" **Done** criterion is
+grounded in: the agent's own LFS failure path warns and proceeds.
+
+[C-E06-105] `path` is resolved under `$(Pipeline.Workspace)`, and escaping that root with `../`
+requires an explicit opt-in variable. —
+https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/steps-checkout (checked 2026-08-21) —
+"**`path`** string. Where to put the repository. The root directory is $(Pipeline.Workspace). By
+default this folder must be under the agent working directory structure. To set a path outside of
+the agent working directory, set a pipeline variable named
+`AZP_AGENT_ALLOW_WORK_DIRECTORY_REPOSITORIES` to true, and use the prefix `../` at the start of your
+checkout path." docs/04 §8 says "within `Agent.BuildDirectory`", which is the *same directory* —
+"**`Pipeline.Workspace`** … This variable has the same value as `Agent.BuildDirectory`" — so §8 is
+imprecise, not wrong, and is left as written with this claim attached.
+
+[C-E06-106] Variable seeding shapes: `Build.SourceBranch` is the **full ref**
+(`refs/heads/main`), `Build.SourceBranchName` is only its **last path segment** — so
+`refs/heads/feature/tools` yields `tools`, not `feature/tools` — `Build.SourceVersion` is the commit
+ID, and `Build.SourceVersionMessage` is "the first line or 200 characters, whichever is shorter". —
+https://learn.microsoft.com/azure/devops/pipelines/build/variables (checked 2026-08-21) — "Git repo
+branch: `refs/heads/main`" / "The last path segment in the ref. For example, in `refs/heads/main`
+this value is `main`. In `refs/heads/feature/tools`, this value is `tools`." / "Git: The commit ID."
+/ "We truncate the message to the first line or 200 characters, whichever is shorter."
+
+[C-E06-107] With a single self checkout, `Build.SourcesDirectory` and `Build.Repository.LocalPath`
+are the **same** path; they diverge only under multi-checkout with a custom self path, which is
+E06-S05-T03's subject. —
+https://learn.microsoft.com/azure/devops/pipelines/build/variables (checked 2026-08-21) — "If you
+check out only one Git repository, this path is the exact path to the code. If you check out
+multiple repositories, the behavior is as follows (and might differ from the value of the
+Build.SourcesDirectory variable) …". `Build.Repository.Provider` for a git repository on a
+non-Azure-DevOps server is the literal `Git` (same page: "`Git`: Git repository hosted on an
+external server"), which is what a local source directory is emulated as.
+
+[C-E06-108] If no `checkout` step is present the implicit default is `self` for a **job** and
+`none` for a **deployment job**. —
+https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/steps-checkout (checked 2026-08-21) —
+"If no `checkout` step is present, it defaults to `self` for `jobs.job.step.checkout` and `none` for
+`jobs.deployment.steps.checkout`." Injecting that implicit step is the **emitter's** job (E05), so
+this claim is recorded here and reflected in docs/04 §8; the runtime function is only ever called
+for a checkout that the emitter decided exists. It sharpens docs/04 §8's looser "Default when steps
+exist".
+
+[C-E06-109] **Experiment (local, git 2.47.3, 2026-08-21).** `git clone --depth 1 <local-path>`
+prints "warning: --depth is ignored in local clones; use file:// instead." and produces a **complete**
+history (3 of 3 commits, no `.git/shallow`); the same clone from `file://<abs-path>` produces 1
+commit. Transcript: `research/experiments/E06-checkout/local-shallow-clone.md`. Consequence for
+`clone` mode: the emulated remote URL must be `file://<source>` or `fetchDepth` is silently a no-op,
+and `file://` also forgoes git's local hardlink/alternates fast path — the reason docs/04 §8's
+"reference clone" wording is corrected to the agent's own `init` + `remote add` + `fetch` +
+`checkout` sequence (C-E06-102, docs/06 §5 decision 40).
+
+[C-E06-110] **Delta, deliberately not implemented.** `fetchFilter` (partial clone: `blob:none`,
+`tree:0`), `sparseCheckoutDirectories`/`sparseCheckoutPatterns` and `persistCredentials` are on the
+`steps-checkout` page and are **not** in this task's **Do** list. The first two are pure fetch/
+checkout performance controls whose absence changes only how much data is present locally — for a
+`file://` source repo the whole history is already on disk — and `persistCredentials` needs the
+`SYSTEM_ACCESSTOKEN` credential helper that E08 owns. All four are accepted and ignored with a
+`degraded` note rather than rejected, so a pipeline that sets them still runs. `workspaceRepo` is
+already grounded at C-E06-026/027 (it retargets `System.DefaultWorkingDirectory`) and is not
+re-grounded here.
+
+[C-E06-111] **`fetchTags: false` does not actually stop tags from being fetched.** The agent puts
+`--no-tags` and `--prune-tags` on the *same* command line (C-E06-097), and git documents
+`--prune-tags` as "a shorthand for providing the explicit tag refspec along with `--prune`",
+"equivalent to having `refs/tags/*:refs/tags/*` declared in the refspecs of the remote" — an
+explicit refspec that overrides `--no-tags`' automatic-tag-following suppression. `--prune-tags` is
+added whenever git ≥ 2.17 **and** the `DisableFetchPruneTags` knob is false, which is its built-in
+default. — https://git-scm.com/docs/git-fetch (checked 2026-08-22) — "--prune-tags … This option is
+a shorthand for providing the explicit tag refspec along with `--prune`" / "--no-tags … This option
+disables this automatic tag following." and
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Sdk/Knob/AgentKnobs.cs#L103-L108
+(checked 2026-08-22) — "public static readonly Knob DisableFetchPruneTags = new Knob(…, new
+BuiltInDefaultKnobSource(\"false\"));". Verified locally: a fetch with
+`--no-tags --prune --prune-tags` brings `v2.0.0` down anyway
+(`research/experiments/E06-checkout/local-shallow-clone.md`). The `steps-checkout` page's entire
+"Sync tags" section — "To reduce the amount of data fetched or pulled from a Git repository,
+Microsoft has added a new option to checkout to control the behavior of syncing tags" — therefore
+oversells what `fetchTags: false` achieves on a default-knob agent. The runtime reproduces the
+agent's command line rather than the page's promise (BACKLOG §3 source hierarchy) and says so under
+`System.Debug`; suppressing `--prune-tags` to make `fetchTags: false` "work" would be a divergence
+invented to match documentation prose.
+
+[C-E06-112] **Local relaxation with no agent counterpart: `-c protocol.file.allow=always` on the
+submodule commands.** Since CVE-2022-39253, git refuses the `file` (and bare local path) transport
+for *submodule* clones by default. The emulated `clone` origin is `file://<source>` by construction
+(C-E06-109), so `git submodule update --init --force` against it fails outright — measured here on
+git 2.47.3: "fatal: transport 'file' not allowed / fatal: clone of '…/sub' into submodule path
+'…/t/vendor/sub' failed … Failed to clone 'vendor/sub' a second time, aborting", exit 1. The hosted
+agent never meets this because its submodule URLs are https; the restriction is a consequence of the
+emulator's own `file://` decision, not a behavior to reproduce. Adding
+`-c protocol.file.allow=always` to `submodule sync`/`submodule update` restores the agent's outcome
+(transcript: `research/experiments/E06-checkout/local-shallow-clone.md`). `submodule foreach` needs
+no relaxation — it iterates already-initialized submodules and clones nothing. Recorded as
+docs/06 §5 decision 40f rather than as parity: it is a deliberate widening, scoped to the submodule
+commands, over repositories the user already has on local disk.
+
+[C-E06-113] **Known limitation, recorded not implemented.** docs/04 §8 offers `Build.SourceBranch`
+as an `.env` override "to simulate other branches/PRs". The *branch* half is real — the override is
+read before the checkout and, together with `Build.SourceVersion`, selects what lands. The **PR**
+half is labelling only: the agent detects a `refs/pull/*` ref and switches to a different refspec
+set, fetching `+refs/heads/*:refs/remotes/origin/*` plus the PR ref and checking out the *remote*
+ref rather than the commit —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/GitSourceProvider.cs#L1020-L1046
+(checked 2026-08-22) — "if (IsPullRequest(sourceBranch)) { … additionalFetchSpecs.Add(\"+refs/heads/*:refs/remotes/origin/*\"); additionalFetchSpecs.Add($\"+{sourceBranch}:{GetRemoteRefName(sourceBranch)}\"); }".
+A local source repository has no merge ref to fetch, so setting `Build.SourceBranch` to a PR ref
+labels the run without reproducing the merge commit the hosted build would have. Out of this task's
+**Do** field; docs/04 §8 now scopes the promise.
+
+## E06-S05-T03 — multi-checkout layout
+
+Sources pinned for this pass: the multi-repo-checkout page (`git_commit_id`
+`a9ee075785637d668c69557d66708bfa49943233`, `ms.date` 2026-04-22) and
+`microsoft/azure-pipelines-agent` @ `42bde98bea7bb3b9e186d693e3b1554249e93a38`
+(`src/Agent.Plugins/RepositoryPlugin.cs`, `src/Agent.Sdk/Util/RepositoryUtil.cs`,
+`src/Agent.Worker/Build/BuildJobExtension.cs`, `src/Agent.Worker/Build/BuildDirectoryManager.cs`,
+`src/Agent.Worker/Build/TrackingConfig.cs`, `src/Test/L0/Util/RepositoryUtilL0.cs`).
+
+The task's **Ground** field asks for "one ambiguous combination (self+path+second repo)" to be
+settled by a real run. **No hosted run was possible: this environment has no `AZDO_ORG_URL` /
+`AZDO_PROJECT` / `AZDO_PAT`** (same situation E06-S05-T01 recorded). It did not need one. The
+combination is ambiguous only in the *doc page*, which says nothing about what `Build.SourcesDirectory`
+and `Build.Repository.LocalPath` become when a `path` is combined with multiple checkouts; the agent
+answers it exactly, in one named method per variable — `RepositoryPlugin.GetRepoPath` for the
+directory, `BuildJobExtension.GetDefaultRepoLocalPathValue` and
+`BuildDirectoryManager.UpdateDirectory` for the two variables — and BACKLOG §3 puts agent source
+above the docs for runtime behavior. C-E06-116/117/118 are read from those methods, so the
+experiment a run would have performed is replaced by the code that would have produced its result.
+
+[C-E06-114] **The layout rule.** With a single `checkout` step (or none), sources land in `s` under
+`$(Agent.BuildDirectory)`; with **multiple** `checkout` steps every repository lands in
+`s/<repositoryName>`, `self` included. —
+https://learn.microsoft.com/azure/devops/pipelines/repos/multi-repo-checkout (checked 2026-08-22) —
+"**Single repository**: If you have a single `checkout` step in your job, or you have no checkout
+step which is equivalent to `checkout: self`, your source code is checked out into a directory
+called `s` located as a subfolder of `$(Agent.BuildDirectory)`." / "**Multiple repositories**: If you
+have multiple `checkout` steps in your job, your source code is checked out into directories named
+after the repositories as a subfolder of `s` in `$(Agent.BuildDirectory)`. If
+`$(Agent.BuildDirectory)` is `C:\agent\_work\1` and your repositories are named `tools` and `code`,
+your code is checked out to `C:\agent\_work\1\s\tools` and `C:\agent\_work\1\s\code`." / "To check
+out `self` as one of the repositories, use `checkout: self` as one of the `checkout` steps." The
+same three branches, in the same order, in the plugin that performs the checkout —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Plugins/RepositoryPlugin.cs#L152-L182
+(checked 2026-08-22) — "if (!string.IsNullOrEmpty(path)) { // When the checkout task provides a
+path, always use that one / expectRepoPath = IOUtil.ResolvePath(buildDirectory, path); … } else if
+(HasMultipleCheckouts(executionContext)) { // When there are multiple checkout tasks (and this one
+didn't set the path), default to directory 1/s/<repoName> / expectRepoPath =
+Path.Combine(buildDirectory, sourcesDirectory, RepositoryUtil.GetCloneDirectory(repo)); } else { //
+When there's a single checkout task that doesn't have path set, default to sources directory 1/s /
+expectRepoPath = Path.Combine(buildDirectory, sourcesDirectory); }". Note the precedence: an
+explicit `path` wins over **both** defaults, and is resolved against `buildDirectory` — the same
+`$(Agent.BuildDirectory)` = `$(Pipeline.Workspace)` root the single-checkout case already uses
+(C-E06-105), *not* against `s`. The page agrees: "If a `path` is specified for a `checkout` step,
+that path is used, relative to `$(Agent.BuildDirectory)`."
+
+Nothing on either side defends against two repositories whose names *reduce* to the same folder —
+`org-a/tools` and `org-b/tools` both want `s/tools`, which is legal YAML. The agent tries to move
+the existing directory aside and, when that fails, deletes it outright with a warning (same file,
+L198-218 — "Unable move and reuse existing repository to required location." followed by
+`DeleteDirectoryWithRetry(expectRepoPath)`), so the second checkout destroys the first there too.
+The emulator's `copy` mode empties its target and `clone` mode fetches into whatever is already
+present; neither is worse than the agent's outcome, and no guard is added, because refusing a
+collision the service accepts would fail a pipeline that runs. Recorded so the shared-target case
+is a known equivalence rather than an untested corner.
+
+[C-E06-115] **`HasMultipleCheckouts` is a job-level setting, not something the checkout step
+derives.** It is computed once during job preparation and read identically by the plugin that places
+the repository, by the extension that seeds the variables and by the directory manager. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Sdk/Util/RepositoryUtil.cs#L32-L45
+(checked 2026-08-22) — "/// Returns true if the dictionary contains the 'HasMultipleCheckouts' key
+and the value is set to 'true'. / public static bool HasMultipleCheckouts(Dictionary<string, string>
+jobSettings) { if (jobSettings != null && jobSettings.TryGetValue(WellKnownJobSettings.
+HasMultipleCheckouts, out string hasMultipleCheckoutsText))". Consequence for the emulator: the flag
+belongs to the *job*, so the runtime receives it (`AZDO_HAS_MULTIPLE_CHECKOUTS`, docs/06 §5
+decision 41) rather than counting steps — the emitter knows the step list statically, exactly as the
+server does. `self` is matched case-insensitively as the primary repository alias (same file,
+`IsPrimaryRepositoryName` / `DefaultPrimaryRepositoryName = "self"`).
+
+[C-E06-116] **`Build.SourcesDirectory` stays at `s` for every multi-checkout job — including when a
+`path` moved the repository.** The tracking config's `SourcesDirectory` is `<buildDir>/s` at
+construction, and the only code that rewrites it to a checkout's own path refuses to when more than
+one repository is tracked. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Worker/Build/BuildDirectoryManager.cs#L174-L183
+(checked 2026-08-22) — "// Also update the SourcesDirectory on the tracking info if there is only
+one repo. / if (trackingConfig.RepositoryTrackingInfo.Count == 1) { … trackingConfig.SourcesDirectory
+= relativeRepoPath; }" and
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Worker/Build/BuildJobExtension.cs#L187
+(checked 2026-08-22) — "executionContext.SetVariable(Constants.Variables.Build.SourcesDirectory,
+Path.Combine(_workDirectory, trackingConfig.SourcesDirectory), isFilePath: true);". So a single
+checkout with `path: custom` moves `Build.SourcesDirectory` to `<workspace>/custom`, and the same
+`path` in a two-checkout job leaves it at `<workspace>/s` while the files land in
+`<workspace>/custom`. This is the half of the ambiguous combination the doc page never states.
+
+[C-E06-117] **`Build.Repository.LocalPath` does *not* follow `self` into `s/<selfName>`.** Under
+multiple checkouts with default paths it stays at `s` — the parent of where `self` actually is —
+and only a **custom** `path` on the `self` checkout moves it. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Worker/Build/BuildJobExtension.cs#L361-L389
+(checked 2026-08-22) — "// For saving backward compatibility with the behavior of the
+Build.RepoLocalPath that was before this PR https://github.com/microsoft/azure-pipelines-agent/pull/3237
+… // This is the only case where the value of Build.RepoLocalPath variable is not pointing to the
+root of sources directory /s. // The new logic is not affecting single checkout jobs and jobs with
+multiple checkouts and default paths for Self repository / if (RepositoryUtil.HasMultipleCheckouts(…))
+{ var selfCheckoutTask = GetSelfCheckoutTask(steps); if (IsCheckoutToCustomPath(trackingConfig,
+repoInfo, selfCheckoutTask)) { selfRepoPath = trackingConfig.RepositoryTrackingInfo.Where(repo =>
+RepositoryUtil.IsPrimaryRepositoryName(repo.Identifier)).Select(props => props.SourcesDirectory).
+FirstOrDefault(); } } // For single checkout jobs and multicheckout jobs with default paths set
+selfRepoPath to the default sources directory / if (selfRepoPath == null) { selfRepoPath =
+trackingConfig.SourcesDirectory; }". "Custom" is defined by comparison against the default, not by
+the presence of the input — same file, `IsCheckoutToCustomPath`: "return selfCheckoutTask != null &&
+selfCheckoutTask.Inputs.TryGetValue(PipelineConstants.CheckoutTaskInputs.Path, out path) &&
+!string.Equals(Path.GetFullPath(Path.Combine(trackingConfig.BuildDirectory, path)),
+defaultRepoCheckoutPath, IOUtil.FilePathStringComparison);" with "string defaultRepoCheckoutPath =
+Path.GetFullPath(Path.Combine(trackingConfig.SourcesDirectory, selfRepoName));". So writing
+`path: s/<selfName>` explicitly under multi-checkout is **not** custom and `Build.Repository.LocalPath`
+stays `s`. C-E06-107's "equal for a single self checkout, diverge only under multi-checkout" is
+therefore precise but understated: they diverge under multi-checkout even though `self` moved, and
+they diverge in the *opposite* direction to the intuition that `LocalPath` tracks the files.
+
+[C-E06-118] **The folder name is the repository's `name`, run through git's own clone-directory
+algorithm — not the `checkout:` alias.** — the doc page (checked 2026-08-22) — "If no `path` is
+specified in the `checkout` step, the name of the repository is used for the folder, not the
+`repository` value which is used to reference the repository in the `checkout` step." and its worked
+example, where `name: MyGitHubOrgOrUser/MyGitHubRepo` produces the folder `MyGitHubRepo`. The
+algorithm behind that last-segment reduction, with its documented fallback order —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Sdk/Util/RepositoryUtil.cs#L190-L252
+(checked 2026-08-22) — "/// Returns the folder name that would be created by calling 'git.exe clone'.
+… /// The repo name is used if provided, then repo url, and finally repo alias." / "// The logic
+here was inspired by what git.exe does / … // skip any kind of scheme … // skip any auth info (ends
+with @) … // trim any slashes or \".git\" extension … // skip everything before the last path
+segment (ends with /) … if (!slashFound) { // No slashes means we only have a host name, remove any
+trailing port number … } // Colons can also be path separators, so skip past the last colon". Two
+orderings in there are easy to invert and are pinned by the agent's own L0 table
+(`src/Test/L0/Util/RepositoryUtilL0.cs#L396-L451`, checked 2026-08-22): the **last** `@` wins, so
+`ssh://user:passw@rd@host:1234/` → `host`; and the port trim fires **only when no slash was found**,
+so `ssh://user:password@host/test:1234` → `1234`. The whole table is ported to bats as the
+conformance fixture for the bash port.
+
+[C-E06-119] **Adding a second checkout silently moves the first one.** — the doc page (checked
+2026-08-22) — "If you are using default paths, adding a second repository `checkout` step changes
+the default path of the code for the first repository. For example, the code for a repository named
+`tools` would be checked out to `C:\agent\_work\1\s` when `tools` is the only repository, but if a
+second repository is added, `tools` would then be checked out to `C:\agent\_work\1\s\tools`. If you
+have any steps that depend on the source code being in the original location, those steps must be
+updated." This is why the emulator's coverage report should surface a multi-checkout job: a pipeline
+whose scripts hardcode `$(Build.SourcesDirectory)/src` breaks on the real service too, and the
+emulator reproducing the break is correct behavior, not a bug to smooth over.
+
+[C-E06-120] **Delta, deliberately not implemented here: `workspaceRepo`.** Under multi-checkout,
+`System.DefaultWorkingDirectory` is retargeted to the repository whose checkout sets
+`workspaceRepo: true`, and falls back to `s` when no checkout does. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Worker/Build/BuildJobExtension.cs#L392-L446
+(checked 2026-08-22) — "if (RepositoryUtil.HasMultipleCheckouts(executionContext.JobSettings)) { //
+get checkout task for default working director repo / var defaultWorkingDirectoryCheckoutTask =
+GetDefaultWorkingDirectoryCheckoutTask(steps); …" / "public static TaskStep
+GetDefaultWorkingDirectoryCheckoutTask(IList<JobStep> steps) { return steps.Select(x => x as
+TaskStep).Where(task => task.IsCheckoutTask() && task.Inputs.TryGetValue(Pipelines.
+PipelineConstants.CheckoutTaskInputs.WorkspaceRepo, out string isDefaultWorkingDirectoryCheckout) &&
+StringUtil.ConvertToBoolean(isDefaultWorkingDirectoryCheckout)).FirstOrDefault(); }". The selection
+scans the **whole step list**, which is emitter knowledge and not available to a single
+`azdo_checkout` invocation — the agent resolves it in job preparation, before any checkout runs.
+`workspaceRepo` was already grounded at C-E06-026/027 for what it *does*; this claim records who
+owns it. `azdo_checkout` accepts and reports it like the four T02 deltas (C-E06-110) so a pipeline
+that sets it still runs, and E05 wires `System.DefaultWorkingDirectory` at job setup.
+
+[C-E06-121] **Non-`self` repositories seed no `Build.*` variables.** The `Build.Repository.*` and
+`Build.Source*` family describes exactly one repository — the triggering one, which is `self` unless
+a multi-repo resource trigger fired. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Worker/Build/BuildJobExtension.cs#L151-L159
+(checked 2026-08-22) — "executionContext.SetVariable(Constants.Variables.Build.RepoName,
+repoInfo.TriggeringRepository.Properties.Get<string>(Pipelines.RepositoryPropertyNames.Name));" —
+and the doc page (checked 2026-08-22) — "When you check out multiple repositories, some details
+about the `self` repository are available as variables. When you use multi-repo triggers, some of
+those variables have information about the triggering repository instead. Details about all of the
+repositories consumed by the job are available as a template context object called
+`resources.repositories`." A converted pipeline is never triggered, so `self` is the triggering
+repository by construction and a non-`self` checkout only places files. `resources.repositories`
+as a template context object belongs to E03/E04, not to the runtime.
+
+## E06-S06-T01 — secret masking
+
+[C-E06-122] **Masking happens on the way out, once per written line, and covers everything the
+agent writes — not only task stdout.** `ExecutionContext.Write` masks the concatenation of the tag
+and the message before it reaches either the server logger or the on-disk log, and `AddIssue` masks
+the issue message before it is recorded. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Worker/ExecutionContext.cs#L768-L790
+(checked 2026-08-22) — "public long Write(string tag, string inputMessage, bool canMaskSecrets =
+true) { string message = canMaskSecrets ? HostContext.SecretMasker.MaskSecrets($\"{tag}
+{inputMessage}\") : inputMessage;" — and
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Worker/ExecutionContext.cs#L442
+— "issue.Message = HostContext.SecretMasker.MaskSecrets(issue.Message);". The unit of masking is
+therefore **one output line**: nothing in the agent buffers two lines to look for a secret spanning
+them. The emulator's `azdo_mask_stream` is line-wise for the same reason, and it sits upstream of
+the `tee`, so the console and `logs/**.log` receive identical masked bytes (docs/04 §3).
+
+[C-E06-123] **Every secret variable write registers its value with the masker, keyed off the
+*merged* secret flag rather than the caller's argument.** `Variables.Set` first forces `secret` true
+when the existing variable is already secret, and only then registers. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Worker/Variables.cs#L426-L441
+(checked 2026-08-22) — "secret = secret || (_expanded.ContainsKey(name) && _expanded[name].Secret);
+// Register the secret. Secret masker handles duplicates gracefully. / if (secret &&
+!string.IsNullOrEmpty(val)) { _secretMasker.AddValue(val, $\"Variables_Set_{name}\"); }". This is
+why registration belongs in the emulator's *store* (`azdo__write_var_unchecked`, after the sticky
+merge of C-E06-056) and not in the `task.setvariable` handler: a non-secret write onto a secret
+variable is registered by the agent, and every other writer — `.env` load, `azdo_var_set`, scope
+copies — gets the same treatment for free. The guard is `IsNullOrEmpty`, so a whitespace-only
+secret value *is* registered here (contrast C-E06-124).
+
+[C-E06-124] **Job-message secret variables are additionally registered in six transformed forms.**
+Before the job runs, the worker walks the message variables and registers, for each secret with a
+non-whitespace value: the raw value; the value with `%`→`%AZP25`, CR→`%0D`, LF→`%0A`; the value with
+only CR/LF escaped; its UTF-8 base64; and that base64 through the same two escape passes. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Worker/Worker.cs#L172-L213
+(checked 2026-08-22) — "if (variable.Value.IsSecret && !string.IsNullOrWhiteSpace(variable.Value
+.Value)) { … AddUserSuppliedSecret(variable.Value.Value); // also, we escape some characters for
+variables when we print them out in debug mode. We need to add the escaped version of these secrets
+as well / var escapedSecret = variable.Value.Value.Replace(\"%\", \"%AZP25\").Replace(\"\\r\",
+\"%0D\").Replace(\"\\n\", \"%0A\"); … var base64Secret = Convert.ToBase64String(System.Text
+.Encoding.UTF8.GetBytes(variable.Value.Value)); …". The emulator's job-message variables are the
+`.env`/manifest secrets (C-E06-013), so `azdo_env_load` is where this belongs. The skip condition
+differs from C-E06-123's on purpose: `IsNullOrWhiteSpace` here versus `IsNullOrEmpty` there, so a
+whitespace-only secret is registered raw by the store and gets **no** variants.
+
+[C-E06-125] **Each of those registrations is itself three registrations.**
+`AddUserSuppliedSecret` adds the value, a copy trimmed of surrounding `'` or `"` when the value both
+starts and ends with that character, and a copy trimmed of CR/LF/space at both ends. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Worker/Worker.cs#L152-L170
+(checked 2026-08-22) — "// for variables, it is possible that they are used inside a shell which
+would strip off surrounding quotes / so, if the value is surrounded by quotes, add a quote-timmed
+version of the secret to our masker as well / This addresses issue #2525 / foreach (var quoteChar in
+_quoteLikeChars) { if (secret.StartsWith(quoteChar) && secret.EndsWith(quoteChar)) { HostContext
+.SecretMasker.AddValue(secret.Trim(quoteChar), …); } } / // Here we add a trimmed secret value to
+the dictionary in case of a possible leak through external tools. / var trimChars = new char[] {
+'\\r', '\\n', ' ' };" with `_quoteLikeChars` = `{ '\'', '"' }` (L26). `String.Trim(char)` removes
+*every* leading and trailing occurrence, not one.
+
+[C-E06-126] **Masking replaces merged character ranges, not substrings one value at a time:
+overlapping *and* adjacent matches collapse into a single `***`.** —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Test/L0/SecretMaskerTests/SecretMaskerL0.cs#L441-L470
+(checked 2026-08-22) — "// a naive replacement would replace \"def\" first, and never find \"bcd\",
+resulting in \"abc***g\" / or it would replace \"bcd\" first, and never find \"def\", resulting in
+\"a***efg\" / Assert.Equal(\"a***g\", result);" and "// two adjacent secrets are basically one big
+secret / Assert.Equal(\"a***h\", result);" (`AddValue("efg")` + `AddValue("bcd")` over
+`"abcdefgh"`). The L0 table pinned as the emulator's conformance fixture, same file, is:
+`def`/`abcdefg` → `abc***g` (L384); `def`/`abcdefgdef` → `abc***g***` (L398); `abc`/`abcabcdef` →
+`***def` (L412); `bcd`+`fgh`/`abcdefghi` → `a***e***i` (L426); `def`+`bcd`/`abcdefg` → `a***g`
+(L441); `efg`+`bcd`/`abcdefgh` → `a***h` (L459); empty input → empty (L358); no registered values →
+input unchanged (L373). The data cannot by itself separate range-merging from "replace, then
+collapse repeated `***`", but collapsing would corrupt a literal `******` in ordinary output, so the
+emulator merges ranges (docs/06 §5 decision 42).
+
+[C-E06-127] **A registered value shorter than the effective minimum is never added, and values
+already added are dropped when the minimum rises.** —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Test/L0/SecretMaskerTests/SecretMaskerL0.cs#L547-L594
+(checked 2026-08-22) — "secretMasker.MinSecretLength = 3; secretMasker.AddValue(\"efg\");
+secretMasker.AddValue(\"bcd\"); … Assert.Equal(\"a***h\", result); / secretMasker.MinSecretLength =
+4; secretMasker.RemoveShortSecretsFromDictionary(); … Assert.Equal(input, result2);". The comparison
+is `length < minimum` → skipped (a 3-character value survives a minimum of 3), a negative minimum
+adds everything (L530), and a minimum set above every registered length leaves the input untouched
+(L476). Encoded forms are length-filtered individually rather than inheriting their source value's
+fate (L617-L663).
+
+[C-E06-128] **The minimum comes from `AZP_IGNORE_SECRETS_SHORTER_THAN`, defaults to 0, and is
+capped at 6 with a warning.** —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Sdk/Knob/AgentKnobs.cs#L421-L426
+(checked 2026-08-22) — "public static readonly Knob MaskedSecretMinLength = new Knob(nameof(
+MaskedSecretMinLength), \"Specify the length of the secrets, which, if shorter, will be ignored in
+the logs.\", new RuntimeKnobSource(\"AZP_IGNORE_SECRETS_SHORTER_THAN\"), new EnvironmentKnobSource(
+\"AZP_IGNORE_SECRETS_SHORTER_THAN\"), new BuiltInDefaultKnobSource(\"0\"));" — the cap is
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Sdk/SecretMasking/LoggedSecretMasker.cs#L83-L104
+— "// We don't allow to skip secrets longer than 5 characters. / // Note: the secret that will be
+ignored is of length n-1. / public static int MinSecretLengthLimit => 6;" — and the warning is
+raised once at job start,
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Agent.Worker/ExecutionContext.cs#L603-L611
+— "var minSecretLen = AgentKnobs.MaskedSecretMinLength.GetValue(this).AsInt(); HostContext
+.SecretMasker.MinSecretLength = minSecretLen; if (HostContext.SecretMasker.MinSecretLength <
+minSecretLen) { warnings.Add(StringUtil.Loc(\"MinSecretsLengtLimitWarning\", …)); } HostContext
+.SecretMasker.RemoveShortSecretsFromDictionary();" with `"MinSecretsLengtLimitWarning": "The value
+of the minimum length of the secrets is too high. Maximum value is set: {0}"`
+(`src/Misc/layoutbin/en-US/strings.json` L420, same pin). `KnobValue.AsInt()` is `Int32.Parse`, not
+`TryParse` (`src/Agent.Sdk/Knob/KnobValue.cs`), so a non-numeric value is a job-start exception
+rather than a silent 0 — the emulator refuses to register instead of masking nothing. Registering
+under the already-known minimum is observably equivalent to the agent's add-then-`RemoveShort`
+order, because the knob is fixed for the whole job.
+
+[C-E06-129] **Delta, deliberately not implemented: the three global value encoders.** Every masker
+the agent builds carries `ValueEncoders.JsonStringEscape`, `UriDataEscape` and `BackslashEscape`, so
+a registered secret is also masked in those encodings. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Microsoft.VisualStudio.Services.Agent/HostContext.cs#L187-L223
+(checked 2026-08-22) — "secretMasker.AddValueEncoder(ValueEncoders.JsonStringEscape, …);
+secretMasker.AddValueEncoder(ValueEncoders.UriDataEscape, …); secretMasker.AddValueEncoder(
+ValueEncoders.BackslashEscape, …);". `ValueEncoders` itself lives in the **closed**
+`Microsoft.TeamFoundation.DistributedTask.Logging` assembly — the same situation as the expression
+engine (C-E00-012) and the attachment-type constants (C-E06-079) — and the only visible behavior is
+one L0 example each: `SecretMaskerL0.cs` L222-L256 shows JSON escaping of CR/LF/tab/backslash/quote,
+percent-encoding of a space, and, for `BackslashEscape`, a registered `abc\\def\'\"ghi\t` also
+matching `abc\def'"ghi<TAB>` — i.e. it *un*escapes. One example per encoder cannot pin a general
+rule, so the emulator registers no encoded forms and records the gap here. The `%AZP25`/base64
+variants of C-E06-124 are **not** encoders: they are literal, fully visible `Worker.cs` source.
+
+[C-E06-130] **Delta, deferred to E08: the URL-credential regex.** Independently of any registered
+value, the agent masks the password segment of a `scheme://user:pass@host` authority. —
+https://github.com/microsoft/azure-pipelines-agent/blob/42bde98bea7bb3b9e186d693e3b1554249e93a38/src/Microsoft.VisualStudio.Services.Agent/AdditionalMaskingRegexes.cs
+(checked 2026-08-22) — "// URLs can contain secrets if they have a userinfo part / in the authority.
+example: https://user:pass@example.com / … It only matches on the password part. / private static
+string urlSecretPattern = \"(?<=//[^:/?#\\n]+:)\" + urlMatch + \"(?=@)\";" with L0 cases
+`https://user:pass@example.com` → `https://user:***@example.com` and
+`https://simpledomain@example.com` unchanged (`SecretMaskerL0.cs` L96-L155). Two reasons it is not
+in this task: the **Do** field scopes the masker to *registered values*, and bash ERE has no
+lookaround, so the pattern needs capture-group emulation. Its motivating case is a credentialed
+remote URL, which is `persistCredentials` — already deferred to E08 (C-E06-110) — so it is filed
+as a new follow-up task, E06-S06-T03, at the end of this story rather than folded in here.
+
+[C-E06-131] **Parity, not a delta: a secret split across two output lines is masked on neither.**
+Masking is per line (C-E06-122) and the agent registers no per-line fragment of a multiline secret —
+`AddUserSuppliedSecret` only *end*-trims CR/LF (C-E06-125) — so a two-line secret echoed as two
+lines survives both the agent and the emulator. The doc page states the general rule this follows
+from: — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/set-secret-variables
+(checked 2026-08-22) — "We make an effort to mask secrets from appearing in Azure Pipelines output,
+but you still need to take precautions. Never echo secrets as output. … We never mask substrings of
+secrets. If, for example, \"abc123\" is set as a secret, \"abc\" isn't masked from the logs. This is
+to avoid masking secrets at too granular of a level, making the logs unreadable. For this reason,
+secrets should not contain structured data." The `%0D`/`%0A` forms of C-E06-124 are the agent's
+compensation: the *escaped* single-line rendering of a multiline secret **is** masked. The
+emulator's pre-existing masker read only the first line of each registered value, which masked that
+line alone — stricter than the agent and inconsistent with "never mask substrings"; it now reads
+registered values exactly (`azdo__read_file_exact`).

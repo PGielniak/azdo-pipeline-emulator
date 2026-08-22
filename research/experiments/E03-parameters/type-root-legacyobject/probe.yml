@@ -1,0 +1,8 @@
+parameters:
+- name: p
+  type: legacyObject
+  default: {}
+steps:
+- script: echo probe
+  env:
+    OUT: ${{ convertToJson(parameters.p) }}

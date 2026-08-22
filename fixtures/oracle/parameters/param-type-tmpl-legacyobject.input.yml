@@ -1,0 +1,2 @@
+steps:
+- template: /e03-params/types-legacyobject.yml

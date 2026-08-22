@@ -1,0 +1,7 @@
+parameters:
+- type: string
+  default: s
+steps:
+- script: echo probe
+  env:
+    OUT: ${{ convertToJson('x') }}

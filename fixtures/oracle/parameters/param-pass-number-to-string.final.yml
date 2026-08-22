@@ -1,0 +1,11 @@
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      env:
+        OUT: '"42"'
+      inputs:
+        script: echo probe
+

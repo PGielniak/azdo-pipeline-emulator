@@ -1,0 +1,22 @@
+parameters:
+- name: p
+  type: stringList
+  default:
+  - a
+  values:
+  - a
+  - b
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      env:
+        OUT: >-
+          [
+            "a"
+          ]
+      inputs:
+        script: echo probe
+

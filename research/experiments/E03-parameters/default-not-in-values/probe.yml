@@ -1,0 +1,11 @@
+parameters:
+- name: p
+  type: string
+  default: gamma
+  values:
+  - alpha
+  - beta
+steps:
+- script: echo probe
+  env:
+    OUT: ${{ convertToJson(parameters.p) }}

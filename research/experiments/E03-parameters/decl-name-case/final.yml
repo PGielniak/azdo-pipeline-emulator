@@ -1,0 +1,15 @@
+parameters:
+- name: myParam
+  type: string
+  default: s
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      env:
+        OUT: '"s"'
+      inputs:
+        script: echo probe
+

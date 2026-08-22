@@ -1,0 +1,55 @@
+parameters:
+- name: t01
+  type: string
+  default: s
+- name: t02
+  type: number
+  default: 1
+- name: t03
+  type: boolean
+  default: true
+- name: t04
+  type: object
+  default: {}
+- name: t05
+  type: step
+  default:
+    script: echo s
+- name: t06
+  type: stepList
+  default: []
+- name: t07
+  type: job
+  default:
+    job: j
+    steps:
+    - script: echo j
+- name: t08
+  type: jobList
+  default: []
+- name: t09
+  type: deployment
+  default:
+    deployment: d
+- name: t10
+  type: deploymentList
+  default: []
+- name: t11
+  type: stage
+  default:
+    stage: s
+    jobs: []
+- name: t12
+  type: stageList
+  default: []
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      env:
+        OUT: '{}'
+      inputs:
+        script: echo probe
+

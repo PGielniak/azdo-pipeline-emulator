@@ -1,0 +1,8 @@
+parameters:
+- name: p
+  type: secureFile
+  default: sf
+steps:
+- script: echo probe
+  env:
+    OUT: ${{ convertToJson(parameters.p) }}

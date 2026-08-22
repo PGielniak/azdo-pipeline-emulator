@@ -1,0 +1,7 @@
+steps:
+- template: /e03-params/bind-steplist.yml
+  parameters:
+    p:
+    - script: echo one
+    - bash: echo two
+      displayName: Two

@@ -1,0 +1,8 @@
+parameters:
+- name: outer
+  type: string
+  default: from-caller
+steps:
+- template: /e03-params/bind-string.yml
+  parameters:
+    p: ${{ parameters.outer }}

@@ -1,0 +1,3 @@
+{
+  "finalYaml": "stages:\n- stage: __default\n  jobs:\n  - job: Job\n    steps:\n    - task: CmdLine@2\n      env:\n        OUT: >-\n          {\n            \"n\": \"3\",\n            \"b\": \"true\",\n            \"nil\": \"\",\n            \"list\": [\n              \"1\",\n              \"two\"\n            ]\n          }\n      inputs:\n        script: echo probe\n\n"
+}

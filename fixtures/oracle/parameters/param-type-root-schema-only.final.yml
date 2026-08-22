@@ -1,0 +1,28 @@
+parameters:
+- name: t01
+  type: environment
+  default: env
+- name: t02
+  type: filePath
+  default: /tmp/x
+- name: t03
+  type: pool
+  default:
+    vmImage: ubuntu-latest
+- name: t04
+  type: secureFile
+  default: sf
+- name: t05
+  type: serviceConnection
+  default: sc
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      env:
+        OUT: '"/tmp/x"'
+      inputs:
+        script: echo probe
+

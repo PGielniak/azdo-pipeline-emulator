@@ -1,0 +1,8 @@
+parameters:
+- name: p
+  type: container
+  default: alpine
+steps:
+- script: echo probe
+  env:
+    OUT: ${{ convertToJson(parameters.p) }}

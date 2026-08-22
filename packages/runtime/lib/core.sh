@@ -68,6 +68,26 @@ azdo__validate_bool() {
 }
 
 azdo__write_var() {
+  local name="$1" meta_path
+  meta_path="$(azdo__var_path "$name" "$6").meta" || return
+
+  if azdo__meta_flag_is_true "$meta_path" readonly; then
+    # Run 539 showed that hosted agents reject the second command before it changes the first
+    # value, rather than issuing the legacy warning and overwriting it (C-E06-004, C-E06-006).
+    printf "##[error]Overwriting readonly variable '%s' is not permitted.\n" "$name" >&2
+    return 1
+  fi
+  azdo__write_var_unchecked "$@"
+}
+
+# azdo__write_var_unchecked <name> <value> <secret> <output> <readonly> <scope>
+#
+# The read-only rule is enforced by callers, not by the store, because the agent enforces it in
+# `TaskSetVariableCommand` rather than in `Variables.Set` — which is exactly why
+# `build.updatebuildnumber` can overwrite `Build.BuildNumber` even though that name is a member of
+# `Constants.Variables.ReadOnlyVariables` (C-E06-081). A read-only variable stays read-only across
+# such a write, so the flag is preserved below rather than reset by the caller.
+azdo__write_var_unchecked() {
   local name="$1" value="$2" secret="$3" output="$4" readonly="$5" scope="$6"
   local var_path meta_path var_dir value_tmp meta_tmp
   var_path="$(azdo__var_path "$name" "$scope")" || return
@@ -76,17 +96,21 @@ azdo__write_var() {
 
   mkdir -p "$var_dir" || return
 
-  if azdo__meta_flag_is_true "$meta_path" readonly; then
-    # Run 539 showed that hosted agents reject the second command before it changes the first
-    # value, rather than issuing the legacy warning and overwriting it (C-E06-004, C-E06-006).
-    printf "##[error]Overwriting readonly variable '%s' is not permitted.\n" "$name" >&2
-    return 1
-  fi
-
   # A secret variable cannot be downgraded by a later non-secret write; the replacement value must
   # remain out of automatic environments and be registered with the masker (C-E06-056).
   if azdo__meta_flag_is_true "$meta_path" secret; then
     secret=true
+  fi
+  if azdo__meta_flag_is_true "$meta_path" readonly; then
+    readonly=true
+  fi
+
+  # Registration keys off the *merged* flag, not the caller's argument: the agent registers inside
+  # Variables.Set, after the same sticky-secret merge, so a plain write onto a secret variable
+  # registers its replacement value too (C-E06-123). Every writer — the store API, `.env` load,
+  # scope copies, the logging handlers — therefore registers exactly once, here.
+  if [[ "$secret" = true && -n "$value" ]]; then
+    azdo_mask_register "$value" || return
   fi
 
   value_tmp="$(mktemp "$var_dir/.value.XXXXXX")" || return
@@ -584,6 +608,18 @@ AZDO_ENV_LOADER
         else
           load_status=$?
           break 2
+        fi
+        # `.env` secrets are this runtime's job-message variables (C-E06-013), so they also get the
+        # six transformed registrations the worker adds before the job starts (C-E06-124). The store
+        # already registered the raw value; a whitespace-only value stops here, exactly as the
+        # agent's IsNullOrWhiteSpace guard does.
+        if [[ "$secret" = true ]]; then
+          if azdo__mask_register_job_variable "${declaration_values[$index]}"; then
+            :
+          else
+            load_status=$?
+            break 2
+          fi
         fi
         break
       fi
@@ -1155,9 +1191,9 @@ azdo_logging_property() {
 #
 # Store masker inputs outside shell variables so registration in the logging-parser subprocess is
 # visible to the downstream mask filter and to later steps. Empty values are ignored exactly as in
-# TaskCommandHelper.AddSecret (C-E06-053). E06-S06-T01 owns the broader initial-secret and
-# cross-line hardening pass; this seam provides the immediate task.setvariable behavior required
-# here.
+# TaskCommandHelper.AddSecret (C-E06-053), and a value shorter than the effective minimum is not
+# stored at all (C-E06-127) — the agent's add-then-RemoveShortSecretsFromDictionary order is
+# observably the same here because the minimum is fixed for the whole run (C-E06-128).
 azdo_mask_register() {
   (($# == 1)) || {
     printf '%s\n' 'usage: azdo_mask_register <value>' >&2
@@ -1165,7 +1201,9 @@ azdo_mask_register() {
   }
   [[ -n "$1" ]] || return 0
 
-  local state_dir mask_dir mask_tmp mask_path old_umask
+  local state_dir mask_dir mask_tmp mask_path old_umask minimum
+  azdo__mask_min_length minimum || return
+  ((${#1} >= minimum)) || return 0
   state_dir="$(azdo__state_dir)" || return
   mask_dir="$state_dir/masks"
   mkdir -p "$mask_dir" || return
@@ -1184,39 +1222,223 @@ azdo_mask_register() {
   mv -- "$mask_tmp" "$mask_path"
 }
 
+# azdo__mask_min_length <destination-variable>
+#
+# Effective minimum length of a registered value. `AZP_IGNORE_SECRETS_SHORTER_THAN` is the agent's
+# knob (built-in default 0) and LoggedSecretMasker caps whatever it is handed at 6, warning once
+# when the request was higher (C-E06-128). The knob is read with Int32.Parse rather than TryParse,
+# so a non-numeric value is a hard failure on the agent; refusing to register is the local
+# equivalent, and it fails loud instead of silently masking nothing.
+azdo__mask_min_length() {
+  (($# == 1)) || {
+    printf '%s\n' 'usage: azdo__mask_min_length <destination-variable>' >&2
+    return 2
+  }
+
+  local requested="${AZP_IGNORE_SECRETS_SHORTER_THAN:-0}" state_dir warning_marker
+  [[ "$requested" =~ ^-?[0-9]+$ ]] || {
+    printf 'AZP_IGNORE_SECRETS_SHORTER_THAN must be an integer, got: %s\n' "$requested" >&2
+    return 2
+  }
+  if ((requested > 6)); then
+    state_dir="$(azdo__state_dir)" || return
+    warning_marker="$state_dir/masks/.min-length-warning"
+    if [[ ! -e "$warning_marker" ]]; then
+      mkdir -p "$state_dir/masks" || return
+      : >"$warning_marker" || return
+      printf '##[warning]The value of the minimum length of the secrets is too high. Maximum value is set: %s\n' 6
+    fi
+    requested=6
+  fi
+  printf -v "$1" '%s' "$requested"
+}
+
+# azdo__mask_register_user_supplied <value>
+#
+# AddUserSuppliedSecret: the value, the same value stripped of surrounding quote characters, and the
+# same value stripped of leading/trailing CR, LF and spaces (C-E06-125). `String.Trim(char)` removes
+# every leading and trailing occurrence, which is why both loops run to exhaustion.
+azdo__mask_register_user_supplied() {
+  (($# == 1)) || {
+    printf '%s\n' 'usage: azdo__mask_register_user_supplied <value>' >&2
+    return 2
+  }
+
+  local value="$1" quote trimmed
+  azdo_mask_register "$value" || return
+  for quote in "'" '"'; do
+    if [[ "$value" == "$quote"*"$quote" ]]; then
+      trimmed="$value"
+      while [[ "$trimmed" == "$quote"* ]]; do trimmed="${trimmed#"$quote"}"; done
+      while [[ "$trimmed" == *"$quote" ]]; do trimmed="${trimmed%"$quote"}"; done
+      azdo_mask_register "$trimmed" || return
+    fi
+  done
+  trimmed="$value"
+  while [[ "$trimmed" == [$'\r\n ']* ]]; do trimmed="${trimmed#?}"; done
+  while [[ "$trimmed" == *[$'\r\n '] ]]; do trimmed="${trimmed%?}"; done
+  azdo_mask_register "$trimmed"
+}
+
+# azdo__mask_register_job_variable <value>
+#
+# InitializeSecretMasker's treatment of a secret job variable: the raw value, the value with `%`,
+# CR and LF escaped the way the agent renders variables in debug output, the CR/LF-only escaping for
+# runs with `%` escaping disabled, the UTF-8 base64 of the value, and that base64 through both
+# escape passes — each of the six through AddUserSuppliedSecret (C-E06-124). A whitespace-only value
+# is skipped entirely here, while the store still registers it raw (C-E06-123): the two guards are
+# IsNullOrWhiteSpace and IsNullOrEmpty respectively.
+azdo__mask_register_job_variable() {
+  (($# == 1)) || {
+    printf '%s\n' 'usage: azdo__mask_register_job_variable <value>' >&2
+    return 2
+  }
+
+  local value="$1" escaped base64_value
+  [[ -n "${value//[[:space:]]/}" ]] || return 0
+
+  azdo__mask_register_user_supplied "$value" || return
+  escaped="${value//%/%AZP25}"
+  escaped="${escaped//$'\r'/%0D}"
+  escaped="${escaped//$'\n'/%0A}"
+  azdo__mask_register_user_supplied "$escaped" || return
+  escaped="${value//$'\r'/%0D}"
+  escaped="${escaped//$'\n'/%0A}"
+  azdo__mask_register_user_supplied "$escaped" || return
+
+  base64_value="$(printf '%s' "$value" | base64 | tr -d '\n')" || return
+  azdo__mask_register_user_supplied "$base64_value" || return
+  escaped="${base64_value//%/%AZP25}"
+  escaped="${escaped//$'\r'/%0D}"
+  escaped="${escaped//$'\n'/%0A}"
+  azdo__mask_register_user_supplied "$escaped" || return
+  escaped="${base64_value//$'\r'/%0D}"
+  escaped="${escaped//$'\n'/%0A}"
+  azdo__mask_register_user_supplied "$escaped"
+}
+
+# Registered values, cached per process against the state directory they were read from. Mask files
+# are immutable once renamed into place, so a file already read never has to be read again; only the
+# directory listing is repeated, which is what lets `task.setsecret` in the parser subprocess reach
+# the mask filter on the very next line (C-E06-058).
+AZDO__MASK_CACHE_STATE_DIR=''
+AZDO__MASK_CACHE_FILES=()
+AZDO__MASK_VALUES=()
+
+# shellcheck disable=SC2120 # Internal loader; it intentionally accepts no arguments.
+azdo__mask_load_values() {
+  (($# == 0)) || {
+    printf '%s\n' 'usage: azdo__mask_load_values' >&2
+    return 2
+  }
+
+  local state_dir mask_dir file known value index seen
+  local -a mask_files=()
+  state_dir="$(azdo__state_dir)" || return
+  if [[ "$state_dir" != "$AZDO__MASK_CACHE_STATE_DIR" ]]; then
+    AZDO__MASK_CACHE_STATE_DIR="$state_dir"
+    AZDO__MASK_CACHE_FILES=()
+    AZDO__MASK_VALUES=()
+  fi
+  mask_dir="$state_dir/masks"
+  [[ -d "$mask_dir" ]] || return 0
+
+  shopt -s nullglob
+  mask_files=("$mask_dir"/mask.*)
+  shopt -u nullglob
+
+  for file in "${mask_files[@]}"; do
+    seen=false
+    for known in "${AZDO__MASK_CACHE_FILES[@]}"; do
+      if [[ "$known" = "$file" ]]; then
+        seen=true
+        break
+      fi
+    done
+    [[ "$seen" = false ]] || continue
+    AZDO__MASK_CACHE_FILES+=("$file")
+    # The registered value is read byte-exactly: reading only its first line would mask that line on
+    # its own, which the agent never does for a multiline secret (C-E06-131).
+    azdo__read_file_exact "$file" value || return
+    [[ -n "$value" ]] || continue
+    seen=false
+    for ((index = 0; index < ${#AZDO__MASK_VALUES[@]}; index++)); do
+      if [[ "${AZDO__MASK_VALUES[$index]}" = "$value" ]]; then
+        seen=true
+        break
+      fi
+    done
+    [[ "$seen" = false ]] || continue
+    AZDO__MASK_VALUES+=("$value")
+  done
+}
+
+# azdo__mask_line <line> <destination-variable>
+#
+# Every occurrence of every registered value becomes a character range; ranges that overlap *or*
+# touch merge into one, and each merged range is replaced by a single `***` (C-E06-126). Replacing
+# value by value instead would emit `a******h` where the agent emits `a***h`, and would let the
+# first replacement hide a second value that straddles it.
 azdo__mask_line() {
   (($# == 2)) || {
     printf '%s\n' 'usage: azdo__mask_line <line> <destination-variable>' >&2
     return 2
   }
 
-  local state_dir mask_dir mask_file secret mask_result="$1" index other swap
-  local -a mask_files=() secrets=()
-  state_dir="$(azdo__state_dir)" || return
-  mask_dir="$state_dir/masks"
-  if [[ -d "$mask_dir" ]]; then
-    shopt -s nullglob
-    mask_files=("$mask_dir"/mask.*)
-    shopt -u nullglob
-  fi
-  for mask_file in "${mask_files[@]}"; do
-    secret=''
-    IFS= read -r secret <"$mask_file" || [[ -n "$secret" ]] || continue
-    [[ -n "$secret" ]] && secrets+=("$secret")
+  # Locals are named apart from the plausible destination names a caller might pass: `printf -v`
+  # into a name this function also declares `local` would write to the local and leave the caller's
+  # variable unset.
+  local mask_line="$1" mask_value mask_rest mask_prefix mask_at mask_from mask_i mask_j
+  local -a mask_starts=() mask_ends=()
+  # shellcheck disable=SC2119 # The loader intentionally accepts no arguments.
+  azdo__mask_load_values || return
+
+  for mask_value in "${AZDO__MASK_VALUES[@]}"; do
+    mask_at=0
+    while ((mask_at <= ${#mask_line})); do
+      mask_rest="${mask_line:mask_at}"
+      [[ "$mask_rest" == *"$mask_value"* ]] || break
+      mask_prefix="${mask_rest%%"$mask_value"*}"
+      mask_from=$((mask_at + ${#mask_prefix}))
+      mask_starts+=("$mask_from")
+      mask_ends+=("$((mask_from + ${#mask_value}))")
+      mask_at=$((mask_from + ${#mask_value}))
+    done
   done
 
-  # Mask longer registered values first so an overlapping shorter value cannot expose the suffix
-  # of a longer secret. Each replacement still matches only the complete registered value.
-  for ((index = 0; index < ${#secrets[@]}; index++)); do
-    for ((other = index + 1; other < ${#secrets[@]}; other++)); do
-      if ((${#secrets[$other]} > ${#secrets[$index]})); then
-        swap="${secrets[$index]}"
-        secrets[index]="${secrets[$other]}"
-        secrets[other]="$swap"
+  if ((${#mask_starts[@]} == 0)); then
+    printf -v "$2" '%s' "$mask_line"
+    return 0
+  fi
+
+  for ((mask_i = 0; mask_i < ${#mask_starts[@]}; mask_i++)); do
+    for ((mask_j = mask_i + 1; mask_j < ${#mask_starts[@]}; mask_j++)); do
+      if ((mask_starts[mask_j] < mask_starts[mask_i])); then
+        mask_from="${mask_starts[$mask_i]}"
+        mask_starts[mask_i]="${mask_starts[$mask_j]}"
+        mask_starts[mask_j]="$mask_from"
+        mask_from="${mask_ends[$mask_i]}"
+        mask_ends[mask_i]="${mask_ends[$mask_j]}"
+        mask_ends[mask_j]="$mask_from"
       fi
     done
-    mask_result="${mask_result//"${secrets[$index]}"/***}"
   done
+
+  local mask_result='' mask_done=0
+  local mask_open="${mask_starts[0]}" mask_close="${mask_ends[0]}"
+  for ((mask_i = 1; mask_i <= ${#mask_starts[@]}; mask_i++)); do
+    if ((mask_i < ${#mask_starts[@]} && mask_starts[mask_i] <= mask_close)); then
+      ((mask_ends[mask_i] > mask_close)) && mask_close="${mask_ends[$mask_i]}"
+      continue
+    fi
+    mask_result+="${mask_line:mask_done:mask_open-mask_done}***"
+    mask_done="$mask_close"
+    if ((mask_i < ${#mask_starts[@]})); then
+      mask_open="${mask_starts[$mask_i]}"
+      mask_close="${mask_ends[$mask_i]}"
+    fi
+  done
+  mask_result+="${mask_line:mask_done}"
   printf -v "$2" '%s' "$mask_result"
 }
 
@@ -1254,7 +1476,7 @@ azdo__logging_bool_property() {
 }
 
 azdo__logging_task_setvariable() {
-  local name secret output readonly_flag stored_name var_path
+  local name secret output readonly_flag
   if ! azdo_logging_property variable name || [[ -z "$name" ]]; then
     printf "%s\n" "Required field 'variable' is missing in ##vso[task.setvariable] command." >&2
     return 1
@@ -1272,17 +1494,11 @@ azdo__logging_task_setvariable() {
   # process, reproducing the current-versus-following-task boundary (C-E06-050/051). Output writes
   # reuse the step-qualified same-job and cross-job paths from C-E06-005/052; the store enforces
   # the strict read-only policy established by C-E06-006.
+  # Secret registration is the store's job (C-E06-123), including the sticky case where this
+  # command omits `isSecret` over an already-secret variable.
   azdo_var_set \
     "$name" "$AZDO_LOGGING_MESSAGE" "$secret" "$output" "$readonly_flag" \
-    "${AZDO_VAR_SCOPE:-pipeline}" || return
-  stored_name="$name"
-  if [[ "$output" = true ]]; then
-    stored_name="${AZDO_STEP_NAME:-}.$name"
-  fi
-  var_path="$(azdo__var_path "$stored_name" "${AZDO_VAR_SCOPE:-pipeline}")" || return
-  if azdo__meta_flag_is_true "$var_path.meta" secret; then
-    azdo_mask_register "$AZDO_LOGGING_MESSAGE" || return
-  fi
+    "${AZDO_VAR_SCOPE:-pipeline}"
 }
 
 # E06-S04-T03 — command-scoped state. Handlers run inside the logging-stream subshell, so every
@@ -1567,8 +1783,253 @@ azdo__logging_task_debug() {
   azdo__debug_note "$AZDO_LOGGING_MESSAGE"
 }
 
+# --- E06-S04-T04: artifact, attachment and build commands ---------------------------------------
+#
+# These four families all move bytes the hosted agent moves to the server. Locally the destinations
+# are directories in the generated project: published artifacts under `.artifacts/<artifactname>/`
+# (docs/04 §1/§7, the download source E06-S05-T01 reads), attachments under
+# `<logs>/attachments/<type>/<name>`, and build tags under `state/tags`. The hosted transfers run on
+# the agent's async command queue *after* the handler returns, so a hosted transfer failure surfaces
+# at job end; here the copy is synchronous and a copy failure is a command failure (C-E06-083).
+
+azdo__artifact_dir() {
+  if [[ -z "${AZDO_ARTIFACT_DIR:-}" ]]; then
+    printf '%s\n' 'AZDO_ARTIFACT_DIR must be set before using the artifact logging commands' >&2
+    return 2
+  fi
+  printf '%s\n' "$AZDO_ARTIFACT_DIR"
+}
+
+azdo__attachment_dir() {
+  if [[ -z "${AZDO_ATTACHMENT_DIR:-}" ]]; then
+    printf '%s\n' 'AZDO_ATTACHMENT_DIR must be set before using the attachment logging commands' >&2
+    return 2
+  fi
+  printf '%s\n' "$AZDO_ATTACHMENT_DIR"
+}
+
+# azdo__logging_attach_file <type> <name> <path>
+#
+# The one implementation behind `task.addattachment`, `task.uploadfile`, `task.uploadsummary`,
+# `build.uploadlog` and `build.uploadsummary` — the agent has exactly one too, and the two task
+# upload commands are literally calls into it with a derived type and `Path.GetFileName(data)` as
+# the name (C-E06-074/075). Both `type` and `name` must be nonempty and the message must name an
+# existing *file*; a directory is not accepted here, unlike `artifact.upload`.
+#
+# The agent additionally rejects `Path.GetInvalidFileNameChars()` in either value. That set is
+# platform-dependent in .NET, so the strictly narrower `azdo__valid_store_segment` guard is reused
+# instead of importing the Windows set — both values become local path segments, which is the
+# reason the guard exists (C-E06-076).
+azdo__logging_attach_file() {
+  (($# == 3)) || {
+    printf '%s\n' 'usage: azdo__logging_attach_file <type> <name> <path>' >&2
+    return 2
+  }
+  local type="$1" name="$2" path="$3" attachment_dir target_dir
+
+  if [[ -z "$type" ]]; then
+    printf '%s\n' "Can't add task attachment, attachment type is not provided." >&2
+    return 1
+  fi
+  if [[ -z "$name" ]]; then
+    printf '%s\n' "Can't add task attachment, attachment name is not provided." >&2
+    return 1
+  fi
+  if [[ -z "$path" || ! -f "$path" ]]; then
+    printf '%s\n' 'Cannot upload task attachment file, attachment file location is not specified or attachment file does not exist on disk.' >&2
+    return 1
+  fi
+  azdo__valid_store_segment "$type" || return 1
+  azdo__valid_store_segment "$name" || return 1
+
+  attachment_dir="$(azdo__attachment_dir)" || return
+  target_dir="$attachment_dir/$type"
+  mkdir -p "$target_dir" || return
+  cp -f -- "$path" "$target_dir/$name"
+}
+
+azdo__logging_task_addattachment() {
+  local type name
+  azdo_logging_property type type || :
+  azdo_logging_property name name || :
+  azdo__logging_attach_file "$type" "$name" "$AZDO_LOGGING_MESSAGE"
+}
+
+azdo__logging_task_uploadfile() {
+  if [[ -z "$AZDO_LOGGING_MESSAGE" ]]; then
+    printf '%s\n' 'Cannot upload file because file location is not specified.' >&2
+    return 1
+  fi
+  # `FileAttachment` is the C# member name, used because the constant's wire value lives in the
+  # closed WebApi assembly and is not citable (C-E06-079).
+  azdo__logging_attach_file FileAttachment "${AZDO_LOGGING_MESSAGE##*/}" "$AZDO_LOGGING_MESSAGE"
+}
+
+azdo__logging_task_uploadsummary() {
+  if [[ -z "$AZDO_LOGGING_MESSAGE" ]]; then
+    printf '%s\n' 'Cannot upload summary file, summary file location is not specified.' >&2
+    return 1
+  fi
+  # The one attachment type whose wire value the doc page states, so the documented shorthand
+  # identity with `task.addattachment type=Distributedtask.Core.Summary` is observable locally
+  # (C-E06-079). The name is the file name, not the doc example's custom name (C-E06-074).
+  azdo__logging_attach_file Distributedtask.Core.Summary "${AZDO_LOGGING_MESSAGE##*/}" "$AZDO_LOGGING_MESSAGE"
+}
+
+azdo__logging_build_uploadlog() {
+  if [[ -z "$AZDO_LOGGING_MESSAGE" || ! -f "$AZDO_LOGGING_MESSAGE" ]]; then
+    printf "Log file path is not provided or file doesn't exist: '%s'\n" "$AZDO_LOGGING_MESSAGE" >&2
+    return 1
+  fi
+  # Fixed attachment name, not the file's own (C-E06-077).
+  azdo__logging_attach_file Log CustomToolLog "$AZDO_LOGGING_MESSAGE"
+}
+
+azdo__logging_build_uploadsummary() {
+  if [[ -z "$AZDO_LOGGING_MESSAGE" || ! -f "$AZDO_LOGGING_MESSAGE" ]]; then
+    printf "Markdown summary file path is not provided or file doesn't exist: '%s'\n" "$AZDO_LOGGING_MESSAGE" >&2
+    return 1
+  fi
+  # Deprecated on the agent but still installed, and distinct from `task.uploadsummary`: same type,
+  # a prefixed name (C-E06-078). The doc page does not list it.
+  azdo__logging_attach_file Distributedtask.Core.Summary \
+    "CustomMarkDownSummary-${AZDO_LOGGING_MESSAGE##*/}" "$AZDO_LOGGING_MESSAGE"
+}
+
+azdo__logging_build_updatebuildnumber() {
+  if [[ -z "$AZDO_LOGGING_MESSAGE" ]]; then
+    printf '%s\n' 'Build number is required.' >&2
+    return 1
+  fi
+  # Not trimmed, unlike addbuildtag (C-E06-080/082), and written through the unchecked path because
+  # `Build.BuildNumber` is a read-only name that this command is specifically allowed to overwrite
+  # (C-E06-081). Subsequent steps see the new value through the ordinary environment pass.
+  azdo__write_var_unchecked 'Build.BuildNumber' "$AZDO_LOGGING_MESSAGE" false false false \
+    "${AZDO_VAR_SCOPE:-pipeline}"
+}
+
+azdo__logging_build_addbuildtag() {
+  local tag="$AZDO_LOGGING_MESSAGE" tags_path existing folded_tag folded_existing
+  # The agent trims before the emptiness check; a whitespace-only tag is therefore rejected
+  # (C-E06-082).
+  tag="${tag#"${tag%%[![:space:]]*}"}"
+  tag="${tag%"${tag##*[![:space:]]}"}"
+  if [[ -z "$tag" ]]; then
+    printf '%s\n' 'Build tag is required.' >&2
+    return 1
+  fi
+  # Server-side tags are a set compared OrdinalIgnoreCase, so a repeat is a no-op rather than a
+  # second line (C-E06-082). The doc's "no colon" restriction is enforced by the server, not the
+  # agent, and is deliberately not reproduced here.
+  azdo__logging_fold "$tag" folded_tag || return
+  tags_path="$(azdo__state_dir)/tags" || return
+  if [[ -f "$tags_path" ]]; then
+    while IFS= read -r existing || [[ -n "$existing" ]]; do
+      azdo__logging_fold "$existing" folded_existing || return
+      [[ "$folded_existing" = "$folded_tag" ]] && return 0
+    done <"$tags_path"
+  fi
+  printf '%s\n' "$tag" >>"$tags_path"
+}
+
+# azdo__logging_artifact_copy <source> <destination-root>
+#
+# Reproduces the container item paths of C-E06-071 as a local tree: a file source contributes its
+# basename, a directory source contributes its *contents* — its own name never appears.
+azdo__logging_artifact_copy() {
+  local source="$1" destination="$2" entry relative target
+  mkdir -p "$destination" || return
+  if [[ -f "$source" ]]; then
+    cp -f -- "$source" "$destination/${source##*/}"
+    return
+  fi
+  # `TrimEnd(Path.DirectorySeparatorChar, ...)`, and only on the directory branch — the file branch
+  # takes `Path.GetDirectoryName` instead, and trimming before the `-f` test above would accept
+  # `file.txt/`, where `File.Exists` is false (C-E06-071). Without it a trailing slash leaves the
+  # prefix strip below unmatched and the whole absolute path lands inside the artifact.
+  source="${source%"${source##*[!/]}"}"
+  while IFS= read -r -d '' entry; do
+    relative="${entry#"$source"/}"
+    target="$destination/$relative"
+    mkdir -p "${target%/*}" || return
+    cp -f -- "$entry" "$target" || return
+  done < <(find "$source" -type f -print0)
+}
+
+azdo__logging_artifact_upload() {
+  local artifact_name container_folder source artifact_dir destination meta_dir
+
+  if ! azdo_logging_property artifactname artifact_name || [[ -z "$artifact_name" ]]; then
+    printf '%s\n' 'Artifact Name is required.' >&2
+    return 1
+  fi
+  # Absent or empty containerfolder defaults to the artifact name (C-E06-069).
+  azdo_logging_property containerfolder container_folder || :
+  [[ -n "$container_folder" ]] || container_folder="$artifact_name"
+
+  source="$AZDO_LOGGING_MESSAGE"
+  if [[ -z "$source" ]]; then
+    printf '%s\n' 'Artifact location is required.' >&2
+    return 1
+  fi
+  if [[ ! -e "$source" ]]; then
+    printf 'Path does not exist: %s\n' "$source" >&2
+    return 1
+  fi
+  if [[ -d "$source" ]] && [[ -z "$(find "$source" -type f -print -quit)" ]]; then
+    # A successful no-op with a counted warning issue, not a failure — the one case where the
+    # obvious implementation gets the agent backwards (C-E06-070).
+    azdo__logging_record_issue warning \
+      "Directory '$source' is empty. Nothing will be added to build artifact '$artifact_name'."
+    return
+  fi
+
+  azdo__valid_store_segment "$artifact_name" || return 1
+  artifact_dir="$(azdo__artifact_dir)" || return
+  # `.artifacts/` is keyed by **artifact name**, because that is what a later download asks for and
+  # what E06-S05-T01 resolves against `$(Pipeline.Workspace)/<name>`; the container folder is the
+  # coordinate of the bytes *inside* the container and does not appear in a downloaded tree
+  # (C-E06-072, docs/06 §5 decision 37). It is recorded beside the artifact so the second level the
+  # service would see is not silently lost.
+  destination="$artifact_dir/$artifact_name"
+  azdo__logging_artifact_copy "$source" "$destination" || return
+  meta_dir="$artifact_dir/.meta"
+  mkdir -p "$meta_dir" || return
+  printf 'type=container\ncontainerfolder=%s\n' "$container_folder" >"$meta_dir/$artifact_name"
+}
+
+azdo__logging_artifact_associate() {
+  local artifact_name artifact_type location artifact_dir meta_dir
+  if ! azdo_logging_property artifactname artifact_name || [[ -z "$artifact_name" ]]; then
+    printf '%s\n' 'Artifact Name is required.' >&2
+    return 1
+  fi
+  if ! azdo_logging_property type artifact_type || [[ -z "$artifact_type" ]]; then
+    printf '%s\n' 'Artifact Type is required.' >&2
+    return 1
+  fi
+  location="$AZDO_LOGGING_MESSAGE"
+  if [[ -z "$location" ]]; then
+    printf '%s\n' 'Artifact location is required.' >&2
+    return 1
+  fi
+  azdo__valid_store_segment "$artifact_name" || return 1
+
+  # The location is a *server-side* coordinate — file container, UNC share, TFVC path or git ref —
+  # so there is nothing to materialize. The command is accepted, validated and recorded, following
+  # the `task.setprogress` pattern rather than the unknown-command path, because the hosted agent
+  # accepts it and a passthrough warning would be the wrong parity signal (C-E06-073).
+  artifact_dir="$(azdo__artifact_dir)" || return
+  meta_dir="$artifact_dir/.meta"
+  mkdir -p "$meta_dir" || return
+  printf 'type=%s\nassociated=%s\n' "$artifact_type" "$location" >"$meta_dir/$artifact_name"
+  azdo__debug_note "artifact.associate recorded '$artifact_name' ($artifact_type): no local bytes to copy."
+}
+
 # Status 127 means the command is unknown to the local runtime; other non-zero statuses are handler
-# failures. E06-S04-T04 extends this case statement with the artifact/attachment family.
+# failures. `release.*` and the remaining `task.*` timeline commands (`logdetail`, `setendpoint`,
+# `settaskvariable`) are deliberately still unknown here: they act on server-side state the local
+# runtime has no counterpart for, so they take the warning-and-passthrough path (C-E06-048/049).
 azdo_logging_dispatch() {
   case "$AZDO_LOGGING_AREA.$AZDO_LOGGING_ACTION" in
     task.setvariable) azdo__logging_task_setvariable ;;
@@ -1578,6 +2039,15 @@ azdo_logging_dispatch() {
     task.logissue | task.issue) azdo__logging_task_logissue ;;
     task.setprogress) azdo__logging_task_setprogress ;;
     task.debug) azdo__logging_task_debug ;;
+    task.addattachment) azdo__logging_task_addattachment ;;
+    task.uploadfile) azdo__logging_task_uploadfile ;;
+    task.uploadsummary) azdo__logging_task_uploadsummary ;;
+    artifact.upload) azdo__logging_artifact_upload ;;
+    artifact.associate) azdo__logging_artifact_associate ;;
+    build.uploadlog) azdo__logging_build_uploadlog ;;
+    build.uploadsummary) azdo__logging_build_uploadsummary ;;
+    build.updatebuildnumber) azdo__logging_build_updatebuildnumber ;;
+    build.addbuildtag) azdo__logging_build_addbuildtag ;;
     *) return 127 ;;
   esac
 }
@@ -2242,4 +2712,999 @@ run_step() {
       return 1
       ;;
   esac
+}
+
+# ── E06-S05-T01 · pipeline artifact publish & download ────────────────────────
+#
+# `PublishPipelineArtifact@1` and `DownloadPipelineArtifact@2` are *agent plugin* tasks, so the
+# behavior reproduced below is read from `src/Agent.Plugins/PipelineArtifact/PipelineArtifactPlugin{V1,V2}.cs`
+# rather than from a task `main.ts` (C-E06-085/091). The local store is the same `.artifacts/<name>/`
+# tree that `artifact.upload` writes (C-E06-072), which is why a download resolves an artifact by
+# name and never by container folder.
+
+# Two independent name rules, both applied: the agent's forbidden-character set is the parity rule,
+# and the store-segment guard on top rejects "", "." and ".." — names the agent accepts but which
+# cannot be a directory under `.artifacts/` (C-E06-093).
+azdo__valid_artifact_name() {
+  local name="$1"
+  if [[ "$name" == *[[:cntrl:]]* ]] || [[ -n "${name//[^\":<>|*?\/\\]/}" ]]; then
+    printf 'Artifact name is not valid: %s\n' "$name" >&2
+    return 1
+  fi
+  azdo__valid_store_segment "$name" || return 1
+}
+
+# Translate the minimatch subset the artifact tasks actually use into an anchored ERE: `**` crosses
+# directory separators, `*` and `?` do not. Brace expansion and bracket classes are *not* part of the
+# subset — they are matched literally and announced, because silently treating `{a,b}` as one
+# directory name would be a wrong answer rather than a missing one (C-E06-090).
+azdo__artifact_pattern_regex() {
+  local rest="$1" out='' char
+  case "$rest" in
+    *'{'* | *'['*)
+      printf 'azdo-emu: artifact pattern %s uses brace/bracket syntax; matched literally (degraded)\n' \
+        "$rest" >&2
+      ;;
+  esac
+  while [[ -n "$rest" ]]; do
+    case "$rest" in
+      '**/'*)
+        out+='(.*/)?'
+        rest="${rest#\*\*/}"
+        ;;
+      '**'*)
+        out+='.*'
+        rest="${rest#\*\*}"
+        ;;
+      '*'*)
+        out+='[^/]*'
+        rest="${rest#\*}"
+        ;;
+      '?'*)
+        out+='[^/]'
+        rest="${rest#\?}"
+        ;;
+      *)
+        char="${rest:0:1}"
+        case "$char" in
+          '.' | '^' | '$' | '+' | '(' | ')' | '{' | '}' | '[' | ']' | '|' | \\) out+="\\$char" ;;
+          *) out+="$char" ;;
+        esac
+        rest="${rest:1}"
+        ;;
+    esac
+  done
+  printf '%s\n' "^$out\$"
+}
+
+# azdo__artifact_filter <patterns>   —   candidate paths on stdin, selected paths on stdout
+#
+# The agent applies the patterns **in order to an accumulating map**: an include adds its matches,
+# an exclude removes them. Order is load-bearing — `!*.md` followed by `**` selects everything —
+# so this cannot be simplified into "match all includes, then subtract all excludes" (C-E06-090).
+# Patterns are newline-delimited only; `;` is the `azdo_match` convention, not this one (C-E06-088).
+azdo__artifact_filter() {
+  local patterns="$1" raw pattern regex negate idx path
+  local -a candidates=()
+  local -A keep=()
+  mapfile -t candidates
+  while IFS= read -r raw; do
+    pattern="${raw#"${raw%%[![:space:]]*}"}"
+    pattern="${pattern%"${pattern##*[![:space:]]}"}"
+    [[ -n "$pattern" ]] || continue
+    # Comments are skipped before the negation prefix is read, matching the agent's order.
+    [[ "$pattern" != '#'* ]] || continue
+    negate=0
+    while [[ "$pattern" == '!'* ]]; do
+      pattern="${pattern#!}"
+      negate=$((negate ^ 1))
+    done
+    pattern="${pattern#"${pattern%%[![:space:]]*}"}"
+    pattern="${pattern%"${pattern##*[![:space:]]}"}"
+    [[ -n "$pattern" ]] || continue
+    regex="$(azdo__artifact_pattern_regex "$pattern")" || return
+    for idx in "${!candidates[@]}"; do
+      path="${candidates[idx]}"
+      [[ "$path" =~ $regex ]] || continue
+      if ((negate == 0)); then keep["$path"]=1; else keep["$path"]=0; fi
+    done
+  done <<<"$patterns"
+  for idx in "${!candidates[@]}"; do
+    path="${candidates[idx]}"
+    [[ "${keep[$path]:-0}" == 1 ]] && printf '%s\n' "$path"
+  done
+  return 0
+}
+
+# A relative `path`/`targetPath` resolves against System.DefaultWorkingDirectory, **not** against the
+# pipeline workspace: the plugin source and the task.json help text disagree and the source wins
+# (C-E06-089).
+azdo__artifact_resolve_path() {
+  local path="$1" base
+  if [[ "$path" == /* ]]; then
+    printf '%s\n' "$path"
+    return 0
+  fi
+  base="$(azdo_var 'System.DefaultWorkingDirectory')" || return
+  if [[ -z "$base" ]]; then
+    printf 'System.DefaultWorkingDirectory must be set to resolve the relative path: %s\n' "$path" >&2
+    return 1
+  fi
+  printf '%s\n' "${base%/}/$path"
+}
+
+azdo__artifact_workspace() {
+  local workspace
+  workspace="$(azdo_var 'Pipeline.Workspace')" || return
+  if [[ -z "$workspace" ]]; then
+    printf '%s\n' 'Pipeline.Workspace must be set before downloading artifacts' >&2
+    return 1
+  fi
+  printf '%s\n' "$workspace"
+}
+
+# `[^a-zA-Z0-9 - .]` is deleted, then the literal `.default` is removed (C-E06-091). The `-` in that
+# .NET class is consumed as a range operator between the two spaces, so the surviving characters are
+# alphanumerics, space and `.` — which is exactly why `Build.Job1.__default` normalizes to
+# `Build.Job1`: the underscores are stripped first, leaving `.default` to be removed.
+azdo__artifact_default_name() {
+  local identifier name
+  identifier="$(azdo_var 'System.JobIdentifier')" || return
+  name="${identifier//[^A-Za-z0-9 .]/}"
+  name="${name//.default/}"
+  if [[ -z "$name" ]]; then
+    printf '%s\n' 'Artifact name is required: System.JobIdentifier is empty, so no default name can be derived' >&2
+    return 1
+  fi
+  printf '%s\n' "$name"
+}
+
+azdo__artifact_meta_field() {
+  local name="$1" field="$2" artifact_dir meta_path line
+  artifact_dir="$(azdo__artifact_dir)" || return
+  meta_path="$artifact_dir/.meta/$name"
+  [[ -f "$meta_path" ]] || return 0
+  while IFS= read -r line; do
+    if [[ "$line" == "$field="* ]]; then
+      printf '%s\n' "${line#"$field="}"
+      return 0
+    fi
+  done <"$meta_path"
+}
+
+# Relative paths of every file under an artifact root, sorted so a download is reproducible. The
+# optional prefix is the artifact name the multi-download branch matches patterns against.
+azdo__artifact_entries() {
+  local root="$1" prefix="${2-}" entry
+  [[ -d "$root" ]] || return 0
+  while IFS= read -r -d '' entry; do
+    printf '%s%s\n' "$prefix" "${entry#"$root"/}"
+  done < <(find "$root" -type f -print0 | LC_ALL=C sort -z)
+}
+
+# azdo_artifact_publish --path <file-or-directory> [--artifact <name>]
+#
+# The pipeline-artifact counterpart of `artifact.upload`. A directory contributes its *contents* at
+# the artifact root and a file contributes its basename, so the copy rule is shared with the file
+# container (C-E06-094/071). Unlike `artifact.upload` there is no empty-directory special case:
+# publishing an empty directory is a plain success (C-E06-092).
+azdo_artifact_publish() {
+  local path='' artifact_name='' resolved artifact_dir destination meta_dir
+  while (($# > 0)); do
+    case "$1" in
+      --path)
+        path="${2-}"
+        shift 2 || return 2
+        ;;
+      --artifact)
+        artifact_name="${2-}"
+        shift 2 || return 2
+        ;;
+      *)
+        printf 'usage: azdo_artifact_publish --path <file-or-directory> [--artifact <name>]\n' >&2
+        return 2
+        ;;
+    esac
+  done
+  if [[ -z "$path" ]]; then
+    printf '%s\n' 'azdo_artifact_publish: --path is required' >&2
+    return 2
+  fi
+
+  resolved="$(azdo__artifact_resolve_path "$path")" || return
+  [[ -n "$artifact_name" ]] || artifact_name="$(azdo__artifact_default_name)" || return
+  azdo__valid_artifact_name "$artifact_name" || return 1
+
+  if [[ ! -f "$resolved" ]] && [[ ! -d "$resolved" ]]; then
+    printf 'Path does not exist: %s\n' "$path" >&2
+    return 1
+  fi
+
+  artifact_dir="$(azdo__artifact_dir)" || return
+  destination="$artifact_dir/$artifact_name"
+  azdo__logging_artifact_copy "$resolved" "$destination" || return
+  meta_dir="$artifact_dir/.meta"
+  mkdir -p "$meta_dir" || return
+  printf 'type=pipeline\n' >"$meta_dir/$artifact_name" || return
+  printf 'Uploading pipeline artifact from %s for artifact %s\n' "$resolved" "$artifact_name"
+}
+
+# Selected paths on stdin; the optional prefix is stripped back off before they are resolved
+# against the artifact root. Prefixing is done with parameter expansion rather than `sed` because an
+# artifact name may legally contain `.`, `[`, `(` and `$` (C-E06-093), which a regex would eat.
+azdo__artifact_copy_selected() {
+  local root="$1" target="$2" prefix="${3-}" relative source destination
+  while IFS= read -r relative; do
+    [[ -n "$relative" ]] || continue
+    relative="${relative#"$prefix"}"
+    source="$root/$relative"
+    destination="$target/$relative"
+    mkdir -p "${destination%/*}" || return
+    cp -f -- "$source" "$destination" || return
+  done
+}
+
+# azdo_artifact_download [--artifact <name>] [--patterns <patterns>] [--path <dir>] [--source current]
+#
+# Task semantics, not `download:`-keyword semantics: `--path` defaults to `$(Pipeline.Workspace)` and
+# a named artifact lands *at* that path, while an unnamed download creates one subdirectory per
+# artifact (C-E06-085/086/087). The keyword's `$(Pipeline.Workspace)/<name>` layout (C-E06-084) is
+# the emitter's job to pass through `--path`; see docs/06 §5 decision 39.
+azdo_artifact_download() {
+  local artifact_name='' patterns='' target='' source='current'
+  local artifact_dir root resolved selected entry meta_type associated
+  while (($# > 0)); do
+    case "$1" in
+      --artifact)
+        artifact_name="${2-}"
+        shift 2 || return 2
+        ;;
+      --patterns)
+        patterns="${2-}"
+        shift 2 || return 2
+        ;;
+      --path)
+        target="${2-}"
+        shift 2 || return 2
+        ;;
+      --source)
+        source="${2-}"
+        shift 2 || return 2
+        ;;
+      *)
+        printf 'usage: azdo_artifact_download [--artifact <name>] [--patterns <p>] [--path <dir>] [--source current]\n' >&2
+        return 2
+        ;;
+    esac
+  done
+
+  # `specific` needs a run id, a REST fetch and the lockfile-pinned `.cache/artifacts/` tree (E08).
+  if [[ "$source" != current ]]; then
+    printf 'azdo_artifact_download: --source %s is not supported yet (only "current"; see E08)\n' \
+      "$source" >&2
+    return 1
+  fi
+  # Empty means `**`, and the value splits on newline only (C-E06-088).
+  [[ -n "$patterns" ]] || patterns='**'
+  [[ -n "$target" ]] || target="$(azdo__artifact_workspace)" || return
+  resolved="$(azdo__artifact_resolve_path "$target")" || return
+  mkdir -p "$resolved" || return
+  artifact_dir="$(azdo__artifact_dir)" || return
+  printf 'Downloading artifacts to %s\n' "$resolved"
+
+  if [[ -n "$artifact_name" ]]; then
+    azdo__valid_artifact_name "$artifact_name" || return 1
+    root="$artifact_dir/$artifact_name"
+    associated="$(azdo__artifact_meta_field "$artifact_name" associated)" || return
+    if [[ -n "$associated" ]]; then
+      printf 'Artifact %s is an associated artifact at %s: it has no local content to download.\n' \
+        "$artifact_name" "$associated" >&2
+      return 1
+    fi
+    if [[ ! -d "$root" ]]; then
+      printf 'Artifact not found: %s\n' "$artifact_name" >&2
+      return 1
+    fi
+    # Patterns are relative to the artifact root and the files land directly in the target
+    # directory — no per-artifact subdirectory on this branch (C-E06-086).
+    selected="$(azdo__artifact_entries "$root" | azdo__artifact_filter "$patterns")" || return
+    printf '%s\n' "$selected" | azdo__artifact_copy_selected "$root" "$resolved" || return
+    return 0
+  fi
+
+  # No name: every artifact of the run, one subdirectory each, patterns matched against
+  # `<artifact>/<relative path>`, and no failure when nothing matches (C-E06-087).
+  for root in "$artifact_dir"/*/; do
+    root="${root%/}"
+    entry="${root##*/}"
+    [[ "$entry" != .meta ]] || continue
+    [[ -d "$root" ]] || continue
+    meta_type="$(azdo__artifact_meta_field "$entry" type)" || return
+    associated="$(azdo__artifact_meta_field "$entry" associated)" || return
+    if [[ -n "$associated" ]]; then
+      azdo__debug_note "Skipping associated artifact '$entry' ($meta_type): no local bytes to copy."
+      continue
+    fi
+    selected="$(azdo__artifact_entries "$root" "$entry/" | azdo__artifact_filter "$patterns")" || return
+    printf '%s\n' "$selected" | azdo__artifact_copy_selected "$root" "$resolved/$entry" "$entry/" || return
+  done
+  return 0
+}
+
+# The injection point for deployment jobs: "All available artifacts ... are automatically downloaded
+# in deployment jobs", to `$(Pipeline.Workspace)`, only for the `deploy` lifecycle hook, and only
+# when no `download: none` step is present (C-E06-096). That is exactly the no-name branch above, so
+# this is a passthrough the emitter can name rather than a second implementation.
+azdo_artifact_auto_download() {
+  azdo_artifact_download "$@"
+}
+
+# E06-S05-T02 — checkout emulation for the `self` repository (docs/04 §8).
+#
+# The hosted implementation is not a task with a `main.ts`: `checkout` compiles to the `Get sources`
+# job step, so the option → git-flag mapping below is read from the agent's `GitCliManager`
+# (C-E06-097..104). Three of the six options have a *hosted* default that no YAML file records — the
+# clean/shallow-fetch/sync-tags pipeline settings — so this library uses the agent's own
+# empty-input defaults, which are `clean=false`, `fetchDepth=0` and `fetchTags=true`
+# (C-E06-099/100, docs/06 §5 decision 40).
+
+# Reproduces `StringUtil.ConvertToBoolean`: `1/true/$true` and `0/false/$false` case-insensitively,
+# and *every other value* — `yes`, `no`, `on` — silently becomes the caller's default rather than an
+# error (C-E06-100). That is why `clean: yes` does not clean while `fetchTags: yes` does sync tags.
+azdo__checkout_bool() {
+  local value="$1" fallback="$2"
+  # shellcheck disable=SC2016 # `$true`/`$false` are literal PowerShell-shaped inputs the agent accepts.
+  case "${value,,}" in
+    1 | true | '$true') printf 'true\n' ;;
+    0 | false | '$false') printf 'false\n' ;;
+    *) printf '%s\n' "$fallback" ;;
+  esac
+}
+
+# `int.TryParse` semantics: anything that is not a non-negative integer — including `abc` and `-1` —
+# is the same as `0`, which means "no --depth flag" (C-E06-098).
+azdo__checkout_fetch_depth() {
+  local value="$1"
+  if [[ "$value" =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$((10#$value))"
+  else
+    printf '0\n'
+  fi
+}
+
+# `''`/`false` → none, `recursive` → nested, any other truthy value → top level (C-E06-103).
+azdo__checkout_submodules() {
+  local value="$1"
+  if [[ -z "$value" ]]; then
+    printf 'none\n'
+    return 0
+  fi
+  if [[ "${value,,}" == recursive ]]; then
+    printf 'recursive\n'
+    return 0
+  fi
+  if [[ "$(azdo__checkout_bool "$value" false)" == true ]]; then
+    printf 'top\n'
+  else
+    printf 'none\n'
+  fi
+}
+
+# Every git command runs with `GIT_LFS_SKIP_SMUDGE=1` unless `lfs: true` was requested, because a
+# user- or system-level LFS config would otherwise pull assets down behind the pipeline's back
+# (C-E06-104). The flag is read from `azdo_checkout`'s `local` through bash's dynamic scoping so it
+# does not have to be threaded through every call site.
+azdo__checkout_git() {
+  if [[ "${azdo__checkout_lfs_enabled:-false}" == true ]]; then
+    git "$@"
+  else
+    GIT_LFS_SKIP_SMUDGE=1 git "$@"
+  fi
+}
+
+azdo__checkout_git_version_ge() {
+  local want_major="$1" want_minor="$2" version major minor
+  version="$(git --version 2>/dev/null)" || return 1
+  version="${version##* }"
+  major="${version%%.*}"
+  minor="${version#*.}"
+  minor="${minor%%.*}"
+  [[ "$major" =~ ^[0-9]+$ ]] && [[ "$minor" =~ ^[0-9]+$ ]] || return 1
+  ((major > want_major)) && return 0
+  ((major == want_major)) && ((minor >= want_minor))
+}
+
+azdo__checkout_note() {
+  printf 'azdo-emu: %s (degraded)\n' "$1"
+}
+
+# The source repository a checkout is emulated from: for `self`, the local clone the project was
+# converted in. `--source` wins, then AZDO_SELF_REPO, which the generated runner exports beside
+# AZDO_STATE_DIR. E08 replaces the "current state of this repo" pin with the lockfile's origin+commit.
+# AZDO_SELF_REPO is *only* a fallback for `self`: a non-`self` alias that silently checked out the
+# self repository would produce a green run with the wrong files in it.
+azdo__checkout_source() {
+  local source="$1" repository="${2:-self}" resolved
+  if [[ -z "$source" ]] && [[ "$repository" == self ]]; then
+    source="${AZDO_SELF_REPO-}"
+  fi
+  if [[ -z "$source" ]]; then
+    if [[ "$repository" == self ]]; then
+      printf '%s\n' 'azdo_checkout: no self repository; pass --source or set AZDO_SELF_REPO' >&2
+    else
+      printf 'azdo_checkout: repository %s needs --source; only self falls back to AZDO_SELF_REPO\n' "$repository" >&2
+    fi
+    return 1
+  fi
+  if [[ ! -d "$source" ]]; then
+    printf 'azdo_checkout: self repository does not exist: %s\n' "$source" >&2
+    return 1
+  fi
+  resolved="$(cd "$source" && pwd -P)" || return 1
+  if ! git -C "$resolved" rev-parse --git-dir >/dev/null 2>&1; then
+    printf 'azdo_checkout: not a git repository: %s\n' "$resolved" >&2
+    return 1
+  fi
+  if ! git -C "$resolved" rev-parse --verify -q HEAD >/dev/null 2>&1; then
+    printf 'azdo_checkout: self repository has no commits: %s\n' "$resolved" >&2
+    return 1
+  fi
+  printf '%s\n' "$resolved"
+}
+
+# E06-S05-T03 — the folder name a repository gets under multi-checkout is its `name` property run
+# through git's own clone-directory algorithm, not the `checkout:` alias and not `basename`
+# (C-E06-118). Ported from `RepositoryUtil.GetCloneDirectory`: strip a scheme, skip past the *last*
+# `@` (so `ssh://user:passw@rd@host/` keeps `host`), trim trailing slashes and one `.git`, take the
+# last `/`- then `:`-separated segment, and trim a trailing `:<digits>` port **only** when no slash
+# was found at all (so `.../test:1234` keeps `1234`). The agent's own L0 table is the conformance
+# fixture in `test/core.bats`.
+
+# Last index of `ch` within the inclusive range, or -1 — `RepositoryUtil.FinalIndexOf`, including
+# its out-of-range guard.
+azdo__checkout_final_index_of() {
+  local buffer="$1" ch="$2" start="$3" end="$4" len=${#1} i
+  if ((start < 0 || end < 0 || start >= len || end >= len)); then
+    printf '%s\n' -1
+    return 0
+  fi
+  for ((i = end; i >= start; i--)); do
+    if [[ "${buffer:i:1}" == "$ch" ]]; then
+      printf '%s\n' "$i"
+      return 0
+    fi
+  done
+  printf '%s\n' -1
+}
+
+# `RepositoryUtil.SkipLastIndexOf`: the new start is one past the match, and a match sitting **on**
+# `end` counts as not found — that is what keeps `host:/` and `ssh://host/` resolving to `host`.
+# Prints "<index> <found>" because the `/` caller needs the flag and the others do not.
+azdo__checkout_skip_last_index_of() {
+  local buffer="$1" ch="$2" start="$3" end="$4" index
+  index="$(azdo__checkout_final_index_of "$buffer" "$ch" "$start" "$end")"
+  if ((index >= 0 && index < end)); then
+    printf '%s true\n' "$((index + 1))"
+  else
+    printf '%s false\n' "$start"
+  fi
+}
+
+# `RepositoryUtil.TrimSlashesAndExtension`: trailing slashes/whitespace, then at most one `.git`
+# (case-insensitively), then trailing slashes/whitespace again — the second pass is what makes
+# `ssh://host/foo///.git/` and `ssh://host/foo/.git///` both reduce to `foo`.
+azdo__checkout_trim_slashes_and_extension() {
+  local buffer="$1" end="$2" len=${#1} char
+  if ((end < 0 || end >= len)); then
+    printf '%s\n' "$end"
+    return 0
+  fi
+  while ((end > 0)); do
+    char="${buffer:end:1}"
+    [[ "$char" == / || "$char" == [[:space:]] ]] || break
+    end=$((end - 1))
+  done
+  if ((end - 3 >= 0)) && [[ "${buffer:end-3:4}" == [.][Gg][Ii][Tt] ]]; then
+    end=$((end - 4))
+  fi
+  while ((end > 0)); do
+    char="${buffer:end:1}"
+    [[ "$char" == / || "$char" == [[:space:]] ]] || break
+    end=$((end - 1))
+  done
+  printf '%s\n' "$end"
+}
+
+# `RepositoryUtil.TrimPortNumber`: only reached when the name had no `/`, and only trims when what
+# follows the last colon is empty or all digits.
+azdo__checkout_trim_port_number() {
+  local buffer="$1" end="$2" start="$3" last_colon rest
+  last_colon="$(azdo__checkout_final_index_of "$buffer" ':' "$start" "$end")"
+  if ((last_colon >= 0)); then
+    rest="${buffer:last_colon+1:end-last_colon}"
+    if ((last_colon == end)) || { [[ -n "$rest" ]] && [[ "$rest" =~ ^[0-9]+$ ]]; }; then
+      printf '%s\n' "$((last_colon - 1))"
+      return 0
+    fi
+  fi
+  printf '%s\n' "$end"
+}
+
+azdo__checkout_clone_directory() {
+  local name="$1" start end found prefix directory
+  if [[ -z "$name" ]]; then
+    printf 'azdo_checkout: repository name must not be empty\n' >&2
+    return 1
+  fi
+  end=$((${#name} - 1))
+  if [[ "$name" == *'://'* ]]; then
+    prefix="${name%%://*}"
+    start=$((${#prefix} + 3))
+  else
+    start=0
+  fi
+  read -r start found < <(azdo__checkout_skip_last_index_of "$name" '@' "$start" "$end")
+  end="$(azdo__checkout_trim_slashes_and_extension "$name" "$end")"
+  read -r start found < <(azdo__checkout_skip_last_index_of "$name" '/' "$start" "$end")
+  if [[ "$found" == false ]]; then
+    end="$(azdo__checkout_trim_port_number "$name" "$end" "$start")"
+  fi
+  read -r start found < <(azdo__checkout_skip_last_index_of "$name" ':' "$start" "$end")
+  # C# throws `ArgumentOutOfRangeException` out of `Substring` here — `x://` is the shortest input
+  # that reaches it. Refused with the message below rather than with a bash arithmetic error.
+  if ((end < start)); then
+    directory=''
+  else
+    directory="${name:start:end-start+1}"
+  fi
+  # No agent counterpart: the agent's repository names come from the service, this one can come from
+  # a directory basename or a `--repo-name` the emitter passed through. A `.`/`..`/`/` segment would
+  # resolve `s/<name>` back out of `s` — and `clean` deletes inside whatever it resolves to.
+  case "$directory" in
+    '' | . | .. | */*)
+      printf 'azdo_checkout: repository name does not yield a usable directory: %s\n' "$name" >&2
+      return 1
+      ;;
+  esac
+  printf '%s\n' "$directory"
+}
+
+# The agent computes `HasMultipleCheckouts` **once, at job preparation**, from the job's step list,
+# and the plugin that places the repository, the extension that seeds the variables and the
+# directory manager all read that one setting (C-E06-115). The emitter knows the same step list
+# statically, so it exports the answer per job beside AZDO_STATE_DIR rather than having the runtime
+# count anything (docs/06 §5 decision 41).
+azdo__checkout_has_multiple() {
+  azdo__checkout_bool "${AZDO_HAS_MULTIPLE_CHECKOUTS-}" false
+}
+
+# `path` is resolved under `$(Pipeline.Workspace)` and escaping that root needs an explicit opt-in
+# on the agent (C-E06-105); here it is simply refused. The guard is load-bearing beyond parity:
+# `clean` runs `git clean -ffdx` and `copy` empties its target, so a path that escaped the workspace
+# would let a pipeline delete the user's own files.
+#
+# The default the caller passes in is `s` for a single checkout and `s/<repoName>` when the job has
+# more than one (C-E06-114); an explicit `path` wins over both and, like the default, is resolved
+# against `$(Pipeline.Workspace)` — **not** against `s` (C-E06-114).
+# `Path.GetFullPath(Path.Combine(base, path))`: purely lexical, no filesystem access. It has to be,
+# for two reasons — `mkdir -p` first would leave an empty directory outside the workspace on its way
+# to refusing the path, and the agent's own default-vs-custom `path` comparison (C-E06-117) compares
+# two path *strings*, one of which may name a directory that will never exist.
+azdo__checkout_normalize() {
+  local base="$1" path="$2" resolved segment depth=0
+  local -a parts=() stack=()
+  if [[ "$path" == /* ]]; then
+    resolved="$path"
+  else
+    resolved="$base/$path"
+  fi
+  IFS='/' read -r -a parts <<<"$resolved"
+  for segment in "${parts[@]}"; do
+    case "$segment" in
+      '' | .) ;;
+      ..)
+        if ((depth > 0)); then
+          depth=$((depth - 1))
+          stack=("${stack[@]:0:depth}")
+        fi
+        ;;
+      *)
+        stack+=("$segment")
+        depth=$((depth + 1))
+        ;;
+    esac
+  done
+  printf '/%s\n' "$(
+    IFS=/
+    printf '%s' "${stack[*]}"
+  )"
+}
+
+azdo__checkout_target() {
+  local path="${1-}" fallback="${2-s}" workspace resolved
+  workspace="$(azdo__artifact_workspace)" || return 1
+  workspace="$(cd "${workspace%/}" 2>/dev/null && pwd -P)" || {
+    printf 'azdo_checkout: Pipeline.Workspace does not exist\n' >&2
+    return 1
+  }
+  [[ -n "$path" ]] || path="$fallback"
+  resolved="$(azdo__checkout_normalize "$workspace" "$path")" || return 1
+  azdo__checkout_inside "$resolved" "$workspace" "$path" || return 1
+  mkdir -p "$resolved" || return 1
+  resolved="$(cd "$resolved" && pwd -P)" || return 1
+  # Re-checked after the physical resolve, because a symlinked segment can point out of the
+  # workspace even when every lexical segment stayed inside it.
+  azdo__checkout_inside "$resolved" "$workspace" "$path" || return 1
+  printf '%s\n' "$resolved"
+}
+
+azdo__checkout_inside() {
+  local candidate="$1" workspace="$2" reported="$3"
+  if [[ "$candidate" != "$workspace" ]] && [[ "$candidate" != "$workspace"/* ]]; then
+    printf 'azdo_checkout: checkout path escapes Pipeline.Workspace: %s\n' "$reported" >&2
+    return 1
+  fi
+}
+
+# `git clean -ffdx` **and then** `git reset --hard HEAD`, in that order, plus the submodule pair when
+# submodules are enabled (C-E06-101). `-fdx` below git 2.4.
+azdo__checkout_clean() {
+  local target="$1" submodules="$2" flags='-ffdx'
+  azdo__checkout_git_version_ge 2 4 || flags='-fdx'
+  azdo__checkout_git -C "$target" clean "$flags" || return 1
+  azdo__checkout_git -C "$target" reset --hard HEAD || return 1
+  if [[ "$submodules" != none ]]; then
+    azdo__checkout_git -C "$target" submodule foreach --recursive "git clean $flags" || return 1
+    azdo__checkout_git -C "$target" submodule foreach --recursive 'git reset --hard HEAD' || return 1
+  fi
+}
+
+# `git submodule sync [--recursive]` then `git submodule update --init --force [--depth=N]
+# [--recursive]`, reusing the checkout's own fetch depth (C-E06-103).
+azdo__checkout_submodule_update() {
+  local target="$1" submodules="$2" depth="$3"
+  # `-c protocol.file.allow=always` is a **local relaxation with no agent counterpart** (C-E06-112,
+  # docs/06 §5 decision 40f). Since CVE-2022-39253 git refuses the `file` transport for submodule
+  # clones, and the emulated origin is `file://<source>` by construction (C-E06-109) — so without
+  # it every `submodules: true` fails with "transport 'file' not allowed". The hosted agent never
+  # meets this because its remotes are https. Scoped to the submodule commands, over repositories
+  # the user already has on disk.
+  local -a sync=(-c protocol.file.allow=always submodule sync)
+  local -a update=(-c protocol.file.allow=always submodule update --init --force)
+  if [[ "$submodules" == recursive ]]; then
+    sync+=(--recursive)
+  fi
+  if ((depth > 0)); then
+    update+=("--depth=$depth")
+  fi
+  if [[ "$submodules" == recursive ]]; then
+    update+=(--recursive)
+  fi
+  azdo__checkout_git -C "$target" "${sync[@]}" || return 1
+  azdo__checkout_git -C "$target" "${update[@]}" || return 1
+}
+
+# The agent's fetch line (C-E06-097). `--force` from git 2.20, `--prune-tags` from 2.17; `--depth=N`
+# when a depth was asked for, `--unshallow` when it was not and the local repo is already shallow
+# (C-E06-098).
+azdo__checkout_fetch() {
+  local target="$1" remote="$2" fetch_tags="$3" depth="$4"
+  local -a options=()
+  azdo__checkout_git_version_ge 2 20 && options+=(--force)
+  if [[ "$fetch_tags" == true ]]; then
+    options+=(--tags)
+  else
+    options+=(--no-tags)
+  fi
+  options+=(--prune)
+  if azdo__checkout_git_version_ge 2 17; then
+    # `--prune-tags` is a shorthand for the explicit `refs/tags/*:refs/tags/*` refspec, and an
+    # explicit refspec beats `--no-tags`. The agent passes both, with the knob that would suppress
+    # `--prune-tags` defaulting to off, so `fetchTags: false` does not in fact stop tags from being
+    # synced (C-E06-111). Reproduced rather than "fixed": inventing a divergence to match the doc
+    # page's prose would make the local run disagree with the hosted one.
+    options+=(--prune-tags)
+    [[ "$fetch_tags" == true ]] ||
+      azdo__debug_note 'fetchTags: false is requested, but the agent also passes --prune-tags, which re-adds the refs/tags/* refspec — tags are still synced (C-E06-111)'
+  fi
+  options+=(--no-recurse-submodules "$remote")
+  if ((depth > 0)); then
+    options+=("--depth=$depth")
+  elif [[ -f "$target/.git/shallow" ]]; then
+    options+=(--unshallow)
+  fi
+  azdo__checkout_git -C "$target" fetch "${options[@]}"
+}
+
+# `clone` — the agent's own sequence: `git init` → `git remote add origin` → `git fetch` →
+# `git checkout --progress --force <commit>`, ending at a detached HEAD (C-E06-102). The remote is
+# `file://<source>` and not the bare path, because git silently ignores `--depth` for a local-path
+# clone (C-E06-109) — which would make `fetchDepth` a no-op that reports success.
+azdo__checkout_mode_clone() {
+  local source="$1" target="$2" committish="$3" clean="$4" fetch_tags="$5" depth="$6" submodules="$7"
+  local -a checkout=(checkout --force)
+  mkdir -p "$target" || return 1
+  if [[ -d "$target/.git" ]] && [[ "$clean" == true ]]; then
+    azdo__checkout_clean "$target" "$submodules" || return 1
+  fi
+  if [[ ! -d "$target/.git" ]]; then
+    azdo__checkout_git init -q "$target" || return 1
+    azdo__checkout_git -C "$target" remote add origin "file://$source" || return 1
+  else
+    azdo__checkout_git -C "$target" remote set-url origin "file://$source" || return 1
+  fi
+  azdo__checkout_fetch "$target" origin "$fetch_tags" "$depth" || return 1
+  azdo__checkout_git_version_ge 2 7 && checkout+=(--progress)
+  azdo__checkout_git -C "$target" "${checkout[@]}" "$committish" || return 1
+  if [[ "$submodules" != none ]]; then
+    azdo__checkout_submodule_update "$target" "$submodules" "$depth" || return 1
+  fi
+}
+
+# `copy` — the working tree as it is on disk, uncommitted changes included, which is the entire
+# point of the mode (docs/04 §8). Copied with `tar` rather than `rsync`: rsync is not part of any
+# base image this project targets and is absent from this container, while `tar` is POSIX and
+# preserves modes, symlinks and hardlinks (docs/06 §5 decision 40).
+azdo__checkout_mode_copy() {
+  local source="$1" target="$2"
+  mkdir -p "$target" || return 1
+  find "$target" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + || return 1
+  tar -cf - -C "$source" . | tar -xf - -C "$target" || return 1
+}
+
+# `worktree` — a detached worktree of the source repository. Re-running is the interesting case:
+# `git worktree add` refuses a non-empty path and a branch that is already checked out elsewhere, so
+# the previous worktree is removed and pruned first and `--detach` sidesteps the branch conflict.
+azdo__checkout_mode_worktree() {
+  local source="$1" target="$2" committish="$3"
+  git -C "$source" worktree prune >/dev/null 2>&1 || :
+  if [[ -e "$target" ]]; then
+    git -C "$source" worktree remove --force "$target" >/dev/null 2>&1 || :
+    git -C "$source" worktree prune >/dev/null 2>&1 || :
+  fi
+  if [[ -e "$target" ]] && [[ -n "$(find "$target" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
+    printf 'azdo_checkout: worktree target is not empty and could not be released: %s\n' "$target" >&2
+    return 1
+  fi
+  rmdir "$target" 2>/dev/null || :
+  azdo__checkout_git -C "$source" worktree add --detach "$target" "$committish" || return 1
+}
+
+# Seeded, never overwritten: docs/04 §8 makes these overridable through `.env` so a local run can
+# simulate another branch or PR, and an override that the checkout then clobbered would be useless.
+azdo__checkout_seed_var() {
+  local name="$1" value="$2" current
+  current="$(azdo_var "$name")" || return 1
+  [[ -z "$current" ]] || return 0
+  azdo_var_set "$name" "$value"
+}
+
+# The mode dispatch, shared by `self` and every other alias: the layout rules differ between them
+# but what lands in the directory does not. `azdo__checkout_lfs_enabled` is the caller's local,
+# reached through bash's dynamic scoping (C-E06-104), and is cleared here when the warning fires.
+azdo__checkout_place() {
+  local mode="$1" source="$2" target="$3" committish="$4" clean="$5" fetch_tags="$6" depth="$7"
+  local submodules="$8" tags_input="$9"
+
+  if [[ "$azdo__checkout_lfs_enabled" == true ]] && ! git lfs version >/dev/null 2>&1; then
+    # The agent's own LFS pre-fetch failure is a warning and the checkout continues (C-E06-104);
+    # a missing git-lfs binary is the local shape of the same situation.
+    azdo__logging_record_issue warning \
+      'lfs: true was requested but git-lfs is not installed; LFS files are left as pointers and the checkout continues.' || return 1
+    azdo__checkout_lfs_enabled=false
+  fi
+
+  case "$mode" in
+    clone)
+      azdo__checkout_mode_clone "$source" "$target" "$committish" "$clean" "$fetch_tags" "$depth" "$submodules" || return 1
+      ;;
+    copy)
+      # Every fetch-shaped option is meaningless for a working-tree copy, and `clean` is worse than
+      # meaningless: `git clean -ffdx` would delete exactly the uncommitted work the mode exists to
+      # test. Reported, not silently honored (docs/06 §5 decision 40).
+      [[ "$clean" != true ]] || azdo__checkout_note 'checkout mode copy ignores clean: true; it would delete the uncommitted changes this mode exists to run'
+      ((depth == 0)) || azdo__checkout_note 'checkout mode copy ignores fetchDepth; the working tree is copied, not fetched'
+      [[ -z "$tags_input" ]] || azdo__checkout_note 'checkout mode copy ignores fetchTags; the working tree is copied, not fetched'
+      [[ "$submodules" == none ]] || azdo__checkout_note 'checkout mode copy inherits submodule contents from the source working tree'
+      azdo__checkout_mode_copy "$source" "$target" || return 1
+      ;;
+    worktree)
+      ((depth == 0)) || azdo__checkout_note 'checkout mode worktree ignores fetchDepth; no remote is fetched'
+      [[ -z "$tags_input" ]] || azdo__checkout_note 'checkout mode worktree ignores fetchTags; no remote is fetched'
+      azdo__checkout_mode_worktree "$source" "$target" "$committish" || return 1
+      [[ "$clean" != true ]] || azdo__checkout_clean "$target" "$submodules" || return 1
+      if [[ "$submodules" != none ]]; then
+        azdo__checkout_submodule_update "$target" "$submodules" "$depth" || return 1
+      fi
+      ;;
+  esac
+}
+
+azdo_checkout() {
+  local repository='self' mode='clone' source_input='' path='' target source
+  local clean_input='' depth_input='' tags_input='' lfs_input='' submodules_input='' name_input=''
+  local clean fetch_tags depth submodules committish ref branch_name message uri name
+  local multiple clone_directory workspace_root sources_root default_path local_path
+  local azdo__checkout_lfs_enabled=false
+  while (($# > 0)); do
+    case "$1" in
+      --repository)
+        repository="${2-}"
+        shift 2 || return 2
+        ;;
+      --mode)
+        mode="${2-}"
+        shift 2 || return 2
+        ;;
+      --source)
+        source_input="${2-}"
+        shift 2 || return 2
+        ;;
+      --path)
+        path="${2-}"
+        shift 2 || return 2
+        ;;
+      --clean)
+        clean_input="${2-}"
+        shift 2 || return 2
+        ;;
+      --fetch-depth)
+        depth_input="${2-}"
+        shift 2 || return 2
+        ;;
+      --fetch-tags)
+        tags_input="${2-}"
+        shift 2 || return 2
+        ;;
+      --lfs)
+        lfs_input="${2-}"
+        shift 2 || return 2
+        ;;
+      --submodules)
+        submodules_input="${2-}"
+        shift 2 || return 2
+        ;;
+      # The repository resource's `name` property — the folder name multi-checkout uses, and the
+      # value `Build.Repository.Name` reports (C-E06-118/121). The emitter passes the YAML's; the
+      # fallback for `self` is the source directory's own basename.
+      --repo-name)
+        name_input="${2-}"
+        shift 2 || return 2
+        ;;
+      # Grounded and deliberately not implemented (C-E06-120): `workspaceRepo` retargets
+      # `System.DefaultWorkingDirectory`, and the agent picks the winner by scanning the whole job's
+      # step list before any checkout runs. That is E05's knowledge, not one step's.
+      --workspace-repo)
+        [[ "$(azdo__checkout_bool "${2-}" false)" != true ]] ||
+          azdo__checkout_note 'checkout option workspaceRepo is not emulated here; System.DefaultWorkingDirectory is set at job setup'
+        shift 2 || return 2
+        ;;
+      # Grounded and deliberately not implemented (C-E06-110): accepted so a pipeline that sets them
+      # still runs, and reported rather than silently dropped.
+      --fetch-filter | --sparse-checkout-directories | --sparse-checkout-patterns | --persist-credentials)
+        [[ -z "${2-}" ]] || azdo__checkout_note "checkout option ${1#--} is not emulated; ignored"
+        shift 2 || return 2
+        ;;
+      *)
+        printf 'usage: azdo_checkout [--repository self|<alias>] [--repo-name <name>] [--mode clone|copy|worktree] [--source <dir>] [--path <p>] [--clean <v>] [--fetch-depth <v>] [--fetch-tags <v>] [--lfs <v>] [--submodules <v>]\n' >&2
+        return 2
+        ;;
+    esac
+  done
+
+  # `checkout: none` is a skip. Any other alias is a real repository the job also checks out; it
+  # differs from `self` only in where its files come from and in seeding no variables (C-E06-121).
+  if [[ "$repository" == none ]]; then
+    return 0
+  fi
+  if [[ -z "$repository" ]]; then
+    printf '%s\n' 'azdo_checkout: --repository must not be empty' >&2
+    return 2
+  fi
+  # `IsPrimaryRepositoryName` is case-insensitive (C-E06-115).
+  [[ "${repository,,}" != self ]] || repository='self'
+  case "$mode" in
+    clone | copy | worktree) ;;
+    *)
+      printf 'azdo_checkout: unknown checkout mode: %s\n' "$mode" >&2
+      return 2
+      ;;
+  esac
+
+  clean="$(azdo__checkout_bool "$clean_input" false)"
+  fetch_tags="$(azdo__checkout_bool "$tags_input" true)"
+  depth="$(azdo__checkout_fetch_depth "$depth_input")"
+  submodules="$(azdo__checkout_submodules "$submodules_input")"
+  azdo__checkout_lfs_enabled="$(azdo__checkout_bool "$lfs_input" false)"
+
+  source="$(azdo__checkout_source "$source_input" "$repository")" || return 1
+
+  # Layout (C-E06-114): one checkout in the job puts it in `s`; two or more put every repository —
+  # `self` included — in `s/<repoName>`; an explicit `path` overrides both and is rooted at
+  # `$(Pipeline.Workspace)`, not at `s`.
+  name="$name_input"
+  [[ -n "$name" ]] || name="${source##*/}"
+  clone_directory="$(azdo__checkout_clone_directory "$name")" || return 1
+  multiple="$(azdo__checkout_has_multiple)"
+  workspace_root="$(azdo__artifact_workspace)" || return 1
+  workspace_root="${workspace_root%/}"
+  sources_root="$workspace_root/s"
+  if [[ "$multiple" == true ]]; then
+    default_path="s/$clone_directory"
+  else
+    default_path='s'
+  fi
+  target="$(azdo__checkout_target "$path" "$default_path")" || return 1
+
+  # A non-`self` checkout places files and nothing else: every `Build.*` variable below describes
+  # the *triggering* repository, which in a converted pipeline is always `self` (C-E06-121). Its
+  # commit is its own HEAD — `Build.SourceVersion` is `self`'s, and honoring it here would check a
+  # foreign repository out at a commit it has never heard of.
+  if [[ "$repository" != self ]]; then
+    committish="$(git -C "$source" rev-parse HEAD)" || return 1
+    azdo__checkout_place "$mode" "$source" "$target" "$committish" \
+      "$clean" "$fetch_tags" "$depth" "$submodules" "$tags_input" || return 1
+    return 0
+  fi
+
+  # Read before the checkout so an `.env` override of Build.SourceVersion actually selects the
+  # commit, and re-seeded after it so an unset one records what was checked out.
+  committish="$(azdo_var 'Build.SourceVersion')" || return 1
+  if [[ -z "$committish" ]]; then
+    committish="$(git -C "$source" rev-parse HEAD)" || return 1
+  fi
+  ref="$(azdo_var 'Build.SourceBranch')" || return 1
+  if [[ -z "$ref" ]]; then
+    ref="$(git -C "$source" symbolic-ref -q HEAD || :)"
+    if [[ -z "$ref" ]]; then
+      azdo__checkout_note 'self repository is at a detached HEAD; Build.SourceBranch is unset — set it in .env to simulate a branch'
+    fi
+  fi
+
+  azdo__checkout_place "$mode" "$source" "$target" "$committish" \
+    "$clean" "$fetch_tags" "$depth" "$submodules" "$tags_input" || return 1
+
+  branch_name="${ref##*/}"
+  message="$(git -C "$source" log -1 --pretty=%B "$committish" 2>/dev/null | head -n 1)"
+  message="${message:0:200}"
+  uri="$(git -C "$source" config --get remote.origin.url 2>/dev/null || :)"
+  [[ -n "$uri" ]] || uri="file://$source"
+
+  azdo__checkout_seed_var 'Build.SourceVersion' "$committish" || return 1
+  azdo__checkout_seed_var 'Build.SourceVersionMessage' "$message" || return 1
+  [[ -z "$ref" ]] || azdo__checkout_seed_var 'Build.SourceBranch' "$ref" || return 1
+  [[ -z "$branch_name" ]] || azdo__checkout_seed_var 'Build.SourceBranchName' "$branch_name" || return 1
+  azdo__checkout_seed_var 'Build.Repository.Name' "$name" || return 1
+  azdo__checkout_seed_var 'Build.Repository.Uri' "$uri" || return 1
+  # `Git`, not `TfsGit`: "Git repository hosted on an external server" is the closest true statement
+  # about a local source directory (C-E06-107).
+  azdo__checkout_seed_var 'Build.Repository.Provider' 'Git' || return 1
+  azdo__checkout_seed_var 'Build.Repository.Clean' "$clean" || return 1
+
+  # Two variables, three rules, none of which is "wherever the files went" (C-E06-116/117).
+  #
+  # `Build.SourcesDirectory` is the tracking config's sources directory. That is `s`, rewritten to a
+  # checkout's own path only when the job tracks exactly **one** repository — so `path:` moves it in
+  # a single-checkout job and leaves it at `s` in a multi-checkout one.
+  #
+  # `Build.Repository.LocalPath` follows it, except for the case the agent kept for backward
+  # compatibility: under multi-checkout it stays at `s` even though `self`'s files are one level
+  # deeper in `s/<repoName>`, and only a `path` that *differs* from that default moves it. Writing
+  # `path: s/<repoName>` explicitly is therefore not custom and changes nothing.
+  if [[ "$multiple" != true ]]; then
+    azdo__checkout_seed_var 'Build.Repository.LocalPath' "$target" || return 1
+    azdo__checkout_seed_var 'Build.SourcesDirectory' "$target" || return 1
+    return 0
+  fi
+  # The sources root is nobody's checkout target once every repository has a `path`, but both
+  # variables still point at it, so it has to exist the way the agent's tracking directory does.
+  mkdir -p "$sources_root" || return 1
+  sources_root="$(cd "$sources_root" && pwd -P)" || return 1
+  local_path="$sources_root"
+  if [[ -n "$path" ]] &&
+    [[ "$(azdo__checkout_normalize "$workspace_root" "$path")" != "$(azdo__checkout_normalize "$workspace_root" "$default_path")" ]]; then
+    local_path="$target"
+  fi
+  azdo__checkout_seed_var 'Build.Repository.LocalPath' "$local_path" || return 1
+  azdo__checkout_seed_var 'Build.SourcesDirectory' "$sources_root" || return 1
 }

@@ -59,6 +59,18 @@ prepare_run_step() {
   azdo_env_materialize
 }
 
+prepare_artifact_dirs() {
+  AZDO_ARTIFACT_DIR="$BATS_TEST_TMPDIR/.artifacts"
+  AZDO_ATTACHMENT_DIR="$BATS_TEST_TMPDIR/logs/attachments"
+  export AZDO_ARTIFACT_DIR AZDO_ATTACHMENT_DIR
+  mkdir -p "$AZDO_ARTIFACT_DIR" "$AZDO_ATTACHMENT_DIR"
+}
+
+dispatch_line() {
+  azdo_logging_parse_line "$1" || return
+  azdo_logging_dispatch
+}
+
 run_test_step() {
   local id="$1" file="$2" timeout_seconds="${3:-10}"
   shift 3
@@ -516,110 +528,6 @@ STREAM
   run ! azdo_var_meta multiline
 }
 
-@test "task.setsecret masks only later output in the job (C-E06-057)" {
-  local source_file="$BATS_TEST_TMPDIR/setsecret.sh" marker='synthetic-derived-secret'
-  prepare_run_step
-  printf '%s\n' \
-    "printf 'BEFORE=%s\\n' '$marker'" \
-    "printf '%s\\n' '##vso[task.setsecret]$marker'" \
-    "printf 'AFTER=%s\\n' '$marker'" >"$source_file"
-
-  run -0 run_test_step setsecret "$source_file" 10
-
-  [ "$output" = $'BEFORE=synthetic-derived-secret\nAFTER=***' ]
-  grep -F 'BEFORE=synthetic-derived-secret' "$AZDO_LOG_DIR/setsecret.log"
-  ! grep -F 'AFTER=synthetic-derived-secret' "$AZDO_LOG_DIR/setsecret.log"
-}
-
-@test "task.prependpath de-duplicates entries for subsequent tasks only (C-E06-058)" {
-  local source_file="$BATS_TEST_TMPDIR/prependpath.sh"
-  prepare_run_step
-  printf '%s\n' \
-    "printf 'CURRENT_HAS_FIRST=%s\\n' \"\${PATH//*\/first-e06*/yes}\"" \
-    "printf '%s\\n' '##vso[task.prependpath]/first-e06'" \
-    "printf '%s\\n' '##vso[task.prependpath]/second-e06'" \
-    "printf '%s\\n' '##vso[task.prependpath]/first-e06'" >"$source_file"
-
-  run -0 run_test_step prependpath "$source_file" 10
-  [ "$output" != 'CURRENT_HAS_FIRST=yes' ]
-
-  azdo_env_materialize PATH '/explicit/base'
-  [ "$(materialized_env_value PATH)" = '/first-e06:/second-e06:/explicit/base' ]
-  [ "$(find "$AZDO_STATE_DIR/path.d" -type f ! -name '.next' | wc -l)" -eq 2 ]
-}
-
-@test "task.logissue renders and persists result-neutral counters (C-E06-059/060)" {
-  local source_file="$BATS_TEST_TMPDIR/logissue.sh"
-  prepare_run_step
-  printf '%s\n' \
-    "printf '%s\\n' '##vso[task.logissue type=warning]synthetic warning'" \
-    "printf '%s\\n' '##vso[task.logissue type=ERROR]synthetic error'" \
-    "printf '%s\\n' 'ISSUE_STEP_CONTINUED=yes'" >"$source_file"
-
-  run -0 run_test_step logissue "$source_file" 10
-
-  [[ "$output" == *$'\033[1;33m##[warning]synthetic warning\033[0m'* ]]
-  [[ "$output" == *$'\033[1;31m##[error]synthetic error\033[0m'* ]]
-  [[ "$output" == *'ISSUE_STEP_CONTINUED=yes'* ]]
-  run -0 azdo_step_issue_count logissue warning
-  [ "$output" -eq 1 ]
-  run -0 azdo_step_issue_count logissue error
-  [ "$output" -eq 1 ]
-  run -0 azdo_step_result logissue
-  [ "$output" = Succeeded ]
-}
-
-@test "task.complete merges with shell status without stopping the task (C-E06-061)" {
-  local row_id command_lines exit_line expected_status expected_result source_file
-  prepare_run_step
-
-  while IFS='|' read -r row_id command_lines exit_line expected_status expected_result; do
-    source_file="$BATS_TEST_TMPDIR/$row_id.sh"
-    printf '%b\n' "$command_lines" "printf 'AFTER_COMPLETE=%s\\n' '$row_id'" "$exit_line" \
-      >"$source_file"
-
-    run run_result_step "$row_id" "$source_file" false false 0 10
-    [ "$status" -eq "$expected_status" ]
-    [[ "$output" == *"AFTER_COMPLETE=$row_id"* ]]
-    run -0 azdo_step_result "$row_id"
-    [ "$output" = "$expected_result" ]
-  done <<'TABLE'
-complete-partial|printf '%s\n' '##vso[task.complete result=SucceededWithIssues;]partial'|:|0|SucceededWithIssues
-complete-failed|printf '%s\n' '##vso[task.complete result=Failed;]failed'|:|1|Failed
-complete-exit|printf '%s\n' '##vso[task.complete result=Succeeded;]success'|exit 7|7|Failed
-complete-worst|printf '%s\n' '##vso[task.complete result=Failed;]failed' '##vso[task.complete result=Succeeded;]success'|:|1|Failed
-TABLE
-}
-
-@test "raw formatting always renders while task.debug follows System.Debug (C-E06-062..065)" {
-  local source_file="$BATS_TEST_TMPDIR/formatting.sh"
-  prepare_run_step
-  printf '%s\n' \
-    "printf '%s\\n' '##[group]group' '##[section]section' '##[command]command'" \
-    "printf '%s\\n' '##[warning]warning' '##[error]error' '##[debug]raw debug' '##[endgroup]'" \
-    "printf '%s\\n' '##vso[task.debug]task debug off'" >"$source_file"
-
-  run -0 run_test_step formatting-off "$source_file" 10
-
-  [[ "$output" == *$'\033[1;36m##[group]group\033[0m'* ]]
-  [[ "$output" == *$'\033[1;35m##[section]section\033[0m'* ]]
-  [[ "$output" == *$'\033[1;34m##[command]command\033[0m'* ]]
-  [[ "$output" == *$'\033[1;33m##[warning]warning\033[0m'* ]]
-  [[ "$output" == *$'\033[1;31m##[error]error\033[0m'* ]]
-  [[ "$output" == *$'\033[2;37m##[debug]raw debug\033[0m'* ]]
-  [[ "$output" == *$'\033[1;36m##[endgroup]\033[0m'* ]]
-  [[ "$output" != *'task debug off'* ]]
-  run -0 azdo_step_issue_count formatting-off error
-  [ "$output" -eq 0 ]
-  run -0 azdo_step_result formatting-off
-  [ "$output" = Succeeded ]
-
-  azdo_var_set 'System.Debug' true
-  printf '%s\n' "printf '%s\\n' '##vso[task.debug]task debug on'" >"$source_file"
-  run -0 run_test_step formatting-on "$source_file" 10
-  [[ "$output" == *$'\033[2;37m##[debug]task debug on\033[0m'* ]]
-}
-
 @test "run_step routes live output through the logging parser (C-E06-044/049)" {
   local source_file="$BATS_TEST_TMPDIR/logging-step.sh"
   prepare_run_step
@@ -1062,7 +970,18 @@ TABLE
   local complete_succeeded="$BATS_TEST_TMPDIR/complete-succeeded.sh"
   local complete_merge="$BATS_TEST_TMPDIR/complete-merge.sh"
   local complete_invalid="$BATS_TEST_TMPDIR/complete-invalid.sh"
+  local complete_partial="$BATS_TEST_TMPDIR/complete-partial.sh"
   prepare_run_step
+
+  # task.complete records its result without stopping the task (C-E06-059): the step keeps
+  # running to its own exit status, and SucceededWithIssues alone is not a step failure.
+  printf '%s\n' \
+    "printf '%s\\n' '##vso[task.complete result=SucceededWithIssues;]partial'" \
+    "printf '%s\\n' 'AFTER_COMPLETE=yes'" >"$complete_partial"
+  run -0 run_result_step complete-partial "$complete_partial" false false 0 10
+  [[ "$output" == *'AFTER_COMPLETE=yes'* ]]
+  run -0 azdo_step_result complete-partial
+  [ "$output" = SucceededWithIssues ]
 
   # task.complete alone fails a step that exited zero.
   printf '%s\n' "printf '%s\\n' '##vso[task.complete result=Failed;]DONE'" >"$complete_failed"
@@ -1143,6 +1062,24 @@ TABLE
   [ "$output" = $'errors=2\nwarnings=2' ]
 }
 
+@test "task.issue is an alias dispatching to the same handler (C-E06-068)" {
+  local source_file="$BATS_TEST_TMPDIR/issue-alias.sh"
+  prepare_run_step
+  printf '%s\n' \
+    "printf '%s\\n' '##vso[task.issue type=error]Aliased error.'" \
+    "printf '%s\\n' '##vso[task.issue type=warning]Aliased warning.'" >"$source_file"
+
+  run -0 run_test_step issuealias "$source_file" 10
+  # Same tagged rendering as task.logissue -- one executor behind both names.
+  [ "$output" = $'##[error]Aliased error.\n##[warning]Aliased warning.' ]
+
+  # And the same counters: the alias is not an unknown command falling through to the warning path.
+  run -0 azdo_step_issues issuealias
+  [ "$output" = $'errors=1\nwarnings=1' ]
+  run -0 azdo_step_result issuealias
+  [ "$output" = Succeeded ]
+}
+
 @test "task.logissue with an unexpected type fails the command but not the stream (C-E06-062/064)" {
   local source_file="$BATS_TEST_TMPDIR/logissue-bad-type.sh"
   prepare_run_step
@@ -1190,6 +1127,19 @@ TABLE
   resolved="$(azdo__command_state_dir)"
   [ "$resolved" = "$AZDO_STATE_DIR/commands/step-030" ]
 
+  # The public reader defaults to zero, sees what the handler increments in the scope it is
+  # called from, and rejects a kind it does not know.
+  run -0 azdo_step_issue_count error
+  [ "$output" -eq 0 ]
+  azdo_logging_parse_line '##vso[task.logissue type=error]scoped error'
+  azdo_logging_dispatch
+  run -0 azdo_step_issue_count error
+  [ "$output" -eq 1 ]
+  run -0 azdo_step_issue_count warning
+  [ "$output" -eq 0 ]
+  run ! azdo_step_issue_count sometimes
+  [ "$status" -eq 2 ]
+
   # run_step scopes it further so concurrent steps cannot reset each other's counters.
   prepare_run_step
   printf '%s\n' "printf '%s\\n' '##vso[task.logissue type=warning]scoped'" \
@@ -1200,7 +1150,7 @@ TABLE
   [ "$output" = $'errors=0\nwarnings=1' ]
 }
 
-@test "the debug channel is gated on System.Debug (C-E06-065)" {
+@test "the debug channel is gated on System.Debug (C-E06-065/067)" {
   local source_file="$BATS_TEST_TMPDIR/debug-channel.sh"
   prepare_run_step
   printf '%s\n' \
@@ -1247,6 +1197,19 @@ TABLE
   run -0 azdo_render_stream <<<"$plain"
   [ "$output" = $'\033[1;36mBeginning of a group\033[0m\n\033[33mWarning message\033[0m\n\033[31mError message\033[0m\n\033[1mStart of a section\033[0m\n\033[34mCommand-line being run\033[0m\nordinary line' ]
 
+  # The debug arm is the one tag the renderer can drop entirely: it is console-gated on
+  # System.Debug (C-E06-065, docs/06 §5 decision 36), independently of color.
+  local debug_line='##[debug]Debug detail'
+  run -0 azdo_render_stream <<<"$debug_line"
+  [ "$output" = '' ]
+  azdo_var_set 'System.Debug' true
+  run -0 azdo_render_stream <<<"$debug_line"
+  [ "$output" = $'\033[2mDebug detail\033[0m' ]
+  AZDO_COLOR=never
+  run -0 azdo_render_stream <<<"$debug_line"
+  [ "$output" = "$debug_line" ]
+  AZDO_COLOR=always
+
   # An unknown tag and a bare ##vso line are not formatting commands.
   run -0 azdo_render_stream <<<$'##[unknown]left alone\n##vso[task.setvariable variable=x]y'
   [ "$output" = $'##[unknown]left alone\n##vso[task.setvariable variable=x]y' ]
@@ -1268,4 +1231,1418 @@ TABLE
   [ "$output" = Skipped ]
   run ! azdo_merge_task_results Succeeded Abandoned
   [ "$status" -eq 2 ]
+}
+
+@test "artifact.upload of a file lands under the artifact name and records the container folder (C-E06-069/071/072)" {
+  local payload="$BATS_TEST_TMPDIR/testresult.trx"
+  prepare_artifact_dirs
+  printf 'RESULT\n' >"$payload"
+
+  # The doc page's own example: the two levels deliberately differ.
+  run -0 dispatch_line "##vso[artifact.upload containerfolder=testresult;artifactname=uploadedresult]$payload"
+
+  [ "$(cat "$AZDO_ARTIFACT_DIR/uploadedresult/testresult.trx")" = RESULT ]
+  # The container folder is the coordinate inside the container, never a directory level of the
+  # downloaded tree (C-E06-072, docs/06 §5 decision 37).
+  [ ! -e "$AZDO_ARTIFACT_DIR/uploadedresult/testresult" ]
+  [ "$(cat "$AZDO_ARTIFACT_DIR/.meta/uploadedresult")" = $'type=container\ncontainerfolder=testresult' ]
+}
+
+@test "artifact.upload of a directory contributes its contents, not its own name (C-E06-071)" {
+  local source="$BATS_TEST_TMPDIR/drop"
+  prepare_artifact_dirs
+  mkdir -p "$source/nested/deeper"
+  printf 'TOP\n' >"$source/top.txt"
+  printf 'DEEP\n' >"$source/nested/deeper/deep.txt"
+
+  run -0 dispatch_line "##vso[artifact.upload artifactname=MyDrop]$source"
+  # A trailing separator is trimmed on the directory branch, so `$(Build.ArtifactStagingDirectory)/`
+  # produces the same tree rather than nesting the absolute path inside the artifact (C-E06-071).
+  run -0 dispatch_line "##vso[artifact.upload artifactname=SlashDrop]$source/"
+
+  [ "$(cat "$AZDO_ARTIFACT_DIR/MyDrop/top.txt")" = TOP ]
+  [ "$(cat "$AZDO_ARTIFACT_DIR/SlashDrop/top.txt")" = TOP ]
+  [ "$(cat "$AZDO_ARTIFACT_DIR/SlashDrop/nested/deeper/deep.txt")" = DEEP ]
+  [ "$(cat "$AZDO_ARTIFACT_DIR/MyDrop/nested/deeper/deep.txt")" = DEEP ]
+  [ ! -e "$AZDO_ARTIFACT_DIR/MyDrop/drop" ]
+  # An absent containerfolder defaults to the artifact name (C-E06-069).
+  [ "$(cat "$AZDO_ARTIFACT_DIR/.meta/MyDrop")" = $'type=container\ncontainerfolder=MyDrop' ]
+}
+
+@test "artifact.upload requires an artifact name and an existing path (C-E06-069/070)" {
+  local payload="$BATS_TEST_TMPDIR/payload.txt"
+  prepare_artifact_dirs
+  printf 'X\n' >"$payload"
+
+  run ! dispatch_line "##vso[artifact.upload containerfolder=drop]$payload"
+  [[ "$output" == *'Artifact Name is required.'* ]]
+
+  run ! dispatch_line "##vso[artifact.upload artifactname=drop]"
+  [[ "$output" == *'Artifact location is required.'* ]]
+
+  run ! dispatch_line "##vso[artifact.upload artifactname=drop]$BATS_TEST_TMPDIR/absent"
+  [[ "$output" == *'Path does not exist: '* ]]
+
+  [ ! -e "$AZDO_ARTIFACT_DIR/drop" ]
+}
+
+@test "artifact.upload of an empty directory warns and succeeds without failing the step (C-E06-070)" {
+  local source_file="$BATS_TEST_TMPDIR/upload-empty.sh" empty="$BATS_TEST_TMPDIR/empty-drop"
+  prepare_run_step
+  prepare_artifact_dirs
+  mkdir -p "$empty/only-a-subdirectory"
+
+  printf '%s\n' "printf '%s\\n' '##vso[artifact.upload artifactname=EmptyDrop]$empty'" >"$source_file"
+  run -0 run_test_step upload-empty "$source_file" 10
+
+  # context.Warning is AddIssue(Warning): a counted warning issue and a tagged line, and the
+  # command still returns successfully.
+  [ "$output" = "##[warning]Directory '$empty' is empty. Nothing will be added to build artifact 'EmptyDrop'." ]
+  run -0 azdo_step_result upload-empty
+  [ "$output" = Succeeded ]
+  [ ! -e "$AZDO_ARTIFACT_DIR/EmptyDrop" ]
+}
+
+@test "artifact.associate is accepted and recorded without copying bytes (C-E06-073)" {
+  prepare_artifact_dirs
+  run -0 dispatch_line '##vso[artifact.associate type=filepath;artifactname=MyFileShareDrop]\\MyShare\MyDropLocation'
+  [ "$(cat "$AZDO_ARTIFACT_DIR/.meta/MyFileShareDrop")" = $'type=filepath\nassociated=\\\\MyShare\\MyDropLocation' ]
+  [ ! -e "$AZDO_ARTIFACT_DIR/MyFileShareDrop" ]
+
+  run ! dispatch_line '##vso[artifact.associate artifactname=NoType]#/1/build'
+  [[ "$output" == *'Artifact Type is required.'* ]]
+  run ! dispatch_line '##vso[artifact.associate type=container]#/1/build'
+  [[ "$output" == *'Artifact Name is required.'* ]]
+}
+
+@test "the attachment family is one implementation with three name/type derivations (C-E06-074/075/079)" {
+  local summary="$BATS_TEST_TMPDIR/testsummary.md" extra="$BATS_TEST_TMPDIR/additionalfile.log"
+  prepare_artifact_dirs
+  printf '# Summary\n' >"$summary"
+  printf 'LOGLINE\n' >"$extra"
+
+  run -0 dispatch_line "##vso[task.uploadsummary]$summary"
+  run -0 dispatch_line "##vso[task.uploadfile]$extra"
+  run -0 dispatch_line "##vso[task.addattachment type=myattachmenttype;name=myattachmentname;]$extra"
+
+  # uploadsummary is the documented shorthand for exactly this addattachment, so both spellings
+  # land in the same place — the identity is locally observable (C-E06-079).
+  [ "$(cat "$AZDO_ATTACHMENT_DIR/Distributedtask.Core.Summary/testsummary.md")" = '# Summary' ]
+  [ "$(cat "$AZDO_ATTACHMENT_DIR/FileAttachment/additionalfile.log")" = LOGLINE ]
+  [ "$(cat "$AZDO_ATTACHMENT_DIR/myattachmenttype/myattachmentname")" = LOGLINE ]
+
+  run -0 dispatch_line "##vso[task.addattachment type=Distributedtask.Core.Summary;name=testsummary.md;]$summary"
+  [ "$(cat "$AZDO_ATTACHMENT_DIR/Distributedtask.Core.Summary/testsummary.md")" = '# Summary' ]
+}
+
+@test "attachments require type, name and an existing file, and reject path segments (C-E06-074/075/076)" {
+  local extra="$BATS_TEST_TMPDIR/attach.log"
+  prepare_artifact_dirs
+  printf 'X\n' >"$extra"
+
+  run ! dispatch_line "##vso[task.addattachment name=n]$extra"
+  [[ "$output" == *"attachment type is not provided."* ]]
+  run ! dispatch_line "##vso[task.addattachment type=t]$extra"
+  [[ "$output" == *"attachment name is not provided."* ]]
+  run ! dispatch_line "##vso[task.addattachment type=t;name=n]$BATS_TEST_TMPDIR/absent"
+  [[ "$output" == *'does not exist on disk.'* ]]
+  # A directory is accepted by artifact.upload but never by an attachment (C-E06-075).
+  run ! dispatch_line "##vso[task.addattachment type=t;name=n]$BATS_TEST_TMPDIR"
+  [[ "$output" == *'does not exist on disk.'* ]]
+
+  # The agent rejects Path.GetInvalidFileNameChars(); the local guard is narrower but sufficient,
+  # because both values become path segments (C-E06-076).
+  run ! dispatch_line "##vso[task.addattachment type=..;name=n]$extra"
+  [[ "$output" == *'invalid variable-store path segment'* ]]
+
+  # Empty message is rejected by the two upload commands with their own message, before the helper.
+  run ! dispatch_line '##vso[task.uploadfile]'
+  [[ "$output" == *'Cannot upload file because file location is not specified.'* ]]
+  run ! dispatch_line '##vso[task.uploadsummary]'
+  [[ "$output" == *'Cannot upload summary file, summary file location is not specified.'* ]]
+}
+
+@test "build.uploadlog and the deprecated build.uploadsummary attach under derived names (C-E06-077/078)" {
+  local log="$BATS_TEST_TMPDIR/msbuild.log" summary="$BATS_TEST_TMPDIR/report.md"
+  prepare_artifact_dirs
+  printf 'BUILT\n' >"$log"
+  printf 'REPORT\n' >"$summary"
+
+  run -0 dispatch_line "##vso[build.uploadlog]$log"
+  # Fixed name, not the file's own (C-E06-077).
+  [ "$(cat "$AZDO_ATTACHMENT_DIR/Log/CustomToolLog")" = BUILT ]
+
+  run -0 dispatch_line "##vso[build.uploadsummary]$summary"
+  [ "$(cat "$AZDO_ATTACHMENT_DIR/Distributedtask.Core.Summary/CustomMarkDownSummary-report.md")" = REPORT ]
+
+  run ! dispatch_line '##vso[build.uploadlog]'
+  [[ "$output" == *"Log file path is not provided or file doesn't exist: ''"* ]]
+  run ! dispatch_line "##vso[build.uploadsummary]$BATS_TEST_TMPDIR/absent.md"
+  [[ "$output" == *"Markdown summary file path is not provided or file doesn't exist:"* ]]
+}
+
+@test "build.updatebuildnumber overwrites the read-only name and reaches later steps (C-E06-080/081)" {
+  local setter="$BATS_TEST_TMPDIR/set-number.sh" observer="$BATS_TEST_TMPDIR/read-number.sh"
+  # Build.BuildNumber is a member of Constants.Variables.ReadOnlyVariables, so seed it as the
+  # runner would; task.setvariable must still be refused on it.
+  azdo_var_set 'Build.BuildNumber' '20260821.1' false false true
+  prepare_run_step
+
+  printf '%s\n' "printf '%s\\n' '##vso[build.updatebuildnumber]  my-new-build-number  '" >"$setter"
+  run -0 run_test_step set-number "$setter" 10
+  run -0 azdo_step_result set-number
+  [ "$output" = Succeeded ]
+
+  # Not trimmed, unlike addbuildtag (C-E06-080/082).
+  [ "$(azdo_var 'Build.BuildNumber')" = '  my-new-build-number  ' ]
+  # The name stays read-only: Variables.Set propagates the flag, it does not clear it (C-E06-081).
+  run -0 azdo_var_meta 'Build.BuildNumber'
+  [[ "$output" == *'readonly=true'* ]]
+
+  azdo_env_materialize
+  printf '%s\n' 'printf "SEEN=[%s]\n" "$BUILD_BUILDNUMBER"' >"$observer"
+  run -0 run_test_step read-number "$observer" 10
+  [ "$output" = 'SEEN=[  my-new-build-number  ]' ]
+}
+
+@test "build.updatebuildnumber requires a value while task.setvariable stays refused (C-E06-004/080/081)" {
+  prepare_artifact_dirs
+  azdo_var_set 'Build.BuildNumber' 'original' false false true
+
+  run ! dispatch_line '##vso[build.updatebuildnumber]'
+  [[ "$output" == *'Build number is required.'* ]]
+  [ "$(azdo_var 'Build.BuildNumber')" = original ]
+
+  # The read-only rule is enforced in the setvariable handler, not in the store, which is precisely
+  # why updatebuildnumber can bypass it (C-E06-081).
+  run ! dispatch_line '##vso[task.setvariable variable=Build.BuildNumber]hijacked'
+  [ "$(azdo_var 'Build.BuildNumber')" = original ]
+}
+
+@test "build.addbuildtag trims, de-duplicates case-insensitively and rejects blanks (C-E06-082)" {
+  prepare_artifact_dirs
+
+  run -0 dispatch_line '##vso[build.addbuildtag]  last_scanned-2026  '
+  run -0 dispatch_line '##vso[build.addbuildtag]LAST_SCANNED-2026'
+  run -0 dispatch_line '##vso[build.addbuildtag]release'
+  # Server-side tags are a set compared OrdinalIgnoreCase (C-E06-082).
+  [ "$(cat "$AZDO_STATE_DIR/tags")" = $'last_scanned-2026\nrelease' ]
+
+  run ! dispatch_line '##vso[build.addbuildtag]'
+  [[ "$output" == *'Build tag is required.'* ]]
+  run ! dispatch_line '##vso[build.addbuildtag]   '
+  [[ "$output" == *'Build tag is required.'* ]]
+  [ "$(cat "$AZDO_STATE_DIR/tags")" = $'last_scanned-2026\nrelease' ]
+}
+
+@test "a failing artifact command is an error issue that fails the step (C-E06-064/069)" {
+  local source_file="$BATS_TEST_TMPDIR/bad-upload.sh"
+  prepare_run_step
+  prepare_artifact_dirs
+  printf '%s\n' \
+    "printf '%s\\n' '##vso[artifact.upload containerfolder=drop]/tmp/whatever'" \
+    "printf '%s\\n' 'still-running'" >"$source_file"
+
+  run ! run_result_step bad-upload "$source_file" false false 0 10
+  [[ "$output" == *still-running* ]]
+  # The message names area.action, never the wire line - the T03 convention (C-E06-064).
+  grep -qxF "##[error]Unable to process command 'artifact.upload' successfully." \
+    "$AZDO_LOG_DIR/bad-upload.log"
+  run -0 azdo_step_result bad-upload
+  [ "$output" = Failed ]
+}
+
+# ── E06-S05-T01 · pipeline artifact publish & download ────────────────────────
+
+# One job's view of the run: a working directory that a relative `--path` resolves against
+# (C-E06-089), a workspace that a download defaults to (C-E06-085), and the run-level `.artifacts/`
+# store — which `prepare_artifact_dirs` keeps at the *same* path for every job on purpose, because
+# that is what makes a cross-job hand-off possible at all.
+prepare_pipeline_artifacts() {
+  local job="$1"
+  AZDO_VAR_SCOPE="$job"
+  export AZDO_VAR_SCOPE
+  prepare_artifact_dirs
+  mkdir -p "$BATS_TEST_TMPDIR/$job/work" "$BATS_TEST_TMPDIR/$job/workspace"
+  azdo_var_set 'System.DefaultWorkingDirectory' "$BATS_TEST_TMPDIR/$job/work"
+  azdo_var_set 'Pipeline.Workspace' "$BATS_TEST_TMPDIR/$job/workspace"
+}
+
+# A drop with a nested file and a Markdown file, so pattern cases have something to exclude.
+seed_drop() {
+  local root="$1"
+  mkdir -p "$root/nested"
+  printf 'TOP\n' >"$root/top.txt"
+  printf 'NOTES\n' >"$root/notes.md"
+  printf 'DEEP\n' >"$root/nested/deep.txt"
+  # A name a pattern list can only reach by *not* reading `#` as a comment (C-E06-090).
+  printf 'HASH\n' >"$root/#hash.txt"
+}
+
+@test "a pipeline artifact published in one job is downloaded by name in the next (C-E06-085/091/094)" {
+  prepare_pipeline_artifacts publish-job
+  azdo_var_set 'System.JobIdentifier' 'Build.Job1.__default'
+  seed_drop "$BATS_TEST_TMPDIR/publish-job/work/drop"
+
+  # No --artifact: the name is System.JobIdentifier with every character outside `[a-zA-Z0-9 .]`
+  # deleted and the literal `.default` then removed — the underscores go first, which is why
+  # `.__default` collapses to `.default` and disappears (C-E06-091).
+  run -0 azdo_artifact_publish --path drop
+  [[ "$output" == *"for artifact Build.Job1" ]]
+  # A directory contributes its *contents*; its own name never appears (C-E06-094).
+  [ "$(cat "$AZDO_ARTIFACT_DIR/Build.Job1/nested/deep.txt")" = DEEP ]
+  [ ! -e "$AZDO_ARTIFACT_DIR/Build.Job1/drop" ]
+  [ "$(cat "$AZDO_ARTIFACT_DIR/.meta/Build.Job1")" = 'type=pipeline' ]
+
+  # The next job: its own variable scope, so nothing the publisher set is visible …
+  prepare_pipeline_artifacts download-job
+  run -0 azdo_var 'System.JobIdentifier'
+  [ -z "$output" ]
+  # … but the artifact store is the run's, so the hand-off works.
+  run -0 azdo_artifact_download --artifact Build.Job1
+  [[ "$output" == *"Downloading artifacts to $BATS_TEST_TMPDIR/download-job/workspace"* ]]
+  # `--path` defaults to `$(Pipeline.Workspace)` and a *named* download lands directly there:
+  # no `Build.Job1/` level on this branch (C-E06-085/086).
+  [ "$(cat "$BATS_TEST_TMPDIR/download-job/workspace/top.txt")" = TOP ]
+  [ "$(cat "$BATS_TEST_TMPDIR/download-job/workspace/nested/deep.txt")" = DEEP ]
+  [ ! -e "$BATS_TEST_TMPDIR/download-job/workspace/Build.Job1" ]
+}
+
+@test "a named download lands at --path while an unnamed download adds one directory per artifact (C-E06-084/086/087)" {
+  local workspace="$BATS_TEST_TMPDIR/layout/workspace"
+  prepare_pipeline_artifacts layout
+  seed_drop "$BATS_TEST_TMPDIR/layout/work/alpha"
+  printf 'ONLY\n' >"$BATS_TEST_TMPDIR/layout/work/single.txt"
+
+  run -0 azdo_artifact_publish --path alpha --artifact alpha
+  # A file source contributes its basename at the artifact root — the container rule reused as an
+  # inference, flagged in C-E06-094 for a later oracle run.
+  run -0 azdo_artifact_publish --path single.txt --artifact beta
+  [ "$(cat "$AZDO_ARTIFACT_DIR/beta/single.txt")" = ONLY ]
+
+  # The `download:` keyword's `$(Pipeline.Workspace)/<name>` layout is produced by the *caller*
+  # passing that path, not by the task (C-E06-084 vs C-E06-086; docs/06 §5 decision 39).
+  run -0 azdo_artifact_download --artifact alpha --path "$workspace/alpha"
+  [ "$(cat "$workspace/alpha/top.txt")" = TOP ]
+  [ ! -e "$workspace/alpha/alpha" ]
+
+  # With no name, every artifact of the run is taken and the name *is* a directory level. The target
+  # directory is created when it does not exist (C-E06-085/087).
+  run -0 azdo_artifact_download --path "$BATS_TEST_TMPDIR/layout/absent-target"
+  [ "$(cat "$BATS_TEST_TMPDIR/layout/absent-target/alpha/nested/deep.txt")" = DEEP ]
+  [ "$(cat "$BATS_TEST_TMPDIR/layout/absent-target/beta/single.txt")" = ONLY ]
+  # `.meta` is bookkeeping beside the artifacts, never an artifact of its own.
+  [ ! -e "$BATS_TEST_TMPDIR/layout/absent-target/.meta" ]
+}
+
+@test "download patterns accumulate in order, so a later include re-adds an excluded file (C-E06-090)" {
+  local target
+  prepare_pipeline_artifacts patterns
+  seed_drop "$BATS_TEST_TMPDIR/patterns/work/drop"
+  run -0 azdo_artifact_publish --path drop --artifact drop
+
+  # Exclude after include: the Markdown file is removed from the accumulating map.
+  target="$BATS_TEST_TMPDIR/patterns/exclude-last"
+  run -0 azdo_artifact_download --artifact drop --patterns $'**\n!**/*.md' --path "$target"
+  [ -f "$target/top.txt" ]
+  [ -f "$target/nested/deep.txt" ]
+  [ ! -e "$target/notes.md" ]
+
+  # The same two patterns in the other order select *everything* — the include re-adds what the
+  # exclude removed. This is the assertion that a "match includes, then subtract excludes"
+  # implementation cannot satisfy.
+  target="$BATS_TEST_TMPDIR/patterns/include-last"
+  run -0 azdo_artifact_download --artifact drop --patterns $'!**/*.md\n**' --path "$target"
+  [ -f "$target/notes.md" ]
+
+  # A comment is skipped *before* the negation prefix is read, and an even number of `!` is an
+  # include. The comment line is the last one and would otherwise re-add `#hash.txt`, so a reader
+  # that treats `#` as an ordinary character selects a file this one must not.
+  target="$BATS_TEST_TMPDIR/patterns/comment-and-double-negation"
+  run -0 azdo_artifact_download --artifact drop \
+    --patterns $'**\n!**\n!!**/*.md\n#hash.txt' --path "$target"
+  [ -f "$target/notes.md" ]
+  [ ! -e "$target/top.txt" ]
+  [ ! -e "$target/#hash.txt" ]
+}
+
+@test "artifact patterns split on newlines only and match the artifact name in the first segment (C-E06-087/088/090)" {
+  local target
+  prepare_pipeline_artifacts globs
+  seed_drop "$BATS_TEST_TMPDIR/globs/work/alpha"
+  printf 'B\n' >"$BATS_TEST_TMPDIR/globs/work/beta.txt"
+  run -0 azdo_artifact_publish --path alpha --artifact alpha
+  run -0 azdo_artifact_publish --path beta.txt --artifact beta
+
+  # First segment selects the artifact on the multi-download branch (C-E06-087).
+  target="$BATS_TEST_TMPDIR/globs/first-segment"
+  run -0 azdo_artifact_download --patterns 'alpha/**' --path "$target"
+  [ -f "$target/alpha/top.txt" ]
+  [ ! -e "$target/beta" ]
+
+  # `*` does not cross a separator, `**` does, `?` is exactly one character.
+  target="$BATS_TEST_TMPDIR/globs/star"
+  run -0 azdo_artifact_download --artifact alpha --patterns '*.txt' --path "$target"
+  [ -f "$target/top.txt" ]
+  [ ! -e "$target/nested" ]
+  target="$BATS_TEST_TMPDIR/globs/question"
+  run -0 azdo_artifact_download --artifact alpha --patterns 'nested/?eep.txt' --path "$target"
+  [ -f "$target/nested/deep.txt" ]
+
+  # `;` is the `azdo_match` convention, not this one: the whole string is one pattern here and it
+  # matches nothing, which is a plain success rather than a failure (C-E06-088/087).
+  target="$BATS_TEST_TMPDIR/globs/semicolon"
+  run -0 azdo_artifact_download --artifact alpha --patterns 'top.txt;notes.md' --path "$target"
+  [ -z "$(find "$target" -type f)" ]
+}
+
+@test "the deployment-job auto-download injection point puts every artifact under Pipeline.Workspace (C-E06-096/084)" {
+  local workspace="$BATS_TEST_TMPDIR/deploy/workspace"
+  prepare_pipeline_artifacts build-stage
+  seed_drop "$BATS_TEST_TMPDIR/build-stage/work/drop"
+  printf 'CHART\n' >"$BATS_TEST_TMPDIR/build-stage/work/chart.yaml"
+  run -0 azdo_artifact_publish --path drop --artifact drop
+  run -0 azdo_artifact_publish --path chart.yaml --artifact manifests
+
+  # The deployment job: the injected step takes no arguments at all, and "all available artifacts …
+  # are automatically downloaded" to `$(Pipeline.Workspace)` is exactly the no-name branch, so each
+  # artifact lands at `$(Pipeline.Workspace)/<name>` — the `download:` keyword layout (C-E06-096/084).
+  prepare_pipeline_artifacts deploy
+  run -0 azdo_artifact_auto_download
+  [ "$(cat "$workspace/drop/top.txt")" = TOP ]
+  [ "$(cat "$workspace/drop/nested/deep.txt")" = DEEP ]
+  [ "$(cat "$workspace/manifests/chart.yaml")" = CHART ]
+  # `download: none` is the *absence* of this call, decided by the emitter; nothing here suppresses
+  # an injected step at runtime.
+}
+
+@test "publish requires an existing path, and its artifact name must be a usable store segment (C-E06-092/093)" {
+  prepare_pipeline_artifacts validation
+  seed_drop "$BATS_TEST_TMPDIR/validation/work/drop"
+
+  # Each case has exactly one defect: the agent's own ordering of the name check against the
+  # existence check is not established by the pinned sources, so nothing here depends on it.
+  run ! azdo_artifact_publish --path absent --artifact drop
+  [[ "$output" == *"Path does not exist: absent"* ]]
+  # The agent's own forbidden set — `" : < > | * ? / \` and anything below U+0020 — none of which
+  # `azdo__valid_store_segment` would catch on its own (C-E06-093).
+  run ! azdo_artifact_publish --path drop --artifact 'star*name'
+  run ! azdo_artifact_publish --path drop --artifact 'q?name'
+  run ! azdo_artifact_publish --path drop --artifact 'back\slash'
+  run ! azdo_artifact_publish --path drop --artifact 'colon:name'
+  run ! azdo_artifact_publish --path drop --artifact 'quote"name'
+  run ! azdo_artifact_publish --path drop --artifact 'angle<name>'
+  run ! azdo_artifact_publish --path drop --artifact 'pipe|name'
+  run ! azdo_artifact_publish --path drop --artifact 'sub/drop'
+  # And the store-segment guard on top, which rejects names the agent accepts but a directory
+  # under `.artifacts/` cannot be — a recorded local hardening (C-E06-093).
+  run ! azdo_artifact_publish --path drop --artifact '..'
+  run ! azdo_artifact_publish --path drop --artifact ''
+  [ -z "$(find "$AZDO_ARTIFACT_DIR" -mindepth 1)" ]
+
+  # --path is required; an unknown flag is a usage error, not a failed publish.
+  run -2 azdo_artifact_publish --artifact drop
+  run -2 azdo_artifact_publish --path drop --nonsense
+}
+
+@test "publishing an empty directory is a plain success, unlike artifact.upload (C-E06-092 vs C-E06-070)" {
+  prepare_pipeline_artifacts empty
+  mkdir -p "$BATS_TEST_TMPDIR/empty/work/hollow/only-a-subdirectory"
+
+  run -0 azdo_artifact_publish --path hollow --artifact Hollow
+  # No `Directory '…' is empty` warning: that special case belongs to the logging command, and the
+  # plugin has nothing like it (C-E06-092).
+  [[ "$output" != *'is empty'* ]]
+  [ -d "$AZDO_ARTIFACT_DIR/Hollow" ]
+  [ "$(cat "$AZDO_ARTIFACT_DIR/.meta/Hollow")" = 'type=pipeline' ]
+
+  # Downloading it is a success with no files, not an "artifact not found".
+  run -0 azdo_artifact_download --artifact Hollow --path "$BATS_TEST_TMPDIR/empty/out"
+  [ -z "$(find "$BATS_TEST_TMPDIR/empty/out" -type f)" ]
+}
+
+@test "relative artifact paths resolve against System.DefaultWorkingDirectory, not the workspace (C-E06-089)" {
+  local work="$BATS_TEST_TMPDIR/relative/work" workspace="$BATS_TEST_TMPDIR/relative/workspace"
+  prepare_pipeline_artifacts relative
+  # The same relative name exists under both roots, so the assertion cannot pass by accident.
+  mkdir -p "$work/rel" "$workspace/rel"
+  printf 'FROM-WORK\n' >"$work/rel/marker.txt"
+  printf 'FROM-WORKSPACE\n' >"$workspace/rel/marker.txt"
+
+  run -0 azdo_artifact_publish --path rel --artifact rel
+  [ "$(cat "$AZDO_ARTIFACT_DIR/rel/marker.txt")" = FROM-WORK ]
+
+  # The task.json help text says "relative to the pipeline workspace directory"; the plugin source
+  # combines with `system.defaultworkingdirectory` and the source wins (BACKLOG §3 hierarchy).
+  run -0 azdo_artifact_download --artifact rel --path out
+  [ "$(cat "$work/out/marker.txt")" = FROM-WORK ]
+  [ ! -e "$workspace/out" ]
+}
+
+@test "a named download fails on an unknown artifact and on one with no local bytes (C-E06-086)" {
+  prepare_pipeline_artifacts missing
+  seed_drop "$BATS_TEST_TMPDIR/missing/work/drop"
+  run -0 azdo_artifact_publish --path drop --artifact drop
+
+  run ! azdo_artifact_download --artifact absent
+  [[ "$output" == *absent* ]]
+
+  # An associated artifact is a server-side coordinate with nothing local behind it (C-E06-073).
+  # The named branch says so rather than reporting an empty success; the multi-download branch
+  # skips it with a debug note, because there "no files" is not an error (C-E06-087). The asymmetry
+  # is a local decision — docs/06 §5 decision 39.
+  run -0 dispatch_line '##vso[artifact.associate type=filepath;artifactname=Shared]\\MyShare\Drop'
+  run ! azdo_artifact_download --artifact Shared
+  run -0 azdo_artifact_download --path "$BATS_TEST_TMPDIR/missing/all"
+  [ -f "$BATS_TEST_TMPDIR/missing/all/drop/top.txt" ]
+  [ ! -e "$BATS_TEST_TMPDIR/missing/all/Shared" ]
+}
+
+@test "download refuses a source it cannot serve and a workspace it was never given (C-E06-085)" {
+  prepare_pipeline_artifacts degrade
+  seed_drop "$BATS_TEST_TMPDIR/degrade/work/drop"
+  run -0 azdo_artifact_publish --path drop --artifact drop
+
+  # `specific` needs a run id, a REST fetch and the lockfile-pinned `.cache/artifacts/` tree (E08):
+  # refused loudly rather than silently served from the current run.
+  run ! azdo_artifact_download --artifact drop --source specific
+  [[ "$output" == *specific* ]]
+  [ -z "$(find "$BATS_TEST_TMPDIR/degrade/workspace" -type f)" ]
+
+  # No --path and no Pipeline.Workspace: the default has nothing to resolve to.
+  azdo_var_set 'Pipeline.Workspace' ''
+  run ! azdo_artifact_download --artifact drop
+  [[ "$output" == *'Pipeline.Workspace'* ]]
+}
+
+@test "a container artifact written by artifact.upload downloads by its artifact name (C-E06-072/086, docs/06 §5 decision 37)" {
+  prepare_pipeline_artifacts crosscommand
+  printf 'RESULT\n' >"$BATS_TEST_TMPDIR/crosscommand/work/testresult.trx"
+
+  # The doc page's own example, where the two names deliberately differ. Decision 37 keys
+  # `.artifacts/` by the *artifact* name precisely because that is the name a download asks for;
+  # this is the case that proves it, and the only one where the download reads `type=container`
+  # metadata instead of the `type=pipeline` its own publish writes.
+  run -0 dispatch_line "##vso[artifact.upload containerfolder=testresult;artifactname=uploadedresult]$BATS_TEST_TMPDIR/crosscommand/work/testresult.trx"
+  run -0 azdo_artifact_download --artifact uploadedresult --path "$BATS_TEST_TMPDIR/crosscommand/out"
+  [ "$(cat "$BATS_TEST_TMPDIR/crosscommand/out/testresult.trx")" = RESULT ]
+  # The container folder is not a directory level of the downloaded tree.
+  [ ! -e "$BATS_TEST_TMPDIR/crosscommand/out/testresult/testresult.trx" ]
+
+  # And it is reachable by name from the multi-download branch too, one directory per artifact.
+  run -0 azdo_artifact_download --path "$BATS_TEST_TMPDIR/crosscommand/all"
+  [ "$(cat "$BATS_TEST_TMPDIR/crosscommand/all/uploadedresult/testresult.trx")" = RESULT ]
+}
+
+# --- E06-S05-T02 — checkout (self) modes and options -------------------------------------------
+
+# A throwaway source repository plus a workspace, both under BATS_TEST_TMPDIR. Nothing here may
+# resolve to the emulator's own checkout: `clean` runs `git clean -ffdx` and `copy` empties its
+# target, so a fixture that leaked outside the scratch tree would delete real work.
+prepare_checkout() {
+  local name="$1"
+  local root="$BATS_TEST_TMPDIR/$name"
+  mkdir -p "$root/workspace"
+  checkout_source="$root/src"
+  checkout_workspace="$root/workspace"
+  mkdir -p "$checkout_source"
+  # A fresh variable store per fixture: a Build.SourceVersion seeded by an earlier fixture in the
+  # same test would be honored as an `.env` override and point at a commit this repo never had.
+  AZDO_STATE_DIR="$root/state"
+  export AZDO_STATE_DIR
+  git -C "$checkout_source" init -q -b main .
+  git -C "$checkout_source" config user.email 'bats@example.invalid'
+  git -C "$checkout_source" config user.name 'bats'
+  printf 'one\n' >"$checkout_source/one.txt"
+  git -C "$checkout_source" add -A
+  git -C "$checkout_source" commit -q -m 'first commit'
+  printf 'two\n' >"$checkout_source/two.txt"
+  git -C "$checkout_source" add -A
+  git -C "$checkout_source" commit -q -m $'second commit\nbody line that is not the summary'
+  azdo_var_set 'Pipeline.Workspace' "$checkout_workspace"
+  export AZDO_SELF_REPO="$checkout_source"
+}
+
+@test "checkout booleans follow ConvertToBoolean, so clean:yes and fetchTags:yes disagree (C-E06-100)" {
+  # `1/true/$true` and `0/false/$false`, case-insensitively; everything else falls back to the
+  # *caller's* default, which is false for clean/lfs and true for fetchTags (C-E06-099/100). The
+  # same literal therefore resolves in opposite directions depending on the option.
+  [ "$(azdo__checkout_bool yes false)" = false ]
+  [ "$(azdo__checkout_bool yes true)" = true ]
+  [ "$(azdo__checkout_bool '' true)" = true ]
+  [ "$(azdo__checkout_bool TRUE false)" = true ]
+  [ "$(azdo__checkout_bool '$True' false)" = true ]
+  [ "$(azdo__checkout_bool '$FALSE' true)" = false ]
+  [ "$(azdo__checkout_bool 1 false)" = true ]
+  [ "$(azdo__checkout_bool 0 true)" = false ]
+  [ "$(azdo__checkout_bool on true)" = true ]
+
+  # int.TryParse: a negative or non-numeric depth is the same as 0, i.e. no --depth (C-E06-098).
+  [ "$(azdo__checkout_fetch_depth 15)" = 15 ]
+  [ "$(azdo__checkout_fetch_depth 08)" = 8 ]
+  [ "$(azdo__checkout_fetch_depth -1)" = 0 ]
+  [ "$(azdo__checkout_fetch_depth abc)" = 0 ]
+  [ "$(azdo__checkout_fetch_depth '')" = 0 ]
+
+  # '' / false → none, recursive → nested, any other truthy → top level only (C-E06-103).
+  [ "$(azdo__checkout_submodules '')" = none ]
+  [ "$(azdo__checkout_submodules false)" = none ]
+  [ "$(azdo__checkout_submodules yes)" = none ]
+  [ "$(azdo__checkout_submodules true)" = top ]
+  [ "$(azdo__checkout_submodules Recursive)" = recursive ]
+}
+
+@test "clone mode reproduces the agent's init/remote/fetch/checkout sequence into detached HEAD (C-E06-102)" {
+  prepare_checkout clone
+  run -0 azdo_checkout --mode clone
+  local target="$checkout_workspace/s"
+  [ -f "$target/two.txt" ]
+  [ -d "$target/.git" ]
+  # `checkout <commit>` and not `checkout <branch>`: the agent checks out the commit whenever it
+  # knows one, so the working repo ends detached exactly like the hosted one.
+  run ! git -C "$target" symbolic-ref -q HEAD
+  [ "$(git -C "$target" rev-parse HEAD)" = "$(git -C "$checkout_source" rev-parse HEAD)" ]
+  # The remote is file://, never the bare path — see the fetchDepth test for why.
+  [ "$(git -C "$target" config --get remote.origin.url)" = "file://$checkout_source" ]
+}
+
+@test "fetchDepth is honored because the remote is a file:// URL, and 0 unshallows (C-E06-098/109)" {
+  prepare_checkout depth
+  run -0 azdo_checkout --mode clone --fetch-depth 1
+  local target="$checkout_workspace/s"
+  # git *silently* ignores --depth for a local-path remote (experiment
+  # research/experiments/E06-checkout/local-shallow-clone.md); a bare path here would report
+  # success and fetch all history, so this assertion is what pins the file:// URL in place.
+  [ "$(git -C "$target" rev-list --count HEAD)" = 1 ]
+  [ -f "$target/.git/shallow" ]
+
+  # depth 0 over an already-shallow repo is the --unshallow branch, not a no-op.
+  run -0 azdo_checkout --mode clone --fetch-depth 0
+  [ "$(git -C "$target" rev-list --count HEAD)" = 2 ]
+  [ ! -f "$target/.git/shallow" ]
+
+  # A non-numeric depth is 0, so it unshallows too rather than erroring.
+  run -0 azdo_checkout --mode clone --fetch-depth 1
+  [ -f "$target/.git/shallow" ]
+  run -0 azdo_checkout --mode clone --fetch-depth abc
+  [ ! -f "$target/.git/shallow" ]
+}
+
+@test "fetchTags defaults to true at the agent even though new pipelines default to false (C-E06-099)" {
+  prepare_checkout tags
+  git -C "$checkout_source" tag v1.0.0
+  # The doc page says new pipelines default to not syncing tags; that default is a *pipeline
+  # setting* the server materializes into the input, so with no input the agent syncs them.
+  run -0 azdo_checkout --mode clone
+  run -0 git -C "$checkout_workspace/s" tag --list
+  [ "$output" = v1.0.0 ]
+
+  # And `fetchTags: false` does *not* stop them, because the agent puts `--prune-tags` on the same
+  # line and that is a shorthand for the explicit `refs/tags/*` refspec (C-E06-111). The runtime
+  # reproduces the agent's command line rather than the doc page's promise, and says so under
+  # System.Debug instead of silently surprising the reader.
+  prepare_checkout tagsoff
+  git -C "$checkout_source" tag v2.0.0
+  azdo_var_set 'System.Debug' true
+  run -0 azdo_checkout --mode clone --fetch-tags false
+  [[ "$output" == *'##[debug]'*'--prune-tags'* ]]
+  run -0 git -C "$checkout_workspace/s" tag --list
+  [ "$output" = v2.0.0 ]
+
+  # The note is a `fetchTags: false` statement, not noise on every checkout.
+  prepare_checkout tagsnote
+  azdo_var_set 'System.Debug' true
+  run -0 azdo_checkout --mode clone --fetch-tags true
+  [[ "$output" != *'--prune-tags'* ]]
+
+  # `yes` is not a recognized literal, so it falls back to fetchTags' own default of true.
+  prepare_checkout tagsyes
+  git -C "$checkout_source" tag v3.0.0
+  run -0 azdo_checkout --mode clone --fetch-tags yes
+  run -0 git -C "$checkout_workspace/s" tag --list
+  [ "$output" = v3.0.0 ]
+}
+
+@test "clean runs git clean -ffdx then git reset --hard HEAD on an existing checkout (C-E06-101)" {
+  prepare_checkout clean
+  run -0 azdo_checkout --mode clone
+  local target="$checkout_workspace/s"
+
+  # Both commands, in the agent's order, exercised directly: `-ffdx` is what removes the untracked
+  # file and the untracked *directory*, and `reset --hard HEAD` is what restores the tracked edit.
+  # Dropping either one leaves one of these three assertions failing.
+  printf 'stale\n' >"$target/untracked.txt"
+  mkdir -p "$target/untracked-dir"
+  printf 'stale\n' >"$target/untracked-dir/inner.txt"
+  printf 'edited\n' >"$target/one.txt"
+  run -0 azdo__checkout_clean "$target" none
+  [ ! -e "$target/untracked.txt" ]
+  [ ! -e "$target/untracked-dir" ]
+  [ "$(cat "$target/one.txt")" = one ]
+
+  # In the full flow only the untracked file distinguishes the two runs: `git checkout --force`
+  # (C-E06-102) already restores tracked files, so `reset --hard HEAD` is subsumed there and the
+  # observable difference `clean` makes on a re-checkout is the untracked tree.
+  printf 'stale\n' >"$target/untracked.txt"
+  printf 'edited\n' >"$target/one.txt"
+  run -0 azdo_checkout --mode clone
+  [ -f "$target/untracked.txt" ]
+  [ "$(cat "$target/one.txt")" = one ]
+
+  run -0 azdo_checkout --mode clone --clean true
+  [ ! -e "$target/untracked.txt" ]
+
+  # `clean: yes` is not a recognized boolean, so it does *not* clean (C-E06-100).
+  printf 'stale\n' >"$target/untracked.txt"
+  run -0 azdo_checkout --mode clone --clean yes
+  [ -f "$target/untracked.txt" ]
+}
+
+@test "copy mode carries uncommitted work and refuses the clean that would destroy it" {
+  prepare_checkout copy
+  printf 'uncommitted\n' >"$checkout_source/scratch.txt"
+  printf 'edited\n' >"$checkout_source/one.txt"
+
+  run -0 azdo_checkout --mode copy
+  local target="$checkout_workspace/s"
+  [ "$(cat "$target/scratch.txt")" = uncommitted ]
+  [ "$(cat "$target/one.txt")" = edited ]
+  # `.git` comes along, so steps that run `git rev-parse`/`git describe` still work.
+  [ -d "$target/.git" ]
+
+  # docs/06 §5 decision 40: honoring `clean: true` here would `git clean -ffdx` away the very
+  # uncommitted changes the mode exists to run. Reported, and the files survive.
+  run -0 azdo_checkout --mode copy --clean true
+  [[ "$output" == *'ignores clean: true'* ]]
+  [[ "$output" == *degraded* ]]
+  [ "$(cat "$target/scratch.txt")" = uncommitted ]
+  # The fetch-shaped options are equally meaningless here and say so instead of pretending.
+  run -0 azdo_checkout --mode copy --fetch-depth 1
+  [[ "$output" == *fetchDepth* ]]
+  [ "$(git -C "$target" rev-list --count HEAD)" = 2 ]
+
+  # Re-running empties the target first, so a file deleted at the source disappears from the copy.
+  rm "$checkout_source/scratch.txt"
+  run -0 azdo_checkout --mode copy
+  [ ! -e "$target/scratch.txt" ]
+}
+
+@test "worktree mode produces a working repo and survives being run twice" {
+  prepare_checkout worktree
+  run -0 azdo_checkout --mode worktree
+  local target="$checkout_workspace/s"
+  [ -f "$target/two.txt" ]
+  [ "$(git -C "$target" rev-parse HEAD)" = "$(git -C "$checkout_source" rev-parse HEAD)" ]
+  # `--detach`: `git worktree add` refuses a branch that is already checked out in the source, so
+  # the second checkout of `main` would fail without it.
+  run ! git -C "$target" symbolic-ref -q HEAD
+
+  # And `worktree add` refuses a non-empty path, so a re-run has to release the old one first.
+  printf 'stale\n' >"$target/untracked.txt"
+  run -0 azdo_checkout --mode worktree
+  [ -f "$target/two.txt" ]
+  [ ! -e "$target/untracked.txt" ]
+  # The source repository is left with exactly one registered worktree besides itself.
+  [ "$(git -C "$checkout_source" worktree list | wc -l)" = 2 ]
+
+  # `--detach` earns its place only when the committish is a *branch name*, which `.env` can make
+  # it: docs/04 §8 says Build.SourceVersion is overridable to simulate another revision, and
+  # `worktree add <path> main` without it refuses a branch already checked out in the source.
+  prepare_checkout worktreebranch
+  azdo_var_set 'Build.SourceVersion' 'main'
+  run -0 azdo_checkout --mode worktree
+  target="$checkout_workspace/s"
+  [ -f "$target/two.txt" ]
+  run ! git -C "$target" symbolic-ref -q HEAD
+}
+
+@test "lfs: true without git-lfs warns and continues, and lfs off sets GIT_LFS_SKIP_SMUDGE (C-E06-104)" {
+  prepare_checkout lfs
+  azdo_command_state_reset
+
+  if git lfs version >/dev/null 2>&1; then
+    skip 'git-lfs is installed; this asserts the missing-binary degradation'
+  fi
+  # The agent's own LFS pre-fetch failure is a warning and the checkout proceeds — it lets
+  # `git checkout` smudge instead. A missing binary is the local shape of that, so the step
+  # succeeds with a counted warning rather than failing.
+  run -0 azdo_checkout --mode clone --lfs true
+  [[ "$output" == *'##[warning]'* ]]
+  [[ "$output" == *git-lfs* ]]
+  [ -f "$checkout_workspace/s/two.txt" ]
+  [ "$(azdo_step_issue_count warning)" = 1 ]
+
+  # With lfs off, every git command carries GIT_LFS_SKIP_SMUDGE=1 so a user- or system-level LFS
+  # config cannot pull assets down behind the pipeline's back.
+  # A `!`-prefixed git alias runs as a shell command, so it reports the environment the git
+  # subprocess actually received rather than what the wrapper meant to pass.
+  local probe='!printf %s "${GIT_LFS_SKIP_SMUDGE-unset}"'
+  azdo__checkout_lfs_enabled=false
+  run -0 azdo__checkout_git -C "$checkout_workspace/s" -c "alias.envprobe=$probe" envprobe
+  [ "$output" = 1 ]
+  azdo__checkout_lfs_enabled=true
+  run -0 azdo__checkout_git -C "$checkout_workspace/s" -c "alias.envprobe=$probe" envprobe
+  [ "$output" = unset ]
+}
+
+@test "checkout seeds Build.SourceBranch/SourceVersion/Repository.* and never clobbers .env (C-E06-106/107)" {
+  prepare_checkout seed
+  run -0 azdo_checkout --mode clone
+  local target="$checkout_workspace/s"
+
+  [ "$(azdo_var 'Build.SourceVersion')" = "$(git -C "$checkout_source" rev-parse HEAD)" ]
+  [ "$(azdo_var 'Build.SourceBranch')" = 'refs/heads/main' ]
+  # The *last path segment* of the ref, not the part after `refs/heads/`.
+  [ "$(azdo_var 'Build.SourceBranchName')" = main ]
+  # First line only, per "the first line or 200 characters, whichever is shorter".
+  [ "$(azdo_var 'Build.SourceVersionMessage')" = 'second commit' ]
+  [ "$(azdo_var 'Build.Repository.Name')" = src ]
+  [ "$(azdo_var 'Build.Repository.Provider')" = Git ]
+  [ "$(azdo_var 'Build.Repository.Clean')" = false ]
+  # Equal for a single self checkout; E06-S05-T03 owns the multi-checkout case where they diverge.
+  local resolved
+  resolved="$(cd "$target" && pwd -P)"
+  [ "$(azdo_var 'Build.Repository.LocalPath')" = "$resolved" ]
+  [ "$(azdo_var 'Build.SourcesDirectory')" = "$resolved" ]
+
+  # A nested branch keeps only its last segment: refs/heads/feature/tools → tools.
+  prepare_checkout seednested
+  git -C "$checkout_source" checkout -q -b feature/tools
+  run -0 azdo_checkout --mode clone
+  [ "$(azdo_var 'Build.SourceBranch')" = 'refs/heads/feature/tools' ]
+  [ "$(azdo_var 'Build.SourceBranchName')" = tools ]
+}
+
+@test "a pre-set Build.SourceVersion selects the commit and is not overwritten (docs/04 §8)" {
+  prepare_checkout override
+  local first
+  first="$(git -C "$checkout_source" rev-parse HEAD~1)"
+  # docs/04 §8 makes these overridable through `.env` so a local run can simulate another commit.
+  # An override that only survived until the checkout wrote over it would be useless, so the value
+  # is read *before* the checkout and drives which commit lands.
+  azdo_var_set 'Build.SourceVersion' "$first"
+  azdo_var_set 'Build.SourceBranch' 'refs/pull/7/merge'
+  run -0 azdo_checkout --mode clone
+  [ "$(git -C "$checkout_workspace/s" rev-parse HEAD)" = "$first" ]
+  [ -f "$checkout_workspace/s/one.txt" ]
+  [ ! -e "$checkout_workspace/s/two.txt" ]
+  [ "$(azdo_var 'Build.SourceVersion')" = "$first" ]
+  [ "$(azdo_var 'Build.SourceBranch')" = 'refs/pull/7/merge' ]
+  [ "$(azdo_var 'Build.SourceBranchName')" = merge ]
+
+  # Those two survive trivially — the checkout would write back the same bytes it just read. The
+  # values that actually prove "seed, never overwrite" are the *derived* and repo-shaped ones,
+  # which a checkout that seeded unconditionally would replace with what it found on disk.
+  prepare_checkout overrideall
+  azdo_var_set 'Build.SourceBranchName' 'pretty-name'
+  azdo_var_set 'Build.Repository.Name' 'MyRepo'
+  azdo_var_set 'Build.Repository.Uri' 'https://dev.azure.com/contoso/_git/MyRepo'
+  azdo_var_set 'Build.Repository.Provider' 'TfsGit'
+  azdo_var_set 'Build.Repository.Clean' 'true'
+  azdo_var_set 'Build.SourcesDirectory' '/somewhere/else'
+  azdo_var_set 'Build.SourceVersionMessage' 'a message from .env'
+  run -0 azdo_checkout --mode clone
+  [ "$(azdo_var 'Build.SourceBranchName')" = pretty-name ]
+  [ "$(azdo_var 'Build.Repository.Name')" = MyRepo ]
+  [ "$(azdo_var 'Build.Repository.Uri')" = 'https://dev.azure.com/contoso/_git/MyRepo' ]
+  [ "$(azdo_var 'Build.Repository.Provider')" = TfsGit ]
+  [ "$(azdo_var 'Build.Repository.Clean')" = true ]
+  [ "$(azdo_var 'Build.SourcesDirectory')" = /somewhere/else ]
+  [ "$(azdo_var 'Build.SourceVersionMessage')" = 'a message from .env' ]
+  # Seeding is skipped, not the checkout: the files still land.
+  [ -f "$checkout_workspace/s/two.txt" ]
+}
+
+@test "checkout: none is a skip and a path outside Pipeline.Workspace is refused (C-E06-105)" {
+  prepare_checkout guard
+  run -0 azdo_checkout --repository none --mode clone
+  [ -z "$(find "$checkout_workspace" -mindepth 1 -print -quit)" ]
+  [ -z "$(azdo_var 'Build.SourceVersion')" ]
+
+  # `path` is rooted at Pipeline.Workspace and escaping it needs an opt-in on the agent; here it is
+  # refused, because `clean` and `copy` both delete inside the target.
+  run ! azdo_checkout --mode clone --path ../escape
+  [[ "$output" == *'escapes Pipeline.Workspace'* ]]
+  # Refused *before* anything is created: `mkdir -p` first would leave an empty directory outside
+  # the workspace on its way to saying no.
+  [ ! -e "$BATS_TEST_TMPDIR/guard/escape" ]
+  run ! azdo_checkout --mode copy --path "$BATS_TEST_TMPDIR/guard/src"
+  [[ "$output" == *'escapes Pipeline.Workspace'* ]]
+  [ -f "$checkout_source/one.txt" ]
+
+  # A path *inside* the workspace is honored, which is what makes the refusal a guard and not a
+  # blanket ban.
+  run -0 azdo_checkout --mode clone --path custom/place
+  [ -f "$checkout_workspace/custom/place/two.txt" ]
+
+  # Another repository is E06-S05-T03's multi-checkout layout, refused rather than mis-emulated.
+  run ! azdo_checkout --repository tools --mode clone
+  [[ "$output" == *self* ]]
+  run -2 azdo_checkout --mode rsync
+}
+
+@test "an unusable self repository fails, and ungrounded options are reported not dropped (C-E06-110)" {
+  prepare_checkout unusable
+  local empty="$BATS_TEST_TMPDIR/unusable/empty" nocommit="$BATS_TEST_TMPDIR/unusable/nocommit"
+  mkdir -p "$empty" "$nocommit"
+  git -C "$nocommit" init -q .
+
+  run ! azdo_checkout --mode clone --source "$empty"
+  [[ "$output" == *'not a git repository'* ]]
+  run ! azdo_checkout --mode clone --source "$nocommit"
+  [[ "$output" == *'no commits'* ]]
+  run ! azdo_checkout --mode clone --source "$BATS_TEST_TMPDIR/unusable/absent"
+  [[ "$output" == *'does not exist'* ]]
+
+  # fetchFilter, the two sparseCheckout inputs and persistCredentials are grounded and deliberately
+  # not emulated: accepted so the pipeline still runs, announced so the gap is visible.
+  run -0 azdo_checkout --mode clone --fetch-filter 'blob:none' --persist-credentials true
+  [[ "$output" == *'fetch-filter is not emulated'* ]]
+  [[ "$output" == *'persist-credentials is not emulated'* ]]
+  [ -f "$checkout_workspace/s/two.txt" ]
+  # An empty value is not a request, so it is not reported.
+  run -0 azdo_checkout --mode clone --sparse-checkout-patterns ''
+  [[ "$output" != *sparse* ]]
+}
+
+# A source repository whose `vendor/sub` submodule itself contains `inner`, so `true` and
+# `recursive` are distinguishable. `protocol.file.allow=always` is needed even to *build* this
+# fixture — the same restriction the runtime has to relax (C-E06-112).
+prepare_checkout_submodules() {
+  local name="$1"
+  local root="$BATS_TEST_TMPDIR/$name"
+  local inner="$root/inner" sub="$root/sub"
+  prepare_checkout "$name"
+  for repo in "$inner" "$sub"; do
+    mkdir -p "$repo"
+    git -C "$repo" init -q -b main .
+    git -C "$repo" config user.email 'bats@example.invalid'
+    git -C "$repo" config user.name 'bats'
+  done
+  printf 'deep\n' >"$inner/deep.txt"
+  git -C "$inner" add -A
+  git -C "$inner" commit -q -m inner
+  printf 'shallow\n' >"$sub/sub.txt"
+  git -C "$sub" -c protocol.file.allow=always submodule add -q "$inner" inner
+  git -C "$sub" add -A
+  git -C "$sub" commit -q -m sub
+  git -C "$checkout_source" -c protocol.file.allow=always submodule add -q "$sub" vendor/sub
+  git -C "$checkout_source" commit -q -m 'add submodule'
+}
+
+@test "submodules: true takes one level and recursive takes the nested one (C-E06-103/112)" {
+  prepare_checkout_submodules submodules
+  local target="$checkout_workspace/s"
+
+  # Without the option the submodule directory is registered but empty — `--no-recurse-submodules`
+  # is on every fetch and nothing initializes it.
+  run -0 azdo_checkout --mode clone
+  [ -d "$target/vendor/sub" ]
+  [ ! -e "$target/vendor/sub/sub.txt" ]
+
+  # `true` is one level: the top-level submodule's own files arrive, the nested one does not.
+  run -0 azdo_checkout --mode clone --submodules true
+  [ -f "$target/vendor/sub/sub.txt" ]
+  [ ! -e "$target/vendor/sub/inner/deep.txt" ]
+
+  # `recursive` reaches the nested submodule. This is the only assertion that separates the
+  # `--recursive` arms of `submodule sync` and `submodule update` from their plain forms.
+  run -0 azdo_checkout --mode clone --submodules recursive
+  [ -f "$target/vendor/sub/inner/deep.txt" ]
+
+  # `yes` is not a recognized boolean, so it means no submodules at all (C-E06-100).
+  prepare_checkout_submodules submodulesyes
+  run -0 azdo_checkout --mode clone --submodules yes
+  [ ! -e "$checkout_workspace/s/vendor/sub/sub.txt" ]
+}
+
+@test "clean with submodules cleans inside them too (C-E06-101)" {
+  prepare_checkout_submodules submoduleclean
+  local target="$checkout_workspace/s"
+  run -0 azdo_checkout --mode clone --submodules recursive
+
+  printf 'stale\n' >"$target/vendor/sub/untracked.txt"
+  printf 'stale\n' >"$target/vendor/sub/inner/untracked.txt"
+  printf 'edited\n' >"$target/vendor/sub/sub.txt"
+
+  # `git clean -ffdx` on the outer repo does not descend into a submodule work tree; the agent
+  # runs a separate `submodule foreach --recursive` pair for exactly that reason, and only when
+  # submodules are enabled.
+  run -0 azdo__checkout_clean "$target" none
+  [ -f "$target/vendor/sub/untracked.txt" ]
+
+  run -0 azdo__checkout_clean "$target" recursive
+  [ ! -e "$target/vendor/sub/untracked.txt" ]
+  [ ! -e "$target/vendor/sub/inner/untracked.txt" ]
+  [ "$(cat "$target/vendor/sub/sub.txt")" = shallow ]
+}
+
+# --- E06-S05-T03 — multi-checkout layout --------------------------------------------------------
+
+# A second (or third) source repository beside the fixture's `self`, each carrying one file named
+# after itself so a layout assertion can name the repository it expects to find.
+prepare_checkout_extra() {
+  local name="$1" dir="$BATS_TEST_TMPDIR/extra/$1"
+  mkdir -p "$dir"
+  git -C "$dir" init -q -b main .
+  git -C "$dir" config user.email 'bats@example.invalid'
+  git -C "$dir" config user.name 'bats'
+  printf '%s\n' "$name" >"$dir/$name.txt"
+  git -C "$dir" add -A
+  git -C "$dir" commit -q -m "$name commit"
+  printf '%s\n' "$dir"
+}
+
+@test "the checkout folder name is git's clone-directory algorithm, not basename (C-E06-118)" {
+  # The agent's own L0 table (RepositoryUtilL0.cs#L396-L451), ported wholesale. Two rows carry the
+  # orderings that are easy to invert in a rewrite: the *last* `@` wins, and the port trim fires
+  # only when no `/` was found — which is why `.../test:1234` keeps the digits it looks like a port.
+  [ "$(azdo__checkout_clone_directory 'host:foo')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'host:foo.git')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'host:foo/.git')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'ssh://host/foo')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'ssh://host/foo.git')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'ssh://host/foo/.git')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'ssh://host/foo/')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'ssh://host/foo///')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'ssh://host/foo/.git/')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'ssh://host/foo.git/')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'ssh://host/foo.git///')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'ssh://host/foo///.git/')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'ssh://host/foo/.git///')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'host:foo/')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'host:foo///')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'host:foo.git/')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'host:foo/.git/')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'host:foo.git///')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'host:foo///.git/')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'host:foo/.git///')" = foo ]
+  [ "$(azdo__checkout_clone_directory 'host:foo/repo')" = repo ]
+
+  # Omitting the path defaults to the host name, and auth material never becomes a directory.
+  [ "$(azdo__checkout_clone_directory 'ssh://host/')" = host ]
+  [ "$(azdo__checkout_clone_directory 'ssh://host:1234/')" = host ]
+  [ "$(azdo__checkout_clone_directory 'ssh://user@host/')" = host ]
+  [ "$(azdo__checkout_clone_directory 'host:/')" = host ]
+  [ "$(azdo__checkout_clone_directory 'ssh://user:password@host/')" = host ]
+  [ "$(azdo__checkout_clone_directory 'ssh://user:password@host:1234/')" = host ]
+  [ "$(azdo__checkout_clone_directory 'ssh://user:passw@rd@host:1234/')" = host ]
+  [ "$(azdo__checkout_clone_directory 'user@host:/')" = host ]
+  [ "$(azdo__checkout_clone_directory 'user:password@host:/')" = host ]
+  [ "$(azdo__checkout_clone_directory 'user:passw@rd@host:/')" = host ]
+  [ "$(azdo__checkout_clone_directory 'ssh://user:password@host/test:1234')" = 1234 ]
+  [ "$(azdo__checkout_clone_directory 'ssh://user:password@host/test:1234.git')" = 1234 ]
+
+  # The doc page's own worked example: the *name* property's last segment, not the alias.
+  [ "$(azdo__checkout_clone_directory 'MyGitHubOrgOrUser/MyGitHubRepo')" = MyGitHubRepo ]
+  [ "$(azdo__checkout_clone_directory 'MyFirstProject/repo1_name')" = repo1_name ]
+  [ "$(azdo__checkout_clone_directory 'alias')" = alias ]
+
+  # A trailing `@` is *not* auth material: `SkipLastIndexOf` treats a match sitting on the last
+  # index as not found, so the name keeps it and only the `/` segmentation applies.
+  [ "$(azdo__checkout_clone_directory 'proj/repo@')" = 'repo@' ]
+  [ "$(azdo__checkout_clone_directory 'a/b@')" = 'b@' ]
+
+  # No agent counterpart: a name whose folder would be `.`/`..`/`/` is refused rather than
+  # resolved, because `s/..` is the workspace and `clean` deletes inside whatever it resolves to.
+  run -1 azdo__checkout_clone_directory ''
+  run -1 azdo__checkout_clone_directory '..'
+  run -1 azdo__checkout_clone_directory 'ssh://host/foo/../'
+  run -1 azdo__checkout_clone_directory '/'
+  # C# throws out of `Substring` on this one; a bash arithmetic error is not a usable diagnostic.
+  run -1 azdo__checkout_clone_directory 'x://'
+  [[ "$output" == *'does not yield a usable directory'* ]]
+}
+
+@test "AZDO_HAS_MULTIPLE_CHECKOUTS is the job setting, read as a checkout boolean (C-E06-115)" {
+  # The agent computes HasMultipleCheckouts once at job preparation; the emitter knows the same
+  # step list statically, so the runtime reads an answer rather than counting anything.
+  unset AZDO_HAS_MULTIPLE_CHECKOUTS
+  [ "$(azdo__checkout_has_multiple)" = false ]
+  AZDO_HAS_MULTIPLE_CHECKOUTS=true
+  [ "$(azdo__checkout_has_multiple)" = true ]
+  AZDO_HAS_MULTIPLE_CHECKOUTS=TRUE
+  [ "$(azdo__checkout_has_multiple)" = true ]
+  # ConvertToBoolean again (C-E06-100): `yes` is not a boolean, so it falls back to false.
+  AZDO_HAS_MULTIPLE_CHECKOUTS=yes
+  [ "$(azdo__checkout_has_multiple)" = false ]
+  AZDO_HAS_MULTIPLE_CHECKOUTS=''
+  [ "$(azdo__checkout_has_multiple)" = false ]
+}
+
+@test "a single checkout lands in s, self or not (C-E06-114)" {
+  prepare_checkout singlelayout
+  local tools
+  tools="$(prepare_checkout_extra tools)"
+
+  # One checkout in the job: `s`, and the repository name is not used at all.
+  run -0 azdo_checkout --mode clone --repo-name 'MyProject/CurrentRepo'
+  [ -f "$checkout_workspace/s/two.txt" ]
+  [ ! -e "$checkout_workspace/s/CurrentRepo" ]
+  [ "$(azdo_var 'Build.SourcesDirectory')" = "$checkout_workspace/s" ]
+  [ "$(azdo_var 'Build.Repository.LocalPath')" = "$checkout_workspace/s" ]
+  # The seeded name is the `name` property the emitter passed, not the folder it reduces to.
+  [ "$(azdo_var 'Build.Repository.Name')" = 'MyProject/CurrentRepo' ]
+
+  # "A single checkout step that isn't self or none: the designated repository is checked out
+  # instead of self" — same `s`, and it does not disturb the self-shaped variables.
+  prepare_checkout singlealias
+  run -0 azdo_checkout --repository tools --source "$tools"
+  [ -f "$checkout_workspace/s/tools.txt" ]
+  [ -z "$(azdo_var 'Build.Repository.Name')" ]
+  [ -z "$(azdo_var 'Build.SourcesDirectory')" ]
+}
+
+@test "multiple checkouts put every repository including self in s/<repoName> (C-E06-114/118)" {
+  prepare_checkout multilayout
+  local tools code
+  tools="$(prepare_checkout_extra tools)"
+  code="$(prepare_checkout_extra code)"
+  export AZDO_HAS_MULTIPLE_CHECKOUTS=true
+
+  # The doc page's own example shape: `self` named CurrentRepo alongside `tools` and `code`, and
+  # the folder comes from the repository *name*, so `MyProject/CurrentRepo` becomes `CurrentRepo`
+  # while the `--repository` alias (`self`, `toolsAlias`) is never a directory.
+  run -0 azdo_checkout --mode clone --repo-name 'MyProject/CurrentRepo'
+  run -0 azdo_checkout --repository toolsAlias --repo-name 'MyProject/tools' --source "$tools"
+  run -0 azdo_checkout --repository codeAlias --repo-name "https://host/x/code.git" --source "$code"
+
+  [ -f "$checkout_workspace/s/CurrentRepo/two.txt" ]
+  [ -f "$checkout_workspace/s/tools/tools.txt" ]
+  [ -f "$checkout_workspace/s/code/code.txt" ]
+  [ ! -e "$checkout_workspace/s/toolsAlias" ]
+  [ ! -e "$checkout_workspace/s/two.txt" ]
+
+  # Three `azdo_checkout` calls share one variable store, and the two non-`self` ones ran last, so
+  # this also pins that a later checkout does not disturb what `self` seeded.
+  [ "$(azdo_var 'Build.SourcesDirectory')" = "$checkout_workspace/s" ]
+  [ "$(azdo_var 'Build.Repository.Name')" = 'MyProject/CurrentRepo' ]
+}
+
+@test "the layout does not depend on which checkout runs first (C-E06-115)" {
+  prepare_checkout multiorder
+  local tools
+  tools="$(prepare_checkout_extra tools)"
+  export AZDO_HAS_MULTIPLE_CHECKOUTS=true
+
+  # The agent resolves HasMultipleCheckouts in job preparation, before any checkout runs, so the
+  # `self`-last ordering has to land exactly where the `self`-first one did. A runtime that derived
+  # the flag by counting the checkouts it had already performed would put this `tools` in `s` and
+  # only then discover the job had two.
+  run -0 azdo_checkout --repository tools --source "$tools"
+  run -0 azdo_checkout --mode clone --repo-name CurrentRepo
+
+  [ -f "$checkout_workspace/s/tools/tools.txt" ]
+  [ -f "$checkout_workspace/s/CurrentRepo/two.txt" ]
+  [ ! -e "$checkout_workspace/s/tools.txt" ]
+  [ "$(azdo_var 'Build.Repository.LocalPath')" = "$checkout_workspace/s" ]
+  [ "$(azdo_var 'Build.SourcesDirectory')" = "$checkout_workspace/s" ]
+}
+
+@test "under multi-checkout Build.Repository.LocalPath stays at s, one level above self (C-E06-117)" {
+  prepare_checkout multivars
+  local tools
+  tools="$(prepare_checkout_extra tools)"
+  export AZDO_HAS_MULTIPLE_CHECKOUTS=true
+
+  run -0 azdo_checkout --mode clone --repo-name CurrentRepo
+  run -0 azdo_checkout --repository tools --source "$tools"
+
+  # This is the assertion that looks wrong and is not: self's files are in `s/CurrentRepo`, and the
+  # agent deliberately leaves both variables at `s` for backward compatibility (PR #3237). Seeding
+  # either of them from the resolved checkout target would produce `s/CurrentRepo` and pass every
+  # other test in this file.
+  [ -f "$checkout_workspace/s/CurrentRepo/two.txt" ]
+  [ "$(azdo_var 'Build.Repository.LocalPath')" = "$checkout_workspace/s" ]
+  [ "$(azdo_var 'Build.SourcesDirectory')" = "$checkout_workspace/s" ]
+}
+
+@test "path is rooted at Pipeline.Workspace and overrides both layout defaults (C-E06-114)" {
+  prepare_checkout pathroot
+  export AZDO_HAS_MULTIPLE_CHECKOUTS=true
+
+  # Relative to `$(Agent.BuildDirectory)` = `$(Pipeline.Workspace)`, **not** to `s` — so `tools`
+  # means `<workspace>/tools` and not `<workspace>/s/tools`, under multi-checkout as under single.
+  run -0 azdo_checkout --mode clone --repo-name CurrentRepo --path tools
+  [ -f "$checkout_workspace/tools/two.txt" ]
+  [ ! -e "$checkout_workspace/s/tools" ]
+  [ ! -e "$checkout_workspace/s/CurrentRepo" ]
+}
+
+@test "a path under multi-checkout moves Build.Repository.LocalPath but never Build.SourcesDirectory (C-E06-116/117)" {
+  prepare_checkout multipath
+  export AZDO_HAS_MULTIPLE_CHECKOUTS=true
+
+  run -0 azdo_checkout --mode clone --repo-name CurrentRepo --path custom
+  [ -f "$checkout_workspace/custom/two.txt" ]
+  # `UpdateDirectory` rewrites the tracking config's SourcesDirectory only when the job tracks
+  # exactly one repository, so `s` survives a `path` here — and `s` must exist even though no
+  # checkout ever targeted it.
+  [ -d "$checkout_workspace/s" ]
+  [ "$(azdo_var 'Build.SourcesDirectory')" = "$checkout_workspace/s" ]
+  # A custom path *is* the one case that moves LocalPath off `s`.
+  [ "$(azdo_var 'Build.Repository.LocalPath')" = "$checkout_workspace/custom" ]
+
+  # The same `path` in a single-checkout job moves both, because then the count is one.
+  prepare_checkout singlepath
+  unset AZDO_HAS_MULTIPLE_CHECKOUTS
+  run -0 azdo_checkout --mode clone --repo-name CurrentRepo --path custom
+  [ "$(azdo_var 'Build.SourcesDirectory')" = "$checkout_workspace/custom" ]
+  [ "$(azdo_var 'Build.Repository.LocalPath')" = "$checkout_workspace/custom" ]
+}
+
+@test "writing path: s/<repoName> under multi-checkout is the default, not a custom path (C-E06-117)" {
+  prepare_checkout defaultpath
+  export AZDO_HAS_MULTIPLE_CHECKOUTS=true
+
+  # `IsCheckoutToCustomPath` compares the resolved `path` against the resolved default rather than
+  # testing whether the input was present, so spelling the default out changes nothing. This is
+  # exactly the self+path+second-repo combination the task's Ground field flagged as ambiguous.
+  run -0 azdo_checkout --mode clone --repo-name CurrentRepo --path 's/CurrentRepo'
+  [ -f "$checkout_workspace/s/CurrentRepo/two.txt" ]
+  [ "$(azdo_var 'Build.Repository.LocalPath')" = "$checkout_workspace/s" ]
+  [ "$(azdo_var 'Build.SourcesDirectory')" = "$checkout_workspace/s" ]
+
+  # And a path that only *normalizes* to the default is still the default, because the comparison
+  # is `Path.GetFullPath` on both sides.
+  prepare_checkout defaultpathdotted
+  run -0 azdo_checkout --mode clone --repo-name CurrentRepo --path './s/./CurrentRepo'
+  [ "$(azdo_var 'Build.Repository.LocalPath')" = "$checkout_workspace/s" ]
+}
+
+@test "a non-self checkout needs its own source and seeds no Build.* variables (C-E06-121)" {
+  prepare_checkout nonself
+  local tools
+  tools="$(prepare_checkout_extra tools)"
+  export AZDO_HAS_MULTIPLE_CHECKOUTS=true
+
+  # AZDO_SELF_REPO is set by the fixture; falling back to it for an alias would produce a green run
+  # with the self repository's files under someone else's name.
+  run -1 azdo_checkout --repository tools
+  [[ "$output" == *'needs --source'* ]]
+
+  # A Build.SourceVersion belonging to `self` must not select the commit of a foreign repository.
+  azdo_var_set 'Build.SourceVersion' "$(git -C "$checkout_source" rev-parse HEAD)"
+  run -0 azdo_checkout --repository tools --source "$tools"
+  [ -f "$checkout_workspace/s/tools/tools.txt" ]
+  [ -z "$(azdo_var 'Build.Repository.Name')" ]
+  [ -z "$(azdo_var 'Build.SourcesDirectory')" ]
+  [ -z "$(azdo_var 'Build.Repository.LocalPath')" ]
+  [ "$(azdo_var 'Build.SourceVersion')" = "$(git -C "$checkout_source" rev-parse HEAD)" ]
+
+  # `self` is matched the way IsPrimaryRepositoryName matches it.
+  prepare_checkout selfcased
+  run -0 azdo_checkout --repository SELF --repo-name CurrentRepo
+  [ "$(azdo_var 'Build.Repository.LocalPath')" = "$checkout_workspace/s" ]
+  [ -f "$checkout_workspace/s/CurrentRepo/two.txt" ]
+
+  run -2 azdo_checkout --repository ''
+}
+
+@test "workspaceRepo is reported and left to the emitter, like the other layout deltas (C-E06-120)" {
+  prepare_checkout workspacerepo
+
+  # The agent picks the workspaceRepo winner by scanning the whole job's step list before any
+  # checkout runs, so a single step cannot honor it; `false` is not worth a note.
+  run -0 azdo_checkout --mode copy --workspace-repo false
+  [[ "$output" != *workspaceRepo* ]]
+
+  run -0 azdo_checkout --mode copy --workspace-repo true
+  [[ "$output" == *'workspaceRepo is not emulated here'* ]]
+  [[ "$output" == *'(degraded)'* ]]
+}
+
+# E06-S06-T01 — secret masking.
+
+# Registers values into a private state directory and masks one line through them, so each row of
+# the agent's own SecretMaskerL0 table starts from an empty masker.
+mask_row() {
+  local line="$1" masked
+  shift
+  AZDO_STATE_DIR="$(azdo_emu_scratch_dir "mask-$BATS_SUITE_TEST_NUMBER-$RANDOM")"
+  export AZDO_STATE_DIR
+  AZDO__MASK_CACHE_STATE_DIR=''
+  local value
+  for value in "$@"; do
+    azdo_mask_register "$value"
+  done
+  azdo__mask_line "$line" masked
+  printf '%s\n' "$masked"
+}
+
+@test "masking merges overlapping and adjacent matches into one *** (C-E06-126)" {
+  # microsoft/azure-pipelines-agent src/Test/L0/SecretMaskerTests/SecretMaskerL0.cs L358-L470,
+  # ported row for row.
+  [ "$(mask_row 'abcdefg' def)" = 'abc***g' ]
+  [ "$(mask_row 'abcdefgdef' def)" = 'abc***g***' ]
+  [ "$(mask_row 'abcabcdef' abc)" = '***def' ]
+  [ "$(mask_row 'abcdefghi' bcd fgh)" = 'a***e***i' ]
+  # A naive per-value replacement would print `abc***g` or `a***efg` here.
+  [ "$(mask_row 'abcdefg' def bcd)" = 'a***g' ]
+  # Two adjacent secrets are basically one big secret: `a******h` would be wrong.
+  [ "$(mask_row 'abcdefgh' efg bcd)" = 'a***h' ]
+  [ "$(mask_row 'abcdefgh123' bc defg h12)" = 'a***3' ]
+  [ "$(mask_row '' abcd)" = '' ]
+  [ "$(mask_row 'abcdefg')" = 'abcdefg' ]
+
+  # Registration order does not decide the outcome, and a value that is not present changes nothing.
+  [ "$(mask_row 'abcdefg' bcd def)" = 'a***g' ]
+  [ "$(mask_row 'abcdefg' xyz)" = 'abcdefg' ]
+}
+
+@test "registered values shorter than the effective minimum are ignored (C-E06-127/128)" {
+  local masked
+
+  AZP_IGNORE_SECRETS_SHORTER_THAN=3 azdo_mask_register efg
+  AZP_IGNORE_SECRETS_SHORTER_THAN=3 azdo_mask_register bcd
+  azdo__mask_line 'abcdefgh' masked
+  [ "$masked" = 'a***h' ]
+
+  AZDO_STATE_DIR="$(azdo_emu_scratch_dir mask-min-high)"
+  AZDO__MASK_CACHE_STATE_DIR=''
+  AZP_IGNORE_SECRETS_SHORTER_THAN=4 azdo_mask_register efg
+  azdo__mask_line 'abcdefgh' masked
+  [ "$masked" = 'abcdefgh' ]
+
+  # A negative minimum registers everything; the built-in default is 0.
+  AZP_IGNORE_SECRETS_SHORTER_THAN=-3 azdo_mask_register bcd
+  azdo__mask_line 'abcdefgh' masked
+  [ "$masked" = 'a***efgh' ]
+
+  # The request is capped at 6 and warned about once, so a six-character value is always masked.
+  AZDO_STATE_DIR="$(azdo_emu_scratch_dir mask-min-capped)"
+  AZDO__MASK_CACHE_STATE_DIR=''
+  run -0 env AZP_IGNORE_SECRETS_SHORTER_THAN=99 bash -c \
+    'source "$1"; azdo_mask_register sixchr; azdo_mask_register five5; azdo__mask_line "a-sixchr-five5" masked; printf "%s\n" "$masked"' \
+    _ "$(azdo_emu_runtime_dir)/lib/core.sh"
+  [ "$output" = \
+    $'##[warning]The value of the minimum length of the secrets is too high. Maximum value is set: 6\na-***-five5' ]
+
+  # Int32.Parse, not TryParse: a non-numeric knob refuses to register instead of masking nothing.
+  AZP_IGNORE_SECRETS_SHORTER_THAN=lots
+  run -2 azdo_mask_register wide-open-secret
+  [[ "$output" == *'must be an integer'* ]]
+  unset AZP_IGNORE_SECRETS_SHORTER_THAN
+}
+
+@test "the variable store registers every secret value it writes (C-E06-123)" {
+  local masked
+
+  azdo_var_set env-secret 'store-registered-value' true
+  azdo__mask_line 'saw store-registered-value here' masked
+  [ "$masked" = 'saw *** here' ]
+
+  # A later non-secret write onto a secret variable keeps the flag and registers the replacement,
+  # which is the case a handler-side registration keyed on the passed flag would miss.
+  azdo_var_set env-secret 'replacement-value' false
+  azdo__mask_line 'saw replacement-value here' masked
+  [ "$masked" = 'saw *** here' ]
+
+  # The store's guard is IsNullOrEmpty, so a whitespace-only secret is registered here.
+  azdo_var_set blank-secret '     ' true
+  azdo__mask_line 'gap[     ]' masked
+  [ "$masked" = 'gap[***]' ]
+
+  # A public variable is not registered, whatever its value looks like.
+  azdo_var_set public-value 'plainly-visible' false
+  azdo__mask_line 'saw plainly-visible here' masked
+  [ "$masked" = 'saw plainly-visible here' ]
+}
+
+@test ".env secrets are registered in the six job-variable forms (C-E06-124/125)" {
+  local env_file="$BATS_TEST_TMPDIR/secrets.env" masked encoded
+  cat >"$env_file" <<'ENV'
+QUOTED='"wrapped-secret-value"'
+PERCENT='has%percent'
+SPACED='  padded-secret-value  '
+PLAIN=not-a-secret-value
+ENV
+  AZDO_MANIFEST_ENV=('QUOTED=true' 'PERCENT=true' 'SPACED=true' 'PLAIN=false')
+  azdo_env_load "$env_file"
+
+  # The raw value, and the same value with the surrounding quote characters stripped: a shell that
+  # ate the quotes must not be able to print the inside.
+  azdo__mask_line 'value="wrapped-secret-value" end' masked
+  [ "$masked" = 'value=*** end' ]
+  azdo__mask_line 'value=wrapped-secret-value end' masked
+  [ "$masked" = 'value=*** end' ]
+
+  # The debug-rendering escape of `%`, and the base64 the agent registers alongside it.
+  azdo__mask_line 'value=has%AZP25percent end' masked
+  [ "$masked" = 'value=*** end' ]
+  encoded="$(printf '%s' 'has%percent' | base64)"
+  azdo__mask_line "value=$encoded end" masked
+  [ "$masked" = 'value=*** end' ]
+
+  # The CR/LF/space-trimmed copy, for the leak through an external tool that strips padding.
+  azdo__mask_line 'value=[padded-secret-value] end' masked
+  [ "$masked" = 'value=[***] end' ]
+
+  azdo__mask_line 'value=not-a-secret-value end' masked
+  [ "$masked" = 'value=not-a-secret-value end' ]
+}
+
+@test "a whitespace-only .env secret gets no variant registrations (C-E06-124)" {
+  local env_file="$BATS_TEST_TMPDIR/blank.env" masked encoded
+  cat >"$env_file" <<'ENV'
+BLANK='   '
+ENV
+  AZDO_MANIFEST_ENV=('BLANK=true')
+  azdo_env_load "$env_file"
+
+  # IsNullOrWhiteSpace stops the job-variable pass, so the store's raw registration is all there is.
+  azdo__mask_line 'gap[   ]' masked
+  [ "$masked" = 'gap[***]' ]
+  encoded="$(printf '%s' '   ' | base64)"
+  azdo__mask_line "value=$encoded end" masked
+  [ "$masked" = "value=$encoded end" ]
+  # The CR/LF/space-trimmed form of a blank value is empty, and an empty value is never registered.
+  azdo__mask_line 'untouched' masked
+  [ "$masked" = 'untouched' ]
+}
+
+@test "a multiline secret is masked escaped but not line by line (C-E06-131)" {
+  local env_file="$BATS_TEST_TMPDIR/multiline.env" masked
+  cat >"$env_file" <<'ENV'
+MULTILINE='first-secret-line
+second-secret-line'
+ENV
+  AZDO_MANIFEST_ENV=('MULTILINE=true')
+  azdo_env_load "$env_file"
+
+  # Agent parity: masking is per output line and no per-line fragment is ever registered, so each
+  # half of the secret survives on its own. Reading only the first line of the registered value —
+  # which the pre-T01 masker did — would mask this and contradict "we never mask substrings".
+  azdo__mask_line 'first-secret-line' masked
+  [ "$masked" = 'first-secret-line' ]
+  azdo__mask_line 'second-secret-line' masked
+  [ "$masked" = 'second-secret-line' ]
+
+  # The escaped single-line rendering is registered, and it is masked.
+  azdo__mask_line 'value=first-secret-line%0Asecond-secret-line end' masked
+  [ "$masked" = 'value=*** end' ]
+
+  # The whole value on one line still matches.
+  azdo__mask_line "$(printf 'x%sy' $'first-secret-line\nsecond-secret-line')" masked
+  [ "$masked" = 'x***y' ]
+}
+
+@test "step stdout, stderr and the log file are all masked (C-E06-122)" {
+  local source_file="$BATS_TEST_TMPDIR/leaky-step.sh" marker='env-supplied-secret-value'
+  prepare_run_step
+  azdo_var_set leaky "$marker" true
+  printf '%s\n' \
+    "printf 'OUT=%s\\n' '$marker'" \
+    "printf 'ERR=%s\\n' '$marker' >&2" >"$source_file"
+
+  run -0 run_test_step masked-stdio "$source_file" 10
+
+  [ "$output" = $'OUT=***\nERR=***' ]
+  ! grep -F "$marker" "$AZDO_LOG_DIR/masked-stdio.log"
+
+  # failOnStderr routes stderr through a second tee before it reaches the masker.
+  run -0 run_result_step masked-stderr-branch "$source_file" true true 0 10
+  [ "$output" = \
+    $'OUT=***\nERR=***\n##[error]Bash wrote one or more lines to the standard error stream.' ]
+  ! grep -F "$marker" "$AZDO_LOG_DIR/masked-stderr-branch.log"
 }

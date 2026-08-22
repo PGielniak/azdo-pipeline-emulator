@@ -6,6 +6,14 @@ Primary grounding set: learn.microsoft.com/azure/devops/pipelines/process/templa
 ## E03-S01 — As a pipeline developer, `${{ if/elseif/else }}`, `${{ each }}` and `${{ insert }}` expand exactly like the service, so template-heavy pipelines convert byte-equivalently.
 Acceptance: directive semantics proven by oracle fixture pairs, not by reading alone.
 
+> **Bookkeeping drift (noted 2026-08-21 by E06-S04-T04, not repaired here).** The checkboxes below
+> understate this epic. `CHANGELOG-BACKLOG.md` records E03-S01-T02, T03, T04, T05 and E03-S02-T01 as
+> done, and `packages/engine/src/template/` holds `conditionals.ts`, `each.ts`, `insert.ts`,
+> `interpolate.ts`, `reference.ts` and `walk.ts` with their suites green on `main` — but only T01 and
+> E03-S05-T01 were ever ticked. `main` and this branch agree on the file, so this is the E03 worker's
+> outstanding bookkeeping, not a merge casualty. A cold session told to "take the next unchecked task"
+> will otherwise pick E03-S01-T03, which is finished. Flip these when the E03 lane next runs.
+
 - [x] **E03-S01-T01 — DOM walker with context stack**
   **Do:** `packages/engine/src/template/walk.ts`: depth-first mapping/sequence walk, per-file context frames (parameters, file variables), directive-key detection.
   **Ground:** templates doc structure sections; agent object-templating walker (pin permalink to its evaluation loop) as design reference.
@@ -61,6 +69,7 @@ Acceptance: reference forms, parameter typing, and `extends` restrictions all en
   **Do:** all documented types (`string number boolean object step stepList job jobList deployment deploymentList stage stageList`), `values:` restriction, `default`, required-missing error, extra-parameter error; runtime parameters at root bound from CLI/config.
   **Ground:** template-parameters + runtime-parameters docs (quote type list and coercion notes); oracle probes for: passing number to string, boolean literals accepted (`true`/`True`?), object deep shape — transcripts + claims.
   **Done:** binding test matrix per type × (default/provided/missing/wrong-type); errors snapshot-compared to service phrasing collected via oracle.
+  *Status note (2026-08-21, recorded by E06-S04-T04): an unfinished 755-line `packages/engine/src/template/parameters.ts` from the 2026-08-20 in-progress session survives on branch `claude/e06-s04-t03`, swept in by the crash-recovery commit `f76a47b` ("auto-save checkpoint"). It is **not on `main`**, is imported by nothing, and has no tests, so it counts as ~247 wholly uncovered statements and is the sole reason `pnpm test:unit` fails its coverage thresholds on that branch (1,439/1,439 tests pass; `main` measures 93.4% statements against the same numerator). Left in place rather than deleted — finishing or discarding it is this task's call; it is recoverable from `f76a47b` either way. Thresholds were **not** lowered.*
 - [ ] **E03-S02-T03 — `extends` semantics**
   **Do:** expansion of the target with root restrictions enforced (which root keys are legal beside `extends`); nested `extends` behavior.
   **Ground:** templates doc "Extend from a template" (+ security section); oracle probes: illegal root key beside extends → capture error; nested extends → capture result. Claims per rule.

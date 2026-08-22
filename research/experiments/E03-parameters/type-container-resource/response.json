@@ -1,0 +1,3 @@
+{
+  "finalYaml": "parameters:\n- name: p\n  type: container\n  default:\n    container: c1\n    image: alpine\nstages:\n- stage: __default\n  jobs:\n  - job: Job\n    steps:\n    - task: CmdLine@2\n      env:\n        OUT: >-\n          {\n            \"container\": \"c1\",\n            \"image\": \"alpine\"\n          }\n      inputs:\n        script: echo probe\n\n"
+}

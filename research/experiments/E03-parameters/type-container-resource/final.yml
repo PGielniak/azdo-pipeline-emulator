@@ -1,0 +1,21 @@
+parameters:
+- name: p
+  type: container
+  default:
+    container: c1
+    image: alpine
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      env:
+        OUT: >-
+          {
+            "container": "c1",
+            "image": "alpine"
+          }
+      inputs:
+        script: echo probe
+
