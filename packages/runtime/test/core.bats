@@ -2063,6 +2063,9 @@ prepare_checkout() {
   # refused, because `clean` and `copy` both delete inside the target.
   run ! azdo_checkout --mode clone --path ../escape
   [[ "$output" == *'escapes Pipeline.Workspace'* ]]
+  # Refused *before* anything is created: `mkdir -p` first would leave an empty directory outside
+  # the workspace on its way to saying no.
+  [ ! -e "$BATS_TEST_TMPDIR/guard/escape" ]
   run ! azdo_checkout --mode copy --path "$BATS_TEST_TMPDIR/guard/src"
   [[ "$output" == *'escapes Pipeline.Workspace'* ]]
   [ -f "$checkout_source/one.txt" ]
