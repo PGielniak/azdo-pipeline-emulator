@@ -56,6 +56,7 @@ Anonymous fallback for public repos (tarball download without auth).
   artifacts/<pipelineAlias>/<runId>/<artifactName>/...
   tasks/<TaskName>@<version>/task.json (+ zip in P6)
   schema/yamlschema-<org>.json
+  expansion/<requestHash>/final.yml (+ provenance.json)       # preview expansion, E00-S04
 ```
 
 **`schema/yamlschema-<org>.json` cache policy** (measured in E01-S02-T03, `research/experiments/E01-orgschema/`):
@@ -91,7 +92,11 @@ wider than the `vso.build` the oracle needs (C-E01-036).
       "artifacts": ["drop"]
     }
   },
-  "tasks": { "replacetokens@5": { "id": "guid", "version": "5.6.1" } }
+  "tasks": { "replacetokens@5": { "id": "guid", "version": "5.6.1" } },
+  "expansion": {
+    "requestHash": "2a138e6a…", "finalYamlHash": "sha256 of finalYaml",
+    "apiVersion": "7.1", "pipelineId": 19, "storedAt": "2026-08-22T12:00:00Z"
+  }
 }
 ```
 
@@ -102,6 +107,13 @@ the YAML resource declares `project:` — the service omits the variable otherwi
 observable in the emitted environment (C-E02-122). Lockfile keys use the repo's camelCase
 (`pipelineId`, `runUri`); `pipelineResourceVariables()` in `packages/engine/src/expr/resources.ts`
 maps them to the service's own spelling (`pipelineID`, `runURI`).
+
+**Expansion cache (E00-S04-T02, added 2026-08-22).** The `preview` expansion is cached under
+`.cache/expansion/<requestHash>/` keyed by the sha256 of the `yamlOverride`; `final.yml` holds the
+**raw** expansion (functional — D8 guarantees the document carries no secret *values*, and `.cache/`
+is gitignored), and `provenance.json` holds the lock entry. `--frozen` resolves the expansion from
+cache and raises `ExpansionCacheMissError` on a miss, so a `--frozen` re-convert is byte-identical
+and fully offline.
 
 - `convert --frozen`: fully offline, errors if anything required is missing from cache — reproducible regeneration.
 - `convert --update [alias|artifact|all]`: re-resolve pins.

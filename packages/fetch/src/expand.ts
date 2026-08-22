@@ -15,7 +15,7 @@ import { createHash } from 'node:crypto';
 import { preview, type OracleConfig } from './oracle.js';
 
 /** Narrow fetch shape, matching `preview()`'s own injectable-fetch contract (oracle.ts). */
-type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
+export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
 /** What `convert` supplies: the local pipeline and (optionally) its runtime parameters. */
 export interface ExpansionRequest {
