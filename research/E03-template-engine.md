@@ -15,7 +15,7 @@ time the IDs were load-bearing in code comments and test names) is the reason th
 | `C-E03-140..159` | E03-S01-T03 iterative insertion (`each`) | this file | free |
 | `C-E03-160..174` | E03-S01-T04 `${{ insert }}` merge | this file | free |
 | `C-E03-175..194` | E03-S01-T05 scalar interpolation | this file | free |
-| `C-E03-195..229` | E03-S02 template resolution & parameters | this file | free |
+| `C-E03-195..229` | E03-S02 template resolution & parameters | this file | **204 used** (E03-S02-T05); the rest is E03-S02-T01's to record — it cites 195..215 in `reference.ts` and its test, and those entries are still unwritten |
 | `C-E03-230..249` | E03-S03 compile-time variable visibility | this file | free |
 | `C-E03-250..279` | E03-S04 limits, emitter, strict validation | this file | free |
 | `C-E03-280..299` | E03-S05-T02 `preview-diff` | this file | free |
@@ -272,3 +272,34 @@ page does not define malformed/orphan-chain behavior; that remains an oracle que
     values are `bar`, `qux`, and `default`.
   — https://github.com/MicrosoftDocs/azure-devops-docs/blob/7ba9a9ac7d28a7edbbddf0d9bfd480bce665b55b/docs/pipelines/process/template-expressions.md#L263-L282
     (source pin checked 2026-08-18)
+
+
+---
+
+## E03-S02-T05 — path lookup is case-sensitive (`C-E03-204`)
+
+Evidence: `research/experiments/E03-references/case-mismatch/` — one live preview probe, captured by
+E03-S02-T01's reference survey and replayed by `packages/engine/test/template/reference.test.ts`.
+**No new probe was run for this task**: the service's answer was already on file and is decisive.
+
+Bookkeeping note: `C-E03-204` is cited in `packages/engine/src/template/reference.ts` since
+E03-S02-T01, but that task's claim block (`C-E03-195..229`) was never written into this file — the
+code is ahead of its evidence record. This entry writes **only** the claim this task implements
+against; the remaining IDs stay E03-S02-T01's to record, and the table above now says so instead of
+reading `free` while the numbers are in use.
+
+[C-E03-204] **A template path is matched against the repository tree case-sensitively: a reference
+whose spelling differs only in case is rejected, not resolved.** The probe references
+`/E03-REFS/LEAF.YML` in a repository whose tree spells the file `/e03-refs/leaf.yml`. The service
+answers HTTP 400 `PipelineValidationException` and names the path it looked for in the uppercase
+spelling — i.e. it neither folded the case nor fell back to the file that exists. Git trees are
+case-sensitive and the service reads the tree, so this is the behavior a local resolver has to
+reproduce **regardless of the host filesystem's own comparison rules**.
+  — `research/experiments/E03-references/case-mismatch/probe.yml` + `response.json`
+    (live probe, checked 2026-08-22) — request `- template: /E03-REFS/LEAF.YML`; response
+    `"/azure-pipelines.yml: File /E03-REFS/LEAF.YML not found in repository … branch refs/heads/main
+    version da8a304…"`, `typeKey: PipelineValidationException`.
+  — Consequence recorded here because it is what the implementation turns on: reading the path with
+    `readFileSync` delegates the comparison to the **host**, so a case-insensitive filesystem
+    (macOS APFS, Windows) resolves what the service rejects. `localFetcher` therefore walks the
+    path one segment at a time and requires a byte-identical `readdirSync` entry (E03-S02-T05).
