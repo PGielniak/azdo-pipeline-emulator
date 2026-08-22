@@ -12,6 +12,10 @@ How individual tasks become script code. Source of truth for behavior: `microsof
 > reference** — which tasks matter first, what their local equivalents are, and where the ambient-auth
 > model applies. §1 and §3's "Strategy" column are archived as *transpilation* plans; nothing reads
 > them as an emitter spec any more.
+>
+> **Phase labels here (`P2`, `P4`, `P5`, …) are the archived P0–P6 roadmap** (docs/06 §4), kept by
+> number because committed changelog entries cite them; the live plan is PLAN §7's three phases
+> (E12-S03-T01, 2026-08-22).
 
 ## 1. Handler architecture (converter-side) — **archived (E12-S02-T03)**
 
