@@ -33,7 +33,7 @@
  * rather than a ref to be re-resolved per reference — and why `read` can be synchronous, since by
  * the time expansion runs, every repository is already fetched and pinned in the lockfile.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import type { Diagnostic } from '../frontend/diagnostics.js';
 import type { SourceRange } from '../frontend/parse.js';
@@ -353,13 +353,45 @@ export interface LocalRepositorySpec {
 }
 
 /**
+ * Resolve `repositoryPath` (repository-absolute, already normalized) under `root`, requiring each
+ * segment to match a directory entry **byte for byte** — the case-sensitivity of the repository's
+ * own tree rather than of the host filesystem (C-E03-204).
+ *
+ * Only segments *inside* the repository are checked: `root` is wherever the user happens to have
+ * checked the repository out, and its spelling is not part of the pipeline.
+ *
+ * Returns the absolute path to read, or `undefined` when any segment is absent — including present
+ * under a different spelling, which is the whole point.
+ */
+function resolveExact(root: string, repositoryPath: string): string | undefined {
+  let current = root;
+  for (const segment of repositoryPath.split('/')) {
+    if (segment === '') continue; // leading '/' of a repository-absolute path
+    let entries: readonly string[];
+    try {
+      entries = readdirSync(current);
+    } catch {
+      return undefined; // not a directory, or unreadable
+    }
+    if (!entries.includes(segment)) return undefined;
+    current = path.join(current, segment);
+  }
+  return current;
+}
+
+/**
  * A fetcher over local directories, one per alias.
  *
- * Case folding is applied to the **alias** only (C-E03-213). File lookup deliberately does *not*
- * fold: the service is case-sensitive about paths (C-E03-204), and on a case-insensitive host
- * filesystem this implementation will be more permissive than the service. That is a host
- * limitation rather than a modelled behavior, and it is one-directional — it accepts pipelines the
- * service would reject, never the reverse.
+ * Case folding is applied to the **alias** only (C-E03-213). File lookup does *not* fold: the
+ * service is case-sensitive about paths (C-E03-204).
+ *
+ * **Corrected 2026-08-22 (E03-S02-T05).** This used to hand the path straight to `readFileSync`
+ * and record the resulting host-dependence as an accepted limitation. It is not acceptable: on a
+ * case-insensitive filesystem (macOS APFS, Windows) `readFileSync` answers for a path the service
+ * rejects, so the *same pipeline* resolved on macOS and on Linux — and the oracle replay for the
+ * `case-mismatch` probe failed on macOS only, which is how it was found. `resolveExact` below
+ * therefore walks the path a segment at a time and requires a byte-identical directory entry, so
+ * the answer comes from the tree's own spelling rather than from the host's comparison rules.
  */
 export function localFetcher(repositories: readonly LocalRepositorySpec[]): TemplateFetcher {
   const byAlias = new Map<string, RepositoryResource>();
@@ -381,8 +413,9 @@ export function localFetcher(repositories: readonly LocalRepositorySpec[]): Temp
       const root = rootByAlias.get(location.repository.alias.toLowerCase());
       if (root === undefined) return undefined;
       // `location.path` is normalized and proven to stay inside the repository by
-      // `normalizeRepositoryPath`, so this join cannot escape `root`.
-      const file = path.join(root, location.path);
+      // `normalizeRepositoryPath`, so this walk cannot escape `root`.
+      const file = resolveExact(root, location.path);
+      if (file === undefined) return undefined;
       try {
         return readFileSync(file, 'utf8');
       } catch {

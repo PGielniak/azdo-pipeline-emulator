@@ -305,6 +305,56 @@ describe('oracle replay — every reference probe', () => {
 // The rules the replay proves, restated as direct assertions
 // ---------------------------------------------------------------------------------------------
 
+describe('path lookup is case-sensitive, from the tree and not from the host (C-E03-204, E03-S02-T05)', () => {
+  // The `case-mismatch` probe (`/E03-REFS/LEAF.YML` against a tree spelling it `/e03-refs/leaf.yml`)
+  // is rejected by the service, HTTP 400. The resolver used to pass the joined path to
+  // `readFileSync` and let the host answer, so the probe replayed correctly on Linux and *wrongly*
+  // on macOS, where APFS is case-insensitive — the same pipeline, two answers, and CI red on
+  // macOS only.
+  //
+  // Honest limit of these assertions: on a case-sensitive filesystem they also hold for the old
+  // implementation, because there the host agrees with the tree. macOS CI is what actually gates
+  // the fix; what these add locally is the *positive* half — that requiring an exact directory
+  // entry does not start rejecting paths that are simply spelled correctly.
+  const fetcher = localFetcher([SELF]);
+  const self = fetcher.repository('self');
+  if (self === undefined) throw new Error('fixtures not mounted');
+  const read = (path: string): string | undefined => fetcher.read({ repository: self, path });
+
+  it('reads a file whose spelling matches the tree', () => {
+    expect(read('/e03-refs/leaf.yml')).toContain('echo');
+  });
+
+  it('reads a nested file, every segment matching', () => {
+    expect(read('/e03-refs/dir/self-rel.yml')).toContain('template');
+  });
+
+  it('does not fold an unusual character in an exactly-matching name (C-E03-210)', () => {
+    // `we@ird.yml` is unreachable *through a reference* because the alias splits on the first `@`;
+    // the file itself is ordinary, and the segment walk must still find it byte for byte.
+    expect(read('/e03-refs/we@ird.yml')).toBeDefined();
+  });
+
+  it('misses a file segment spelled in another case — the probe the service rejected', () => {
+    expect(read('/E03-REFS/LEAF.YML')).toBeUndefined();
+    expect(read('/e03-refs/LEAF.yml')).toBeUndefined();
+  });
+
+  it('misses a directory segment spelled in another case', () => {
+    expect(read('/E03-REFS/leaf.yml')).toBeUndefined();
+    expect(read('/e03-refs/DIR/self-rel.yml')).toBeUndefined();
+  });
+
+  it('misses when a middle segment is a file rather than a directory', () => {
+    // `readdirSync` throws ENOTDIR here; the walk answers "absent" instead of propagating.
+    expect(read('/e03-refs/leaf.yml/nested.yml')).toBeUndefined();
+  });
+
+  it('misses a name that differs only by a trailing space (C-E03-205 does not trim)', () => {
+    expect(read('/e03-refs/leaf.yml ')).toBeUndefined();
+  });
+});
+
 describe('the repository-switch rule (C-E03-215)', () => {
   const fetcher = localFetcher([SELF, TEMPLATES]);
   const self = fetcher.repository('self');
