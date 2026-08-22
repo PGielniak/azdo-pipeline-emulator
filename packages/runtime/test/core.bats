@@ -1913,6 +1913,7 @@ prepare_checkout() {
   # docs/06 §5 decision 40: honoring `clean: true` here would `git clean -ffdx` away the very
   # uncommitted changes the mode exists to run. Reported, and the files survive.
   run -0 azdo_checkout --mode copy --clean true
+  [[ "$output" == *'ignores clean: true'* ]]
   [[ "$output" == *degraded* ]]
   [ "$(cat "$target/scratch.txt")" = uncommitted ]
   # The fetch-shaped options are equally meaningless here and say so instead of pretending.
@@ -1943,6 +1944,16 @@ prepare_checkout() {
   [ ! -e "$target/untracked.txt" ]
   # The source repository is left with exactly one registered worktree besides itself.
   [ "$(git -C "$checkout_source" worktree list | wc -l)" = 2 ]
+
+  # `--detach` earns its place only when the committish is a *branch name*, which `.env` can make
+  # it: docs/04 §8 says Build.SourceVersion is overridable to simulate another revision, and
+  # `worktree add <path> main` without it refuses a branch already checked out in the source.
+  prepare_checkout worktreebranch
+  azdo_var_set 'Build.SourceVersion' 'main'
+  run -0 azdo_checkout --mode worktree
+  target="$checkout_workspace/s"
+  [ -f "$target/two.txt" ]
+  run ! git -C "$target" symbolic-ref -q HEAD
 }
 
 @test "lfs: true without git-lfs warns and continues, and lfs off sets GIT_LFS_SKIP_SMUDGE (C-E06-104)" {
@@ -2018,6 +2029,28 @@ prepare_checkout() {
   [ "$(azdo_var 'Build.SourceVersion')" = "$first" ]
   [ "$(azdo_var 'Build.SourceBranch')" = 'refs/pull/7/merge' ]
   [ "$(azdo_var 'Build.SourceBranchName')" = merge ]
+
+  # Those two survive trivially — the checkout would write back the same bytes it just read. The
+  # values that actually prove "seed, never overwrite" are the *derived* and repo-shaped ones,
+  # which a checkout that seeded unconditionally would replace with what it found on disk.
+  prepare_checkout overrideall
+  azdo_var_set 'Build.SourceBranchName' 'pretty-name'
+  azdo_var_set 'Build.Repository.Name' 'MyRepo'
+  azdo_var_set 'Build.Repository.Uri' 'https://dev.azure.com/contoso/_git/MyRepo'
+  azdo_var_set 'Build.Repository.Provider' 'TfsGit'
+  azdo_var_set 'Build.Repository.Clean' 'true'
+  azdo_var_set 'Build.SourcesDirectory' '/somewhere/else'
+  azdo_var_set 'Build.SourceVersionMessage' 'a message from .env'
+  run -0 azdo_checkout --mode clone
+  [ "$(azdo_var 'Build.SourceBranchName')" = pretty-name ]
+  [ "$(azdo_var 'Build.Repository.Name')" = MyRepo ]
+  [ "$(azdo_var 'Build.Repository.Uri')" = 'https://dev.azure.com/contoso/_git/MyRepo' ]
+  [ "$(azdo_var 'Build.Repository.Provider')" = TfsGit ]
+  [ "$(azdo_var 'Build.Repository.Clean')" = true ]
+  [ "$(azdo_var 'Build.SourcesDirectory')" = /somewhere/else ]
+  [ "$(azdo_var 'Build.SourceVersionMessage')" = 'a message from .env' ]
+  # Seeding is skipped, not the checkout: the files still land.
+  [ -f "$checkout_workspace/s/two.txt" ]
 }
 
 @test "checkout: none is a skip and a path outside Pipeline.Workspace is refused (C-E06-105)" {
