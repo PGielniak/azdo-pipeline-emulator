@@ -32,7 +32,7 @@ Tiers per PLAN.md §6 (`exact / equivalent / degraded / stub / unsupported`). Ph
 | `name` (run-number format) | equivalent | P2 | Evaluated at run start; `$(Rev:.r)` / `$(Date:…)` / counters from local state file → `Build.BuildNumber` |
 | `appendCommitMessageToRunName`, `lockBehavior` | parsed, ignored | P0 | Manifest note |
 | `pool` (name / vmImage / demands) | metadata | P2 | Drives `--target-os` inference + `doctor` expectations; `pool: server` switches to server-task emulation (docs/03 group F) |
-| `parameters` (runtime parameters) | exact | P1 | Bound at convert time from `--parameter`/config/defaults; `values:` and type validation enforced |
+| `parameters` (runtime parameters) | exact | P1 | **Bound by the service** (PLAN D3): `--parameter`/config/defaults supply the values, which the bundler passes through as the request's `templateParameters` (E03-S06-T03, docs/02 §5.1); `values:`/type validation and the missing/extra-parameter errors are the service's, and reach us as a `rejected` expansion. The local typed binder (docs/02 §5) is fallback-only (E03-S02-T02) |
 | `variables` (all forms) | exact/equivalent | P1/P3 | §4 below |
 | `stages` / `jobs` / `steps` + single-job & single-stage shorthands | exact | P1 | Normalized to full stages→jobs→steps tree |
 | `extends` template | exact | P1 | Resolved by the **service** (PLAN D3) — the bundler only inlines the *target file*; docs/02 §2/§4 are fallback-only |
@@ -96,7 +96,7 @@ variables:                 # list form — ORDER MATTERS and is preserved
     value: v
     readonly: true
   - group: my-vars         # variable group (Library)
-  - template: vars.yml     # variables template (may take parameters)
+  - template: vars.yml     # variables template (may take parameters) — expanded by the service; see §2's `template:` row
 ```
 
 ### Scoping & precedence (exact)
