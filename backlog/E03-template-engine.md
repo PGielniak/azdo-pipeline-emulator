@@ -97,6 +97,11 @@ Acceptance: reference forms, parameter typing, and `extends` restrictions all en
   **Do:** opaque payload attached to stage/job/step items iterated in templates; reachable in expressions per doc.
   **Ground:** templates doc "templateContext" section + yaml-schema keyword page; one oracle fixture using it with a jobList.
   **Done:** golden matches oracle.
+- [ ] **E03-S02-T05 — Local file lookup must be case-sensitive on a case-insensitive filesystem** *(filed 2026-08-22 by E12-S03-T01 as a defect found in CI, not fixed there — it is E03-S02-T01's lane and needs its own grounding + tests.)*
+  **Do:** the local-FS loader in `packages/engine/src/template/reference.ts` resolves a template path with `readFileSync`, so on macOS (case-insensitive APFS) a path whose case does not match the repository's succeeds — the service rejects it. Verify the *real* case of each resolved segment (e.g. `readdirSync` on the parent, or `realpath` compared against the requested spelling) before returning the content, so the resolver answers the same on Linux and macOS.
+  **Ground:** already grounded — **C-E03-204** (path lookup does not fold case, while alias lookup does) and the oracle transcript `research/experiments/E03-references/case-mismatch/` (HTTP 400, `PipelineValidationException`). No new probe is needed; the service's answer is on file.
+  **Done:** the `case-mismatch` probe in `packages/engine/test/template/reference.test.ts` ("oracle replay — every reference probe") passes on macOS as well as Linux — it currently fails there with `expected undefined to be defined`, the only red test in CI on both `main` and PR #22; a regression test asserts the miss directly, not only through the replay.
+
 
 ## E03-S03 — As an engine developer, compile-time variable visibility follows empirically proven rules, so the murkiest area of the service is encoded as tested policy, not guesses.
 Acceptance: policy function backed by an experiment matrix.
