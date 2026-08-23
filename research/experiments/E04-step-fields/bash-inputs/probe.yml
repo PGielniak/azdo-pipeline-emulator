@@ -1,0 +1,4 @@
+steps:
+- bash: echo hi
+  workingDirectory: /w
+  failOnStderr: true

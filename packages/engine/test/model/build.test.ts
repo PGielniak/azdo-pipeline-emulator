@@ -125,11 +125,13 @@ describe('steps', () => {
   continueOnError: true
   timeoutInMinutes: 5
   retryCountOnTaskFailure: 2
-  workingDirectory: /w
   env:
     A: '1'
   inputs:
     script: echo hi
+    # An input, not a step property — E04-S01-T03 measured this (C-E04-061). T01 originally wrote
+    # it at step level, where the expansion never puts it.
+    workingDirectory: /w
 - task: Other@3
 `).pipeline;
 
@@ -142,7 +144,7 @@ describe('steps', () => {
     expect(step?.name).toBe('firstStep');
     expect(step?.displayName).toBe('Say hello');
     expect(step?.task).toStrictEqual({ name: 'CmdLine', version: '2' });
-    expect(step?.inputs).toStrictEqual({ script: 'echo hi' });
+    expect(step?.inputs).toStrictEqual({ script: 'echo hi', workingDirectory: '/w' });
     expect(step?.condition).toBe('succeeded()');
     expect(step?.env).toStrictEqual({ A: '1' });
     expect(step?.continueOnError).toBe(true);

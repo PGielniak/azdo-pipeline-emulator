@@ -1,0 +1,12 @@
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      target:
+        container: c
+        commands: restricted
+      inputs:
+        script: echo hi
+

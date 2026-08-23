@@ -10,7 +10,7 @@ collision that made this convention mandatory.
 |---|---|---|---|
 | `C-E04-001..029` | **E04-S01-T01 model types & builder** | this file | 001–005 used |
 | `C-E04-030..059` | E04-S01-T02 normalization boundary | this file | 030–037 used |
-| `C-E04-060..079` | E04-S01-T03 common step fields | this file | free |
+| `C-E04-060..079` | E04-S01-T03 common step fields | this file | 060–067 used |
 | `C-E04-080..109` | E04-S02 variables & scoping | this file | free |
 | `C-E04-110..139` | E04-S03 dependency graph & matrix | this file | free |
 
@@ -135,3 +135,70 @@ Both expand to the same task; the `pwsh` probe's expansion carries `pwsh: true` 
 while the `powershell` probe's does not — checked 2026-08-23,
 `research/experiments/E04-normalization/{pwsh,powershell}/final.yml`. Anything dispatching on the
 task reference alone cannot distinguish them, which matters to E07's disposition registry.
+
+---
+
+## E04-S01-T03 — common step fields, and which of them are not step fields (`C-E04-060..067`)
+
+Evidence: the `steps.task` schema page (fetched 2026-08-23, `ms.date: 2026-07-29`, source commit
+`d089fd2dbb54483ec611eeb478e3eff14be74393` of `MicrosoftDocs/azure-devops-yaml-schema-pr`
+`content/steps-task.md`) and **6 live probes** under `research/experiments/E04-step-fields/`.
+
+[C-E04-060] **The documented common properties survive expansion at step level, verbatim.**
+`name`, `displayName`, `enabled`, `timeoutInMinutes`, `retryCountOnTaskFailure`, `continueOnError`
+and `condition` all appear as step keys in the expansion, unchanged
+(`research/experiments/E04-step-fields/control-fields/`, HTTP 200) — checked 2026-08-23. The page
+lists exactly this set — https://learn.microsoft.com/en-us/azure/devops/pipelines/yaml-schema/steps-task
+— "`task` … `inputs` … `condition` … `continueOnError` … `displayName` … `target` … `enabled` …
+`env` … `name` … `timeoutInMinutes` … `retryCountOnTaskFailure`".
+
+[C-E04-061] **`workingDirectory` and `failOnStderr` are *not* step properties — they are task
+inputs, and the expansion puts them there.** `- script: echo hi` with both set expands to
+`task: CmdLine@2` whose `inputs` are `{script, failOnStderr, workingDirectory}`, with neither at
+step level (`script-inputs/`); the `bash` shorthand does the same into `Bash@3`, additionally
+gaining `targetType: inline` (`bash-inputs/`) — both HTTP 200, checked 2026-08-23. The schema page
+omits both from the common list, which is consistent. This matters because **this task's own Do
+lists them among "common step fields"**: a model reading them off the step mapping finds nothing,
+silently, for every pipeline. It is also the same fact C-E06-033 records from the other side —
+`failOnStderr` "is not an agent-level input at all: it is the Bash/PowerShell shortcuts' own flag".
+
+[C-E04-062] **`target:` is normalized to its object form, and the scalar shorthand becomes a
+`container`.** `target: host` expands to `target: {container: host}` (`target-scalar/`), and the
+object form passes through with its command mode intact — `target: {container: c, commands:
+restricted}` (`target-object/`) — both HTTP 200, checked 2026-08-23. So the model never sees the
+scalar spelling, and the word `host` arrives as a *container name* rather than as a distinct kind.
+
+[C-E04-063] **There is no auto-generated step name: the VERIFY resolves to "no scheme exists".**
+Two unnamed steps expand with **no** `name:` key at all (`no-name/`, HTTP 200) — checked
+2026-08-23 — and across the **157** captured expansions in `research/experiments/` no step-level
+`name:` appears that the author did not write (the 84 files matching `name:` are all
+`resources.repositories[].name`). The schema page describes `name` as "ID of the step. Acceptable
+values: `[-_A-Za-z0-9]*`" and says nothing about generation. Consequence: **the model must not
+invent one.** A step without an authored name has unreferenceable outputs — that is the pipeline
+author's problem, not something for the converter to paper over — and E05 derives file names from
+the ordinal and `displayName` (docs/04 §1), which needs no step `name`.
+
+[C-E04-064] **`enabled: false` survives expansion rather than the step being dropped.** The
+control probe sets it and the step is still present in the expansion with `enabled: false`
+(`control-fields/`) — checked 2026-08-23. So skipping a disabled step is the *runner's* job, not
+something the expansion has already done, and the model must carry the flag rather than assume
+every step it sees is live.
+
+[C-E04-065] **`displayName` is not defaulted by the service.** No probe's expansion gains a
+`displayName` the author did not write — checked 2026-08-23 across
+`research/experiments/E04-step-fields/` and the wider corpus. What the ADO UI shows for an unnamed
+step is a presentation concern computed elsewhere; the model defaults it locally (to the task name,
+then to the ordinal) so downstream code always has a label, and that default is **ours** rather
+than a claim about the service.
+
+[C-E04-066] **`continueOnError`, `enabled` and the numeric fields arrive as YAML scalars of the
+authored type, and must be read as text.** The control probe authored `enabled: false`,
+`continueOnError: true`, `timeoutInMinutes: 3` and `retryCountOnTaskFailure: 2`, and each is echoed
+in the expansion in that spelling — checked 2026-08-23. Combined with C-E01-015/C-E01-020 (pipeline
+values are strings, and `fetchDepth: 1` and `'1'` are the same pipeline), the model parses them
+from text rather than trusting the YAML scalar kind.
+
+[C-E04-067] **`bash` gains an input the author never wrote: `targetType: inline`.**
+`bash-inputs/`, HTTP 200 — checked 2026-08-23. Recorded because it is a case of the expansion
+*adding* inputs rather than only renaming them (C-E04-032's `artifactName`), so a consumer
+comparing authored inputs against expanded ones must expect additions in both directions.
