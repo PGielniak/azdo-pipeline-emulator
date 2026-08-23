@@ -1,0 +1,5 @@
+{
+  "kind": "expanded",
+  "status": 200,
+  "finalYaml": "stages:\n- stage: __default\n  jobs:\n  - job: Build\n    steps:\n    - task: CmdLine@2\n      inputs:\n        script: echo one\n\n"
+}
