@@ -38,6 +38,22 @@ export const INLINE_CYCLE = 'bundle-template-cycle';
 export const INLINE_USES_PARAMETERS = 'bundle-template-uses-parameters';
 export const INLINE_UNSUPPORTED_SITE = 'bundle-template-site-unsupported';
 export const INLINE_CROSS_REPO = 'bundle-template-cross-repo';
+export const INLINE_PARSE_ERROR = 'bundle-template-parse-error';
+export const INLINE_LIMIT = 'bundle-template-limit';
+export const INLINE_UNREADABLE = 'bundle-template-unreadable';
+
+/**
+ * The service's published ceilings (C-E03-403): "No more than 100 separate YAML files may be
+ * included (directly or indirectly)" and "No more than 100 levels of template nesting".
+ *
+ * Enforced here rather than left to the service for two reasons. A bundle that exceeds them is
+ * rejected *after* we send it, with the service's own wording and no local file:line; and a
+ * pathological chain would otherwise recurse until the stack overflows, which is the raw exception
+ * this task exists to prevent. Both limits stop with a diagnostic at the reference that crossed
+ * them.
+ */
+export const MAX_TEMPLATE_FILES = 100;
+export const MAX_TEMPLATE_NESTING = 100;
 
 /** Reads a file out of the user's local working tree, by repository-absolute path. */
 export type LocalTreeReader = (repositoryPath: string) => string | undefined;
@@ -62,7 +78,11 @@ export type SkipReason =
   /** The file is not in the local working tree. */
   | 'not-found'
   /** The reference closes a cycle. */
-  | 'cycle';
+  | 'cycle'
+  /** A published ceiling (C-E03-403) would be crossed by following this reference. */
+  | 'limit'
+  /** The local tree reader threw — a permission error, a directory, a bad encoding. */
+  | 'unreadable';
 
 export interface SkippedReference {
   readonly reason: SkipReason;
@@ -137,6 +157,22 @@ function inlineDocument(
   state: State,
 ): string {
   const parsed = parsePipelineYaml(source, file);
+
+  // A template whose YAML is broken must say so against **its own** file, not disappear. Without
+  // this, `findTemplateReferences` simply finds nothing in it and the caller reports the far more
+  // confusing "no `steps:` sequence to inline" a few lines below — a diagnostic that describes a
+  // consequence rather than the cause. Errors do not stop the bundle: the parser recovers, and a
+  // second reference in a healthy sibling should still inline.
+  for (const error of parsed.errors) {
+    state.diagnostics.push({
+      severity: 'error',
+      code: INLINE_PARSE_ERROR,
+      message: `Template \`${file}\` could not be parsed: ${error.message}`,
+      file,
+      range: error.pos.range,
+    });
+  }
+
   const references = findTemplateReferences(parsed);
   if (references.length === 0) return source;
 
@@ -214,11 +250,56 @@ function inlineDocument(
         message: `Template cycle: \`${target}\` is already being inlined (${[...stack, target].join(' → ')}).`,
         file,
         range: reference.range,
+        hint: 'Including the same file twice from one parent is fine (a diamond); a cycle is the same file appearing twice in one active chain.',
       });
       continue;
     }
 
-    const content = state.read(target);
+    // C-E03-403's ceilings, checked at the reference that would cross them. `stack` counts the
+    // active chain (nesting); `state.inlined` counts distinct splices (files).
+    if (stack.length >= MAX_TEMPLATE_NESTING) {
+      skip('limit');
+      state.diagnostics.push({
+        severity: 'error',
+        code: INLINE_LIMIT,
+        message: `Template nesting exceeds ${MAX_TEMPLATE_NESTING} levels at \`${target}\`.`,
+        file,
+        range: reference.range,
+        hint: 'Azure Pipelines rejects more than 100 levels of template nesting; the bundle stops here rather than building one the service would refuse.',
+      });
+      continue;
+    }
+    if (state.inlined.length >= MAX_TEMPLATE_FILES) {
+      skip('limit');
+      state.diagnostics.push({
+        severity: 'error',
+        code: INLINE_LIMIT,
+        message: `More than ${MAX_TEMPLATE_FILES} template files inlined; stopped at \`${target}\`.`,
+        file,
+        range: reference.range,
+        hint: 'Azure Pipelines rejects more than 100 included YAML files; the bundle stops here rather than building one the service would refuse.',
+      });
+      continue;
+    }
+
+    // The reader's contract is `undefined` for "no such file", but a filesystem-backed one can
+    // still throw — a permission error, a directory where a file was expected. Turning that into a
+    // diagnostic is the whole of this task's "never a raw exception".
+    let content: string | undefined;
+    try {
+      content = state.read(target);
+    } catch (cause) {
+      skip('unreadable');
+      state.diagnostics.push({
+        severity: 'error',
+        code: INLINE_UNREADABLE,
+        message: `Template file \`${target}\` could not be read: ${cause instanceof Error ? cause.message : String(cause)}`,
+        file,
+        range: reference.range,
+      });
+      continue;
+    }
+
     if (content === undefined) {
       skip('not-found');
       state.diagnostics.push({
