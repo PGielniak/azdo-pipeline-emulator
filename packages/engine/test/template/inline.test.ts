@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
+  INLINE_CROSS_REPO,
   INLINE_CYCLE,
   INLINE_MISSING_FILE,
   INLINE_UNSUPPORTED_SITE,
@@ -173,13 +174,39 @@ describe('inlineTemplates — the shapes it must refuse (C-E03-411/412/413)', ()
     expect(result.skipped[0]?.reason).toBe('uses-parameters');
   });
 
-  it('leaves a cross-repo reference alone for E03-S06-T04', () => {
+  it('leaves a cross-repo reference alone and warns (E03-S06-T04, C-E03-419)', () => {
     const source = 'steps:\n- template: common.yml@templates\n';
     const result = bundle(source, {});
     expect(result.yaml).toBe(source);
     expect(result.skipped[0]?.reason).toBe('cross-repo');
-    // T04 owns the user-facing wording; T02 only records it.
-    expect(result.diagnostics).toStrictEqual([]);
+    const [diagnostic, ...rest] = result.diagnostics;
+    expect(rest).toStrictEqual([]);
+    expect(diagnostic?.code).toBe(INLINE_CROSS_REPO);
+    // Warning, not error: an un-inlined `@other` reference expands fine (HTTP 200), it is just
+    // read from that repository's committed state.
+    expect(diagnostic?.severity).toBe('warning');
+    expect(diagnostic?.message).toContain('@templates');
+    expect(diagnostic?.hint).toContain('E09');
+    expect(diagnostic?.range.line).toBe(2);
+  });
+
+  it('does not read the local tree for a cross-repo reference', () => {
+    // A same-named file in the working tree must not be substituted for the other repository's.
+    const result = bundle('steps:\n- template: /t/leaf.yml@templates\n', {
+      '/t/leaf.yml': 'steps:\n- script: echo WRONG-REPO\n',
+    });
+    expect(result.yaml).not.toContain('WRONG-REPO');
+    expect(result.inlined).toStrictEqual([]);
+  });
+
+  it('treats `@self` and an empty alias as local, not cross-repo (C-E03-212/213)', () => {
+    for (const text of ['/t/a.yml@self', '/t/a.yml@SELF', '/t/a.yml@']) {
+      const result = bundle(`steps:\n- template: ${text}\n`, {
+        '/t/a.yml': 'steps:\n- script: echo local\n',
+      });
+      expect(result.yaml).toBe('steps:\n- script: echo local\n');
+      expect(result.diagnostics).toStrictEqual([]);
+    }
   });
 
   it('does not inline an `extends` target, and warns that local edits are invisible', () => {

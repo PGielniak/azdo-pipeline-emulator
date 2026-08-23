@@ -35,6 +35,7 @@ export const INLINE_MISSING_FILE = 'bundle-template-not-found';
 export const INLINE_CYCLE = 'bundle-template-cycle';
 export const INLINE_USES_PARAMETERS = 'bundle-template-uses-parameters';
 export const INLINE_UNSUPPORTED_SITE = 'bundle-template-site-unsupported';
+export const INLINE_CROSS_REPO = 'bundle-template-cross-repo';
 
 /** Reads a file out of the user's local working tree, by repository-absolute path. */
 export type LocalTreeReader = (repositoryPath: string) => string | undefined;
@@ -143,8 +144,24 @@ function inlineDocument(
     };
 
     if (!reference.self) {
-      // E03-S06-T04 turns this into the user-facing diagnostic; recording it is this task's part.
+      // E03-S06-T04. A warning, not an error, and the severity is measured rather than chosen: an
+      // un-inlined `@other` reference **expands fine** (C-E03-419, HTTP 200), it is just read from
+      // that repository's committed state. Stopping would refuse a pipeline the service accepts.
+      //
+      // The bundler will never grow the ability, which is why the message points at E09 instead of
+      // reading as "not yet": the request carries exactly one document (C-E12-011), templates come
+      // from the repository rather than the body (C-E03-404), and repositories are resolved once at
+      // start-up from their pinned ref (C-E03-420). No request shape carries a second repository's
+      // bytes.
       skip('cross-repo');
+      state.diagnostics.push({
+        severity: 'warning',
+        code: INLINE_CROSS_REPO,
+        message: `\`${reference.text}\` is a cross-repository template${reference.alias === undefined || reference.alias === '' ? '' : ` (\`@${reference.alias}\`)`}; it resolves against the committed state of that repository, not your working tree.`,
+        file,
+        range: reference.range,
+        hint: 'The expansion is correct — only local edits to that repository are invisible. Fetching and pinning other repositories is E09.',
+      });
       continue;
     }
 
