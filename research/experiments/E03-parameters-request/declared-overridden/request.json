@@ -1,0 +1,5 @@
+{
+  "templateParameters": {
+    "greeting": "from-request"
+  }
+}

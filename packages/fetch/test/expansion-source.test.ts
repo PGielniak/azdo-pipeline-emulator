@@ -104,7 +104,7 @@ describe('resolveExpansion — default (service) path', () => {
     expect(resolved.manifest).toEqual({
       mode: 'service',
       degraded: false,
-      requestHash: expansionRequestHash(REQUEST.yamlOverride),
+      requestHash: expansionRequestHash(REQUEST),
       finalYamlHash: finalYamlHash(SERVICE_YAML),
       apiVersion: '7.1',
       pipelineId: 19,
@@ -195,7 +195,7 @@ describe('resolveExpansion — `--offline-expand` fallback', () => {
     expect(resolved.manifest).toEqual({
       mode: 'offline',
       degraded: true,
-      requestHash: expansionRequestHash(REQUEST.yamlOverride),
+      requestHash: expansionRequestHash(REQUEST),
       finalYamlHash: finalYamlHash(OFFLINE_YAML),
     });
   });
@@ -215,7 +215,7 @@ describe('resolveExpansion — `--offline-expand` fallback', () => {
     await expect(readFile(lockfilePath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
     await expect(
       readFile(
-        join(cacheDir, '.cache/expansion', expansionRequestHash(REQUEST.yamlOverride), 'final.yml'),
+        join(cacheDir, '.cache/expansion', expansionRequestHash(REQUEST), 'final.yml'),
         'utf8',
       ),
     ).rejects.toMatchObject({ code: 'ENOENT' });

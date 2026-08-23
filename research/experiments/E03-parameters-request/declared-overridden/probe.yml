@@ -1,0 +1,6 @@
+parameters:
+- name: greeting
+  type: string
+  default: from-default
+steps:
+- script: echo [${{ parameters.greeting }}]

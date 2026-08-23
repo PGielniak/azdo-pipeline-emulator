@@ -1,0 +1,6 @@
+parameters:
+- name: config
+  type: object
+  default: {}
+steps:
+- script: echo [${{ convertToJson(parameters.config) }}]

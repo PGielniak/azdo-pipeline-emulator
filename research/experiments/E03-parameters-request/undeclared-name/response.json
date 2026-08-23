@@ -1,0 +1,15 @@
+{
+  "kind": "rejected",
+  "status": 400,
+  "message": "Unexpected parameter 'nosuchparameter'",
+  "typeKey": "PipelineValidationException",
+  "body": {
+    "$id": "1",
+    "innerException": null,
+    "message": "Unexpected parameter 'nosuchparameter'",
+    "typeName": "Microsoft.Azure.Pipelines.WebApi.PipelineValidationException, Microsoft.Azure.Pipelines.WebApi",
+    "typeKey": "PipelineValidationException",
+    "errorCode": 0,
+    "eventId": 3000
+  }
+}

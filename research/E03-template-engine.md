@@ -20,7 +20,7 @@ time the IDs were load-bearing in code comments and test names) is the reason th
 | `C-E03-250..279` | E03-S04 limits, emitter, strict validation | this file | free |
 | `C-E03-280..299` | E03-S05-T02 `preview-diff` | this file | free |
 | `C-E03-300..339` | E03-S02-T02 typed parameter binding | this file | **effectively taken** — the 2026-08-20 lane cited this block in `research/experiments/E03-parameters/` READMEs and never consolidated it here (`grep -c 'C-E03-3'` = 0). Do not reallocate; that task reclaims it. |
-| `C-E03-400..429` | **E03-S06 local bundler** | this file | 400–407 used (S06-T01), 408–413 used (S06-T02) |
+| `C-E03-400..429` | **E03-S06 local bundler** | this file | 400–407 used (S06-T01), 408–413 (S06-T02), 414–418 (S06-T03) |
 | `C-E03-430..449` | E03-S07 bundle provenance & diagnostics | this file | free |
 
 Leave gaps. A branch that numbers from what it can see collides silently with every sibling.
@@ -464,3 +464,53 @@ cannot be bundled by a mechanical inliner at all. Making the user's local edits 
 visible needs the parameter values substituted at the splice, which is **binding**, which is the
 service's job under PLAN D3. That is a real scope boundary of the simplification, not an oversight
 of this task; see E03-S06-T05 and docs/06 §5 decision 54.
+
+---
+
+## E03-S06-T03 — what `templateParameters` in the request actually does (`C-E03-414..418`)
+
+Evidence: `research/experiments/E03-parameters-request/` — **8 live preview probes**
+(`pnpm template-parameters-survey`). C-E00-018 records the field's *existence* from the REST
+reference and nothing about its behavior; every rule below is measured, and every probe is declared
+asking rather than asserting.
+
+[C-E03-414] **A value supplied in `templateParameters` overrides the root pipeline's declared
+default.** `declared-overridden/` expands `${{ parameters.greeting }}` to `from-request` against the
+declared `default: from-default`; the control `declared-not-supplied/` expands it to `from-default`
+— both HTTP 200 — checked 2026-08-23. This is the premise of threading the field at all, and the
+reason the expansion cache key had to grow to cover it.
+
+[C-E03-415] **A name the pipeline does not declare is rejected: HTTP 400
+`PipelineValidationException`, `"Unexpected parameter 'nosuchparameter'"`** (`undeclared-name/`) —
+checked 2026-08-23. The field is not a free-form bag; the service validates it against the root
+`parameters:` block, so a client must not invent or pass through names speculatively.
+
+[C-E03-416] **Values are coerced to the declared type, and the wire type is looser than
+`Record<string, string>`.** A `type: number` parameter given the **string** `'42'` expands to `42`
+(`number-typed/`), and given the raw JSON number `42` also expands to `42` (`number-typed-raw/`) —
+both HTTP 200 — checked 2026-08-23. So the client's `Record<string, string>` typing, taken from the
+REST doc, is narrower than the service requires; that is harmless and is kept, because the string
+form is accepted for every scalar type.
+
+[C-E03-417] **A structured value must be sent as serialized JSON, not as a raw JSON object.** An
+`object`-typed parameter given `{"key": "value"}` as a raw object is refused with HTTP 400
+**`ArgumentNullException`** — `"Value cannot be null.\nParameter name: runParameters"`
+(`object-typed-raw/`) — while the same object sent as the *string* `'{"key":"value"}'` expands, and
+`convertToJson(parameters.config)` renders it as a real object (`object-typed-string/`, HTTP 200) —
+checked 2026-08-23. Two things worth noting: the rejection is a server-side **argument fault**, not
+a pipeline-validation message, so it carries no line/col and no remediation; and this is what makes
+the CLI's `--parameter name=@file.json` (C-E13-009/010) reachable at all — its parsed structure is
+serialized on the way out.
+
+[C-E03-418] **`templateParameters` binds only the *root* pipeline's parameters; it can never reach a
+template's.** A root with no `parameters:` that includes a committed template declaring `greeting`,
+sent with `templateParameters: {greeting: …}`, is rejected `"Unexpected parameter 'greeting'"`
+(`template-scoped/`, HTTP 400) — checked 2026-08-23. **This closes option (c) of E03-S06-T05 by
+measurement**: there is no request shape that lets the service bind a *template's* parameters while
+we supply local bytes for that template, so a parameterized local template cannot be bundled that
+way. It also corrects this task's own **Do**, which reads "pass `templateParameters` (and
+`parameters:` at the `extends` boundary) through to the expansion call … as the `templateParameters`
+request field": reference-level and `extends`-level `parameters:` are written **in the YAML** and
+are bound there by the service. Nothing carries them in the request, and nothing needs to —
+E03-S06-T02's `passed-committed` transcript shows a `- template:` + `parameters:` expanding to the
+supplied value with no client plumbing at all.

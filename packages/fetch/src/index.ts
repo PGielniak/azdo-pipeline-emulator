@@ -21,6 +21,7 @@ export {
 export {
   expand,
   expansionRequestHash,
+  serializeTemplateParameters,
   provenanceFor,
   type ExpansionOutcome,
   type ExpansionProvenance,

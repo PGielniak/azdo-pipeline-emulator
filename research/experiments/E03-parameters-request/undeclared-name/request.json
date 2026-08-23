@@ -1,0 +1,6 @@
+{
+  "templateParameters": {
+    "greeting": "ok",
+    "nosuchparameter": "x"
+  }
+}

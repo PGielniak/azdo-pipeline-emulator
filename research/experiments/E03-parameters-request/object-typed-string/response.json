@@ -1,0 +1,5 @@
+{
+  "kind": "expanded",
+  "status": 200,
+  "finalYaml": "parameters:\n- name: config\n  type: object\n  default: {}\nstages:\n- stage: __default\n  jobs:\n  - job: Job\n    steps:\n    - task: CmdLine@2\n      inputs:\n        script: >-\n          echo [{\n            \"key\": \"value\"\n          }]\n\n"
+}

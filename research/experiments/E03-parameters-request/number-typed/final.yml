@@ -1,0 +1,13 @@
+parameters:
+- name: count
+  type: number
+  default: 1
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo [42]
+
