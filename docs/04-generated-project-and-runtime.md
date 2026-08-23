@@ -94,7 +94,7 @@ Key debugging affordances (the point of the tool):
 4. Run steps in order via `run_step` (§5).
 5. Aggregate job result (`Succeeded`, `SucceededWithIssues`, `Failed`); persist to `state/results/<stage>/<job>`; enforce job `timeoutInMinutes` as a deadline passed to steps.
 
-Stage result aggregates job results; `continueOnError: true` jobs degrade to `SucceededWithIssues`; run exit code is non-zero iff the pipeline result is `Failed`.
+Stage result aggregates job results; `continueOnError: true` jobs degrade to `SucceededWithIssues`; the run exit code is non-zero when the pipeline result is `Failed` **or `Canceled`** *(corrected 2026-08-23, E06-S06-T02: this sentence read "iff the pipeline result is `Failed`", which enumerated the three job results and did not consider `Canceled` — a run the user interrupted must not report success to whatever invoked `run.sh`. docs/06 §5 decision 56)*. `azdo_run_result` folds every recorded step result worst-wins and `azdo_run_exit_code` maps it; `azdo_run_summary` prints the end-of-run table of §2.
 
 ## 4. State store (filesystem, no daemons)
 
@@ -104,6 +104,8 @@ state/outputs/<stage>/<job>/<step>.<var>
 state/results/<stage>[/<job>[/<step>]]   # Succeeded|SucceededWithIssues|Failed|Skipped|Canceled
 state/path.d/NNN-<step>            # PATH prepends, applied in order to subsequent steps
 state/masks/mask.*                 # private exact values registered for streaming log masking
+state/summary/NNNN                 # one record per completed step, in completion order:
+                                   #   scope, id, display, result, duration, log path (§2's table)
 ```
 File-per-value dodges quoting/newline pitfalls entirely. Variable keys are case-insensitive, matching the agent dictionary (C-E06-003). Job variable scope is copied at job start — `setvariable` never leaks across jobs except through `outputs/` (agent-faithful).
 
