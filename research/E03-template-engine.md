@@ -11,11 +11,11 @@ time the IDs were load-bearing in code comments and test names) is the reason th
 |---|---|---|---|
 | `C-E03-001..099` | E03-S05-T01 normalizer | `research/E03-normalizer.md` | 001–003 used |
 | `C-E03-100..119` | **E03-S01-T01 DOM walker with context stack** | this file | 100–117 used |
-| `C-E03-120..139` | E03-S01-T02 conditional insertion chains | this file | 120–121 used |
-| `C-E03-140..159` | E03-S01-T03 iterative insertion (`each`) | this file | free |
-| `C-E03-160..174` | E03-S01-T04 `${{ insert }}` merge | this file | free |
-| `C-E03-175..194` | E03-S01-T05 scalar interpolation | this file | free |
-| `C-E03-195..229` | E03-S02 template resolution & parameters | this file | **204 used** (E03-S02-T05); the rest is E03-S02-T01's to record — it cites 195..215 in `reference.ts` and its test, and those entries are still unwritten |
+| `C-E03-120..139` | E03-S01-T02 conditional insertion chains | this file | **120–121 used; 122+ owed** — 24 transcripts captured in `research/experiments/E03-conditionals/`, entries unwritten (E03-S01-T06) |
+| `C-E03-140..159` | E03-S01-T03 iterative insertion (`each`) | this file | **not free — owed.** 13 transcripts in `research/experiments/E03-each/` cite these IDs; no entry written (E03-S01-T06) |
+| `C-E03-160..174` | E03-S01-T04 `${{ insert }}` merge | this file | **not free — owed.** 32 transcripts in `research/experiments/E03-insert/`; no entry written (E03-S01-T06) |
+| `C-E03-175..194` | E03-S01-T05 scalar interpolation | this file | **not free — owed.** 34 transcripts in `research/experiments/E03-interpolation/`; no entry written (E03-S01-T06) |
+| `C-E03-195..229` | E03-S02 template resolution & parameters | this file | **204 used; 195..203 and 205..215 owed** — `packages/engine/src/template/reference.ts` and its test **cite** those IDs, and 34 transcripts sit in `research/experiments/E03-references/`, but no entry is written, so a reader following a citation finds nothing (E03-S01-T06). E03-S06's shipped code consumes several of them. |
 | `C-E03-230..249` | E03-S03 compile-time variable visibility | this file | free |
 | `C-E03-250..279` | E03-S04 limits, emitter, strict validation | this file | free |
 | `C-E03-280..299` | E03-S05-T02 `preview-diff` | this file | free |
@@ -24,6 +24,15 @@ time the IDs were load-bearing in code comments and test names) is the reason th
 | `C-E03-430..449` | E03-S07 bundle provenance & diagnostics | this file | free |
 
 Leave gaps. A branch that numbers from what it can see collides silently with every sibling.
+
+**Reconciliation note (2026-08-23, E03-S01-T06).** Four blocks above are marked *owed* rather than
+*free*. The pattern behind them is worth stating once: on this epic the oracle probes were run, the
+transcripts committed, the code written against them and the claim IDs cited in comments and test
+names — and then the claim entries themselves were never added to this file. That leaves citations
+pointing at nothing, which is worse than an unstarted block, because the code *looks* grounded.
+Recording those entries is the remaining work on E03-S01-T02..T05 and E03-S02-T01; the transcripts
+they must be written from are already here, so it is transcription, not new measurement, and no
+oracle budget is needed.
 
 ---
 
