@@ -74,7 +74,14 @@ export function locationName(location: TemplateLocation): string {
   return isSelfAlias(alias) ? location.path : `${location.path}@${alias}`;
 }
 
-function isSelfAlias(alias: string): boolean {
+/**
+ * Is this alias the pipeline's own repository? Case-folded, because the alias half of a reference
+ * is case-insensitive while the path half is not (C-E03-213/204).
+ *
+ * Exported since E03-S06-T01: the bundler decides include-or-diagnose per reference and needs the
+ * same answer this module resolves by, rather than a second spelling of it.
+ */
+export function isSelfAlias(alias: string): boolean {
   return alias.toLowerCase() === SELF_ALIAS;
 }
 

@@ -26,3 +26,4 @@ export * from './template/conditionals.js';
 export * from './template/insert.js';
 export * from './template/interpolate.js';
 export * from './template/reference.js';
+export * from './template/bundle.js';

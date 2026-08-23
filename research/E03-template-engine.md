@@ -19,6 +19,9 @@ time the IDs were load-bearing in code comments and test names) is the reason th
 | `C-E03-230..249` | E03-S03 compile-time variable visibility | this file | free |
 | `C-E03-250..279` | E03-S04 limits, emitter, strict validation | this file | free |
 | `C-E03-280..299` | E03-S05-T02 `preview-diff` | this file | free |
+| `C-E03-300..339` | E03-S02-T02 typed parameter binding | this file | **effectively taken** — the 2026-08-20 lane cited this block in `research/experiments/E03-parameters/` READMEs and never consolidated it here (`grep -c 'C-E03-3'` = 0). Do not reallocate; that task reclaims it. |
+| `C-E03-400..429` | **E03-S06 local bundler** | this file | 400–407 used (S06-T01) |
+| `C-E03-430..449` | E03-S07 bundle provenance & diagnostics | this file | free |
 
 Leave gaps. A branch that numbers from what it can see collides silently with every sibling.
 
@@ -303,3 +306,98 @@ reproduce **regardless of the host filesystem's own comparison rules**.
     `readFileSync` delegates the comparison to the **host**, so a case-insensitive filesystem
     (macOS APFS, Windows) resolves what the service rejects. `localFetcher` therefore walks the
     path one segment at a time and requires a byte-identical `readdirSync` entry (E03-S02-T05).
+
+---
+
+## E03-S06-T01 — where a `template:` reference may appear (`C-E03-400..407`)
+
+Evidence: the templates doc page (fetched 2026-08-23, page `ms.date: 2026-06-17`, source commit
+`be5c6557603d2e61bafaa70ec0d4e4ec1351d058` of `MicrosoftDocs/azure-devops-docs-pr`
+`docs/pipelines/process/templates.md`) and the **vendored service schema**
+`packages/engine/vendor/schema/service-schema.json`.
+
+Two source tiers are used here and they are labelled per claim, because decision 8 (docs/06 §5)
+established that the vendored schema is **not** self-sufficient and that the docs outrank it. Claims
+marked *(schema-derived)* are not doc-grounded and are not measured against the live service; where
+that matters, the claim says which task owns the probe. This task detects reference **positions**
+only — the reference *string* semantics (path math, alias resolution, case rules) are E03-S02-T01's
+`C-E03-195..215`, already implemented in `packages/engine/src/template/reference.ts`, and are reused
+rather than re-grounded.
+
+[C-E03-400] **A `template:` reference appears in exactly two syntactic shapes: the mapping value
+`extends.template`, and a sequence item whose mapping carries a `template` key.** The doc shows the
+sequence form under four container keys — `stages`, `jobs`, `steps` and `variables` —
+— https://learn.microsoft.com/en-us/azure/devops/pipelines/process/templates — "`extends:` / `  template: start-extends-template.yml`",
+"`stages:` / `- template: templates/insert-stage1.yml # Template reference`",
+"`jobs:` / `- template: templates/insert-jobs.yml  # Template reference`",
+"`steps:` / `- template: templates/insert-npm-steps.yml  # Template reference`",
+"`variables:` / `- template: insert-vars.yml  # Template reference`" — checked 2026-08-23.
+
+[C-E03-401] **A `variables:` template may only define variables**, unlike the other container
+forms — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/templates — "If you're
+using a template to include variables in a pipeline, the included template can only be used to
+define variables. You can use steps and more complex logic when you're extending from a template."
+— checked 2026-08-23. The same page shows the form at **stage** level as well as global
+(`stages:` / `- stage: Release_Stage` / `  variables: # Stage variables` / `  - template: package-release-with-params.yml`),
+so the container key is not confined to the document root. Consequence for detection: the rule keys
+off the **container key name at any depth**, never off a fixed root-level path.
+
+[C-E03-402] **The `@` suffix names a `resources.repositories` entry, and `@self` names the
+repository the pipeline itself was found in.**
+— https://learn.microsoft.com/en-us/azure/devops/pipelines/process/templates — "When you refer to
+the core repo, use `@` and the name you gave it in `resources`." and "You can also use `@self` to
+refer to the repository where the original pipeline was found. This is convenient for use in
+`extends` templates if you want to refer back to contents in the extending pipeline's repository."
+— checked 2026-08-23. Worked example: "`- template: BuildJobs.yml@self`". The split itself, the
+empty-alias case (`a.yml@` lands on self) and the alias's case-folding are already grounded as
+C-E03-210/212/213 and implemented by `parseReference`/`isSelfAlias`; this claim records only that
+`self` is a *documented* alias and not an invention of ours.
+
+[C-E03-403] **Template expansion is bounded by three published limits**, which the bundler's
+recursion must respect rather than discover —
+https://learn.microsoft.com/en-us/azure/devops/pipelines/process/templates — "No more than 100
+separate YAML files may be included (directly or indirectly)", "No more than 100 levels of template
+nesting (templates including other templates)", "No more than 20 megabytes of memory consumed while
+parsing the YAML" — checked 2026-08-23. Recorded here for **E03-S06-T02** (recursive inliner): a
+bundle that exceeds these is rejected by the service after we send it, so the inliner should stop
+first with our own diagnostic.
+
+[C-E03-404] **A template file must exist in the repository at run start; it cannot come from an
+artifact** — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/templates —
+"Template files need to exist on your filesystem at the start of a pipeline run. You can't reference
+templates in an artifact." — checked 2026-08-23. This is the doc sentence that makes the bundler
+sound: inlining a *working-tree* file into the `yamlOverride` is the only way an uncommitted edit
+can reach the expansion, because the service reads templates from the committed tree.
+
+[C-E03-405] *(schema-derived)* **There are five sequence-item template branches, not four: the doc's
+`stage`, `job`, `step` and `variable`, plus the deprecated `phase`.** Each branch is exactly
+`{template, parameters}` with `additionalProperties: false` and `firstProperty: ["template"]` —
+`packages/engine/vendor/schema/service-schema.json`, definitions `stage`/`job`/`step`/`variable`/`phase`
+— e.g. `"phase"`: `{"type":"object","properties":{"template":{"$ref":"#/definitions/nonEmptyString"},"parameters":{"$ref":"#/definitions/mapping"}},"additionalProperties":false,"firstProperty":["template"]}`
+— checked 2026-08-23. `phases:` is absent from the doc page entirely (the schema marks the container
+`"deprecationMessage": "This option is deprecated, use `jobs` instead"`). Detection includes it —
+missing a real reference silently is the failure this story exists to prevent — but **no live probe
+has confirmed a `phases: - template:` reference**, and that probe belongs to E03-S06-T02's
+`research/experiments/E03-bundle/`. Also schema-derived and used by the detector: every container
+key name equals its definition name (`stages`/`jobs`/`phases`/`steps`/`variables`), verified by
+walking every `$ref` to those definitions in the vendored document — so a key-name rule covers the
+nested occurrences (a job's `steps`, a deployment strategy's `steps`) by construction.
+
+[C-E03-406] *(schema-derived)* **`extends` is `{template, parameters}` with
+`additionalProperties: false` and, unlike the sequence forms, no `firstProperty`** —
+`packages/engine/vendor/schema/service-schema.json`, definition `extends`:
+`{"type":"object","properties":{"template":{...},"parameters":{...}},"additionalProperties":false}`
+— checked 2026-08-23. So `extends` is matched as a mapping *property*, and the sequence-item rule
+does not apply to it.
+
+[C-E03-407] *(mirror decision, not measured)* **Detection matches the `template` key
+case-sensitively and by presence, not by first position.** Neither the schema's `template` property
+nor its containers carry `ignoreCase`, and `ignoresKeyCase` (`packages/engine/src/frontend/validate.ts`)
+reads that keyword off the property's own schema, so the walk folds no case — the same rule the
+validator applies. Ordering is deliberately *not* required even though `firstProperty` names
+`template` as the discriminator: `checkFirstProperty` enforces presence as an error and ordering only
+as a **warning**, because "the service's own tolerance is not yet oracle-verified"
+(`research/E01-yaml-frontend.md`'s open question Q1, docs/06 §5 decision 8). A detector
+stricter than the validator would silently skip a reference the service accepts, so it matches the
+looser of the two. If Q1 resolves to "the service errors on order", this claim is unaffected —
+detection would still be correct, merely permissive.
