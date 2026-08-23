@@ -24,6 +24,8 @@
 // of the DOM. "Mechanical inliner, not an expander" is only true if the user's bytes survive
 // unchanged everywhere except at the reference itself; round-tripping through a YAML emitter would
 // restyle the whole document and make every later diff unreadable.
+import { createHash } from 'node:crypto';
+
 import type { Diagnostic } from '../frontend/diagnostics.js';
 import type { MappingNode, PipelineNode, SourceRange } from '../frontend/parse.js';
 import { parsePipelineYaml } from '../frontend/parse.js';
@@ -75,6 +77,15 @@ export interface InlinedFile {
   readonly path: string;
   /** The file that referenced it. */
   readonly from: string;
+  /**
+   * SHA-256 of the file's **working-tree** content, as it was read — before recursion rewrote any
+   * nested reference inside it.
+   *
+   * The pre-recursion bytes are the ones the user can edit, so this is what makes a template edit
+   * attributable (E03-S07-T01): the hash of the post-recursion text would change when a *different*
+   * file three levels down changed, which is the opposite of attribution.
+   */
+  readonly sha256: string;
 }
 
 export interface BundleResult {
@@ -238,6 +249,7 @@ function inlineDocument(
     }
 
     // Recurse first, so the text spliced in is already fully bundled.
+    const sha256 = createHash('sha256').update(content, 'utf8').digest('hex');
     const bundled = inlineDocument(content, target, [...stack, target], state);
     const items = containerItemsText(bundled, target, reference.site);
     if (items === undefined) {
@@ -258,7 +270,7 @@ function inlineDocument(
       continue;
     }
     edits.push({ start: span.start, end: span.end, text: reindent(items, span.indent) });
-    state.inlined.push({ path: target, from: file });
+    state.inlined.push({ path: target, from: file, sha256 });
   }
 
   let out = source;
