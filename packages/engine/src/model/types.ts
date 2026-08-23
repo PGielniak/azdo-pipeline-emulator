@@ -10,6 +10,7 @@
 // look optional. Each such field names the task that fills it, so a reader can tell "not built yet"
 // from "deliberately absent".
 import type { SourceRange } from '../frontend/parse.js';
+import type { StepOrigin } from './shorthand.js';
 
 /** Where a model node came from in the expanded document. */
 export interface ModelProvenance {
@@ -34,6 +35,15 @@ export interface Step {
   readonly name?: string;
   readonly displayName: string;
   readonly task: TaskReference;
+  /**
+   * The shorthand keyword the service desugared this step from, when it is recoverable.
+   *
+   * Only the three agent-internal GUIDs carry one (C-E04-031/032): `checkout`, `download` and
+   * `publish` arrive as a bare GUID with the authored keyword gone, and PLAN D4 emits `checkout`
+   * natively — so without this the emitter has nothing to dispatch on. A `bash:` step needs no
+   * origin: it arrives as `Bash@3`, and the name is already the identity (C-E04-030).
+   */
+  readonly origin?: StepOrigin;
   readonly inputs: Readonly<Record<string, string>>;
   readonly condition?: string;
   readonly env: Readonly<Record<string, string>>;

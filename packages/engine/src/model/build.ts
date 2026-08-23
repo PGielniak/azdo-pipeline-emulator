@@ -16,6 +16,7 @@
 // because inventing one here would hide it from E05, which is where a filename actually has to be
 // chosen.
 import type { Diagnostic } from '../frontend/diagnostics.js';
+import { stepOriginOf } from './shorthand.js';
 import type { MappingNode, ParseResult, PipelineNode, ScalarValue } from '../frontend/parse.js';
 import type {
   Job,
@@ -266,6 +267,9 @@ function buildStep(
   return {
     id: ordinal,
     ...optional('name', name),
+    // Recovered from the GUID, because the authored keyword is gone by the time the model is built
+    // (C-E04-031/032). Absent for an ordinary named task, whose name is already its identity.
+    ...optional('origin', task === undefined ? undefined : stepOriginOf(task.name)),
     displayName: scalarEntry(node, 'displayName') ?? task?.name ?? `Step ${ordinal}`,
     task: task ?? { name: '', version: '' },
     inputs: stringMap(entryValue(node, 'inputs')),

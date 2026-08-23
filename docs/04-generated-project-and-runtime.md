@@ -202,6 +202,14 @@ Defaults for an unset option are the agent's empty-input defaults — `clean=fal
 
 ### 8.1 Multi-checkout layout
 
+> **How the emitter recognises a checkout step (added 2026-08-23, E04-S01-T02).** Not by the
+> `checkout:` keyword — it does not survive expansion. The service desugars `checkout: self` into
+> `task: 6d15af64-176c-496d-b583-fd2ae21d4df4@1` with `inputs: {repository: self}` (C-E04-031/032),
+> so an emitter counting `checkout:` keys would count **zero** on the default path and hand every
+> job the single-checkout layout. The model carries the recovered keyword as `Step.origin`
+> (`'checkout' | 'download' | 'publish'`); count and dispatch on that. The same applies to PLAN
+> D4's "`checkout` steps are emitted as readable bash" and to docs/06 §5 decision 57.
+
 Which layout applies is a **job-level** fact — how many `checkout` steps the job has — so it is decided where the agent decides it. The agent computes `HasMultipleCheckouts` once during job preparation and hands the answer to every component that needs it (C-E06-115); here the emitter, which knows the step list statically, exports `AZDO_HAS_MULTIPLE_CHECKOUTS` per job beside `AZDO_STATE_DIR`, and `azdo_checkout` reads it (docs/06 §5 decision 41). The runtime never counts checkouts: the first of two would otherwise behave as a single one.
 
 | | one checkout in the job | two or more |

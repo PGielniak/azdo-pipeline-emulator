@@ -1,0 +1,15 @@
+{
+  "kind": "rejected",
+  "status": 400,
+  "message": "/azure-pipelines.yml (Line: 2, Col: 15): Cannot find package resource for pkg",
+  "typeKey": "PipelineValidationException",
+  "body": {
+    "$id": "1",
+    "innerException": null,
+    "message": "/azure-pipelines.yml (Line: 2, Col: 15): Cannot find package resource for pkg",
+    "typeName": "Microsoft.Azure.Pipelines.WebApi.PipelineValidationException, Microsoft.Azure.Pipelines.WebApi",
+    "typeKey": "PipelineValidationException",
+    "errorCode": 0,
+    "eventId": 3000
+  }
+}

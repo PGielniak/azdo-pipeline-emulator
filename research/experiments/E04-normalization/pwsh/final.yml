@@ -1,0 +1,11 @@
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: PowerShell@2
+      inputs:
+        targetType: inline
+        script: Write-Host hello
+        pwsh: true
+
