@@ -246,12 +246,18 @@ Reference forms, all supported (P1 local, P3 remote):
 PLAN §2 goal 2 and docs/07 §5 Phase 1: the user edits template files locally, so the expansion
 request must carry them. The bundler is a **mechanical inliner, not an expander** — it never
 evaluates `${{ }}`, never resolves a directive, and never binds a parameter; it only makes the
-service see the user's uncommitted bytes. Scope per task, none of it invented here:
+service see the user's uncommitted bytes. **That constraint has a measured cost, recorded here
+because it bounds what the default path can do (2026-08-23, C-E03-408..413):** a template that
+*reads* its own `${{ parameters.* }}` cannot be inlined at all, because the splice drops the scope
+those references resolve in. Such a reference stays in the override and the service reads the
+**committed** file, so local edits to parameterized templates are not visible on the default path —
+a warning, not an error, and the boundary **E03-S06-T05** exists to decide about (docs/06 §5
+decision 54). Scope per task, none of it invented here:
 
 | Mechanic | Owner | Note |
 |---|---|---|
 | Detect `extends.template` and stage/job/step `- template:` references (incl. `@self`) in the raw DOM, with `file:line` | E03-S06-T01 | reference forms are §5's, above |
-| Resolve each `@self`/relative reference against the **local working tree** and inline it, recursing into nested references; report cycles | E03-S06-T02 | pins *our* inlining mechanics against the committed multi-file form by oracle probe |
+| Resolve each `@self`/relative reference against the **local working tree** and inline it, recursing into nested references; report cycles | E03-S06-T02 | **measured 2026-08-23, and narrower than this row read:** a mechanical splice is equivalent only for a file that reads no `${{ parameters.* }}` (C-E03-408..413). One that does is HTTP 400 `Key not found` when the parent lacks the name and, when the parent *has* it, expands the **wrong value** at HTTP 200 — so those are refused and warned about. `extends:` and references inside a `parameters:` value are likewise reported, not inlined. See **E03-S06-T05**. |
 | Pass `parameters:` / `templateParameters` through to the `preview` request — binding stays the service's | E03-S06-T03 | request shape C-E00-018 |
 | Cross-repo (`@other`) references: convert-time **diagnostic**, never a silent wrong expansion | E03-S06-T04 | v1 answer is "resolves against the committed repo; see E09" |
 | Write the exact (redacted) `yamlOverride` plus a `local path → inlined location` map and file hashes into the output | E03-S07-T01 | file names are that task's to fix — docs/04 §1 does not pin them |

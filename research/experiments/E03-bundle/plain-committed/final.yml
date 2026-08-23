@@ -1,0 +1,16 @@
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo root-before
+    - task: CmdLine@2
+      displayName: plain leaf
+      inputs:
+        script: echo plain-leaf
+    - task: CmdLine@2
+      inputs:
+        script: echo root-after
+

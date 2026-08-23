@@ -1,0 +1,7 @@
+parameters:
+- name: greeting
+  type: string
+  default: never-read
+steps:
+- script: echo declared-unused-leaf
+  displayName: declared unused leaf

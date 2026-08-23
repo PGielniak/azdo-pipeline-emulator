@@ -1,0 +1,4 @@
+steps:
+- script: echo root-before
+- template: /e03-bundle/plain/leaf.yml
+- script: echo root-after

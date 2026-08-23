@@ -1,0 +1,14 @@
+parameters:
+- name: greeting
+  type: string
+  default: root-value
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      displayName: shadowed leaf
+      inputs:
+        script: echo root-value
+

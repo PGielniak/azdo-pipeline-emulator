@@ -1,0 +1,10 @@
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      displayName: defaults leaf
+      inputs:
+        script: echo defaults-leaf
+

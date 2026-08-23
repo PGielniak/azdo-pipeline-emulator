@@ -1,0 +1,4 @@
+steps:
+- template: /e03-bundle/passed/leaf.yml
+  parameters:
+    greeting: passed-value

@@ -1,0 +1,7 @@
+steps:
+- script: echo root-before
+- script: echo nested-mid-before
+- script: echo nested-leaf
+  displayName: nested leaf
+- script: echo nested-mid-after
+- script: echo root-after

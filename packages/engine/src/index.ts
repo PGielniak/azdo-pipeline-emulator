@@ -27,3 +27,4 @@ export * from './template/insert.js';
 export * from './template/interpolate.js';
 export * from './template/reference.js';
 export * from './template/bundle.js';
+export * from './template/inline.js';

@@ -1,0 +1,7 @@
+parameters:
+- name: greeting
+  type: string
+  default: root-value
+steps:
+- script: echo ${{ parameters.greeting }}
+  displayName: shadowed leaf
