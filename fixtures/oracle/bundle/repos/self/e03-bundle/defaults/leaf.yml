@@ -1,0 +1,7 @@
+parameters:
+- name: greeting
+  type: string
+  default: defaults-leaf
+steps:
+- script: echo ${{ parameters.greeting }}
+  displayName: defaults leaf

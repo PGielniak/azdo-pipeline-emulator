@@ -1,0 +1,5 @@
+steps:
+- script: echo root-before
+- script: echo plain-leaf
+  displayName: plain leaf
+- script: echo root-after

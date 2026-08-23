@@ -1,0 +1,4 @@
+steps:
+- script: echo root-before
+- template: /e03-bundle/nested/mid.yml
+- script: echo root-after

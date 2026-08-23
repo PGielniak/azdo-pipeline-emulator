@@ -20,7 +20,7 @@ time the IDs were load-bearing in code comments and test names) is the reason th
 | `C-E03-250..279` | E03-S04 limits, emitter, strict validation | this file | free |
 | `C-E03-280..299` | E03-S05-T02 `preview-diff` | this file | free |
 | `C-E03-300..339` | E03-S02-T02 typed parameter binding | this file | **effectively taken** — the 2026-08-20 lane cited this block in `research/experiments/E03-parameters/` READMEs and never consolidated it here (`grep -c 'C-E03-3'` = 0). Do not reallocate; that task reclaims it. |
-| `C-E03-400..429` | **E03-S06 local bundler** | this file | 400–407 used (S06-T01) |
+| `C-E03-400..429` | **E03-S06 local bundler** | this file | 400–407 used (S06-T01), 408–413 used (S06-T02) |
 | `C-E03-430..449` | E03-S07 bundle provenance & diagnostics | this file | free |
 
 Leave gaps. A branch that numbers from what it can see collides silently with every sibling.
@@ -401,3 +401,66 @@ as a **warning**, because "the service's own tolerance is not yet oracle-verifie
 stricter than the validator would silently skip a reference the service accepts, so it matches the
 looser of the two. If Q1 resolves to "the service errors on order", this claim is unaffected —
 detection would still be correct, merely permissive.
+
+---
+
+## E03-S06-T02 — is a mechanical splice equivalent to the committed form? (`C-E03-408..413`)
+
+Evidence: `research/experiments/E03-bundle/` — **12 live preview probes** (`pnpm bundle-survey`), six
+shapes each submitted twice: `<shape>-committed` references the file in the repository,
+`<shape>-inlined` carries the bytes a mechanical splice produces. Every probe is declared `either`;
+the equivalence question is exactly what they ask. Verdicts are on the **normalized** expansion
+(`normalizeExpandedYaml`, E03-S05-T01), so formatting is never read as divergence — see
+`comparison.md` in that directory.
+
+The question exists because docs/02 §5.1 specifies the bundler as "a mechanical inliner, not an
+expander — it never evaluates `${{ }}`, never resolves a directive, and never binds a parameter",
+and does not say whether that is *equivalent*. It is not, and the boundary is not where the
+specification implies.
+
+[C-E03-408] **A parameterless include splices soundly: the inlined override expands to a
+normalized-identical document.** `research/experiments/E03-bundle/plain-{committed,inlined}/` — both
+HTTP 200, normalized expansions equal — checked 2026-08-23. This is the base case the whole bundler
+rests on, and it is the one shape the task's Ground field asked for.
+
+[C-E03-409] **Recursion adds nothing: nested includes are the plain case applied twice.** A root →
+mid → leaf chain, all parameterless, inlines to a normalized-identical expansion
+(`research/experiments/E03-bundle/nested-{committed,inlined}/`, both HTTP 200) — checked 2026-08-23.
+Note what makes this hold: once both files are inlined **no reference is left to rebase**, so the
+`yamlOverride`-stands-at-`/azure-pipelines.yml` rule (C-E12-011) and the
+reference-relative-to-its-own-file rule (C-E12-012) never come into conflict. A reference the
+bundler *cannot* inline is a different matter — it stays in the override and is then resolved from
+the root's directory rather than its original file's, which is why a skipped reference inside a
+non-root file is unsound to leave in place unless it is repository-absolute.
+
+[C-E03-410] **The trigger is *reading* a parameter, not *declaring* one.** A template that declares
+`parameters:` with a default and never reads it inlines to a normalized-identical expansion
+(`declared-unused-{committed,inlined}`, both HTTP 200) — checked 2026-08-23. This widens the sound
+subset materially: the guard is "does this file contain a `${{ parameters.* }}` reference", not
+"does it have a `parameters:` block".
+
+[C-E03-411] **Splicing a template that reads its own parameters is rejected — loudly — when the
+parent does not declare the name.** Both the defaults-only and the value-passing shapes return
+**HTTP 400 `PipelineValidationException`**: `"/azure-pipelines.yml (Line: 2, Col: 11): Key not found
+'greeting'"` (`defaults-inlined/`, `passed-inlined/`), against HTTP 200 for the committed halves —
+checked 2026-08-23. The mechanism is decision 19(c)'s: the `parameters` context raises `Key not
+found 'x'` on a miss where `variables` would return Null. The template's `parameters:` declaration
+block is not legal inside a `steps:` list, so a splice necessarily drops it and the reference
+resolves against the **parent's** table.
+
+[C-E03-412] **When the parent *does* declare the same name, the same splice is silently wrong.**
+`shadowed-{committed,inlined}` — **both HTTP 200**, normalized expansions **divergent**: the
+committed form expands the leaf's own default (`script: echo leaf-default`), the inlined form
+expands the root's (`script: echo root-value`) — checked 2026-08-23. This is the claim the guard
+must be built on. C-E03-411's failure is loud and the service catches it; this one is not, and it
+produces a pipeline that converts, runs, and does the wrong thing. Together they mean the inliner
+cannot rely on the service to police the parameter case and must refuse it itself.
+
+[C-E03-413] **Therefore: a template is mechanically inlinable iff its content reads no
+`${{ parameters.* }}`.** Derived from C-E03-408..412 rather than measured separately. The
+consequence for the product is worth stating plainly rather than leaving in the code: a
+*parameterized* template — the common shape in real pipelines, and the whole point of `extends` —
+cannot be bundled by a mechanical inliner at all. Making the user's local edits to those files
+visible needs the parameter values substituted at the splice, which is **binding**, which is the
+service's job under PLAN D3. That is a real scope boundary of the simplification, not an oversight
+of this task; see E03-S06-T05 and docs/06 §5 decision 54.

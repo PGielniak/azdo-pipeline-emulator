@@ -1,0 +1,22 @@
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo root-before
+    - task: CmdLine@2
+      inputs:
+        script: echo nested-mid-before
+    - task: CmdLine@2
+      displayName: nested leaf
+      inputs:
+        script: echo nested-leaf
+    - task: CmdLine@2
+      inputs:
+        script: echo nested-mid-after
+    - task: CmdLine@2
+      inputs:
+        script: echo root-after
+

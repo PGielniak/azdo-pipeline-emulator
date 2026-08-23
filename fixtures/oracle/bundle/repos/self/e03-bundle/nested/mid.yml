@@ -1,0 +1,4 @@
+steps:
+- script: echo nested-mid-before
+- template: /e03-bundle/nested/leaf.yml
+- script: echo nested-mid-after
