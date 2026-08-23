@@ -21,6 +21,14 @@ export interface ModelProvenance {
 /** `agent` runs steps on the machine; `server` is an agentless job; `deployment` is a strategy job. */
 export type JobKind = 'agent' | 'server' | 'deployment';
 
+/** Where a step runs. The service always delivers the object form (C-E04-062). */
+export interface StepTarget {
+  /** Container alias, or the literal `host`. */
+  readonly container: string;
+  /** Command-restriction mode, when the author set one. */
+  readonly commands?: string;
+}
+
 /** `Name@version` as written in the expanded document. */
 export interface TaskReference {
   readonly name: string;
@@ -51,7 +59,30 @@ export interface Step {
   /** Minutes, as authored. `0` means "no limit" in Azure Pipelines and is preserved, not defaulted. */
   readonly timeoutInMinutes?: number;
   readonly retryCountOnTaskFailure: number;
+  /**
+   * Does this step run at all? `enabled: false` **survives expansion** — the step is still in the
+   * document — so skipping it is the runner's job, not something already done for us (C-E04-064).
+   */
+  readonly enabled: boolean;
+  /**
+   * Where the step runs. Always the object form: the service normalizes the scalar shorthand, so
+   * `target: host` arrives as `{container: 'host'}` and `host` is a container *name* rather than a
+   * distinct kind (C-E04-062).
+   */
+  readonly target?: StepTarget;
+  /**
+   * Read from the task's **inputs**, not from the step mapping.
+   *
+   * `workingDirectory` is not a common step property — the schema page does not list it and the
+   * expansion puts it in `inputs` (C-E04-061). It is surfaced here because docs/01 §6 puts it on
+   * the model and every consumer wants it in one place, but the value comes from where it lives.
+   */
   readonly workingDirectory?: string;
+  /**
+   * Also an input rather than a step property, and for a sharper reason: `failOnStderr` is the
+   * Bash/PowerShell shortcuts' own flag and not an agent-level input at all (C-E06-033, C-E04-061).
+   */
+  readonly failOnStderr: boolean;
   readonly provenance: ModelProvenance;
   /** E07-S03-T01: `native | real-task | stub`. Unset until the disposition registry lands. */
   readonly disposition?: 'native' | 'real-task' | 'stub';

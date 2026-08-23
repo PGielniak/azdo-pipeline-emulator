@@ -1,0 +1,16 @@
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      name: myStep
+      displayName: Say hi
+      enabled: false
+      timeoutInMinutes: 3
+      retryCountOnTaskFailure: 2
+      continueOnError: true
+      condition: succeeded()
+      inputs:
+        script: echo hi
+

@@ -1,0 +1,5 @@
+steps:
+- script: echo hi
+  target:
+    container: c
+    commands: restricted

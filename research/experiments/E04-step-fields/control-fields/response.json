@@ -1,0 +1,5 @@
+{
+  "kind": "expanded",
+  "status": 200,
+  "finalYaml": "stages:\n- stage: __default\n  jobs:\n  - job: Job\n    steps:\n    - task: CmdLine@2\n      name: myStep\n      displayName: Say hi\n      enabled: false\n      timeoutInMinutes: 3\n      retryCountOnTaskFailure: 2\n      continueOnError: true\n      condition: succeeded()\n      inputs:\n        script: echo hi\n\n"
+}

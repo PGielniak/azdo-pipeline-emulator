@@ -19,6 +19,7 @@ import type { Diagnostic } from '../frontend/diagnostics.js';
 import { stepOriginOf } from './shorthand.js';
 import type { MappingNode, ParseResult, PipelineNode, ScalarValue } from '../frontend/parse.js';
 import type {
+  StepTarget,
   Job,
   JobKind,
   ModelProvenance,
@@ -264,6 +265,7 @@ function buildStep(
   }
 
   const name = scalarEntry(node, 'name');
+  const inputs = stringMap(entryValue(node, 'inputs'));
   return {
     id: ordinal,
     ...optional('name', name),
@@ -272,16 +274,37 @@ function buildStep(
     ...optional('origin', task === undefined ? undefined : stepOriginOf(task.name)),
     displayName: scalarEntry(node, 'displayName') ?? task?.name ?? `Step ${ordinal}`,
     task: task ?? { name: '', version: '' },
-    inputs: stringMap(entryValue(node, 'inputs')),
+    inputs,
     ...optional('condition', scalarEntry(node, 'condition')),
     env: stringMap(entryValue(node, 'env')),
     continueOnError: booleanEntry(node, 'continueOnError') ?? false,
     ...optional('timeoutInMinutes', numberEntry(node, 'timeoutInMinutes')),
     retryCountOnTaskFailure: numberEntry(node, 'retryCountOnTaskFailure') ?? 0,
-    ...optional('workingDirectory', scalarEntry(node, 'workingDirectory')),
+    // `enabled: false` survives expansion, so absence means true rather than "already removed"
+    // (C-E04-064).
+    enabled: booleanEntry(node, 'enabled') ?? true,
+    ...optional('target', stepTarget(node)),
+    // From the **inputs**, not the step mapping: neither is a common step property (C-E04-061).
+    ...optional('workingDirectory', inputs['workingDirectory']),
+    failOnStderr: (inputs['failOnStderr'] ?? '').toLowerCase() === 'true',
     provenance,
     warnings: [],
   };
+}
+
+/**
+ * `target:`, always as the object form — the service normalizes the scalar shorthand into
+ * `{container: <name>}` before we ever see it (C-E04-062). The scalar branch is kept for the
+ * `--offline-expand` arm, whose engine performs no such normalization.
+ */
+function stepTarget(node: MappingNode): StepTarget | undefined {
+  const value = entryValue(node, 'target');
+  if (value === undefined) return undefined;
+  if (value.kind === 'scalar') return { container: text(value.value) };
+  if (value.kind !== 'mapping') return undefined;
+  const container = scalarEntry(value, 'container');
+  if (container === undefined) return undefined;
+  return { container, ...optional('commands', scalarEntry(value, 'commands')) };
 }
 
 /** `Name@version`, split on the **last** `@` so a name containing one is still readable. */

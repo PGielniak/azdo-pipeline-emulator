@@ -1,0 +1,9 @@
+steps:
+- script: echo hi
+  name: myStep
+  displayName: Say hi
+  enabled: false
+  timeoutInMinutes: 3
+  retryCountOnTaskFailure: 2
+  continueOnError: true
+  condition: succeeded()

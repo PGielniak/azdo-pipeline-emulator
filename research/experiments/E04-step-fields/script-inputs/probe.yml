@@ -1,0 +1,4 @@
+steps:
+- script: echo hi
+  workingDirectory: /w
+  failOnStderr: true

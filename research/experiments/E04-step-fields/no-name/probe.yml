@@ -1,0 +1,3 @@
+steps:
+- script: echo one
+- script: echo two
