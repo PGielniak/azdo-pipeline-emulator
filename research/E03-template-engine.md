@@ -20,7 +20,7 @@ time the IDs were load-bearing in code comments and test names) is the reason th
 | `C-E03-250..279` | E03-S04 limits, emitter, strict validation | this file | free |
 | `C-E03-280..299` | E03-S05-T02 `preview-diff` | this file | free |
 | `C-E03-300..339` | E03-S02-T02 typed parameter binding | this file | **effectively taken** — the 2026-08-20 lane cited this block in `research/experiments/E03-parameters/` READMEs and never consolidated it here (`grep -c 'C-E03-3'` = 0). Do not reallocate; that task reclaims it. |
-| `C-E03-400..429` | **E03-S06 local bundler** | this file | 400–407 used (S06-T01), 408–413 (S06-T02), 414–418 (S06-T03) |
+| `C-E03-400..429` | **E03-S06 local bundler** | this file | 400–407 used (S06-T01), 408–413 (S06-T02), 414–418 (S06-T03), 419–420 (S06-T04) |
 | `C-E03-430..449` | E03-S07 bundle provenance & diagnostics | this file | free |
 
 Leave gaps. A branch that numbers from what it can see collides silently with every sibling.
@@ -514,3 +514,34 @@ request field": reference-level and `extends`-level `parameters:` are written **
 are bound there by the service. Nothing carries them in the request, and nothing needs to —
 E03-S06-T02's `passed-committed` transcript shows a `- template:` + `parameters:` expanding to the
 supplied value with no client plumbing at all.
+
+---
+
+## E03-S06-T04 — cross-repo references (`C-E03-419..420`)
+
+Evidence: reused rather than re-probed. E03-S02-T01's survey already measured the cross-repo cases
+(`research/experiments/E03-references/cross-*`, `alias-*`), and the templates doc supplies the
+sentence that explains *why* the bundler cannot help here. Per BACKLOG §3, this task grounds only
+its own mechanic — what the diagnostic is allowed to assert — not reference resolution, which is
+`C-E03-195..215`.
+
+[C-E03-419] **A cross-repo reference in a `yamlOverride` resolves and expands: HTTP 200.**
+`research/experiments/E03-references/cross-alias-rel/` (a relative path with `@alias`, read from the
+second repository) and its siblings `cross-alias-abs`, `cross-bare-inside`, `cross-abs-inside`,
+`cross-back-to-self` — all expanded — checked 2026-08-23 (probes recorded 2026-08-20). So an
+un-inlined `@other` reference is **not** a broken conversion: the expansion is correct, it is simply
+read from the *committed* state of that repository. That fixes the severity of this task's
+diagnostic at **warning** rather than error, and rules out "stops" from its Done criterion's
+either/or — stopping would refuse a pipeline the service expands fine.
+
+[C-E03-420] **What the user loses is documented, and it is exactly one thing: their uncommitted
+edits to the other repository.**
+— https://learn.microsoft.com/en-us/azure/devops/pipelines/process/templates — "Repositories are
+resolved only once, when the pipeline starts up. After that, the same resource is used during the
+pipeline run. Only the template files are used." — checked 2026-08-23. Combined with C-E03-404
+(template files must exist in the repository at run start; they cannot come from an artifact) and
+C-E12-011 (the request carries exactly one document, the root override), this closes the question
+the bundler faces: there is **no** request shape that carries a second repository's bytes, so
+`@other` cannot be inlined by any mechanism available on the default path. The remedy is fetching
+and pinning that repository, which is **E09**'s, and the diagnostic says so rather than implying the
+bundler will grow the ability.
