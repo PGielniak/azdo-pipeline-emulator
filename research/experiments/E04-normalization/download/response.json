@@ -1,0 +1,5 @@
+{
+  "kind": "expanded",
+  "status": 200,
+  "finalYaml": "stages:\n- stage: __default\n  jobs:\n  - job: Job\n    steps:\n    - task: 30f35852-3f7e-4c0c-9a88-e127b4f97211@1\n      inputs:\n        alias: current\n        artifact: drop\n\n"
+}

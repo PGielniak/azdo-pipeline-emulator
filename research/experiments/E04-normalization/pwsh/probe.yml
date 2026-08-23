@@ -1,0 +1,2 @@
+steps:
+- pwsh: Write-Host hello

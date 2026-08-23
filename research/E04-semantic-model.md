@@ -9,7 +9,7 @@ collision that made this convention mandatory.
 | Block | Task | File | Status |
 |---|---|---|---|
 | `C-E04-001..029` | **E04-S01-T01 model types & builder** | this file | 001–005 used |
-| `C-E04-030..059` | E04-S01-T02 normalization boundary | this file | free |
+| `C-E04-030..059` | E04-S01-T02 normalization boundary | this file | 030–037 used |
 | `C-E04-060..079` | E04-S01-T03 common step fields | this file | free |
 | `C-E04-080..109` | E04-S02 variables & scoping | this file | free |
 | `C-E04-110..139` | E04-S03 dependency graph & matrix | this file | free |
@@ -63,3 +63,75 @@ are rooted at `stages:` and every corresponding expansion is likewise rooted at 
 authored stage names intact (`probe`, `alpha`, `beta` in the corpus, alongside the synthetic
 `__default` from the `steps:`-rooted probes) — counted 2026-08-23. Together with C-E04-002/003 this
 gives the builder its input contract: one shape, always, on the default path.
+
+---
+
+## E04-S01-T02 — the normalization boundary (`C-E04-030..037`)
+
+Evidence: `research/experiments/E04-normalization/` — **9 live probes** (`pnpm normalization-survey`),
+one per step shorthand the task's **Do** names plus a canonical-`task:` control, each submitted as a
+bare `steps:` document. `matrix.md` is the summary. Every probe is declared asking, not asserting.
+
+The task says to "implement a `normalize.ts` pass for **only** the remainder". The measurement makes
+that instruction resolve oddly and the resolution is the finding: **the remainder is empty in the
+sense the task meant, and non-empty in a sense it did not anticipate.**
+
+[C-E04-030] **Every documented step shorthand is desugared by the service into `task: …@version`.**
+`script` → `CmdLine@2`, `bash` → `Bash@3`, `pwsh` → `PowerShell@2`, `powershell` → `PowerShell@2`,
+`publish` → `ecdc45f6-832d-4ad9-b52b-ee49e94659be@1`, `download` →
+`30f35852-3f7e-4c0c-9a88-e127b4f97211@1`, `checkout` → `6d15af64-176c-496d-b583-fd2ae21d4df4@1` —
+all HTTP 200, `research/experiments/E04-normalization/<keyword>/` — checked 2026-08-23. No shorthand
+keyword survives into the expansion, and the canonical-`task:` control passes through unchanged. So
+**we desugar nothing**: a `normalize.ts` pass that rewrote `bash:` into `Bash@3` would be a second,
+divergent implementation of work the authority already did.
+
+[C-E04-031] **Three of them desugar to a bare GUID with no name spelling, and that is the real
+normalization need.** `checkout`, `download` and `publish` arrive as `task: <guid>@1`. This is not a
+new discovery for the repo — the normalizer records it as C-E12-019 and holds the grounded mapping
+`ecdc45f6…` → `PublishPipelineArtifact`, while deliberately **refusing** to name the `checkout` and
+`download` GUIDs because they are agent-internal, return 404 from
+`GET _apis/distributedtask/tasks/{guid}`, and have no catalogue name to unify with. What is new is
+the consequence for **this** epic: PLAN D4 emits `checkout` natively, and a model that carries only
+`task: 6d15af64-…@1` gives E05 nothing to match on. The keyword the author wrote is *gone* by the
+time the model is built.
+
+[C-E04-032] **The GUID↔keyword association is measured here, directly.** Each association comes from
+submitting that keyword and reading the expansion: `checkout: self` →
+`6d15af64-176c-496d-b583-fd2ae21d4df4@1` with `inputs: {repository: self}`; `download: current` →
+`30f35852-3f7e-4c0c-9a88-e127b4f97211@1` with `inputs: {alias: current, artifact: drop}`;
+`publish: <path>` → `ecdc45f6-832d-4ad9-b52b-ee49e94659be@1` with
+`inputs: {path: …, artifactName: drop}` — checked 2026-08-23. Note the input renaming that comes
+with it: the author's `artifact:` becomes `artifactName:` for `publish` but stays `artifact:` for
+`download`, and `download:`'s scalar becomes `alias:`. A model that assumed the authored key names
+would read the wrong input.
+
+[C-E04-033] **Recovering the keyword is not the same operation the normalizer refuses.** The
+normalizer declines to *rename* these GUIDs because its output is a diff and an invented name would
+make the diff lie. Recording "this step came from the `checkout` keyword" is a different fact: it is
+measured (C-E04-032), it is not a claim about the task catalogue, and it does not rename anything.
+The two coexist — `TASK_GUID_NAMES` stays as it is, with its single grounded entry, and the model
+carries the origin keyword in its own field.
+
+[C-E04-034] **`download:` and `DownloadPipelineArtifact@2` are different tasks and must not be
+folded.** Recorded in `packages/engine/src/normalize/normalize.ts` from C-E12-019 and restated here
+because this task is where something might have folded them: the origin keyword `download` maps to
+the agent-internal GUID only, never to the catalogue task of a similar name.
+
+[C-E04-035] **`getPackage` never reaches the model as a shorthand: without a matching package
+resource the service rejects the pipeline.** `research/experiments/E04-normalization/getPackage/` —
+HTTP 400 `PipelineValidationException`, `"/azure-pipelines.yml (Line: 2, Col: 15): Cannot find
+package resource for pkg"` — checked 2026-08-23. So the shorthand is resource-gated rather than
+free-standing, and a conversion that reaches the model at all has already had it either desugared or
+rejected. Not implemented, and the reason is recorded rather than left as a silent hole: probing the
+desugared form needs a `resources.packages` entry in the test organization, which no current task
+provisions.
+
+[C-E04-036] **The canonical control passes through untouched.** `- task: CmdLine@2` with `inputs:`
+expands to exactly itself (`task-explicit/`, HTTP 200) — checked 2026-08-23. This is what makes the
+rows above attributable to the shorthand rather than to the expansion rewriting steps in general.
+
+[C-E04-037] **`pwsh` and `powershell` both become `PowerShell@2` and are told apart by an input.**
+Both expand to the same task; the `pwsh` probe's expansion carries `pwsh: true` among its inputs
+while the `powershell` probe's does not — checked 2026-08-23,
+`research/experiments/E04-normalization/{pwsh,powershell}/final.yml`. Anything dispatching on the
+task reference alone cannot distinguish them, which matters to E07's disposition registry.

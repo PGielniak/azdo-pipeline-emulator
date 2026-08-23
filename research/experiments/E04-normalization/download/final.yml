@@ -1,0 +1,10 @@
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: 30f35852-3f7e-4c0c-9a88-e127b4f97211@1
+      inputs:
+        alias: current
+        artifact: drop
+
