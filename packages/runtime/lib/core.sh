@@ -2571,6 +2571,9 @@ run_step() {
     if ((condition_status == 1)); then
       printf '%s\n' 'Skipping step due to condition evaluation.' | tee -a -- "$log_file"
       azdo_step_result_set "$id" Skipped || return
+      # Duration 0: a skipped step never ran, and reporting the condition-evaluation time as the
+      # step's duration would misattribute it.
+      azdo_summary_record "$id" "$display" Skipped 0 "$log_file" || return
       return 0
     fi
     if ((condition_status != 0)); then
@@ -2582,6 +2585,7 @@ run_step() {
           "$display" "$condition_status" | tee -a -- "$log_file" >&2
       fi
       azdo_step_result_set "$id" Failed || return
+      azdo_summary_record "$id" "$display" Failed 0 "$log_file" || return
       return "$condition_status"
     fi
   fi
@@ -2694,6 +2698,7 @@ run_step() {
     result=SucceededWithIssues
   fi
   azdo_step_result_set "$id" "$result" || return
+  azdo_summary_record "$id" "$display" "$result" "$((SECONDS - start_seconds))" "$log_file" || return
 
   # Counts are recorded next to the result for the run summary. They never move the result on their
   # own — only a failing command or the step's exit status does (C-E06-063/064).
@@ -3707,4 +3712,202 @@ azdo_checkout() {
   fi
   azdo__checkout_seed_var 'Build.Repository.LocalPath' "$local_path" || return 1
   azdo__checkout_seed_var 'Build.SourcesDirectory' "$sources_root" || return 1
+}
+
+# ---------------------------------------------------------------------------------------------
+# Run summary & exit code (E06-S06-T02)
+#
+# docs/04 §2 asks for an "End-of-run summary table (step, result, duration, log path), mirroring
+# the ADO UI's job view", and docs/04 §3 fixes the exit code to the aggregate result. Neither is
+# agent behavior — the agent reports to the service, not to a shell — so this is *our* contract,
+# grounded in the design docs rather than in a pinned source, and the aggregation ranking it reuses
+# is the measured one (C-E06-059..061).
+#
+# Records live in `state/summary/` rather than beside the per-step results, because the table spans
+# every stage and job while `state/results/<stage>/<job>/` is scoped to one job. They are numbered
+# in completion order, which is the order the table prints. Sequential execution is the contract
+# (docs/04 §3: "sequential by default"; `--parallel` is deferred to the archived P6), so a counted
+# sequence is sound here; a parallel runner would need an ordering key that does not race.
+# ---------------------------------------------------------------------------------------------
+
+azdo__summary_dir() {
+  local state_dir
+  state_dir="$(azdo__state_dir)" || return
+  printf '%s/summary\n' "$state_dir"
+}
+
+# azdo_summary_record <step-id> <display> <result> <duration-seconds> <log-path>
+#
+# One file per step, one field per line — the same file-per-value choice the state store makes, and
+# for the same reason: a display name may contain any character a YAML scalar may contain, and a
+# delimited row would have to quote it. The trailing field is read with the rest of the line intact.
+azdo_summary_record() {
+  (($# == 5)) || {
+    printf '%s\n' 'usage: azdo_summary_record <step-id> <display> <result> <duration> <log-path>' >&2
+    return 2
+  }
+  azdo__valid_step_result "$3" || return
+  [[ "$4" =~ ^[0-9]+$ ]] || {
+    printf 'duration must be a non-negative integer, got: %s\n' "$4" >&2
+    return 2
+  }
+
+  local summary_dir index record old_umask
+  summary_dir="$(azdo__summary_dir)" || return
+  mkdir -p "$summary_dir" || return
+
+  # `((index++))` would be wrong here: it evaluates to the *pre*-increment value, so the first
+  # increment returns 0 and, as the last command of the loop body, fails the whole function.
+  index=0
+  for record in "$summary_dir"/[0-9]*; do
+    [[ -f "$record" ]] && index=$((index + 1))
+  done
+
+  printf -v record '%s/%04d' "$summary_dir" "$index"
+  old_umask="$(umask)"
+  umask 077
+  printf '%s\n%s\n%s\n%s\n%s\n' \
+    "${AZDO_VAR_SCOPE:-pipeline}" "$1" "$2" "$3" "$4" >"$record" || {
+    umask "$old_umask"
+    return 1
+  }
+  printf '%s\n' "$5" >>"$record" || {
+    umask "$old_umask"
+    return 1
+  }
+  umask "$old_umask"
+}
+
+# azdo_run_result
+#
+# Worst-wins across every recorded step result in the run, using the ranking
+# `azdo__job_status_from_results` applies within a job (C-E06-059..061): `Canceled` wins outright,
+# then `Failed`, then `SucceededWithIssues`; `Skipped` never moves it, and an empty run is
+# `Succeeded`. Stage and job aggregation are the same fold over a wider set, which is why this
+# reads the recorded step results directly rather than re-aggregating per level — a job whose
+# `continueOnError` degraded a `Failed` has already had that written into its step results.
+# shellcheck disable=SC2120 # This aggregate intentionally accepts no arguments.
+azdo_run_result() {
+  (($# == 0)) || {
+    printf '%s\n' 'usage: azdo_run_result' >&2
+    return 2
+  }
+
+  local state_dir results_dir result_path result status=Succeeded
+  state_dir="$(azdo__state_dir)" || return
+  results_dir="$state_dir/results"
+  [[ -d "$results_dir" ]] || {
+    printf '%s\n' "$status"
+    return 0
+  }
+
+  while IFS= read -r result_path; do
+    # `issues/` sidecars live under the same tree and are not results.
+    [[ "${result_path%/*}" != */issues ]] || continue
+    IFS= read -r result <"$result_path" || [[ -n "$result" ]] || continue
+    azdo__valid_step_result "$result" || return
+    case "$result" in
+      Canceled)
+        status=Canceled
+        break
+        ;;
+      Failed) status=Failed ;;
+      SucceededWithIssues)
+        [[ "$status" = Succeeded ]] && status=SucceededWithIssues
+        ;;
+      Succeeded | Skipped) ;;
+    esac
+  done < <(find "$results_dir" -type f ! -name '.*' | LC_ALL=C sort)
+
+  printf '%s\n' "$status"
+}
+
+# azdo_run_exit_code
+#
+# docs/04 §3: "run exit code is non-zero iff the pipeline result is `Failed`". **Canceled exits
+# non-zero too**, which is a deliberate correction to that sentence rather than a reading of it:
+# the sentence enumerates the three *job* results and does not consider `Canceled`, and a run the
+# user interrupted must not report success to whatever invoked `run.sh`. docs/04 §3 is corrected
+# and docs/06 §5 decision 56 records why.
+#
+# One code for both, because the contract is "non-zero" and inventing a second would be a
+# convention nothing else in the project reads.
+azdo_run_exit_code() {
+  (($# == 0)) || {
+    printf '%s\n' 'usage: azdo_run_exit_code' >&2
+    return 2
+  }
+
+  local result
+  # shellcheck disable=SC2119 # The aggregate intentionally accepts no arguments.
+  result="$(azdo_run_result)" || return
+  case "$result" in
+    Failed | Canceled) printf '%s\n' 1 ;;
+    *) printf '%s\n' 0 ;;
+  esac
+}
+
+# azdo_run_summary
+#
+# The end-of-run table of docs/04 §2. Columns are padded to the widest cell so the result column
+# lines up — the ADO job view's readability is the whole point — and the header is omitted when
+# there is nothing to report, so a run that executed no steps prints one honest line instead of an
+# empty frame.
+azdo_run_summary() {
+  (($# == 0)) || {
+    printf '%s\n' 'usage: azdo_run_summary' >&2
+    return 2
+  }
+
+  local summary_dir record scope id display result duration log
+  local -a scopes=() ids=() displays=() results=() durations=() logs=()
+  local scope_width=5 id_width=4 display_width=4 result_width=6
+
+  summary_dir="$(azdo__summary_dir)" || return
+  if [[ -d "$summary_dir" ]]; then
+    for record in "$summary_dir"/[0-9]*; do
+      [[ -f "$record" ]] || continue
+      { IFS= read -r scope
+        IFS= read -r id
+        IFS= read -r display
+        IFS= read -r result
+        IFS= read -r duration
+        IFS= read -r log || :
+      } <"$record"
+      scopes+=("$scope")
+      ids+=("$id")
+      displays+=("$display")
+      results+=("$result")
+      durations+=("$duration")
+      logs+=("$log")
+      ((${#scope} > scope_width)) && scope_width=${#scope}
+      ((${#id} > id_width)) && id_width=${#id}
+      ((${#display} > display_width)) && display_width=${#display}
+      ((${#result} > result_width)) && result_width=${#result}
+    done
+  fi
+
+  if ((${#ids[@]} == 0)); then
+    printf 'No steps ran.\n'
+    return 0
+  fi
+
+  local index
+  printf '%-*s  %-*s  %-*s  %-*s  %8s  %s\n' \
+    "$scope_width" 'SCOPE' "$id_width" 'STEP' "$display_width" 'NAME' \
+    "$result_width" 'RESULT' 'DURATION' 'LOG'
+  for ((index = 0; index < ${#ids[@]}; index++)); do
+    printf '%-*s  %-*s  %-*s  %-*s  %7ss  %s\n' \
+      "$scope_width" "${scopes[$index]}" \
+      "$id_width" "${ids[$index]}" \
+      "$display_width" "${displays[$index]}" \
+      "$result_width" "${results[$index]}" \
+      "${durations[$index]}" \
+      "${logs[$index]}"
+  done
+
+  local overall
+  # shellcheck disable=SC2119 # The aggregate intentionally accepts no arguments.
+  overall="$(azdo_run_result)" || return
+  printf '\nResult: %s\n' "$overall"
 }

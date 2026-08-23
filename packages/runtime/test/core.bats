@@ -2653,3 +2653,129 @@ ENV
     $'OUT=***\nERR=***\n##[error]Bash wrote one or more lines to the standard error stream.' ]
   ! grep -F "$marker" "$AZDO_LOG_DIR/masked-stderr-branch.log"
 }
+
+# --- E06-S06-T02: run summary & exit codes -----------------------------------------------------
+
+@test "azdo_run_result folds every recorded step result worst-wins" {
+  mkdir -p "$AZDO_STATE_DIR/results/Build/build" "$AZDO_STATE_DIR/results/Test/test"
+  printf 'Succeeded\n' >"$AZDO_STATE_DIR/results/Build/build/010"
+  printf 'Skipped\n' >"$AZDO_STATE_DIR/results/Build/build/020"
+  run -0 azdo_run_result
+  [ "$output" = Succeeded ]
+
+  printf 'SucceededWithIssues\n' >"$AZDO_STATE_DIR/results/Test/test/010"
+  run -0 azdo_run_result
+  [ "$output" = SucceededWithIssues ]
+
+  # Failed outranks SucceededWithIssues regardless of which stage recorded it.
+  printf 'Failed\n' >"$AZDO_STATE_DIR/results/Build/build/030"
+  run -0 azdo_run_result
+  [ "$output" = Failed ]
+
+  # Canceled outranks everything.
+  printf 'Canceled\n' >"$AZDO_STATE_DIR/results/Test/test/020"
+  run -0 azdo_run_result
+  [ "$output" = Canceled ]
+}
+
+@test "azdo_run_result is Succeeded for a run that recorded nothing" {
+  run -0 azdo_run_result
+  [ "$output" = Succeeded ]
+}
+
+@test "azdo_run_result ignores the issues sidecars that sit in the same tree" {
+  mkdir -p "$AZDO_STATE_DIR/results/Build/build/issues"
+  printf 'Succeeded\n' >"$AZDO_STATE_DIR/results/Build/build/010"
+  printf 'errors=2\nwarnings=1\n' >"$AZDO_STATE_DIR/results/Build/build/issues/010"
+  run -0 azdo_run_result
+  [ "$output" = Succeeded ]
+}
+
+@test "azdo_run_exit_code is non-zero only for Failed and Canceled (docs/04 §3, decision 56)" {
+  mkdir -p "$AZDO_STATE_DIR/results/Build/build"
+  local result
+  for result in Succeeded SucceededWithIssues Skipped; do
+    printf '%s\n' "$result" >"$AZDO_STATE_DIR/results/Build/build/010"
+    run -0 azdo_run_exit_code
+    [ "$output" = 0 ]
+  done
+  # Canceled is the deliberate correction to docs/04 §3's "iff Failed": an interrupted run must not
+  # report success to whatever invoked run.sh.
+  for result in Failed Canceled; do
+    printf '%s\n' "$result" >"$AZDO_STATE_DIR/results/Build/build/010"
+    run -0 azdo_run_exit_code
+    [ "$output" = 1 ]
+  done
+}
+
+@test "azdo_run_summary reports no steps when nothing ran" {
+  run -0 azdo_run_summary
+  [ "$output" = 'No steps ran.' ]
+}
+
+@test "azdo_run_summary prints step, result, duration and log path in completion order" {
+  azdo_summary_record 010 'Restore packages' Succeeded 3 /logs/010.log
+  azdo_summary_record 020 'Build solution' SucceededWithIssues 12 /logs/020.log
+  azdo_summary_record 030 'Run tests' Failed 7 /logs/030.log
+
+  run -0 azdo_run_summary
+  # Columns are padded to the widest cell, so NAME is exactly as wide as 'Restore packages'.
+  [ "${lines[0]}" = 'SCOPE     STEP  NAME              RESULT               DURATION  LOG' ]
+  [ "${lines[1]}" = 'pipeline  010   Restore packages  Succeeded                  3s  /logs/010.log' ]
+  [ "${lines[2]}" = 'pipeline  020   Build solution    SucceededWithIssues       12s  /logs/020.log' ]
+  [ "${lines[3]}" = 'pipeline  030   Run tests         Failed                     7s  /logs/030.log' ]
+  # bats collapses the blank separator line (newline is IFS whitespace), so the fold lands at [4].
+  # It reports the *recorded results*, which these synthetic rows deliberately never wrote — the
+  # table and the aggregate are separate sources, and this asserts they stay separate.
+  [ "${lines[4]}" = 'Result: Succeeded' ]
+  [[ "$output" == *$'\n\nResult: ' ]] || [[ "$output" == *$'\n\nResult: Succeeded' ]]
+}
+
+@test "azdo_run_summary keeps a display name containing spaces and punctuation intact" {
+  azdo_summary_record 010 'Publish "artifact" | stage: A' Succeeded 1 '/logs/a b.log'
+  run -0 azdo_run_summary
+  [[ "${lines[1]}" == *'Publish "artifact" | stage: A'* ]]
+  [[ "${lines[1]}" == *'/logs/a b.log' ]]
+}
+
+@test "azdo_summary_record rejects an invalid result and a non-numeric duration" {
+  run -2 azdo_summary_record 010 name Bogus 1 /logs/010.log
+  [[ "$output" == *'invalid step result: Bogus'* ]]
+  run -2 azdo_summary_record 010 name Succeeded 1.5 /logs/010.log
+  [[ "$output" == *'duration must be a non-negative integer'* ]]
+}
+
+@test "run_step records a summary row with its result and log path" {
+  local source_file="$BATS_TEST_TMPDIR/summarised.sh"
+  prepare_run_step
+  printf 'printf %s\\\\n ran\n' >"$source_file"
+
+  run -0 run_test_step 040 "$source_file" 10
+
+  run -0 azdo_run_summary
+  [[ "${lines[1]}" == *'040'* ]]
+  [[ "${lines[1]}" == *'Succeeded'* ]]
+  [[ "${lines[1]}" == *"$AZDO_LOG_DIR/040.log" ]]
+}
+
+@test "a skipped step is summarised with duration 0" {
+  local source_file="$BATS_TEST_TMPDIR/skipped.sh"
+  prepare_run_step
+  printf 'printf %s\\\\n ran\n' >"$source_file"
+  cond_false() { return 1; }
+
+  run -0 run_step \
+    --id 050 \
+    --file "$source_file" \
+    --cond cond_false \
+    --display 'Never runs' \
+    --continue-on-error false \
+    --fail-on-stderr false \
+    --retries 0 \
+    --timeout 10
+
+  run -0 azdo_run_summary
+  [[ "${lines[1]}" == *'Never runs'* ]]
+  [[ "${lines[1]}" == *'Skipped'* ]]
+  [[ "${lines[1]}" == *'  0s '* ]]
+}
