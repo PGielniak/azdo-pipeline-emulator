@@ -1,0 +1,14 @@
+variables:
+  a: pipeline-yaml
+stages:
+- stage: one
+  variables:
+  - name: a
+    value: stage-yaml
+  jobs:
+  - job: A
+    variables:
+    - name: a
+      value: job-yaml
+    steps:
+    - script: echo $(a)

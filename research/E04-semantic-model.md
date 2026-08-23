@@ -11,7 +11,7 @@ collision that made this convention mandatory.
 | `C-E04-001..029` | **E04-S01-T01 model types & builder** | this file | 001–005 used |
 | `C-E04-030..059` | E04-S01-T02 normalization boundary | this file | 030–037 used |
 | `C-E04-060..079` | E04-S01-T03 common step fields | this file | 060–067 used |
-| `C-E04-080..109` | E04-S02 variables & scoping | this file | free |
+| `C-E04-080..109` | E04-S02 variables & scoping | this file | 080–086 used (S02-T01) |
 | `C-E04-110..139` | E04-S03 dependency graph & matrix | this file | free |
 
 Leave gaps. A branch that numbers from what it can see collides silently with every sibling.
@@ -202,3 +202,59 @@ from text rather than trusting the YAML scalar kind.
 `bash-inputs/`, HTTP 200 — checked 2026-08-23. Recorded because it is a case of the expansion
 *adding* inputs rather than only renaming them (C-E04-032's `artifactName`), so a consumer
 comparing authored inputs against expanded ones must expect additions in both directions.
+
+---
+
+## E04-S02-T01 — variable scope and precedence (`C-E04-080..086`)
+
+Evidence: the variables doc (fetched 2026-08-23, `ms.date: 2026-03-04`, source commit
+`1eeaa8de39f8b7130d8eb45ec907d9e47d6f5a32` of `MicrosoftDocs/azure-devops-docs-pr`
+`docs/pipelines/process/variables.md`) and **5 live probes** under
+`research/experiments/E04-variables/`.
+
+[C-E04-080] **The expansion does *not* resolve variable precedence: all three scopes survive.** A
+document setting `a` at root, stage and job comes back with all three `variables:` blocks intact,
+each with its own value (`three-scopes/`, HTTP 200) — checked 2026-08-23. This is the load-bearing
+claim of the task: unlike the step shorthands of C-E04-030, **layering is ours**, and the model has
+to implement it rather than read an already-resolved answer.
+
+[C-E04-081] **Nor does it collapse duplicates within one scope.** Two entries named `a` in one
+stage's list both survive, in authored order (`same-scope-duplicate/`, HTTP 200) — checked
+2026-08-23. So last-wins is ours too.
+
+[C-E04-082] **The documented precedence, quoted.**
+— https://learn.microsoft.com/en-us/azure/devops/pipelines/process/variables — "When you set a
+variable with the same name in multiple scopes, the following precedence applies (highest
+precedence first): 1. Job level variable set in the YAML file 2. Stage level variable set in the
+YAML file 3. Pipeline level variable set in the YAML file 4. Variable set at queue time 5. Pipeline
+variable set in Pipeline settings UI" — checked 2026-08-23. And within one scope: "When you set a
+variable with the same name in the same scope, the last set value takes precedence." Levels 4 and 5
+are outside the YAML and therefore outside the model: they are the `.env` boundary (PLAN D7), which
+is why the resolver layers exactly three.
+
+[C-E04-083] **The scope rule in the page's own words.**
+— same page — "At the root level, to make it available to all jobs in the pipeline. At the stage
+level, to make it available only to a specific stage. At the job level, to make it available only to
+a specific job." and "Variables at the job level override variables at the root and stage level.
+Variables at the stage level override variables at the root level." — checked 2026-08-23. A job
+therefore sees root + its own stage + itself, and **never a sibling stage's or a sibling job's**.
+
+[C-E04-084] **The mapping shorthand is normalized to the list form by the service.**
+`variables: {a: from-mapping, b: two}` expands to `- name: a / value: from-mapping` and
+`- name: b / value: two` (`mapping-vs-list/`, HTTP 200) — checked 2026-08-23. So on the default path
+the model only ever sees the list form, the same way `target:` only arrives as an object
+(C-E04-062). The mapping branch is kept for the `--offline-expand` arm.
+
+[C-E04-085] **`readonly: true` survives expansion verbatim**, so the model can carry it to the
+manifest and the runtime (`readonly-flag/`, HTTP 200) — checked 2026-08-23. This matters because the
+runtime already enforces it: a read-only overwrite emits an error and preserves the first value
+(C-E06-005/006), and it needs to be told which names are read-only.
+
+[C-E04-086] **An unresolvable `group:` is rejected by the service, so it never reaches the model.**
+`- group: nonexistent-group` returns HTTP 400 — "An error occurred while loading the YAML build
+pipeline. Variable group  was not found or is not authorized for use." (`group-entry/`) — checked
+2026-08-23. What an **authorized** group expands to is *not* measured: it needs a variable group
+provisioned and authorized in the test organization, which no current task does, and PLAN D7 forbids
+fetching group *values* in any case. Recorded as a gap rather than guessed — the resolver carries a
+group entry as a named marker contributing no value, which is the behavior E04-S02-T02's
+classification and the `.env.example` synthesis (docs/04 §10) both expect.

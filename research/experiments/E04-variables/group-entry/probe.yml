@@ -1,0 +1,6 @@
+variables:
+- group: nonexistent-group
+- name: a
+  value: inline
+steps:
+- script: echo $(a)

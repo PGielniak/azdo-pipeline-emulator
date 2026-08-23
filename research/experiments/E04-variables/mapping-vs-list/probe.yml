@@ -1,0 +1,5 @@
+variables:
+  a: from-mapping
+  b: two
+steps:
+- script: echo $(a)$(b)

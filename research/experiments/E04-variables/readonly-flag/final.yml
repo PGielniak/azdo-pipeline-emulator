@@ -1,0 +1,13 @@
+variables:
+- name: a
+  value: locked
+  readonly: true
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo $(a)
+

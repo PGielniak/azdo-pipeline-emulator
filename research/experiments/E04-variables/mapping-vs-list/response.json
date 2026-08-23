@@ -1,0 +1,5 @@
+{
+  "kind": "expanded",
+  "status": 200,
+  "finalYaml": "variables:\n- name: a\n  value: from-mapping\n- name: b\n  value: two\nstages:\n- stage: __default\n  jobs:\n  - job: Job\n    steps:\n    - task: CmdLine@2\n      inputs:\n        script: echo $(a)$(b)\n\n"
+}

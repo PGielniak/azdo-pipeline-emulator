@@ -1,0 +1,6 @@
+variables:
+- name: a
+  value: locked
+  readonly: true
+steps:
+- script: echo $(a)

@@ -1,0 +1,11 @@
+stages:
+- stage: one
+  variables:
+  - name: a
+    value: alpha
+  - name: a
+    value: beta
+  jobs:
+  - job: I
+    steps:
+    - script: echo $(a)

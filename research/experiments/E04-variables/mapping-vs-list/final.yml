@@ -1,0 +1,14 @@
+variables:
+- name: a
+  value: from-mapping
+- name: b
+  value: two
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo $(a)$(b)
+
