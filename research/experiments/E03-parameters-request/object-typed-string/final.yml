@@ -1,0 +1,16 @@
+parameters:
+- name: config
+  type: object
+  default: {}
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: >-
+          echo [{
+            "key": "value"
+          }]
+

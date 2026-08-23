@@ -1,0 +1,6 @@
+parameters:
+- name: count
+  type: number
+  default: 1
+steps:
+- script: echo [${{ parameters.count }}]

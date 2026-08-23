@@ -48,7 +48,7 @@ describe('cacheExpansion / readCachedExpansion', () => {
     const cacheDir = await makeTempDir();
     const entry = await cacheExpansion(cacheDir, CONFIG, REQUEST, FINAL_YAML);
 
-    expect(entry.requestHash).toBe(expansionRequestHash(REQUEST.yamlOverride));
+    expect(entry.requestHash).toBe(expansionRequestHash(REQUEST));
     expect(entry.finalYamlHash).toBe(finalYamlHash(FINAL_YAML));
     expect(entry.apiVersion).toBe('7.1');
     expect(entry.pipelineId).toBe(19);

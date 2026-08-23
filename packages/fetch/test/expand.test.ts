@@ -40,16 +40,20 @@ const json = (status: number, body: unknown): Response =>
 
 describe('expansion provenance', () => {
   it('is a deterministic content hash of the override', () => {
-    expect(expansionRequestHash('steps: []\n')).toMatch(/^[0-9a-f]{64}$/);
-    expect(expansionRequestHash('steps: []\n')).toBe(expansionRequestHash('steps: []\n'));
-    expect(expansionRequestHash('steps: []\n')).not.toBe(expansionRequestHash('steps: []\n '));
+    expect(expansionRequestHash({ yamlOverride: 'steps: []\n' })).toMatch(/^[0-9a-f]{64}$/);
+    expect(expansionRequestHash({ yamlOverride: 'steps: []\n' })).toBe(
+      expansionRequestHash({ yamlOverride: 'steps: []\n' }),
+    );
+    expect(expansionRequestHash({ yamlOverride: 'steps: []\n' })).not.toBe(
+      expansionRequestHash({ yamlOverride: 'steps: []\n ' }),
+    );
   });
 
   it('records api-version, pipelineId, request hash and the redaction invariant', () => {
     const provenance = provenanceFor(CONFIG, REQUEST);
     expect(provenance.apiVersion).toBe('7.1');
     expect(provenance.pipelineId).toBe(19);
-    expect(provenance.requestHash).toBe(expansionRequestHash(REQUEST.yamlOverride));
+    expect(provenance.requestHash).toBe(expansionRequestHash(REQUEST));
     expect(provenance.redacted).toBe(true); // persisted transcripts are always redacted (D7)
   });
 });
@@ -93,7 +97,9 @@ describe('expand() outcome mapping', () => {
     if (outcome.kind !== 'rejected') return;
     expect(outcome.message).toContain('Unexpected value');
     expect(outcome.typeKey).toBe('PipelineValidationException');
-    expect(outcome.provenance.requestHash).toBe(expansionRequestHash('stepz: []\n'));
+    expect(outcome.provenance.requestHash).toBe(
+      expansionRequestHash({ yamlOverride: 'stepz: []\n' }),
+    );
   });
 
   it('[C-E00-025] classifies a 302 as unauthenticated', async () => {

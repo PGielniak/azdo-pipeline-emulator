@@ -50,9 +50,55 @@ export type ExpansionOutcome =
   | { readonly kind: 'unauthenticated'; readonly provenance: ExpansionProvenance }
   | { readonly kind: 'transport'; readonly provenance: ExpansionProvenance };
 
-/** SHA-256 of the override, hex-encoded — stable across processes and platforms. */
-export function expansionRequestHash(yamlOverride: string): string {
-  return createHash('sha256').update(yamlOverride, 'utf8').digest('hex');
+/**
+ * SHA-256 of the request, hex-encoded — stable across processes and platforms.
+ *
+ * **Covers `templateParameters`, not just the override (E03-S06-T03).** Two conversions of the same
+ * pipeline with different parameter values produce genuinely different expansions — the service
+ * substitutes them (C-E03-414) — so hashing the override alone would have let the second read the
+ * first's cached `finalYaml`. Nothing exercised that before this task, because nothing set the
+ * field; it is fixed here rather than left for whoever first sets it.
+ *
+ * A request with no parameters hashes to the **override alone**, exactly as before, so existing
+ * cache entries and `azdo-emu.lock.json` pins stay valid. Only the parameterized case is new
+ * ground, and the composite is canonical — keys sorted — so key order cannot change the hash.
+ */
+export function expansionRequestHash(request: ExpansionRequest): string {
+  const parameters = request.templateParameters ?? {};
+  const names = Object.keys(parameters).sort();
+  const payload =
+    names.length === 0
+      ? request.yamlOverride
+      : JSON.stringify({
+          yamlOverride: request.yamlOverride,
+          templateParameters: names.map((name) => [name, parameters[name]]),
+        });
+  return createHash('sha256').update(payload, 'utf8').digest('hex');
+}
+
+/**
+ * Render `--parameter` values into the `Record<string, string>` the request field carries.
+ *
+ * Measured rules (C-E03-416/417). The service coerces a string to the parameter's declared type, so
+ * `'42'` binds to a `type: number` parameter as the number 42. A **structured** value must be sent
+ * as serialized JSON: a raw JSON object in the field is refused with a server-side
+ * `ArgumentNullException` ("Value cannot be null. Parameter name: runParameters"), while the same
+ * object as a JSON *string* binds and is parsed back into a real object. So everything that is not
+ * already a string goes through `JSON.stringify`, which renders numbers and booleans as their bare
+ * text and objects/arrays as the JSON the service expects.
+ *
+ * `undefined` values are dropped rather than rendered: the field cannot express "declared but
+ * unset", and the service rejects a name the pipeline does not declare (C-E03-415).
+ */
+export function serializeTemplateParameters(
+  values: Readonly<Record<string, unknown>>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(values)) {
+    if (value === undefined) continue;
+    out[name] = typeof value === 'string' ? value : JSON.stringify(value);
+  }
+  return out;
 }
 
 /** Provenance for a request against a config; callers persist it beside the redacted response. */
@@ -63,7 +109,7 @@ export function provenanceFor(
   return {
     apiVersion: config.apiVersion,
     pipelineId: config.pipelineId,
-    requestHash: expansionRequestHash(request.yamlOverride),
+    requestHash: expansionRequestHash(request),
     redacted: true,
   };
 }

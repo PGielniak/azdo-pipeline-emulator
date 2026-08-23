@@ -155,7 +155,7 @@ async function offlineArm(
     manifest: {
       mode: 'offline',
       degraded: true,
-      requestHash: expansionRequestHash(request.yamlOverride),
+      requestHash: expansionRequestHash(request),
       finalYamlHash: finalYamlHash(expansion.finalYaml),
     },
   };

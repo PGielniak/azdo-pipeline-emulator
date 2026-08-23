@@ -82,7 +82,7 @@ export async function cacheExpansion(
   request: ExpansionRequest,
   finalYaml: string,
 ): Promise<ExpansionLockEntry> {
-  const requestHash = expansionRequestHash(request.yamlOverride);
+  const requestHash = expansionRequestHash(request);
   const dir = entryDir(cacheDir, requestHash);
   await mkdir(dir, { recursive: true });
 
@@ -162,7 +162,7 @@ export async function expandCached(
   request: ExpansionRequest,
   options: ExpandCachedOptions,
 ): Promise<CachedExpansion> {
-  const requestHash = expansionRequestHash(request.yamlOverride);
+  const requestHash = expansionRequestHash(request);
 
   if (options.frozen) {
     const cached = await readCachedExpansion(options.cacheDir, requestHash);

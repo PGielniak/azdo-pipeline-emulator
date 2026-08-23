@@ -1,0 +1,13 @@
+parameters:
+- name: greeting
+  type: string
+  default: from-default
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo [from-request]
+
