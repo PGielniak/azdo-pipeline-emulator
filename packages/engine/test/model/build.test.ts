@@ -194,18 +194,25 @@ describe('dependsOn, variables and parameters', () => {
     expect(many?.stages[0]?.dependsOn).toStrictEqual(['a']);
   });
 
-  it('reads both variable spellings into one flat map', () => {
+  it('reads both variable spellings into the same declaration list', () => {
+    // E04-S02-T01 changed this from a flat map: the expansion resolves no precedence and collapses
+    // no duplicates (C-E04-080/081), so the model carries the declarations as authored and
+    // `resolveVariables()` does the layering.
     const mapping = build('variables:\n  A: one\nsteps: []\n').pipeline;
     const sequence = build('variables:\n- name: A\n  value: one\nsteps: []\n').pipeline;
-    expect(mapping?.variables).toStrictEqual({ A: 'one' });
-    expect(sequence?.variables).toStrictEqual({ A: 'one' });
+    const expected = [{ name: 'A', value: 'one', readonly: false }];
+    expect(mapping?.variables).toStrictEqual(expected);
+    expect(sequence?.variables).toStrictEqual(expected);
   });
 
-  it('skips a `group:` entry rather than inventing a name for it (E04-S02-T02 owns groups)', () => {
+  it('carries a `group:` entry as a named marker with no value (C-E04-086)', () => {
     const pipeline = build(
       'variables:\n- group: shared\n- name: A\n  value: one\nsteps: []\n',
     ).pipeline;
-    expect(pipeline?.variables).toStrictEqual({ A: 'one' });
+    expect(pipeline?.variables).toStrictEqual([
+      { name: '', value: '', readonly: false, group: 'shared' },
+      { name: 'A', value: 'one', readonly: false },
+    ]);
   });
 
   it('reads root parameter defaults, empty for a parameter with none', () => {

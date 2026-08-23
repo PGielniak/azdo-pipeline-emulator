@@ -17,6 +17,7 @@
 // chosen.
 import type { Diagnostic } from '../frontend/diagnostics.js';
 import { stepOriginOf } from './shorthand.js';
+import type { VariableDeclaration } from './variables.js';
 import type { MappingNode, ParseResult, PipelineNode, ScalarValue } from '../frontend/parse.js';
 import type {
   StepTarget,
@@ -106,7 +107,7 @@ function buildStages(root: MappingNode, file: string, diagnostics: Diagnostic[])
       {
         id: SYNTHETIC_STAGE_ID,
         dependsOn: [],
-        variables: {},
+        variables: [],
         jobs: [job],
         provenance: provenanceOf(file, root),
       },
@@ -133,7 +134,7 @@ function syntheticStage(
   return {
     id: SYNTHETIC_STAGE_ID,
     dependsOn: [],
-    variables: {},
+    variables: [],
     jobs: items
       .filter((item): item is MappingNode => item.kind === 'mapping')
       .map((item) => buildJob(item, file, diagnostics)),
@@ -152,7 +153,7 @@ function syntheticJob(
     id: SYNTHETIC_JOB_ID,
     kind: 'agent',
     dependsOn: [],
-    variables: {},
+    variables: [],
     steps: buildSteps(stepsNode, file, diagnostics),
     provenance: provenanceOf(file, root),
   };
@@ -330,17 +331,43 @@ function dependsOn(node: MappingNode): readonly string[] {
  * classification E04-S02-T02 owns (group vs inline vs `.env`-required) is not attempted, so a
  * `group:` entry contributes nothing rather than a wrong name.
  */
-function variableMap(node: PipelineNode | undefined): Record<string, string> {
-  if (node === undefined) return {};
-  if (node.kind === 'mapping') return stringMap(node);
-  if (node.kind !== 'sequence') return {};
+function variableMap(node: PipelineNode | undefined): readonly VariableDeclaration[] {
+  if (node === undefined) return [];
 
-  const out: Record<string, string> = {};
+  // The mapping shorthand is normalized to the list form by the service (C-E04-084), so this branch
+  // only fires for the `--offline-expand` arm — kept for the same reason the stage/job wrapping is.
+  if (node.kind === 'mapping') {
+    return node.entries
+      .filter((entry) => typeof entry.key.value === 'string' && entry.value.kind === 'scalar')
+      .map((entry) => ({
+        name: String(entry.key.value),
+        value: entry.value.kind === 'scalar' ? text(entry.value.value) : '',
+        readonly: false,
+      }));
+  }
+  if (node.kind !== 'sequence') return [];
+
+  const out: VariableDeclaration[] = [];
   for (const item of node.items) {
     if (item.kind !== 'mapping') continue;
+
+    // `- group: <name>` names a group, not a variable. Carried as a marker with no value: PLAN D7
+    // forbids fetching group values, and an unauthorized group never reaches us (C-E04-086).
+    const group = scalarEntry(item, 'group');
+    if (group !== undefined) {
+      out.push({ name: '', value: '', readonly: false, group });
+      continue;
+    }
+
     const name = scalarEntry(item, 'name');
     if (name === undefined) continue;
-    out[name] = scalarEntry(item, 'value') ?? '';
+    // Duplicates are **kept**: the expansion does not collapse them (C-E04-081) and last-wins is
+    // applied by `resolveVariables`, not here — dropping one would lose the authored document.
+    out.push({
+      name,
+      value: scalarEntry(item, 'value') ?? '',
+      readonly: (scalarEntry(item, 'readonly') ?? '').toLowerCase() === 'true',
+    });
   }
   return out;
 }

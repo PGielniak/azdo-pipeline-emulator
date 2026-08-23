@@ -1,0 +1,5 @@
+{
+  "kind": "expanded",
+  "status": 200,
+  "finalYaml": "variables:\n- name: a\n  value: pipeline-yaml\nstages:\n- stage: one\n  variables:\n  - name: a\n    value: stage-yaml\n  jobs:\n  - job: A\n    variables:\n    - name: a\n      value: job-yaml\n    steps:\n    - task: CmdLine@2\n      inputs:\n        script: echo $(a)\n\n"
+}

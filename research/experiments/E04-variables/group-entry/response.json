@@ -1,0 +1,15 @@
+{
+  "kind": "rejected",
+  "status": 400,
+  "message": "An error occurred while loading the YAML build pipeline. Variable group  was not found or is not authorized for use. For authorization details, refer to https://aka.ms/yamlauthz.",
+  "typeKey": "PipelineValidationException",
+  "body": {
+    "$id": "1",
+    "innerException": null,
+    "message": "An error occurred while loading the YAML build pipeline. Variable group  was not found or is not authorized for use. For authorization details, refer to https://aka.ms/yamlauthz.",
+    "typeName": "Microsoft.Azure.Pipelines.WebApi.PipelineValidationException, Microsoft.Azure.Pipelines.WebApi",
+    "typeKey": "PipelineValidationException",
+    "errorCode": 0,
+    "eventId": 3000
+  }
+}

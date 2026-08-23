@@ -32,3 +32,4 @@ export * from './template/provenance.js';
 export * from './model/shorthand.js';
 export * from './model/types.js';
 export * from './model/build.js';
+export * from './model/variables.js';

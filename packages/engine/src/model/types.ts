@@ -11,6 +11,7 @@
 // from "deliberately absent".
 import type { SourceRange } from '../frontend/parse.js';
 import type { StepOrigin } from './shorthand.js';
+import type { VariableDeclaration } from './variables.js';
 
 /** Where a model node came from in the expanded document. */
 export interface ModelProvenance {
@@ -105,7 +106,14 @@ export interface Job {
   readonly kind: JobKind;
   readonly dependsOn: readonly string[];
   readonly condition?: string;
-  readonly variables: Readonly<Record<string, string>>;
+  /**
+   * This scope's `variables:` **as authored**, not layered.
+   *
+   * The expansion resolves no precedence and collapses no duplicates (C-E04-080/081), so the raw
+   * declarations are what arrives — including two entries of the same name. Use
+   * `resolveVariables()` to layer root → stage → job.
+   */
+  readonly variables: readonly VariableDeclaration[];
   readonly steps: readonly Step[];
   readonly timeoutInMinutes?: number;
   readonly provenance: ModelProvenance;
@@ -120,7 +128,8 @@ export interface Stage {
   readonly displayName?: string;
   readonly dependsOn: readonly string[];
   readonly condition?: string;
-  readonly variables: Readonly<Record<string, string>>;
+  /** As authored; see `Job.variables`. */
+  readonly variables: readonly VariableDeclaration[];
   readonly jobs: readonly Job[];
   readonly provenance: ModelProvenance;
 }
@@ -129,7 +138,8 @@ export interface Pipeline {
   readonly name?: string;
   /** Root `parameters:` declarations, by name, with their default rendered as text. */
   readonly parameters: Readonly<Record<string, string>>;
-  readonly variables: Readonly<Record<string, string>>;
+  /** As authored; see `Job.variables`. */
+  readonly variables: readonly VariableDeclaration[];
   readonly stages: readonly Stage[];
   readonly provenance: ModelProvenance;
 }
