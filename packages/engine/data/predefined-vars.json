@@ -1,0 +1,561 @@
+{
+  "source": {
+    "repo": "MicrosoftDocs/azure-devops-docs",
+    "path": "docs/pipelines/build/includes/variables-hosted.md",
+    "commit": "8e41b654da0437cb473ea1c78cf3df6a36289237",
+    "pagePath": "docs/pipelines/build/variables.md",
+    "pageCommit": "1eeaa8de39f8b7130d8eb45ec907d9e47d6f5a32",
+    "page": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables",
+    "generatedBy": "pnpm predefined-vars"
+  },
+  "variables": [
+    {
+      "name": "Agent.BuildDirectory",
+      "section": "Agent variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#agent-variables-devops-services",
+      "description": "The local path on the agent where all folders for a given build pipeline are created."
+    },
+    {
+      "name": "Agent.ContainerMapping",
+      "section": "Agent variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#agent-variables-devops-services",
+      "description": "A mapping from container resource names in YAML to their Docker IDs at runtime."
+    },
+    {
+      "name": "Agent.HomeDirectory",
+      "section": "Agent variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#agent-variables-devops-services",
+      "description": "The directory the agent is installed into."
+    },
+    {
+      "name": "Agent.Id",
+      "section": "Agent variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#agent-variables-devops-services",
+      "description": "The ID of the agent."
+    },
+    {
+      "name": "Agent.JobName",
+      "section": "Agent variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#agent-variables-devops-services",
+      "description": "The name of the running job."
+    },
+    {
+      "name": "Agent.JobStatus",
+      "section": "Agent variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#agent-variables-devops-services",
+      "description": "The status of the build."
+    },
+    {
+      "name": "Agent.MachineName",
+      "section": "Agent variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#agent-variables-devops-services",
+      "description": "The name of the machine on which the agent is installed."
+    },
+    {
+      "name": "Agent.Name",
+      "section": "Agent variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#agent-variables-devops-services",
+      "description": "The name of the agent that is registered with the pool."
+    },
+    {
+      "name": "Agent.OS",
+      "section": "Agent variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#agent-variables-devops-services",
+      "description": "The operating system of the agent host."
+    },
+    {
+      "name": "Agent.OSArchitecture",
+      "section": "Agent variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#agent-variables-devops-services",
+      "description": "The operating system processor architecture of the agent host."
+    },
+    {
+      "name": "Agent.TempDirectory",
+      "section": "Agent variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#agent-variables-devops-services",
+      "description": "A temporary folder that is cleaned after each pipeline job."
+    },
+    {
+      "name": "Agent.ToolsDirectory",
+      "section": "Agent variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#agent-variables-devops-services",
+      "description": "The directory used by tasks such as Node Tool Installer and Use Python Version to switch between multiple versions of a tool."
+    },
+    {
+      "name": "Agent.WorkFolder",
+      "section": "Agent variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#agent-variables-devops-services",
+      "description": "The working directory for this agent."
+    },
+    {
+      "name": "Build.ArtifactStagingDirectory",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The local path on the agent where any artifacts are copied to before being pushed to their destination."
+    },
+    {
+      "name": "Build.BinariesDirectory",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The local path on the agent you can use as an output folder for compiled binaries."
+    },
+    {
+      "name": "Build.BuildId",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The ID of the record for the completed build."
+    },
+    {
+      "name": "Build.BuildNumber",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The name of the completed build, also known as the run number."
+    },
+    {
+      "name": "Build.BuildUri",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The URI for the build."
+    },
+    {
+      "name": "Build.Clean",
+      "section": "Page sections",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#buildclean",
+      "description": "This is a deprecated variable that modifies how the build agent cleans up source.",
+      "writable": true
+    },
+    {
+      "name": "Build.ContainerId",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The ID of the container for your artifact."
+    },
+    {
+      "name": "Build.CronSchedule.DisplayName",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The displayName of the cron schedule that triggered the pipeline run."
+    },
+    {
+      "name": "Build.DefinitionName",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The name of the build pipeline."
+    },
+    {
+      "name": "Build.DefinitionVersion",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The version of the build pipeline."
+    },
+    {
+      "name": "Build.QueuedBy",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "See How are the identity variables set?."
+    },
+    {
+      "name": "Build.QueuedById",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "See How are the identity variables set?."
+    },
+    {
+      "name": "Build.Reason",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The event that caused the build to run."
+    },
+    {
+      "name": "Build.Repository.Clean",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The value you selected for Clean in the source repository settings."
+    },
+    {
+      "name": "Build.Repository.Git.SubmoduleCheckout",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The value you selected for Checkout submodules on the repository tab."
+    },
+    {
+      "name": "Build.Repository.ID",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The unique identifier of the repository."
+    },
+    {
+      "name": "Build.Repository.LocalPath",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The local path on the agent where your source code files are downloaded."
+    },
+    {
+      "name": "Build.Repository.Name",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The name of the triggering repository."
+    },
+    {
+      "name": "Build.Repository.Provider",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The type of the triggering repository."
+    },
+    {
+      "name": "Build.Repository.Tfvc.Workspace",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "Defined if your repository is Team Foundation Version Control."
+    },
+    {
+      "name": "Build.Repository.Uri",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The URL for the triggering repository."
+    },
+    {
+      "name": "Build.RequestedFor",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "See How are the identity variables set?."
+    },
+    {
+      "name": "Build.RequestedForEmail",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "See How are the identity variables set?."
+    },
+    {
+      "name": "Build.RequestedForId",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "See How are the identity variables set?."
+    },
+    {
+      "name": "Build.SourceBranch",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The branch of the triggering repo the build was queued for."
+    },
+    {
+      "name": "Build.SourceBranchName",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The name of the branch in the triggering repo the build was queued for."
+    },
+    {
+      "name": "Build.SourcesDirectory",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The local path on the agent where your source code files are downloaded."
+    },
+    {
+      "name": "Build.SourceTfvcShelveset",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "Defined if your repository is Team Foundation Version Control."
+    },
+    {
+      "name": "Build.SourceVersion",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The latest version control change of the triggering repo that is included in this build."
+    },
+    {
+      "name": "Build.SourceVersionMessage",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The comment of the commit or changeset for the triggering repo."
+    },
+    {
+      "name": "Build.StageRequestedBy",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The person who triggered the stage when the stage runs manually, or Microsoft.VisualStudio.Services.TFS otherwise."
+    },
+    {
+      "name": "Build.StageRequestedForId",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The GUID of identity of the person who triggered the stage when the stage runs manually, or 00000002-0000-8888-8000-000000000000 otherwise."
+    },
+    {
+      "name": "Build.StagingDirectory",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The local path on the agent where any artifacts are copied to before being pushed to their destination."
+    },
+    {
+      "name": "Build.TriggeredBy.BuildId",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "If another build triggers the build, then this variable is set to the BuildID of the triggering build."
+    },
+    {
+      "name": "Build.TriggeredBy.BuildNumber",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "If another build triggers the build, then this variable is set to the number of the triggering build."
+    },
+    {
+      "name": "Build.TriggeredBy.DefinitionId",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "If another build triggers the build, then this variable is set to the DefinitionID of the triggering build."
+    },
+    {
+      "name": "Build.TriggeredBy.DefinitionName",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "If another build triggers the build, then this variable is set to the name of the triggering build pipeline."
+    },
+    {
+      "name": "Build.TriggeredBy.ProjectID",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "If another build triggers the build, then this variable is set to ID of the project that contains the triggering build."
+    },
+    {
+      "name": "Checks.StageAttempt",
+      "section": "Checks variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#checks-variables-devops-services",
+      "description": "Set to 1 the first time this stage is attempted, and increments every time the stage is retried."
+    },
+    {
+      "name": "Common.TestResultsDirectory",
+      "section": "Build variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#build-variables-devops-services",
+      "description": "The local path on the agent where the test results are created."
+    },
+    {
+      "name": "Environment.Id",
+      "section": "Deployment job variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#deployment-job-variables",
+      "description": "ID of the environment targeted in the deployment job."
+    },
+    {
+      "name": "Environment.Name",
+      "section": "Deployment job variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#deployment-job-variables",
+      "description": "Name of the environment targeted in the deployment job to run the deployment steps and record the deployment history."
+    },
+    {
+      "name": "Environment.ResourceId",
+      "section": "Deployment job variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#deployment-job-variables",
+      "description": "ID of the specific resource within the environment targeted in the deployment job to run the deployment steps."
+    },
+    {
+      "name": "Environment.ResourceName",
+      "section": "Deployment job variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#deployment-job-variables",
+      "description": "Name of the specific resource within the environment targeted in the deployment job to run the deployment steps and record the deployment history."
+    },
+    {
+      "name": "Pipeline.Workspace",
+      "section": "Pipeline variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#pipeline-variables",
+      "description": "Workspace directory for a particular pipeline."
+    },
+    {
+      "name": "Strategy.CycleName",
+      "section": "Deployment job variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#deployment-job-variables",
+      "description": "The current cycle name in a deployment."
+    },
+    {
+      "name": "Strategy.Name",
+      "section": "Deployment job variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#deployment-job-variables",
+      "description": "The name of the deployment strategy: canary, runOnce, or rolling."
+    },
+    {
+      "name": "System.AccessToken",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "Use the OAuth token to access the REST API."
+    },
+    {
+      "name": "System.CollectionId",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "The GUID of the Azure DevOps organization or collection."
+    },
+    {
+      "name": "System.CollectionUri",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "The URI of the Azure DevOps organization or collection."
+    },
+    {
+      "name": "System.Debug",
+      "section": "Page sections",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#systemdebug",
+      "description": "For more detailed logs to debug pipeline problems, define System.Debug and set it to true.",
+      "writable": true
+    },
+    {
+      "name": "System.DefaultWorkingDirectory",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "!INCLUDE [include]"
+    },
+    {
+      "name": "System.DefinitionId",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "The ID of the build pipeline."
+    },
+    {
+      "name": "System.HostType",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "Set to build if the pipeline is a build."
+    },
+    {
+      "name": "System.JobAttempt",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "Set to 1 the first time this job is attempted, and increments every time the job is retried."
+    },
+    {
+      "name": "System.JobDisplayName",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "The human-readable name given to a job."
+    },
+    {
+      "name": "System.JobId",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "A unique identifier for a single attempt of a single job."
+    },
+    {
+      "name": "System.JobName",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "The name of the job, typically used for expressing dependencies and accessing output variables."
+    },
+    {
+      "name": "System.OidcRequestUri",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "Generate an idToken for authentication with Entra ID using OpenID Connect (OIDC)."
+    },
+    {
+      "name": "System.PhaseAttempt",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "Set to 1 the first time this phase is attempted, and increments every time the job is retried."
+    },
+    {
+      "name": "System.PhaseDisplayName",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "The human-readable name given to a phase."
+    },
+    {
+      "name": "System.PhaseName",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "A string-based identifier for a job, typically used for expressing dependencies and accessing output variables."
+    },
+    {
+      "name": "System.PlanId",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "A string-based identifier for a single pipeline run."
+    },
+    {
+      "name": "System.PullRequest.IsFork",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "If the pull request is from a fork of the repository, this variable is set to True."
+    },
+    {
+      "name": "System.PullRequest.PullRequestId",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "The ID of the pull request that caused this build."
+    },
+    {
+      "name": "System.PullRequest.PullRequestNumber",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "The number of the pull request that caused this build."
+    },
+    {
+      "name": "System.PullRequest.SourceBranch",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "The branch that is being reviewed in a pull request."
+    },
+    {
+      "name": "System.PullRequest.SourceCommitId",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "The commit that is being reviewed in a pull request."
+    },
+    {
+      "name": "System.PullRequest.SourceRepositoryUri",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "The URL to the repo that contains the pull request."
+    },
+    {
+      "name": "System.PullRequest.TargetBranch",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "The branch that is the target of a pull request."
+    },
+    {
+      "name": "System.PullRequest.targetBranchName",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "The name of the target branch for a pull request."
+    },
+    {
+      "name": "System.StageAttempt",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "Set to 1 the first time this stage is attempted, and increments every time the stage is retried."
+    },
+    {
+      "name": "System.StageDisplayName",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "The human-readable name given to a stage."
+    },
+    {
+      "name": "System.StageName",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "A string-based identifier for a stage, typically used for expressing dependencies and accessing output variables."
+    },
+    {
+      "name": "System.TeamFoundationCollectionUri",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "The URI of the Azure DevOps organization or collection."
+    },
+    {
+      "name": "System.TeamProject",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "The name of the project that contains this build."
+    },
+    {
+      "name": "System.TeamProjectId",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "The ID of the project that this build belongs to."
+    },
+    {
+      "name": "System.TimelineId",
+      "section": "System variables",
+      "anchor": "https://learn.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables",
+      "description": "A string-based identifier for the execution details and logs of a single pipeline run."
+    }
+  ]
+}
