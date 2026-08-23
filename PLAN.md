@@ -146,7 +146,9 @@ docs/07. Unmarked decisions carry over unchanged.
 - **D5 — Fetch at convert time, cache, lock (unchanged).** The preview expansion, task metadata and
   artifacts are downloaded during `convert`, cached, and pinned in `azdo-emu.lock.json`; `--frozen`
   is fully offline after the first fetch.
-- **D6 — The runtime expression subset is local; the compile-time half is delegated (revised).**
+- **D6 — The runtime expression subset is local; the compile-time half is delegated (revised — a
+  *new* decision on a recycled number; old D6 was "parity oracle = the real service", now part of
+  D3. Old→new map: docs/06 §5, the note above entry 48).**
   `$[ ]` runtime conditions, `dependencies.*.outputs`, status functions and `$( )` macros are local
   (they are evaluated by the *agent* at run time and cannot be delegated). The compile-time `${{ }}`
   evaluator is retained only as the offline fallback (D3/D4) and is not on the critical path.

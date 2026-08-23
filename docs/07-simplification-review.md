@@ -189,6 +189,12 @@ This deliberately revisits recorded decisions. Per the repo's own convention (AG
 revisits are listed explicitly and would each get a dated docs/06 §5 entry **if and when** approved —
 nothing is being relitigated silently, and nothing is changed in the backlog yet.
 
+> **Approved, and the numbers below are the *old* ones (note added 2026-08-23, E12-S03-T02).** The
+> proposal was accepted and PLAN §5 was rewritten — which **renumbered** the decisions, so the
+> `D3`/`D4`/`D6`/`D7`/`D9`/`D11` in the table below name their pre-revision subjects, not today's.
+> The table is a historical proposal and is kept verbatim; the old→new map and the six dated
+> approval entries (docs/06 §5 **48–53**) are where a current reader should resolve a number.
+
 | Today (PLAN decision / epic) | Proposal | Rationale |
 |---|---|---|
 | **D4 + D6** — reimplement expressions; oracle = test-only | **Keep the oracle client; make it the expansion step.** Delete compile-time expression reimplementation from the critical path | Parity by construction instead of by clone; E02/E03 stop being a mountain |
