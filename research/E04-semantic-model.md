@@ -11,7 +11,7 @@ collision that made this convention mandatory.
 | `C-E04-001..029` | **E04-S01-T01 model types & builder** | this file | 001–005 used |
 | `C-E04-030..059` | E04-S01-T02 normalization boundary | this file | 030–037 used |
 | `C-E04-060..079` | E04-S01-T03 common step fields | this file | 060–067 used |
-| `C-E04-080..109` | E04-S02 variables & scoping | this file | 080–086 used (S02-T01) |
+| `C-E04-080..109` | E04-S02 variables & scoping | this file | 080–086 (S02-T01), 087–092 (S02-T02) |
 | `C-E04-110..139` | E04-S03 dependency graph & matrix | this file | free |
 
 Leave gaps. A branch that numbers from what it can see collides silently with every sibling.
@@ -258,3 +258,62 @@ provisioned and authorized in the test organization, which no current task does,
 fetching group *values* in any case. Recorded as a gap rather than guessed — the resolver carries a
 group entry as a named marker contributing no value, which is the behavior E04-S02-T02's
 classification and the `.env.example` synthesis (docs/04 §10) both expect.
+
+---
+
+## E04-S02-T02 — variable classification (`C-E04-087..092`)
+
+Evidence: docs/01 §4 (the internal spec this task's **Ground** names) plus **existing** E06 claims for
+the two syntaxes being scanned. No new probe was run and that is deliberate: the macro and
+`setvariable` grammars are already measured, and re-probing them would produce a second recording of
+the same facts rather than new evidence.
+
+[C-E04-087] **The macro scanner mirrors the runtime's, rather than being a second regex.**
+`azdo__macro_scan` (`packages/runtime/lib/core.sh`) finds `$(` and takes everything up to the
+**first** `)` as the name — non-greedy, which is why `$(a$(b))` yields the candidate `a$(b` rather
+than a nested reference (C-E06-018..024, docs/06 §5 decision 29). The static scanner uses the same
+rule so a name it reports is a name the runtime would look up; candidates containing `$(` are
+discarded as not-a-name rather than reported, since the runtime resolves the inner macro first and
+the outer candidate never becomes one.
+
+[C-E04-088] **Where a macro may appear is settled by docs/01 §4 and is narrower than "anywhere".**
+— docs/01 §4 — "`$(x)` macro | Just before a task executes; textual substitution in task inputs
+only | Task inputs (incl. inline script bodies), `env:` values | Left **literally** as `$(x)`" —
+checked 2026-08-23. So the scan covers step `inputs` values and step `env` values, and nothing else;
+a `$(x)` in a `displayName` is not a macro position and is not reported.
+
+[C-E04-089] **A reference that resolves to nothing is not an error, which is why the classification
+has an `env-required` class at all.** The same table records the missing-variable behavior per
+syntax: a macro is "Left **literally** as `$(x)`", while both expression forms yield the empty
+string. So an unresolved name is a *conversion-time question for the user* — supply it in `.env` —
+rather than something to reject, and docs/01 §4's variable-group decision makes the same point from
+the other side: "every `- group: X` maps to a documented block in `.env.example` that the user
+fills".
+
+[C-E04-090] **A group's members are unknowable at convert time by decision, not by omission.**
+— docs/01 §4 — "variable groups are **never value-resolved** … When authenticated anyway (e.g. for
+remote templates), the converter lists the group's variable **names** inside that block (values
+always left empty); unauthenticated, it emits a placeholder block naming the group." — checked
+2026-08-23; PLAN D7 is the decision. Consequence for classification: when a pipeline declares any
+group, a name that is otherwise unaccounted for **may** be a group member, and the honest class is
+`group-member` — a *possibility* carrying the declared group names, not a resolved fact. With no
+group declared the same name is unambiguously `env-required`.
+
+[C-E04-091] **`setvariable` producers are recognisable statically, and the recogniser is the
+runtime's own command grammar.** The logging command is
+`##vso[task.setvariable variable=v;isoutput=true]val` (docs/01 §4; the parser and its
+case-insensitive property lookup are C-E06-044..049, and `setvariable` itself C-E06-050..056). The
+scan is **best-effort by construction**, as the task's Do says: a script that composes the command
+from a variable, or emits it from a program it invokes, cannot be seen — so a missed producer
+degrades to `env-required`, which prompts the user rather than failing.
+
+[C-E04-092] **The predefined table is not this task's, and the classifier takes it as an injected
+port.** E04-S02-T03 owns `packages/engine/data/predefined-vars.json` and is scheduled *after* this
+task, so the dependency runs backwards. Rather than build a second table here — the failure mode
+C-E04-031's GUID case already illustrated — the classifier accepts the set and defaults to empty.
+With no table injected nothing is classed `predefined`, and the **prefix heuristic** below is what
+keeps the gap visible: a name beginning `Build.`, `System.`, `Agent.`, `Pipeline.`, `Environment.`
+or `Release.` that is not in the injected table is reported as a warning
+(`unknown-predefined`), because those namespaces are the service's and a converter silently
+demanding one in `.env` would be wrong. The heuristic is *ours*, is not a claim about the service,
+and is labelled as such.
