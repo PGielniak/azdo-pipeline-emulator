@@ -17,10 +17,17 @@ out/
 ├── README.md                     # conversion report: fidelity table, warnings, how-to (§12)
 ├── pipeline.expanded.yml         # the service's own final YAML, frozen (PLAN D3; --offline-expand: the
 │                              #   fallback engine's output, labelled degraded)
+├── pipeline.bundled.yml          # DEFAULT PATH (E03-S07-T01): the exact bytes sent as `yamlOverride`,
+│                              #   redacted (D7) — diffable, and re-submittable by hand when
+│                              #   reproducing a service rejection
+├── bundle.json                   # DEFAULT PATH (E03-S07-T01): which local file was inlined where +
+│                              #   its content sha256, and every reference NOT inlined with the
+│                              #   reason (cross-repo / uses-parameters / …). The skipped list is
+│                              #   what separates "expanded from your working tree" from "expanded
+│                              #   from what is committed"; docs/02 §5.1
 ├── expansion-map.json            # FALLBACK-ONLY (E12-S03-T01): provenance node → source file:line chain,
 │                              #   produced by the local expansion (E03-S04-T02). The default path's
-│                              #   provenance is the bundler's redacted override + path map instead —
-│                              #   E03-S07-T01 fixes those file names; docs/02 §5.1/§7
+│                              #   provenance is the two files above; docs/02 §5.1/§7
 ├── manifest.json                 # machine-readable graph + metadata (§11)
 ├── azdo-emu.lock.json            # pins: template repo SHAs, artifact run IDs (docs/05)
 ├── fetch-artifacts.sh            # optional refresh of downloaded artifacts
