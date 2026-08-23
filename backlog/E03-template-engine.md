@@ -11,55 +11,36 @@ Primary grounding set: learn.microsoft.com/azure/devops/pipelines/process/templa
 ## E03-S01 — As a pipeline developer, `${{ if/elseif/else }}`, `${{ each }}` and `${{ insert }}` expand exactly like the service, so template-heavy pipelines convert byte-equivalently.
 Acceptance: directive semantics proven by oracle fixture pairs, not by reading alone.
 
-> **Bookkeeping drift (noted 2026-08-21 by E06-S04-T04, not repaired here).** The checkboxes below
-> understate this epic. `CHANGELOG-BACKLOG.md` records E03-S01-T02, T03, T04, T05 and E03-S02-T01 as
-> done, and `packages/engine/src/template/` holds `conditionals.ts`, `each.ts`, `insert.ts`,
-> `interpolate.ts`, `reference.ts` and `walk.ts` with their suites green on `main` — but only T01 and
-> E03-S05-T01 were ever ticked. `main` and this branch agree on the file, so this is the E03 worker's
-> outstanding bookkeeping, not a merge casualty. A cold session told to "take the next unchecked task"
-> will otherwise pick E03-S01-T03, which is finished. Flip these when the E03 lane next runs.
+> **Bookkeeping reconciled 2026-08-23 (E03-S01-T06) — and the drift ran the *other* way.** The
+> 2026-08-21 note here said "the checkboxes below understate this epic" and asked the E03 lane to
+> flip them. Walking the Done criteria says the opposite: **the checkboxes are right and the
+> changelog is wrong.** `CHANGELOG-BACKLOG.md` records T02–T05 and E03-S02-T01 as `done`, and the
+> modules, suites and oracle transcripts genuinely exist and are green on `main` — but the
+> **claim blocks were never written**. `research/E03-template-engine.md` holds formal
+> `[C-E03-NNN]` entries for 100–117, 120–121, 204 and 400–420 and for nothing else: 140–159
+> (`each`), 160–174 (`insert`), 175–194 (interpolation) and 195–229 minus 204 (references) are
+> absent, though those IDs are cited in code, in tests, in experiment READMEs and in
+> `REFERENCES.md`. CLAUDE.md rule 1 calls the Grounding Protocol non-negotiable and rule 3 makes
+> recorded claims a precondition for `[x]`, so none of the five could be ticked; the `done`
+> changelog entries were premature.
 >
-> **Demotion sweep (2026-08-22, E12-S01-T02) deliberately left these checkboxes alone.** The sweep
-> marks *scope*, not completed work (E12 header), and it cannot certify another lane's Done
-> criteria. What the demotion changes for S01 is its **status, not its state**: the directive engine
-> built here is the offline fallback (PLAN D3/D4), reached only through `--offline-expand`
-> (E12-S01-T01) once E03-S04-T02 gives it a whole-document driver. Nothing in S01 is `[~]` — it is
-> built, proven against oracle pairs, and retained. E03-S01-T02's `[!]` blocker note also predates
-> two `done` entries for it in `CHANGELOG-BACKLOG.md`; that too is the E03 lane's to reconcile.
+> What each task still owes is written on the task itself, so a cold session **re-records rather
+> than re-implements** — the failure the old note was worried about, arrived at from the other
+> side. No code changed here.
 
-- [x] **E03-S01-T01 — DOM walker with context stack**
-  **Do:** `packages/engine/src/template/walk.ts`: depth-first mapping/sequence walk, per-file context frames (parameters, file variables), directive-key detection.
-  **Ground:** templates doc structure sections; agent object-templating walker (pin permalink to its evaluation loop) as design reference.
-  **Done:** walker unit tests on synthetic DOMs incl. directive keys in both mappings and sequences.
-  *Done 2026-08-12:* `packages/engine/src/template/walk.ts` — `parseDirectiveKey`/`loneExpression`/
-  `expressionUnits` (recognition), `TemplateFrame`/`bindLoopVariable`/`childFrame` (context stack),
-  `walkTemplate` with a per-directive visitor seam; 54 tests. **Both Ground sources turned out
-  insufficient in opposite directions**, which is why this task ran 33 live probes
-  (`pnpm template-walk-survey`, `research/experiments/E03-walk/`, C-E03-100..115): the docs state
-  none of the recognition rules and their one structural claim about *where* expressions expand is
-  false (C-E03-109), while the `actions/runner` walker knows exactly one directive, `insert`, and
-  none of the others (C-E03-115) — usable for the loop shape and nothing else. Headline findings:
-  directive keywords are **case-sensitive** in an otherwise case-folding language (C-E03-100), and
-  directive parameters are **expression tokens, not whitespace-split words**, so the `each`
-  separator must be found by tokenizing rather than `indexOf(' in ')` (C-E03-101/104). Semantics
-  stay with T02–T05 per their fixture obligations; two gaps were filed rather than fixed
-  (E01-S01-T04, E02-S01-T03). `loneExpression` finds its closing `}}` with a quote-aware scan: the
-  documented escape for a literal `${{` is to wrap it in an expression string (C-E03-117), which
-  E03-S01-T05 depends on.
-- [!] **E03-S01-T02 — Conditional insertion chains**
-  *Blocked 2026-08-18: the required six-case preview-oracle matrix cannot run because `AZDO_ORG_URL`, `AZDO_PROJECT`, `AZDO_ORACLE_PIPELINE_ID`, and `AZDO_PAT` are all unset and `.env.oracle` is absent; official docs leave chain grouping, nesting, and orphan/missing-chain behavior unspecified. Configure `research/oracle-setup.md`, then resume from C-E03-120/121.*
+- [ ] **E03-S01-T02 — Conditional insertion chains** *(reconciled 2026-08-23, E03-S01-T06: the **2026-08-18 blocker is resolved** — `.env.oracle` is present and the matrix ran, `research/experiments/E03-conditionals/` holds **24** probes. `conditionals.ts` and `conditionals.test.ts` are on `main` and green. **What remains is the claim block:** only `C-E03-120..121` are recorded out of the `120..139` allocation, short of the ≥6 cases this task's **Ground** requires. Re-record from the captured transcripts; do not re-implement.)*
   **Do:** `if/elseif/else` chain grouping in document order; winning branch spliced into parent; nested chains.
   **Ground:** templates doc "Conditional insertion"; **oracle fixtures**: ≥ 6 cases (mapping vs sequence, nested, else-only-missing) — commit input+`finalYaml` pairs under `fixtures/oracle/directives/` with claim IDs.
   **Done:** goldens equal oracle output for all pairs.
-- [ ] **E03-S01-T03 — Iterative insertion (`each`)**
+- [ ] **E03-S01-T03 — Iterative insertion (`each`)** *(reconciled 2026-08-23, E03-S01-T06: `each.ts` + `each.test.ts` are on `main` and green and `research/experiments/E03-each/` holds **13** probes, but **no `C-E03-140..159` entry exists** in `research/E03-template-engine.md` — the IDs appear only in the experiment READMEs and `REFERENCES.md`. Remaining work is recording the block, including the **ordering claim** the Done field names; do not re-implement.)*
   **Do:** sequence iteration, mapping iteration (`pair.key`/`pair.value` semantics), iteration over `object`/`*List` parameters, nested `each`, index availability check.
   **Ground:** templates doc "Iterative insertion"; oracle fixtures ≥ 8 incl. each-over-mapping key order (record observed ordering as a claim) and each wrapping full jobs.
   **Done:** goldens vs oracle; ordering claim documented.
-- [ ] **E03-S01-T04 — `${{ insert }}` merge**
+- [ ] **E03-S01-T04 — `${{ insert }}` merge** *(reconciled 2026-08-23, E03-S01-T06: `insert.ts` + `insert.test.ts` are on `main` and green and `research/experiments/E03-insert/` holds **32** probes including the key-collision case, but **no `C-E03-160..174` entry exists**. Remaining work is recording the block; do not re-implement.)*
   **Do:** mapping-merge semantics incl. collision behavior (verify: error vs overwrite).
   **Ground:** templates doc "Insertion"; oracle probe for key-collision behavior; claim recorded.
   **Done:** goldens incl. collision case matching service.
-- [ ] **E03-S01-T05 — Scalar interpolation rules**
+- [ ] **E03-S01-T05 — Scalar interpolation rules** *(reconciled 2026-08-23, E03-S01-T06: `interpolate.ts` + `interpolate.test.ts` are on `main` and green and `research/experiments/E03-interpolation/` holds **34** probes, but **no `C-E03-175..194` entry exists**. Remaining work is recording the block, one claim per stringification rule as the Ground field asks; do not re-implement.)*
   **Do:** lone-expression structural insertion vs mixed-content stringification; Null→``, Boolean→`True/False`, Number invariant; expression-in-key stringification.
   **Ground:** docs/02 §3 spec + oracle probes for each stringification rule (esp. Boolean casing, float rendering `0.5`/`1.0`); claims per rule.
   **Done:** table-driven goldens vs oracle.
@@ -70,7 +51,7 @@ Acceptance: directive semantics proven by oracle fixture pairs, not by reading a
   concatenate" is `format`'s stringification (E02-S03-T02), not a separate rule, and the
   lone-expression/mixed-content split is visible in the service's own error text. Transcripts:
   `research/experiments/E02-errors/` rows `embed-mid-scalar`/`embed-second-expr`/`block-scalar`.
-- [ ] **E03-S01-T06 — Reconcile the S01/S02 completion bookkeeping** *(filed 2026-08-23 while selecting E03-S06-T01; the reconciliation this story's header note has requested since 2026-08-21.)*
+- [x] **E03-S01-T06 — Reconcile the S01/S02 completion bookkeeping** *(done 2026-08-23: **the drift ran the opposite way from what the header note assumed.** It said "the checkboxes below understate this epic" and asked for five `[x]`s; walking the Done criteria gives **zero**. The modules, suites and oracle transcripts are all on `main` and green — but `research/E03-template-engine.md` holds formal `[C-E03-NNN]` entries for 100–117, 120–121, 204 and 400–420 **and nothing else**, so `140..159` (`each`), `160..174` (`insert`), `175..194` (interpolation) and `195..229` minus 204 (references) were never recorded. CLAUDE.md rule 1 makes the Grounding Protocol non-negotiable and rule 3 makes recorded claims a precondition for a checkmark, so none of the five could be ticked: **the checkboxes were right and the changelog was wrong.** The sharpest case is E03-S02-T01, whose shipped `reference.ts` *cites* `C-E03-195..215` in its comments — citations pointing at nothing, which is worse than an unstarted block because the code looks grounded, and E03-S06's shipped bundler consumes several of them. Applied: the header note rewritten to state the real direction; a per-task note naming exactly what each still owes (and that the transcripts already exist, so it is **transcription, not new measurement** — no oracle budget needed); **E03-S01-T02's `[!]` cleared to `[ ]`**, its 2026-08-18 blocker (missing `AZDO_*`) being long resolved with 24 probes captured; and four allocation-table rows moved from *free* to **owed** so nobody reallocates IDs that code already cites. Bookkeeping only — no code changed, no checkbox flipped on another lane's evidence. Evidence: `grep -o '^\[C-E03-[0-9]*\]'` over the research files; 1,559 Vitest + 231 Bats unchanged and green.)* *(filed 2026-08-23 while selecting E03-S06-T01; the reconciliation this story's header note has requested since 2026-08-21.)*
   **Do:** walk the **Done** criteria of the five tasks whose checkboxes contradict the changelog — E03-S01-T02, T03, T04, T05 and E03-S02-T01 — against the merged work on `main` (`packages/engine/src/template/{conditionals,each,insert,interpolate,reference}.ts` and their suites), and flip each to `[x]` **only** where its criteria are actually met; anything short keeps `[ ]`/`[!]` with a precise note. E03-S01-T02's `[!]` blocker note predates two `done` entries for it and is resolved or restated in the same pass. Bookkeeping only — no behavior change.
   **Ground:** none required (BACKLOG §3 applies to *runtime behavior*; this task implements none). The evidence set is the existing one: each task's `done` entry in `CHANGELOG-BACKLOG.md`, its claim block in `research/E03-template-engine.md`, and its suite.
   **Done:** every S01/S02 checkbox states what is actually true of `main`; the story header's "Bookkeeping drift" note is removed or reduced to what still drifts; a cold session reading the epic no longer picks a finished task.
@@ -84,7 +65,7 @@ Acceptance: reference forms, parameter typing, and `extends` restrictions all en
 > reaches template files by *bundling* them for the service (E03-S06/S07), not by interpreting them
 > here.
 
-- [ ] **E03-S02-T01 — Reference resolution (`relative`, `/root`, `@alias`, `@self`)**
+- [ ] **E03-S02-T01 — Reference resolution (`relative`, `/root`, `@alias`, `@self`)** *(reconciled 2026-08-23, E03-S01-T06: `reference.ts` + `reference.test.ts` are on `main` and green, `research/experiments/E03-references/` holds **34** probes, and the module **cites** `C-E03-195..215` in its own comments — but only `C-E03-204` (added later by E03-S02-T05) is actually recorded. This is the sharpest case of the epic's drift: code and tests reference claim IDs that do not exist, so a reader following a citation finds nothing. Remaining work is recording `195..203` and `205..215` from the captured transcripts; do not re-implement. Note that E03-S06-T01..T04 already **consume** several of these (`parseReference`, `isSelfAlias`, the path math), so the block is load-bearing for shipped code.)*
   **Do:** resolver with per-file base dir, repo-context switching on `@alias` (fetcher interface injected; local-FS impl now, remote in E08), cycle detection on (repo, commit, path).
   **Ground:** templates doc "Use other repositories" + resources doc `repositories`; oracle can't exercise cross-repo without setup — add a two-repo fixture in the test org and capture `finalYaml` proving path resolution + `@self` semantics.
   **Done:** unit tests for path math; oracle fixture for cross-repo include.
