@@ -65,7 +65,13 @@ Tiers per PLAN.md §6 (`exact / equivalent / degraded / stub / unsupported`). Ph
 - `runOnce`: hooks `preDeploy → deploy → routeTraffic → postRouteTraffic`, then `on: success|failure` — executed in order, `exact` ordering.
 - `rolling` / `canary`: hook sequence executed per iteration; `strategy.name`, `strategy.cycle`/`strategy.increment` variables populated; batching (`maxParallel` over VMs) collapses to sequential iterations — `degraded`, documented.
 - Implicit behavior reproduced: deployment jobs **auto-download all `current` pipeline artifacts** before `deploy` unless `download: none`.
-- Output variables from deployment jobs use the strategy-qualified naming quirk (`outputs['<lifecycle-hook>.<step>.<var>']`, plus job-name nuances between runOnce and matrix) — encode per docs and verify with the oracle (docs/06 §3).
+- Output variables from deployment jobs use a strategy-qualified naming quirk, and it is **not** the
+  lifecycle-hook spelling. **runOnce** keys by the **job name** — `outputs['<job-name>.<step>.<var>']`
+  — or, when the environment targets a resource, `outputs['Deploy_<resource-name>.<step>.<var>']`;
+  **canary**/**rolling** use `outputs['<hook>_<increment>.<step>.<var>']` /
+  `outputs['<hook>_<resource>.<step>.<var>']`. Verified live 2026-08-24 (run 548: the job-name spelling
+  resolves, the hook-name spelling is empty). Encoded on the model as `runOnceOutputVariableKey`
+  (C-E04-151/152/153/154).
 
 ### Steps — normalization table
 Every shorthand normalizes to a canonical task invocation before the step is dispatched (docs/03 §2):
@@ -158,7 +164,8 @@ Full list in the official predefined-variables doc; anything not listed above is
 Pipeline { name?, parameters[], variables: VarScope, stages[] , resources, provenance }
 Stage    { id, displayName?, dependsOn[], condition?, variables, jobs[] }
 Job      { id, kind: agent|server|deployment, matrixKey?, maxParallel?, dependsOn[], condition?,
-           variables, container?, services{}, workspace, timeout, steps[] }
+           variables, container?, services{}, workspace, timeout, steps[],
+           environment? (deployment), strategy? (deployment), autoDownloadArtifacts? (deployment) }
 Step     { id (ordinal), name?, displayName, task: {name, version}, inputs{},  // fully defaulted
            condition?, env{}, continueOnError, timeout, retryCount, workingDir?,
            fidelity, disposition: native|real-task|stub, provenance {file,line}, warnings[] }

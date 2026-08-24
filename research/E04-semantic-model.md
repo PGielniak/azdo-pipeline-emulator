@@ -13,6 +13,7 @@ collision that made this convention mandatory.
 | `C-E04-060..079` | E04-S01-T03 common step fields | this file | 060–067 used |
 | `C-E04-080..109` | E04-S02 variables & scoping | this file | 080–086 (S02-T01), 087–092 (S02-T02), 093–096 (S02-T03) |
 | `C-E04-110..139` | E04-S03 dependency graph & matrix | this file | 110–122 (T01), 123–138 (T02) |
+| `C-E04-140..169` | E04-S03-T03 deployment job model | this file | 140–… |
 
 Leave gaps. A branch that numbers from what it can see collides silently with every sibling.
 
@@ -569,3 +570,132 @@ need it as a separate check.
 [C-E04-138] **Duplicate job names are rejected the same way, scoped to a stage.**
 `job-dup-in-stage` → HTTP 400, `"Stage A job A1 appears more than once. Job names must be unique
 within a stage."` — checked 2026-08-24. Same out-of-scope status as C-E04-137.
+
+---
+
+## E04-S03-T03 — deployment job model (`C-E04-140..169`)
+
+Evidence: the deployment-jobs concept page (…/process/deployment-jobs, fetched 2026-08-24, source
+commit `1eeaa8de39f8b7130d8eb45ec907d9e47d6f5a32`), three yaml-schema pages
+(`jobs-deployment`, `jobs-deployment-environment`, `jobs-deployment-strategy-run-once`, all fetched
+2026-08-24 at source commit `d089fd2dbb54483ec611eeb478e3eff14be74393`), the corpus golden
+`fixtures/oracle/08-deployment-runonce.final.yml`, **5 live preview probes**
+(`research/experiments/E04-deployment/`, `pnpm`-less `node scripts/deployment-survey.ts`), and **one
+hosted real run** (`research/experiments/E04-deployment/real-run.md`, run 548).
+
+[C-E04-140] **A deployment job's name follows the same charset rule as a job's, and `deploy` is a
+reserved keyword that cannot be the name.**
+— https://learn.microsoft.com/en-us/azure/devops/pipelines/yaml-schema/jobs-deployment — "Name of the
+deployment job, A-Z, a-z, 0-9, and underscore. The word deploy is a keyword and is unsupported as the
+deployment name." — checked 2026-08-24. Consequence: a deployment job id is a safe identifier the
+way a job id is, and the model does not sanitize it (an invalid name is rejected before expansion).
+
+[C-E04-141] **A deployment job carries no top-level `steps:` — its steps live under the strategy's
+lifecycle hooks.** `fixtures/oracle/08-deployment-runonce.final.yml` and the `runonce-all-hooks`
+probe both expand a `deployment:` job with no `steps:` key at job level; the hooks (`preDeploy`,
+`deploy`, `routeTraffic`, `postRouteTraffic`, `on`) each carry their own `steps:`. — checked
+2026-08-24. The builder therefore cannot read a deployment job's steps from the job mapping; the
+hook sequence is the only place they are.
+
+[C-E04-142] **`environment: <scalar>` is promoted to `environment: {name}` by the expansion.**
+`research/experiments/E04-deployment/env-scalar/` — `environment: corpus-staging` → `environment:\n
+name: corpus-staging`, HTTP 200 — checked 2026-08-24. Sibling of C-E04-062 (`target:`) and C-E04-084
+(`variables:` mapping): the service normalizes the scalar shorthand, so on the default path the model
+only ever sees the object form.
+
+[C-E04-143] **The dotted `environment: env.resource` shorthand is understood by the service as name +
+resource, and the resource must exist.** `research/experiments/E04-deployment/env-dotted/` —
+`environment: corpus-staging.someResource` → HTTP 400 `"Job D: Resource someResource does not exist
+in environment corpus-staging."` — checked 2026-08-24. The rejection proves the service parses the
+dotted spelling into (environment, resource); it is not a scalar the model is free to treat as a
+name. So the model never sees the dotted form on the default path (it is rejected before expansion);
+the split belongs to the `--offline-expand` scalar branch, which must split on the **first** `.`.
+
+[C-E04-144] **The full `environment: {name, resourceName, resourceType}` syntax is rejected when the
+named resource does not exist.** `research/experiments/E04-deployment/env-full/` → HTTP 400, the same
+sentence as C-E04-143 — checked 2026-08-24. A resource-form `environment:` can only appear in a
+`finalYaml` whose resource exists, and no current task provisions one (a VM or Kubernetes resource);
+the model's object-form parse is therefore doc-grounded rather than measured, and its resourceName /
+resourceType fields are populated from the docs' shape (C-E04-145).
+
+[C-E04-145] **The environment object's fields and the resourceType values, from the schema page.**
+— https://learn.microsoft.com/en-us/azure/devops/pipelines/yaml-schema/jobs-deployment-environment —
+"`environment: string` | Deployment job with environment name." and "`environment: name,
+resourceName, resourceId, resourceType, tags` | Full syntax for complete control." with the example
+"`resourceType: string # type of the resource you want to target. Supported types - virtualMachine,
+Kubernetes`" — checked 2026-08-24. The model carries exactly the three the task's **Do** names —
+`name`, `resourceName`, `resourceType` — and leaves `resourceId`/`tags` out as not needed for the
+naming quirk.
+
+[C-E04-146] **The runOnce hook sequence and its order.** — the deployment-jobs page (…/process/
+deployment-jobs) — "runOnce is the simplest deployment strategy wherein all the lifecycle hooks,
+namely `preDeploy` `deploy`, `routeTraffic`, and `postRouteTraffic`, are executed once. Then, either
+`on: success` or `on: failure` is executed." — checked 2026-08-24. The order
+`preDeploy → deploy → routeTraffic → postRouteTraffic` then `on:{success,failure}` is exact, and the
+model's fixed hook fields encode it rather than leaving it to a consumer.
+
+[C-E04-147] **Each lifecycle hook is a step list with an optional `pool`, and by default the hooks
+inherit the deployment job's pool.** — deployment-jobs page — "Each of the lifecycle hooks resolves
+into an agent job or a server job … depending on the `pool` attribute. By default, the lifecycle
+hooks inherit the `pool` specified by the `deployment` job." — checked 2026-08-24. Pool is metadata
+(docs/01 §2) and its hook-level override is reserved for E08; the model records the hook's steps and
+leaves the pool to that task.
+
+[C-E04-148] **`strategy:` survives the expansion verbatim — the hooks' steps are not flattened.**
+`runonce-all-hooks/` (HTTP 200) and `fixtures/oracle/08-deployment-runonce.final.yml` both keep the
+authored `strategy: runOnce: {…}` block with each hook's `steps:` intact, only the step *shorthands*
+inside being desugared (C-E04-030). — checked 2026-08-24. This is the same fact C-E04-118 records
+for `matrix`/`parallel`: the multiplied/hooked structure is the model's to build, and the preview
+never does it.
+
+[C-E04-149] **The download-artifact task is auto-injected only in the `deploy` hook, and
+`download: none` suppresses it.** — https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/jobs-deployment-strategy-run-once —
+"Download artifact task will be auto injected only in the `deploy` hook for deployment jobs. To stop
+downloading artifacts, use `- download: none` …" — checked 2026-08-24. This is the same behavior
+C-E06-096 pins ("only in deployment jobs, only for the `deploy` lifecycle hook … `download: none`
+suppresses it"), so the model's auto-download flag is the deploy hook's *lack* of a `download: none`
+step.
+
+[C-E04-150] **`download: none` desugars to the `download` GUID task with `condition: false` and
+`inputs: {alias: none}`.** `research/experiments/E04-deployment/download-none/` — the deploy hook's
+`- download: none` expands to `task: 30f35852-…@1` with `condition: false` and `inputs: {alias:
+none}`, HTTP 200 — checked 2026-08-24. The `download` GUID is the agent-internal one C-E04-032 maps
+to the origin keyword `download`, so the model detects suppression as a deploy-hook step whose
+`origin === 'download'` and `inputs.alias === 'none'`; the `condition: false` is the service's own
+way of making the marker step a no-op, and it is asserted in the test rather than trusted.
+
+[C-E04-151] **runOnce output variables (no resource) are keyed by the *job name*, not the lifecycle
+hook.** — deployment-jobs page — "For **runOnce** strategy:
+`$[dependencies.<job-name>.outputs['<job-name>.<step-name>.<variable-name>']]` (for example,
+`$[dependencies.JobA.outputs['JobA.StepA.VariableA']]`)" — checked 2026-08-24. The first segment is
+the deployment job's name, not `deploy`/`preDeploy`/etc.
+
+[C-E04-152] **runOnce output variables *with* a resource are keyed `Deploy_<resource-name>` instead.**
+— deployment-jobs page — "For **runOnce** strategy plus a resourceType:
+`$[dependencies.<job-name>.outputs['Deploy_<resource-name>.<step-name>.<variable-name>']]`. (for
+example, `$[dependencies.JobA.outputs['Deploy_VM1.StepA.VariableA']]`)" — checked 2026-08-24. The
+`stageDependencies` form is the same key with the stage/job path: the doc's two examples use
+`Deploy_DevEnvironmentV` and `Deploy_vmsfortesting`, so the prefix is literally
+`Deploy_` + the `resourceName` field.
+
+[C-E04-153] **The job-name nuance is confirmed live: the hook-name spelling does not resolve.**
+`research/experiments/E04-deployment/real-run.md` (run 548) — reading both spellings from a later
+stage, `CASE JOBNAME_KEY=[deployment-value]` and `CASE HOOKNAME_KEY=[]` — checked 2026-08-24. The
+job-name key (`A1.setvarStep.myOutputVar`) resolves and the hook-name key
+(`deploy.setvarStep.myOutputVar`) is empty, which is exactly C-E04-151 and refutes the obvious
+"lifecycle-hook first segment" reading. This is the "job-name nuance between runOnce and matrix"
+docs/01 §3 flagged as needing oracle verification.
+
+[C-E04-154] **canary and rolling use a different first segment, and are reserved for E08.**
+— deployment-jobs page — "For **canary** strategy:
+`$[dependencies.<job-name>.outputs['<lifecycle-hookname>_<increment-value>.<step-name>.<variable-name>']]`"
+and "For **rolling** strategy:
+`$[dependencies.<job-name>.outputs['<lifecycle-hookname>_<resource-name>.<step-name>.<variable-name>']]`"
+— checked 2026-08-24. The model records these two strategies as a `rolling`/`canary` marker and
+implements neither (E08 owns them); the output-key helper only answers for runOnce.
+
+[C-E04-155] **A deployment job does not clone the source repo automatically.** — deployment-jobs
+page — "A deployment job doesn't automatically clone the source repo. You can check out the source
+repo within your job with `checkout: self`." — checked 2026-08-24. Recorded because it is the
+deployment-job analogue of the auto-download rule the emitter must respect: unlike an agent job,
+nothing is checked out unless a `checkout` step says so.

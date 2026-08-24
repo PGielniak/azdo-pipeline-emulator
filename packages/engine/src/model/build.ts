@@ -23,10 +23,14 @@ import type { VariableDeclaration } from './variables.js';
 import type { MappingNode, ParseResult, PipelineNode, ScalarValue } from '../frontend/parse.js';
 import type {
   StepTarget,
+  DeploymentHook,
+  DeploymentStrategy,
+  Environment,
   Job,
   JobKind,
   ModelProvenance,
   Pipeline,
+  RunOnceStrategy,
   Stage,
   Step,
   TaskReference,
@@ -224,6 +228,9 @@ function buildJob(node: MappingNode, file: string, diagnostics: Diagnostic[]): r
     steps: stepsNode === undefined ? [] : buildSteps(stepsNode, file, diagnostics),
     ...optional('timeoutInMinutes', numberEntry(node, 'timeoutInMinutes')),
     ...optional('container', scalarEntry(node, 'container')),
+    // A deployment job's steps live under its strategy hooks, not `steps:` (C-E04-141); the
+    // environment, strategy and auto-download flag are parsed only for that kind (E04-S03-T03).
+    ...(kind === 'deployment' ? deploymentFields(node, file, diagnostics) : {}),
     provenance: provenanceOf(file, node),
   };
 
@@ -247,6 +254,120 @@ function jobKind(node: MappingNode): JobKind {
   const pool = entryValue(node, 'pool');
   if (pool?.kind === 'scalar' && text(pool.value).toLowerCase() === 'server') return 'server';
   return 'agent';
+}
+
+/**
+ * The deployment-only fields of a job: `environment:`, the `strategy:`, and the auto-download flag.
+ * Populated only when `kind === 'deployment'`; the hooks' steps are built the same way an agent
+ * job's are, because they arrive as ordinary `steps:` sequences inside each hook (C-E04-141/148).
+ */
+function deploymentFields(
+  node: MappingNode,
+  file: string,
+  diagnostics: Diagnostic[],
+): { environment?: Environment; strategy?: DeploymentStrategy; autoDownloadArtifacts?: boolean } {
+  const environment = parseEnvironment(node);
+  const strategy = parseDeploymentStrategy(node, file, diagnostics);
+  const autoDownloadArtifacts =
+    strategy?.kind === 'runOnce' ? runOnceAutoDownload(strategy) : undefined;
+
+  return {
+    ...optional('environment', environment),
+    ...optional('strategy', strategy),
+    ...(autoDownloadArtifacts === undefined ? {} : { autoDownloadArtifacts }),
+  };
+}
+
+/**
+ * `environment:` — the scalar shorthand is promoted to `{name}` by the service (C-E04-142), so the
+ * scalar branch here serves the `--offline-expand` arm; its dotted `env.resource` form splits on the
+ * **first** `.` (C-E04-143). The object form is doc-grounded rather than measured: a resource-form
+ * `environment:` only expands when the resource exists, which no task provisions (C-E04-144/145).
+ */
+function parseEnvironment(node: MappingNode): Environment | undefined {
+  const value = entryValue(node, 'environment');
+  if (value === undefined) return undefined;
+  if (value.kind === 'scalar') {
+    const raw = text(value.value);
+    const dot = raw.indexOf('.');
+    if (dot === -1) return { name: raw };
+    return { name: raw.slice(0, dot), resourceName: raw.slice(dot + 1) };
+  }
+  if (value.kind !== 'mapping') return undefined;
+  const name = scalarEntry(value, 'name');
+  if (name === undefined) return undefined;
+  return {
+    name,
+    ...optional('resourceName', scalarEntry(value, 'resourceName')),
+    ...optional('resourceType', scalarEntry(value, 'resourceType')),
+  };
+}
+
+/** `strategy:` on a deployment job — `runOnce` parsed, `rolling`/`canary` reserved for E08 (C-E04-154). */
+function parseDeploymentStrategy(
+  node: MappingNode,
+  file: string,
+  diagnostics: Diagnostic[],
+): DeploymentStrategy | undefined {
+  const strategy = entryValue(node, 'strategy');
+  if (strategy?.kind !== 'mapping') return undefined;
+
+  const runOnce = entryValue(strategy, 'runOnce');
+  if (runOnce?.kind === 'mapping') return parseRunOnce(runOnce, file, diagnostics);
+  if (entryValue(strategy, 'rolling') !== undefined) return { kind: 'rolling' };
+  if (entryValue(strategy, 'canary') !== undefined) return { kind: 'canary' };
+  return undefined;
+}
+
+/** The runOnce hooks, in their fixed authored slots (C-E04-146); only authored hooks are present. */
+function parseRunOnce(node: MappingNode, file: string, diagnostics: Diagnostic[]): RunOnceStrategy {
+  return {
+    kind: 'runOnce',
+    ...optional('preDeploy', parseHook(entryValue(node, 'preDeploy'), file, diagnostics)),
+    ...optional('deploy', parseHook(entryValue(node, 'deploy'), file, diagnostics)),
+    ...optional('routeTraffic', parseHook(entryValue(node, 'routeTraffic'), file, diagnostics)),
+    ...optional(
+      'postRouteTraffic',
+      parseHook(entryValue(node, 'postRouteTraffic'), file, diagnostics),
+    ),
+    ...optional('onSuccess', parseOn(node, 'success', file, diagnostics)),
+    ...optional('onFailure', parseOn(node, 'failure', file, diagnostics)),
+  };
+}
+
+function parseHook(
+  node: PipelineNode | undefined,
+  file: string,
+  diagnostics: Diagnostic[],
+): DeploymentHook | undefined {
+  if (node?.kind !== 'mapping') return undefined;
+  const stepsNode = entryValue(node, 'steps');
+  return { steps: stepsNode === undefined ? [] : buildSteps(stepsNode, file, diagnostics) };
+}
+
+function parseOn(
+  runOnce: MappingNode,
+  key: 'success' | 'failure',
+  file: string,
+  diagnostics: Diagnostic[],
+): DeploymentHook | undefined {
+  const on = entryValue(runOnce, 'on');
+  if (on?.kind !== 'mapping') return undefined;
+  return parseHook(entryValue(on, key), file, diagnostics);
+}
+
+/**
+ * The auto-download flag: `true` unless the deploy hook carries a `download: none` step, which the
+ * service desugars to the `download` GUID task with `condition: false` and `inputs: {alias: none}`
+ * (C-E04-149/150). Detecting by `origin === 'download'` + `alias === 'none'` is narrower than "any
+ * step with that alias" and won't misfire on a differently-authored step.
+ */
+function runOnceAutoDownload(strategy: RunOnceStrategy): boolean {
+  const deploy = strategy.deploy;
+  if (deploy === undefined) return true;
+  return !deploy.steps.some(
+    (step) => step.origin === 'download' && step.inputs['alias'] === 'none',
+  );
 }
 
 function buildSteps(node: PipelineNode, file: string, diagnostics: Diagnostic[]): readonly Step[] {
