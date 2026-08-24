@@ -5,7 +5,6 @@ exports[`whole-model shape > a matrix job round-trips through the provenance-str
   "parameters": {},
   "stages": [
     {
-      "dependsOn": [],
       "id": "A",
       "jobs": [
         {
@@ -13,6 +12,7 @@ exports[`whole-model shape > a matrix job round-trips through the provenance-str
           "id": "Build Alpha",
           "kind": "agent",
           "matrixKey": "Alpha",
+          "referenceName": "Build",
           "steps": [
             {
               "continueOnError": false,

@@ -102,8 +102,21 @@ export interface Job {
    * deriving a path or a filename from this may assume it is non-empty.
    */
   readonly id: string;
+  /**
+   * The name `dependsOn` resolves against — the **authored** `job:` name, before any strategy
+   * suffix.
+   *
+   * For a plain job it equals `id`. For a matrix/parallel leg it is the shared base name: a
+   * `dependsOn: Build` reference resolves to the whole matrix job, i.e. every leg, not to a single
+   * leg id like `Build Alpha` (C-E04-136). The graph (E04-S03-T02) keys on this rather than on `id`.
+   */
+  readonly referenceName: string;
   readonly displayName?: string;
   readonly kind: JobKind;
+  /**
+   * The authored `dependsOn:` targets, as the service returned them (empty when absent — jobs have
+   * no implicit dependency, C-E04-124). The graph resolves these against `referenceName`.
+   */
   readonly dependsOn: readonly string[];
   readonly condition?: string;
   /**
@@ -133,7 +146,13 @@ export interface Job {
 export interface Stage {
   readonly id: string;
   readonly displayName?: string;
-  readonly dependsOn: readonly string[];
+  /**
+   * The authored `dependsOn:` targets, with the absent/empty distinction preserved because stages
+   * and jobs default differently: **`undefined`** means the key was not authored (→ the sequential
+   * default, C-E04-123), **`[]`** means `dependsOn: []` (→ no dependency, C-E04-125), and a non-empty
+   * list is literal. The graph (E04-S03-T02) applies the default; nothing else should interpret this.
+   */
+  readonly dependsOn: readonly string[] | undefined;
   readonly condition?: string;
   /** As authored; see `Job.variables`. */
   readonly variables: readonly VariableDeclaration[];

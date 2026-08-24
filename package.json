@@ -44,6 +44,7 @@
     "bundle-survey": "node scripts/bundle-survey.ts",
     "template-parameters-survey": "node scripts/template-parameters-survey.ts",
     "normalization-survey": "node scripts/normalization-survey.ts",
+    "dependency-survey": "node scripts/dependency-survey.ts",
     "predefined-vars": "node scripts/predefined-vars.ts",
     "duplicate-key-survey": "node scripts/duplicate-key-survey.ts",
     "expr-shell-survey": "bash scripts/expr-shell-survey.sh",
