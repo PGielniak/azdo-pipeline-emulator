@@ -12,7 +12,7 @@ time the IDs were load-bearing in code comments and test names) is the reason th
 | `C-E03-001..099` | E03-S05-T01 normalizer | `research/E03-normalizer.md` | 001–003 used |
 | `C-E03-100..119` | **E03-S01-T01 DOM walker with context stack** | this file | 100–117 used |
 | `C-E03-120..139` | E03-S01-T02 conditional insertion chains | this file | 120–139 used — recorded 2026-08-23 from the two committed surveys (`research/experiments/E03-conditionals/` 24 probes, `research/experiments/E03-if/` 22 probes) |
-| `C-E03-140..159` | E03-S01-T03 iterative insertion (`each`) | this file | **not free — owed.** 13 transcripts in `research/experiments/E03-each/` cite these IDs; no entry written (E03-S01-T06) |
+| `C-E03-140..159` | E03-S01-T03 iterative insertion (`each`) | this file | 140–151 used — recorded 2026-08-24 from the 12 committed probes (`research/experiments/E03-each/`, 11 pairs + 1 rejection); 152..159 free |
 | `C-E03-160..174` | E03-S01-T04 `${{ insert }}` merge | this file | **not free — owed.** 32 transcripts in `research/experiments/E03-insert/`; no entry written (E03-S01-T06) |
 | `C-E03-175..194` | E03-S01-T05 scalar interpolation | this file | **not free — owed.** 34 transcripts in `research/experiments/E03-interpolation/`; no entry written (E03-S01-T06) |
 | `C-E03-195..229` | E03-S02 template resolution & parameters | this file | **204 used; 195..203 and 205..215 owed** — `packages/engine/src/template/reference.ts` and its test **cite** those IDs, and 34 transcripts sit in `research/experiments/E03-references/`, but no entry is written, so a reader following a citation finds nothing (E03-S01-T06). E03-S06's shipped code consumes several of them. |
@@ -420,6 +420,116 @@ reader stack, which is deliberately not reproduced (docs/06 §5 decision 33).**
     `"/azure-pipelines.yml (Line: 7, Col: 3): The expression directive 'elseif' is not supported in
     this context\n… (Line: 8, Col: 5): A mapping was not expected\n… Expected end of template object.
     State: …"`.
+
+
+---
+
+## E03-S01-T03 — iterative insertion (`each`) (`C-E03-140..151`)
+
+Evidence: `research/experiments/E03-each/` — **12 live preview probes** (`pnpm each-survey`,
+2026-08-18), with 11 successful input/`finalYaml` pairs promoted to
+`fixtures/oracle/directives/each-*.{input,final}.yml` and the one rejection kept in place because a
+rejected preview has no `finalYaml`. The task's **Ground** field asks for the templates doc plus
+≥ 8 oracle fixtures including each-over-mapping key order and each wrapping full jobs; both are
+answered here, and the ordering result (C-E03-145) is the "record observed ordering as a claim" the
+**Done** field names. `packages/engine/src/template/each.ts` and its suite were written against
+these probes and cite these IDs; this block records them so the citations resolve. The four doc
+claims (140..143) are what the "Iterative insertion" section actually states; the eight probe
+claims (144..151) are the behaviors the section leaves unsaid and the service settles.
+
+[C-E03-140] **The `each` directive iterates a YAML sequence (array) or a mapping (key-value pairs),
+inserting the expanded body once per element.** The doc states both container kinds verbatim and
+names no third; the rejection of any other collection is the engine's to define (C-E03-144..151).
+  — https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions#iterative-insertion
+    (checked 2026-08-18) — "The `each` directive enables iterative insertion based on a YAML
+    sequence (array) or mapping (key-value pairs)."
+  — https://github.com/MicrosoftDocs/azure-devops-docs/blob/7ba9a9ac7d28a7edbbddf0d9bfd480bce665b55b/docs/pipelines/process/template-expressions.md#L292-L294
+    (source pin checked 2026-08-24)
+
+[C-E03-141] **Mapping iteration exposes the key/value pair as `pair.key` and `pair.value`, and
+that is the doc's own idiom for re-emitting a job's properties.** The `job.yml` example iterates
+`${{ each pair in job }}` and reconstructs every property except `steps` with
+`${{ pair.key }}: ${{ pair.value }}`.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions#iterative-insertion
+    (checked 2026-08-18) — the `job.yml` example: `- ${{ each pair in job }}:  # Insert all
+    properties other than "steps"` … `${{ if ne(pair.key, 'steps') }}:  ${{ pair.key }}: ${{ pair.value }}`
+  — https://github.com/MicrosoftDocs/azure-devops-docs/blob/7ba9a9ac7d28a7edbbddf0d9bfd480bce665b55b/docs/pipelines/process/template-expressions.md#L306-L309
+    (source pin checked 2026-08-24)
+
+[C-E03-142] **A `jobList` is iterated as full jobs, and the doc's canonical use is wrapping each
+job's steps with pre- and post-steps.** The `steps:` block is written *around* `- ${{ job.steps }}`
+so the user's steps land between the wrapper's own, which is exactly the `job-list-wrapping` probe
+shape (C-E03-148).
+  — https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions#iterative-insertion
+    (checked 2026-08-18) — "For example, you can wrap the steps of each job with other pre- and
+    post-steps:"
+  — https://github.com/MicrosoftDocs/azure-devops-docs/blob/7ba9a9ac7d28a7edbbddf0d9bfd480bce665b55b/docs/pipelines/process/template-expressions.md#L296-L315
+    (source pin checked 2026-08-24)
+
+[C-E03-143] **`stringList` is documented for iterating a list-of-items parameter, but the doc's own
+note says it is not available in templates and to use `object` instead** — which is why the probe
+fixtures, and the engine's collection handling, exercise the `object` type for template inputs.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions#iterative-insertion
+    (checked 2026-08-18) — "The `stringList` data type isn't available in templates. Use the
+    `object` data type in templates instead."
+  — https://github.com/MicrosoftDocs/azure-devops-docs/blob/7ba9a9ac7d28a7edbbddf0d9bfd480bce665b55b/docs/pipelines/process/template-expressions.md#L331-L334
+    (source pin checked 2026-08-24)
+
+[C-E03-144] **Sequence iteration binds the element itself, once, in source order: a scalar element
+yields the scalar, an object element keeps its object shape and member access.**
+  — `research/experiments/E03-each/sequence-scalars/`, `sequence-objects/` (live preview, checked
+    2026-08-18) — `[alpha, beta, gamma]` expands to `echo alpha`, `echo beta`, `echo gamma`; the
+    object sequence expands `${{ item.name }}=${{ item.value }}` to `echo first=one`,
+    `echo second=two`.
+
+[C-E03-145] **Mapping iteration preserves authored key order, including integer-like keys that a
+JavaScript object would reorder.** `'10': ten`, `'2': two`, `'01': leading` expands to `10=ten`,
+`2=two`, `01=leading` exactly as authored — and mixed-case keys (`Zulu`, `alpha`, `Middle`) stay in
+their authored order too. The engine carries explicit order metadata for this (`value.ts`,
+`objectEntries`), because a plain JS object would sort the integer-like keys.
+  — `research/experiments/E03-each/mapping-pair-order/`, `mapping-numeric-key-order/` (live preview,
+    checked 2026-08-18)
+
+[C-E03-146] **In mapping position, each walked body is spliced into the parent mapping rather than
+nested: the body's entries become sibling entries of the containing mapping, one body's worth per
+iteration.**
+  — `research/experiments/E03-each/mapping-body/` (live preview, checked 2026-08-18) —
+    `variables: {BASE: base, ${{ each pair in parameters.entries }}: {${{ pair.key }}: ${{ pair.value }}}}`
+    expands to the list `BASE`, `FIRST`, `SECOND` — three flat entries, not a nested mapping.
+
+[C-E03-147] **Nested `each` expands outer-major / inner-minor with both loop variables in scope.**
+  — `research/experiments/E03-each/nested-each/` (live preview, checked 2026-08-18) — an outer
+    `each fruit` over two fruits each carrying a `colors` list expands to `echo apple-red`,
+    `echo apple-green`, `echo lemon-yellow`, the outer body walked once per fruit and the inner body
+    once per color.
+
+[C-E03-148] **`stepList` and `jobList` parameters iterate like any sequence: a bound step is
+inserted structurally, and a `jobList` iterated as full jobs wraps every job body.**
+  — `research/experiments/E03-each/step-list/`, `job-list-wrapping/` (live preview, checked
+    2026-08-18) — `- ${{ each step in parameters.injected }}: - ${{ step }}` splices the two
+    authored steps in place; `- ${{ each job in parameters.buildJobs }}:` with a
+    `steps: [setup, - ${{ each step in job.steps }}: - ${{ step }}, teardown]` body expands each
+    job's own steps between `setup` and `teardown`.
+
+[C-E03-149] **An empty collection runs the body zero times, and surrounding items keep their
+authored order.**
+  — `research/experiments/E03-each/empty-sequence/` (live preview, checked 2026-08-18) —
+    `default: []` with `before`/`after` steps expands to `echo before`, `echo after` with no trace
+    of the body.
+
+[C-E03-150] **The collection operand is a full expression; the separator `in` inside string
+literals is not a split point.**
+  — `research/experiments/E03-each/collection-expression/` (live preview, checked 2026-08-18) —
+    `${{ each item in split('a in b', ' in ') }}` iterates `a` and `b`, the ` in ` inside both
+    literals ignored — the same token-split rule C-E03-104 measured at the walker level.
+
+[C-E03-151] **No implicit index: a sequence element receives no synthesized `.index` member, and a
+bare `index` in the body is an unknown name, not a loop value.**
+  — `research/experiments/E03-each/sequence-item-index/`, `implicit-index-name/` (live preview,
+    checked 2026-08-18) — `${{ item.index }}` renders empty (`echo alpha:`, `echo beta:`), and a
+    bare `${{ index }}` is rejected `"/azure-pipelines.yml (Line: 13, Col: 21): Unrecognized value:
+    'index'. Located at position 20 within expression: 'format('echo {0}', index)'"` — so only the
+    declared binding enters the frame.
 
 
 ---
