@@ -1,0 +1,49 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`whole-model shape > a matrix job round-trips through the provenance-stripping shape 1`] = `
+{
+  "parameters": {},
+  "stages": [
+    {
+      "dependsOn": [],
+      "id": "A",
+      "jobs": [
+        {
+          "dependsOn": [],
+          "id": "Build Alpha",
+          "kind": "agent",
+          "matrixKey": "Alpha",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo",
+              },
+              "retryCountOnTaskFailure": 0,
+              "task": {
+                "name": "CmdLine",
+                "version": "2",
+              },
+              "warnings": [],
+            },
+          ],
+          "variables": [
+            {
+              "name": "V",
+              "readonly": false,
+              "value": "a",
+            },
+          ],
+        },
+      ],
+      "variables": [],
+    },
+  ],
+  "variables": [],
+}
+`;

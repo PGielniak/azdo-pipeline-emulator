@@ -12,7 +12,7 @@ collision that made this convention mandatory.
 | `C-E04-030..059` | E04-S01-T02 normalization boundary | this file | 030–037 used |
 | `C-E04-060..079` | E04-S01-T03 common step fields | this file | 060–067 used |
 | `C-E04-080..109` | E04-S02 variables & scoping | this file | 080–086 (S02-T01), 087–092 (S02-T02), 093–096 (S02-T03) |
-| `C-E04-110..139` | E04-S03 dependency graph & matrix | this file | free |
+| `C-E04-110..139` | E04-S03 dependency graph & matrix | this file | 110–122 used (T01) |
 
 Leave gaps. A branch that numbers from what it can see collides silently with every sibling.
 
@@ -360,3 +360,104 @@ one-off. §5's local-mapping strategy is unchanged by this task: it says what ea
 *locally*, while this table says which names exist and where they are documented. Keeping them
 apart is deliberate — the mapping is ours and the list is the service's, and merging them would make
 a stale doc look like a design decision.
+
+---
+
+## E04-S03-T01 — matrix & `parallel` expansion (`C-E04-110..122`)
+
+Evidence: two doc pages — the jobs concept page (…/process/phases, fetched 2026-08-24, source commit
+`1eeaa8de39f8b7130d8eb45ec907d9e47d6f5a32` of `MicrosoftDocs/azure-devops-docs-pr`
+`docs/pipelines/process/phases.md`) and the strategy schema page (`…/yaml-schema/jobs-job-strategy`,
+fetched 2026-08-24, `ms.date: 2026-07-29`, source commit
+`d089fd2dbb54483ec611eeb478e3eff14be74393` of `MicrosoftDocs/azure-devops-yaml-schema-pr`
+`content/jobs-job-strategy.md`) — plus one real run in the oracle org
+(`research/experiments/E04-strategy/real-run.md`). The schema page carries the naming sentence the
+concept page omits, which is why both were fetched.
+
+[C-E04-110] **A matrix key is *appended* to the job name to form the copy's name, space-separated.**
+— https://learn.microsoft.com/en-us/azure/devops/pipelines/yaml-schema/jobs-job-strategy — "For each
+occurrence of *string1* in the matrix, a copy of the job is generated. The name *string1* is the
+copy's name and is appended to the name of the job." and, from the Python example, "This matrix
+creates three jobs: 'Build Python35,' 'Build Python36,' and 'Build Python37.'" — checked
+2026-08-24. The separator is a **space**, not the `Job_<key>` underscore docs/01 §2 wrote (corrected
+below, rule 5), and the name is the job's display name as the UI and timeline show it.
+
+[C-E04-111] **Matrix key character set and length are constrained.** — same schema page — "Matrix
+configuration names must contain only basic Latin alphabet letters (A-Z and a-z), digits (0-9), and
+underscores (`_`). They must start with a letter. Also, their length must be 100 characters or
+fewer." — checked 2026-08-24. Consequence: a key is a safe filename fragment and a safe variable
+suffix; the model does not need to sanitize it (the service rejects invalid keys before a pipeline
+reaches the model, so a key we see is already legal).
+
+[C-E04-112] **Each matrix value pair becomes a variable available to the job.** — same page — "For
+each occurrence of *string2*, a variable called *string2* with the value *string3* is available to
+the job." — checked 2026-08-24. So expanding a matrix leg into a concrete job is: same job, plus the
+key's mapping injected as job-level variables. Their precedence is that of any job-level variable
+(C-E04-082), which is what lets a leg's `$(imageName)` override a pool macro.
+
+[C-E04-113] **`maxParallel` is a scheduling cap, not a shape change, and `0`/absent means unlimited.**
+— schema page — "The optional `maxParallel` keyword specifies the maximum number of simultaneous
+matrix legs to run at once." and "If `maxParallel` is unspecified or set to 0, no limit is applied."
+— checked 2026-08-24. It does not alter the set of concrete jobs; it only bounds how many run
+concurrently, so the model records it rather than using it to merge or drop legs.
+
+[C-E04-114] **`parallel: N` duplicates the job N times and adds `System.JobPositionInPhase` /
+`System.TotalJobsInPhase`.** — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/phases —
+"The `parallel` strategy enables a job to be duplicated many times. Variables `System.JobPositionInPhase`
+and `System.TotalJobsInPhase` are added to each job. The variables can then be used within your
+scripts to divide work among the jobs." — checked 2026-08-24. These two names are **not** in the
+`build/variables` predefined table (they are documented only here, on the jobs page); the model
+injects them as slice-scoped variables.
+
+[C-E04-115] **`matrix` and `parallel` are mutually exclusive; `maxParallel` is only valid with
+`matrix`.** — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/phases (the full job
+syntax block) — "`parallel` and `matrix` are mutually exclusive — you may specify one or the other;
+including both is an error — `maxParallel` is only valid with `matrix`" — checked 2026-08-24. The
+service rejects the combination at load time, so a `strategy:` mapping reaching the model carries at
+most one of the two.
+
+[C-E04-116] **A `matrix` may be a runtime expression, and then its leg count is unknowable at convert
+time.** — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/phases — "`matrix` accepts
+a runtime expression containing a stringified JSON object. That JSON object, when expanded, must
+match the matrixing syntax." — checked 2026-08-24. A `matrix: $[ … ]` leg set depends on a prior
+job's output variable, so the model cannot expand it into concrete jobs; docs/01 §2 specifies the
+degraded path (warning, the job survives unexpanded). This is the "runtime-expression matrix →
+warning path" the Done field names.
+
+[C-E04-117] **Multi-configuration always produces at least one job, even with an empty variable.**
+— https://learn.microsoft.com/en-us/azure/devops/pipelines/process/phases — "Multi-configuration
+always generates at least one job, even if a multi-configuration variable is empty." — checked
+2026-08-24. An empty matrix mapping is therefore *not* "no jobs" — it is one job with no injected
+variables. The model must not drop a matrix job that has a zero-entry mapping.
+
+[C-E04-118] **The service does not expand `strategy:` — that is this epic's work, restated with the
+claim this task owns.** E12-S01-T02's corpus sweep recorded that "`strategy: matrix`/`parallel` is
+**not expanded** by the service, so no golden can ever prove job multiplication" (C-E12-018, flagged
+"that is E04's, verified at L6"). Checked 2026-08-24: the preview endpoint returns a `finalYaml` that
+still carries the authored `strategy:` block verbatim, so matrix/parallel expansion is **local**, and
+a golden that never shows multiplication proves only that the service does not do it.
+
+[C-E04-119] **The real run confirms the space-separated naming: matrix legs appear in the timeline as
+`<JobName> <key>`.** `research/experiments/E04-strategy/real-run.md` (run 546) — the two Job records
+are `Build Beta` and `Build Alpha` — checked 2026-08-24. This settles C-E04-110's sentence against
+docs/01 §2's `Job_<key>` underscore, which was wrong (corrected under rule 5 below).
+
+[C-E04-120] **Inside a matrix leg, `System.JobName` is the matrix key *alone*, not the full name —
+only `System.JobDisplayName` and `Agent.JobName` carry `<JobName> <key>`.** Same run: in the `Beta`
+leg `SYSTEM_JOBNAME=Beta`, `SYSTEM_JOBDISPLAYNAME=Build Beta`, `AGENT_JOBNAME=Build Beta` (and
+`Alpha` symmetrically) — checked 2026-08-24. So the leg's *identity* is the key; the shared base name
+lives only in the display name. This is a runtime-seeding fact (E06) rather than a model-shape fact,
+but it is the sharpest naming nuance the run produced: anything that seeds `System.JobName` per leg
+must use the matrix key, not `id`.
+
+[C-E04-121] **`parallel: N` slices are named `<JobName> <position>`, and `System.JobPositionInPhase`
+is 1-based.** Same run: the two Job records are `Slice 1` and `Slice 2`, and the echoed values are
+`POSITION=1`/`POSITION=2` with `TOTAL=2` — checked 2026-08-24. So a parallel slice carries the same
+space-appended naming as a matrix leg, but the suffix is the **1-based** position rather than a
+matrix key, and the two slice variables are exactly `{1..N}` for `JobPositionInPhase` and `N` for
+`TotalJobsInPhase`.
+
+[C-E04-122] **Matrix value pairs are injected as macro-resolvable variables, verified live.** Same
+run: `MATRIX_VAR=b` in the `Beta` leg and `MATRIX_VAR=a` in `Alpha` — checked 2026-08-24. This
+confirms C-E04-112 executes as documented: the leg's `$(MATRIX_VAR)` resolves to its own value, so
+the model injecting the mapping as job-level variables reproduces the service.

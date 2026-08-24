@@ -51,8 +51,8 @@ Tiers per PLAN.md §6 (`exact / equivalent / degraded / stub / unsupported`). Ph
 | Field | Tier | Notes |
 |---|---|---|
 | `dependsOn`, `condition` | exact | Graph built & cycle-checked at convert; conditions compiled (docs/02 §6) |
-| `strategy.matrix` (incl. `maxParallel`) | exact | Expanded at convert time into N concrete jobs `Job_<key>`; matrix defined via runtime expression `$[ … ]` → convert-time evaluation with warning if it depends on prior-job outputs (degraded: prompts for value) |
-| `strategy.parallel` (slicing) | degraded | N sequential slices with `System.JobPositionInPhase` / `System.TotalJobsInPhase` set |
+| `strategy.matrix` (incl. `maxParallel`) | exact | Expanded at convert time into N concrete jobs named `<JobName> <key>` (space-separated, not `Job_<key>` — corrected 2026-08-24, C-E04-110/119); each leg gets the key's mapping as job variables and carries `matrixKey` + `maxParallel`; matrix defined via runtime expression `$[ … ]` → warning, job survives unexpanded (degraded) |
+| `strategy.parallel` (slicing) | degraded | N sequential slices named `<JobName> <position>` (1-based, C-E04-121) with `System.JobPositionInPhase` / `System.TotalJobsInPhase` set (C-E04-114) |
 | `continueOnError`, `timeoutInMinutes`, `cancelTimeoutInMinutes` | exact | Runtime enforced (docs/04) |
 | `variables` | exact | §4 |
 | `workspace.clean: outputs\|resources\|all` | exact | Runtime cleans per setting before job |
@@ -157,7 +157,7 @@ Full list in the official predefined-variables doc; anything not listed above is
 ```
 Pipeline { name?, parameters[], variables: VarScope, stages[] , resources, provenance }
 Stage    { id, displayName?, dependsOn[], condition?, variables, jobs[] }
-Job      { id, kind: agent|server|deployment, matrixKey?, dependsOn[], condition?,
+Job      { id, kind: agent|server|deployment, matrixKey?, maxParallel?, dependsOn[], condition?,
            variables, container?, services{}, workspace, timeout, steps[] }
 Step     { id (ordinal), name?, displayName, task: {name, version}, inputs{},  // fully defaulted
            condition?, env{}, continueOnError, timeout, retryCount, workingDir?,

@@ -1,0 +1,28 @@
+trigger: none
+pr: none
+jobs:
+- job: Build
+  strategy:
+    matrix:
+      Alpha:
+        MATRIX_VAR: 'a'
+      Beta:
+        MATRIX_VAR: 'b'
+  pool:
+    vmImage: ubuntu-latest
+  steps:
+  - bash: |
+      echo "SYSTEM_JOBNAME=$(System.JobName)"
+      echo "SYSTEM_JOBDISPLAYNAME=$(System.JobDisplayName)"
+      echo "AGENT_JOBNAME=$(Agent.JobName)"
+      echo "MATRIX_VAR=$(MATRIX_VAR)"
+
+- job: Slice
+  strategy:
+    parallel: 2
+  pool:
+    vmImage: ubuntu-latest
+  steps:
+  - bash: |
+      echo "POSITION=$(System.JobPositionInPhase)"
+      echo "TOTAL=$(System.TotalJobsInPhase)"

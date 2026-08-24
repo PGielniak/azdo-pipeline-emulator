@@ -17,6 +17,7 @@
 // chosen.
 import type { Diagnostic } from '../frontend/diagnostics.js';
 import { stepOriginOf } from './shorthand.js';
+import { expandJobStrategy } from './strategy.js';
 import type { VariableDeclaration } from './variables.js';
 import type { MappingNode, ParseResult, PipelineNode, ScalarValue } from '../frontend/parse.js';
 import type {
@@ -137,7 +138,7 @@ function syntheticStage(
     variables: [],
     jobs: items
       .filter((item): item is MappingNode => item.kind === 'mapping')
-      .map((item) => buildJob(item, file, diagnostics)),
+      .flatMap((item) => buildJob(item, file, diagnostics)),
     provenance: provenanceOf(file, root),
   };
 }
@@ -165,7 +166,7 @@ function buildStage(node: MappingNode, file: string, diagnostics: Diagnostic[]):
     jobsNode?.kind === 'sequence'
       ? jobsNode.items
           .filter((item): item is MappingNode => item.kind === 'mapping')
-          .map((item) => buildJob(item, file, diagnostics))
+          .flatMap((item) => buildJob(item, file, diagnostics))
       : [];
 
   return {
@@ -179,7 +180,7 @@ function buildStage(node: MappingNode, file: string, diagnostics: Diagnostic[]):
   };
 }
 
-function buildJob(node: MappingNode, file: string, diagnostics: Diagnostic[]): Job {
+function buildJob(node: MappingNode, file: string, diagnostics: Diagnostic[]): readonly Job[] {
   const kind = jobKind(node);
   // `deployment:` names the job the same way `job:` does; a deployment's steps live under its
   // strategy, which is E04-S03's to flatten — until then a deployment job carries no steps rather
@@ -199,7 +200,7 @@ function buildJob(node: MappingNode, file: string, diagnostics: Diagnostic[]): J
     );
   }
 
-  return {
+  const base: Job = {
     id,
     ...optional('displayName', scalarEntry(node, 'displayName')),
     kind,
@@ -211,6 +212,10 @@ function buildJob(node: MappingNode, file: string, diagnostics: Diagnostic[]): J
     ...optional('container', scalarEntry(node, 'container')),
     provenance: provenanceOf(file, node),
   };
+
+  // A `strategy:` multiplies this job into its concrete legs — the service leaves it unexpanded
+  // (C-E04-118), so the model does it here (E04-S03-T01). A job with no strategy expands to itself.
+  return expandJobStrategy(node, base, file, diagnostics);
 }
 
 /**
