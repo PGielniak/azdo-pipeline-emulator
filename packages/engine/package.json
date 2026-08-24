@@ -15,7 +15,8 @@
   "files": [
     "dist",
     "vendor",
-    "data"
+    "data",
+    "schema"
   ],
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --sourcemap --clean",

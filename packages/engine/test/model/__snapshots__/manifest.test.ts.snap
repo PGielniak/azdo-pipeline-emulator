@@ -1,0 +1,2846 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`golden corpus manifests > 01-matrix-multi-config serializes stably 1`] = `
+{
+  "env": [],
+  "expansion": {
+    "apiVersion": "7.1",
+    "degraded": false,
+    "finalYamlHash": "eeeb28a058422d78c28e60103821ccc7154270f663941753a972f694c8c9588c",
+    "fromCache": false,
+    "mode": "service",
+    "pipelineId": 0,
+    "requestHash": "357d41ba1980c36540a2a6f24f6f44ab80e41d8e5ff3888318f87894441837e3",
+  },
+  "pipeline": {
+    "parameters": {},
+  },
+  "schemaVersion": 1,
+  "stages": [
+    {
+      "dependsOn": [],
+      "id": "__default",
+      "jobs": [
+        {
+          "dependsOn": [],
+          "displayName": "Build",
+          "id": "build linux_debug",
+          "kind": "agent",
+          "matrixKey": "linux_debug",
+          "maxParallel": 2,
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "Report matrix leg",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "config=$(buildConfiguration) image=$(imageName)"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "01-matrix-multi-config.final.yml",
+                "line": 30,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Produce output",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 2,
+              "inputs": {
+                "script": "mkdir -p out
+echo "$(buildConfiguration)" > out/config.txt
+",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "01-matrix-multi-config.final.yml",
+                "line": 34,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Job-scoped variable over a matrix variable",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 3,
+              "inputs": {
+                "script": "echo "suffix=$(artifactSuffix)"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "01-matrix-multi-config.final.yml",
+                "line": 40,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [
+            {
+              "name": "artifactSuffix",
+              "readonly": false,
+              "value": "$(Agent.JobName)",
+            },
+            {
+              "name": "imageName",
+              "readonly": false,
+              "value": "ubuntu-latest",
+            },
+            {
+              "name": "buildConfiguration",
+              "readonly": false,
+              "value": "Debug",
+            },
+          ],
+        },
+        {
+          "dependsOn": [],
+          "displayName": "Build",
+          "id": "build linux_release",
+          "kind": "agent",
+          "matrixKey": "linux_release",
+          "maxParallel": 2,
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "Report matrix leg",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "config=$(buildConfiguration) image=$(imageName)"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "01-matrix-multi-config.final.yml",
+                "line": 30,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Produce output",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 2,
+              "inputs": {
+                "script": "mkdir -p out
+echo "$(buildConfiguration)" > out/config.txt
+",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "01-matrix-multi-config.final.yml",
+                "line": 34,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Job-scoped variable over a matrix variable",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 3,
+              "inputs": {
+                "script": "echo "suffix=$(artifactSuffix)"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "01-matrix-multi-config.final.yml",
+                "line": 40,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [
+            {
+              "name": "artifactSuffix",
+              "readonly": false,
+              "value": "$(Agent.JobName)",
+            },
+            {
+              "name": "imageName",
+              "readonly": false,
+              "value": "ubuntu-latest",
+            },
+            {
+              "name": "buildConfiguration",
+              "readonly": false,
+              "value": "Release",
+            },
+          ],
+        },
+        {
+          "dependsOn": [],
+          "displayName": "Build",
+          "id": "build windows_release",
+          "kind": "agent",
+          "matrixKey": "windows_release",
+          "maxParallel": 2,
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "Report matrix leg",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "config=$(buildConfiguration) image=$(imageName)"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "01-matrix-multi-config.final.yml",
+                "line": 30,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Produce output",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 2,
+              "inputs": {
+                "script": "mkdir -p out
+echo "$(buildConfiguration)" > out/config.txt
+",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "01-matrix-multi-config.final.yml",
+                "line": 34,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Job-scoped variable over a matrix variable",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 3,
+              "inputs": {
+                "script": "echo "suffix=$(artifactSuffix)"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "01-matrix-multi-config.final.yml",
+                "line": 40,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [
+            {
+              "name": "artifactSuffix",
+              "readonly": false,
+              "value": "$(Agent.JobName)",
+            },
+            {
+              "name": "imageName",
+              "readonly": false,
+              "value": "windows-latest",
+            },
+            {
+              "name": "buildConfiguration",
+              "readonly": false,
+              "value": "Release",
+            },
+          ],
+        },
+        {
+          "condition": "succeeded()",
+          "dependsOn": [
+            "build",
+          ],
+          "displayName": "Fan-in over every matrix leg",
+          "id": "fanin",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "all legs finished"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "01-matrix-multi-config.final.yml",
+                "line": 50,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [],
+        },
+        {
+          "dependsOn": [],
+          "displayName": "Parallel (slice) strategy",
+          "id": "parallel_slices 1",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "slice $(System.JobPositionInPhase) of $(System.TotalJobsInPhase)"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "01-matrix-multi-config.final.yml",
+                "line": 58,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [
+            {
+              "name": "System.JobPositionInPhase",
+              "readonly": false,
+              "value": "1",
+            },
+            {
+              "name": "System.TotalJobsInPhase",
+              "readonly": false,
+              "value": "3",
+            },
+          ],
+        },
+        {
+          "dependsOn": [],
+          "displayName": "Parallel (slice) strategy",
+          "id": "parallel_slices 2",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "slice $(System.JobPositionInPhase) of $(System.TotalJobsInPhase)"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "01-matrix-multi-config.final.yml",
+                "line": 58,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [
+            {
+              "name": "System.JobPositionInPhase",
+              "readonly": false,
+              "value": "2",
+            },
+            {
+              "name": "System.TotalJobsInPhase",
+              "readonly": false,
+              "value": "3",
+            },
+          ],
+        },
+        {
+          "dependsOn": [],
+          "displayName": "Parallel (slice) strategy",
+          "id": "parallel_slices 3",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "slice $(System.JobPositionInPhase) of $(System.TotalJobsInPhase)"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "01-matrix-multi-config.final.yml",
+                "line": 58,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [
+            {
+              "name": "System.JobPositionInPhase",
+              "readonly": false,
+              "value": "3",
+            },
+            {
+              "name": "System.TotalJobsInPhase",
+              "readonly": false,
+              "value": "3",
+            },
+          ],
+        },
+      ],
+      "variables": [],
+    },
+  ],
+  "tools": [],
+  "unsupported": [],
+  "warnings": [],
+}
+`;
+
+exports[`golden corpus manifests > 02-artifact-handoff serializes stably 1`] = `
+{
+  "env": [],
+  "expansion": {
+    "apiVersion": "7.1",
+    "degraded": false,
+    "finalYamlHash": "7f7f1482919260e7edc5ce058917cfb18340a99f2dc29e53c64b1125452222df",
+    "fromCache": false,
+    "mode": "service",
+    "pipelineId": 0,
+    "requestHash": "08ed5b3fd2a390bdc098571646f881c7645ed19e7608b599af133fca87198e26",
+  },
+  "pipeline": {
+    "parameters": {},
+  },
+  "schemaVersion": 1,
+  "stages": [
+    {
+      "dependsOn": [],
+      "displayName": "Build and publish",
+      "id": "build",
+      "jobs": [
+        {
+          "dependsOn": [],
+          "id": "compile",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "6d15af64-176c-496d-b583-fd2ae21d4df4",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "fetchDepth": "1",
+                "repository": "self",
+              },
+              "origin": "checkout",
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "02-artifact-handoff.final.yml",
+                "line": 13,
+              },
+              "task": "6d15af64-176c-496d-b583-fd2ae21d4df4@1",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Stage build output",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 2,
+              "inputs": {
+                "script": "mkdir -p $(Build.ArtifactStagingDirectory)/app
+echo "binary" > $(Build.ArtifactStagingDirectory)/app/app.bin
+",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "02-artifact-handoff.final.yml",
+                "line": 17,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Copy config next to the binary",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 3,
+              "inputs": {
+                "CleanTargetFolder": "false",
+                "Contents": "**/*.yml
+!**/node_modules/**
+",
+                "SourceFolder": "$(Build.SourcesDirectory)",
+                "TargetFolder": "$(Build.ArtifactStagingDirectory)/app",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "02-artifact-handoff.final.yml",
+                "line": 23,
+              },
+              "task": "CopyFiles@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Publish app artifact",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 4,
+              "inputs": {
+                "artifact": "app",
+                "publishLocation": "pipeline",
+                "targetPath": "$(Build.ArtifactStagingDirectory)/app",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "02-artifact-handoff.final.yml",
+                "line": 32,
+              },
+              "task": "PublishPipelineArtifact@1",
+              "warnings": [],
+            },
+          ],
+          "variables": [],
+        },
+        {
+          "dependsOn": [],
+          "id": "docs",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "Generate docs",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "mkdir -p docs-out
+echo "# docs" > docs-out/index.md
+",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "02-artifact-handoff.final.yml",
+                "line": 40,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "ecdc45f6-832d-4ad9-b52b-ee49e94659be",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 2,
+              "inputs": {
+                "artifactName": "docs",
+                "path": "docs-out",
+              },
+              "origin": "publish",
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "02-artifact-handoff.final.yml",
+                "line": 46,
+              },
+              "task": "ecdc45f6-832d-4ad9-b52b-ee49e94659be@1",
+              "warnings": [],
+            },
+          ],
+          "variables": [],
+        },
+      ],
+      "variables": [],
+    },
+    {
+      "condition": "succeeded()",
+      "dependsOn": [
+        "build",
+      ],
+      "displayName": "Consume artifacts",
+      "id": "deploy",
+      "jobs": [
+        {
+          "dependsOn": [],
+          "id": "consume",
+          "kind": "agent",
+          "steps": [
+            {
+              "condition": "false",
+              "continueOnError": false,
+              "displayName": "6d15af64-176c-496d-b583-fd2ae21d4df4",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "repository": "none",
+              },
+              "origin": "checkout",
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "02-artifact-handoff.final.yml",
+                "line": 58,
+              },
+              "task": "6d15af64-176c-496d-b583-fd2ae21d4df4@1",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Download only the binary",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 2,
+              "inputs": {
+                "alias": "current",
+                "artifact": "app",
+                "patterns": "**/*.bin",
+              },
+              "origin": "download",
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "02-artifact-handoff.final.yml",
+                "line": 62,
+              },
+              "task": "30f35852-3f7e-4c0c-9a88-e127b4f97211@1",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Download docs to an explicit path",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 3,
+              "inputs": {
+                "artifactName": "docs",
+                "buildType": "current",
+                "targetPath": "$(Pipeline.Workspace)/docs",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "02-artifact-handoff.final.yml",
+                "line": 68,
+              },
+              "task": "DownloadPipelineArtifact@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Assert both artifacts landed",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 4,
+              "inputs": {
+                "script": "test -f "$(Pipeline.Workspace)/app/app.bin"
+test -f "$(Pipeline.Workspace)/docs/index.md"
+",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "02-artifact-handoff.final.yml",
+                "line": 74,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [],
+        },
+      ],
+      "variables": [],
+    },
+  ],
+  "tools": [],
+  "unsupported": [],
+  "warnings": [],
+}
+`;
+
+exports[`golden corpus manifests > 03-dependencies-and-conditions serializes stably 1`] = `
+{
+  "env": [],
+  "expansion": {
+    "apiVersion": "7.1",
+    "degraded": false,
+    "finalYamlHash": "187a1989a43588b1c69690c821061cb4d699e6f3d82fcde1d7102c3f7ce0beca",
+    "fromCache": false,
+    "mode": "service",
+    "pipelineId": 0,
+    "requestHash": "9b31d295401926994bea89682b74257c14c3bad41c1f2ffaf90fbb9fb753afcc",
+  },
+  "pipeline": {
+    "parameters": {},
+  },
+  "schemaVersion": 1,
+  "stages": [
+    {
+      "dependsOn": [],
+      "id": "probe",
+      "jobs": [
+        {
+          "dependsOn": [],
+          "id": "detect",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "Detect what changed",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "##vso[task.setvariable variable=changedApi;isOutput=true]true"
+echo "##vso[task.setvariable variable=changedWeb;isOutput=true]false"
+",
+                "targetType": "inline",
+              },
+              "name": "flags",
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "03-dependencies-and-conditions.final.yml",
+                "line": 12,
+              },
+              "task": "Bash@3",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Job-local variable",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 2,
+              "inputs": {
+                "script": "echo "##vso[task.setvariable variable=localOnly]not-an-output"",
+                "targetType": "inline",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "03-dependencies-and-conditions.final.yml",
+                "line": 20,
+              },
+              "task": "Bash@3",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 3,
+              "inputs": {
+                "script": "echo "local=$(localOnly)"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "03-dependencies-and-conditions.final.yml",
+                "line": 25,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [],
+        },
+      ],
+      "variables": [],
+    },
+    {
+      "dependsOn": [
+        "probe",
+      ],
+      "id": "build",
+      "jobs": [
+        {
+          "condition": "eq(variables.apiChanged, 'true')",
+          "dependsOn": [],
+          "id": "api",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "building api"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "03-dependencies-and-conditions.final.yml",
+                "line": 38,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Bash",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 2,
+              "inputs": {
+                "script": "echo "##vso[task.setvariable variable=version;isOutput=true]1.2.3"",
+                "targetType": "inline",
+              },
+              "name": "meta",
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "03-dependencies-and-conditions.final.yml",
+                "line": 41,
+              },
+              "task": "Bash@3",
+              "warnings": [],
+            },
+          ],
+          "variables": [],
+        },
+        {
+          "condition": "eq(stageDependencies.probe.detect.outputs['flags.changedWeb'], 'true')",
+          "dependsOn": [],
+          "id": "web",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "building web"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "03-dependencies-and-conditions.final.yml",
+                "line": 49,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [],
+        },
+        {
+          "condition": "not(failed())",
+          "dependsOn": [
+            "api",
+            "web",
+          ],
+          "id": "summary",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "api version $(apiVersion)"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "03-dependencies-and-conditions.final.yml",
+                "line": 61,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "condition": "eq(dependencies.web.result, 'Skipped')",
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 2,
+              "inputs": {
+                "script": "echo "web was skipped"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "03-dependencies-and-conditions.final.yml",
+                "line": 64,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "condition": "always()",
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 3,
+              "inputs": {
+                "script": "echo "always runs"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "03-dependencies-and-conditions.final.yml",
+                "line": 68,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "condition": "succeededOrFailed()",
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 4,
+              "inputs": {
+                "script": "echo "runs even after a failure earlier in the job"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "03-dependencies-and-conditions.final.yml",
+                "line": 72,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [
+            {
+              "name": "apiVersion",
+              "readonly": false,
+              "value": "$[ dependencies.api.outputs['meta.version'] ]",
+            },
+          ],
+        },
+      ],
+      "variables": [
+        {
+          "name": "apiChanged",
+          "readonly": false,
+          "value": "$[ stageDependencies.probe.detect.outputs['flags.changedApi'] ]",
+        },
+      ],
+    },
+    {
+      "condition": "and(
+  succeeded('build'),
+  eq(dependencies.probe.result, 'Succeeded')
+)
+",
+      "dependsOn": [
+        "probe",
+        "build",
+      ],
+      "id": "report",
+      "jobs": [
+        {
+          "dependsOn": [],
+          "id": "publish_report",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": true,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "reporting"",
+              },
+              "retryCountOnTaskFailure": 2,
+              "source": {
+                "file": "03-dependencies-and-conditions.final.yml",
+                "line": 90,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "condition": "and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))",
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 2,
+              "inputs": {
+                "script": "exit 0",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "03-dependencies-and-conditions.final.yml",
+                "line": 95,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [],
+        },
+      ],
+      "variables": [],
+    },
+  ],
+  "tools": [],
+  "unsupported": [],
+  "warnings": [],
+}
+`;
+
+exports[`golden corpus manifests > 04-variable-layers serializes stably 1`] = `
+{
+  "env": [],
+  "expansion": {
+    "apiVersion": "7.1",
+    "degraded": false,
+    "finalYamlHash": "b59e8457e9924555b456554070ac80fecbc122061d3f80dc08df54b3c2dd2657",
+    "fromCache": false,
+    "mode": "service",
+    "pipelineId": 0,
+    "requestHash": "36c78c62d59b246bbc60aba755a9901823dbcebb47b605489e92576a3c4addda",
+  },
+  "pipeline": {
+    "name": "$(BuildDefinitionName)_$(Date:yyyyMMdd)$(Rev:.r)",
+    "parameters": {
+      "environmentName": "staging",
+    },
+  },
+  "schemaVersion": 1,
+  "stages": [
+    {
+      "dependsOn": [],
+      "id": "main",
+      "jobs": [
+        {
+          "dependsOn": [],
+          "id": "layers",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "Job layer wins over pipeline layer",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "solution=$(solution) config=$(buildConfiguration)"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "04-variable-layers.final.yml",
+                "line": 41,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 2,
+              "inputs": {
+                "script": "echo "stage=$(stageScoped) job=$(jobScoped) env=$(targetEnv)"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "04-variable-layers.final.yml",
+                "line": 45,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Runtime expression variable",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 3,
+              "inputs": {
+                "script": "echo "counter=$(buildCounter)"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "04-variable-layers.final.yml",
+                "line": 48,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Compile-time read sees the pipeline-level value",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 4,
+              "inputs": {
+                "script": "echo "compile-time=overridden-at-job"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "04-variable-layers.final.yml",
+                "line": 52,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Macro escaping next to a real macro",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 5,
+              "inputs": {
+                "script": "echo "literal $$(not-a-variable) and $(Build.BuildId)"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "04-variable-layers.final.yml",
+                "line": 56,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Variables as environment variables",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 6,
+              "inputs": {
+                "script": "echo "env sees $SOLUTION and $BUILDCONFIGURATION"",
+                "targetType": "inline",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "04-variable-layers.final.yml",
+                "line": 60,
+              },
+              "task": "Bash@3",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {
+                "FROM_VARIABLE": "$(jobScoped)",
+                "STEP_LEVEL": "step-value",
+              },
+              "failOnStderr": false,
+              "id": 7,
+              "inputs": {
+                "script": "echo "step env only"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "04-variable-layers.final.yml",
+                "line": 65,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Set a variable mid-job",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 8,
+              "inputs": {
+                "script": "echo "##vso[task.setvariable variable=lateBound]set-at-runtime"
+",
+                "targetType": "inline",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "04-variable-layers.final.yml",
+                "line": 71,
+              },
+              "task": "Bash@3",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Read it in a later step",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 9,
+              "inputs": {
+                "script": "echo "late=$(lateBound)"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "04-variable-layers.final.yml",
+                "line": 77,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [
+            {
+              "name": "jobScoped",
+              "readonly": false,
+              "value": "from-job",
+            },
+            {
+              "name": "solution",
+              "readonly": false,
+              "value": "overridden-at-job",
+            },
+          ],
+        },
+        {
+          "dependsOn": [],
+          "id": "settable",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "$(fromTemplateExpression)"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "04-variable-layers.final.yml",
+                "line": 86,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [
+            {
+              "name": "fromTemplateExpression",
+              "readonly": false,
+              "value": "staging-suffix",
+            },
+          ],
+        },
+      ],
+      "variables": [
+        {
+          "name": "stageScoped",
+          "readonly": false,
+          "value": "from-stage",
+        },
+        {
+          "name": "buildConfiguration",
+          "readonly": false,
+          "value": "Debug",
+        },
+      ],
+    },
+  ],
+  "tools": [],
+  "unsupported": [],
+  "warnings": [],
+}
+`;
+
+exports[`golden corpus manifests > 05-steps-template-nested serializes stably 1`] = `
+{
+  "env": [],
+  "expansion": {
+    "apiVersion": "7.1",
+    "degraded": false,
+    "finalYamlHash": "6405dd919765a5770db1f31de2e8510ea57f68869ed107fca8117cb26f31dff1",
+    "fromCache": false,
+    "mode": "service",
+    "pipelineId": 0,
+    "requestHash": "b57ddbf1bdea190526504cccf305b16656808dfe2f8806ec90e0eec238f97629",
+  },
+  "pipeline": {
+    "parameters": {
+      "runTests": "true",
+    },
+  },
+  "schemaVersion": 1,
+  "stages": [
+    {
+      "dependsOn": [],
+      "id": "__default",
+      "jobs": [
+        {
+          "dependsOn": [],
+          "id": "build",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "Restore",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "restoring packages"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "05-steps-template-nested.final.yml",
+                "line": 16,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Build src/app",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 2,
+              "inputs": {
+                "script": "echo "building src/app as Release"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "05-steps-template-nested.final.yml",
+                "line": 20,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Build src/lib",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 3,
+              "inputs": {
+                "script": "echo "building src/lib as Release"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "05-steps-template-nested.final.yml",
+                "line": 24,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Test Release",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 4,
+              "inputs": {
+                "script": "echo "testing Release"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "05-steps-template-nested.final.yml",
+                "line": 28,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "condition": "succeededOrFailed()",
+              "continueOnError": false,
+              "displayName": "Publish test results",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 5,
+              "inputs": {
+                "failTaskOnFailedTests": "true",
+                "testResultsFiles": "**/TEST-*.xml",
+                "testResultsFormat": "JUnit",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "05-steps-template-nested.final.yml",
+                "line": 32,
+              },
+              "task": "PublishTestResults@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "After the templates",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 6,
+              "inputs": {
+                "script": "echo "back in the root document"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "05-steps-template-nested.final.yml",
+                "line": 39,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [],
+        },
+        {
+          "dependsOn": [],
+          "id": "reuse",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "Build src/app",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "building src/app as Debug"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "05-steps-template-nested.final.yml",
+                "line": 45,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Tests disabled",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 2,
+              "inputs": {
+                "script": "echo "tests skipped for Debug"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "05-steps-template-nested.final.yml",
+                "line": 49,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [],
+        },
+      ],
+      "variables": [],
+    },
+  ],
+  "tools": [],
+  "unsupported": [],
+  "warnings": [],
+}
+`;
+
+exports[`golden corpus manifests > 06-extends-each-joblist serializes stably 1`] = `
+{
+  "env": [],
+  "expansion": {
+    "apiVersion": "7.1",
+    "degraded": false,
+    "finalYamlHash": "44d80b9d6061a15caddaa818eedc9db45ecdfde0f168ec7e7e8322b24e978f30",
+    "fromCache": false,
+    "mode": "service",
+    "pipelineId": 0,
+    "requestHash": "3faf520000c18e57c49bfd2a6d5ec87ade09f12144c433564d4cbf78e43faec8",
+  },
+  "pipeline": {
+    "parameters": {},
+  },
+  "schemaVersion": 1,
+  "stages": [
+    {
+      "dependsOn": [],
+      "displayName": "Build (governed)",
+      "id": "build",
+      "jobs": [
+        {
+          "dependsOn": [],
+          "displayName": "Build the API",
+          "id": "api",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "Mandated pre-step",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "mandated pre-step for api"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "06-extends-each-joblist.final.yml",
+                "line": 15,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 2,
+              "inputs": {
+                "script": "echo "compile api"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "06-extends-each-joblist.final.yml",
+                "line": 19,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 3,
+              "inputs": {
+                "script": "echo "unit tests api"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "06-extends-each-joblist.final.yml",
+                "line": 22,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "condition": "succeededOrFailed()",
+              "continueOnError": false,
+              "displayName": "Scan api",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 4,
+              "inputs": {
+                "script": "echo "security scan for api"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "06-extends-each-joblist.final.yml",
+                "line": 25,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [],
+        },
+        {
+          "dependsOn": [
+            "api",
+          ],
+          "displayName": "Build the web app",
+          "id": "web",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "Mandated pre-step",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "mandated pre-step for web"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "06-extends-each-joblist.final.yml",
+                "line": 35,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 2,
+              "inputs": {
+                "script": "echo "compile web"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "06-extends-each-joblist.final.yml",
+                "line": 39,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "condition": "succeededOrFailed()",
+              "continueOnError": false,
+              "displayName": "Scan web",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 3,
+              "inputs": {
+                "script": "echo "security scan for web"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "06-extends-each-joblist.final.yml",
+                "line": 42,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [],
+        },
+      ],
+      "variables": [],
+    },
+    {
+      "dependsOn": [
+        "build",
+      ],
+      "displayName": "Deploy to staging",
+      "id": "deploy_staging",
+      "jobs": [
+        {
+          "dependsOn": [],
+          "id": "deploy",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "deploying to staging (governed by $(governedBy))"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "06-extends-each-joblist.final.yml",
+                "line": 54,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [],
+        },
+      ],
+      "variables": [],
+    },
+    {
+      "condition": "and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))",
+      "dependsOn": [
+        "build",
+      ],
+      "displayName": "Deploy to production",
+      "id": "deploy_production",
+      "jobs": [
+        {
+          "dependsOn": [],
+          "id": "deploy",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "deploying to production (governed by $(governedBy))"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "06-extends-each-joblist.final.yml",
+                "line": 65,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [],
+        },
+      ],
+      "variables": [],
+    },
+  ],
+  "tools": [],
+  "unsupported": [],
+  "warnings": [],
+}
+`;
+
+exports[`golden corpus manifests > 07-template-parameter-types serializes stably 1`] = `
+{
+  "env": [],
+  "expansion": {
+    "apiVersion": "7.1",
+    "degraded": false,
+    "finalYamlHash": "3cb896bebe346f11fcc9a6e83f440d84c3a7e428d661cf6a70f89b69451adb2e",
+    "fromCache": false,
+    "mode": "service",
+    "pipelineId": 0,
+    "requestHash": "aad29d8ad6f99f24169e3ab12f380984a766059b712c88a1069f1aea95182ec3",
+  },
+  "pipeline": {
+    "parameters": {
+      "customStep": "",
+      "extraSteps": "",
+      "imageName": "ubuntu-latest",
+      "retries": "2",
+      "settings": "",
+      "verbose": "false",
+    },
+  },
+  "schemaVersion": 1,
+  "stages": [
+    {
+      "dependsOn": [],
+      "id": "__default",
+      "jobs": [
+        {
+          "dependsOn": [],
+          "displayName": "Typed parameters (default)",
+          "id": "typed_default",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "Scalars survive their types",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "retries=2 verbose=False"",
+              },
+              "retryCountOnTaskFailure": 2,
+              "source": {
+                "file": "07-template-parameter-types.final.yml",
+                "line": 56,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Object parameter indexed by path",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 2,
+              "inputs": {
+                "script": "echo "timeout=$(timeoutSetting) nested=$(nestedSetting)"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "07-template-parameter-types.final.yml",
+                "line": 61,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Tag fast",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 3,
+              "inputs": {
+                "script": "echo "tag fast"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "07-template-parameter-types.final.yml",
+                "line": 65,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Tag smoke",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 4,
+              "inputs": {
+                "script": "echo "tag smoke"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "07-template-parameter-types.final.yml",
+                "line": 69,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 5,
+              "inputs": {
+                "script": "echo "default single step"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "07-template-parameter-types.final.yml",
+                "line": 73,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 6,
+              "inputs": {
+                "script": "echo "default extra step one"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "07-template-parameter-types.final.yml",
+                "line": 76,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Bash",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 7,
+              "inputs": {
+                "script": "echo "default extra step two"",
+                "targetType": "inline",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "07-template-parameter-types.final.yml",
+                "line": 79,
+              },
+              "task": "Bash@3",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Functions over parameter collections",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 8,
+              "inputs": {
+                "script": "echo "count=2 joined=fast,smoke"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "07-template-parameter-types.final.yml",
+                "line": 83,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [
+            {
+              "name": "timeoutSetting",
+              "readonly": false,
+              "value": "30",
+            },
+            {
+              "name": "nestedSetting",
+              "readonly": false,
+              "value": "value",
+            },
+          ],
+        },
+        {
+          "dependsOn": [],
+          "displayName": "Typed parameters (overridden)",
+          "id": "typed_overridden",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "Scalars survive their types",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "retries=5 verbose=True"",
+              },
+              "retryCountOnTaskFailure": 5,
+              "source": {
+                "file": "07-template-parameter-types.final.yml",
+                "line": 97,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Truthiness of a boolean parameter",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 2,
+              "inputs": {
+                "script": "echo "verbose mode on"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "07-template-parameter-types.final.yml",
+                "line": 102,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Object parameter indexed by path",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 3,
+              "inputs": {
+                "script": "echo "timeout=$(timeoutSetting) nested=$(nestedSetting)"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "07-template-parameter-types.final.yml",
+                "line": 106,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Tag slow",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 4,
+              "inputs": {
+                "script": "echo "tag slow"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "07-template-parameter-types.final.yml",
+                "line": 110,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Passed as a task step",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 5,
+              "inputs": {
+                "script": "echo "overridden single step"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "07-template-parameter-types.final.yml",
+                "line": 114,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 6,
+              "inputs": {
+                "script": "echo "overridden extra step"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "07-template-parameter-types.final.yml",
+                "line": 118,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Functions over parameter collections",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 7,
+              "inputs": {
+                "script": "echo "count=1 joined=slow"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "07-template-parameter-types.final.yml",
+                "line": 121,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [
+            {
+              "name": "timeoutSetting",
+              "readonly": false,
+              "value": "5",
+            },
+            {
+              "name": "nestedSetting",
+              "readonly": false,
+              "value": "other",
+            },
+          ],
+        },
+      ],
+      "variables": [],
+    },
+  ],
+  "tools": [],
+  "unsupported": [],
+  "warnings": [],
+}
+`;
+
+exports[`golden corpus manifests > 08-deployment-runonce serializes stably 1`] = `
+{
+  "env": [],
+  "expansion": {
+    "apiVersion": "7.1",
+    "degraded": false,
+    "finalYamlHash": "9c6997799276b5456064558a4149f40877aa2f05d0e53823d3f452d75bcac8ae",
+    "fromCache": false,
+    "mode": "service",
+    "pipelineId": 0,
+    "requestHash": "733a6ae601c2b2c6328dab4ea160717115ab70523c9b63401bab9aef2418fc24",
+  },
+  "pipeline": {
+    "parameters": {},
+  },
+  "schemaVersion": 1,
+  "stages": [
+    {
+      "dependsOn": [],
+      "id": "build",
+      "jobs": [
+        {
+          "dependsOn": [],
+          "id": "package",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "Package",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "mkdir -p $(Build.ArtifactStagingDirectory)/drop
+echo "app" > $(Build.ArtifactStagingDirectory)/drop/app.txt
+",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "08-deployment-runonce.final.yml",
+                "line": 15,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "ecdc45f6-832d-4ad9-b52b-ee49e94659be",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 2,
+              "inputs": {
+                "artifactName": "drop",
+                "path": "$(Build.ArtifactStagingDirectory)/drop",
+              },
+              "origin": "publish",
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "08-deployment-runonce.final.yml",
+                "line": 21,
+              },
+              "task": "ecdc45f6-832d-4ad9-b52b-ee49e94659be@1",
+              "warnings": [],
+            },
+          ],
+          "variables": [],
+        },
+      ],
+      "variables": [],
+    },
+    {
+      "dependsOn": [
+        "build",
+      ],
+      "displayName": "Deploy to staging",
+      "id": "deploy_staging",
+      "jobs": [
+        {
+          "autoDownloadArtifacts": true,
+          "dependsOn": [],
+          "displayName": "Staging (runOnce)",
+          "environment": {
+            "name": "corpus-staging",
+          },
+          "id": "staging",
+          "kind": "deployment",
+          "steps": [],
+          "strategy": {
+            "deploy": {
+              "steps": [
+                {
+                  "continueOnError": false,
+                  "displayName": "Deploy to staging",
+                  "enabled": true,
+                  "env": {},
+                  "failOnStderr": false,
+                  "id": 1,
+                  "inputs": {
+                    "script": "echo "deploying $(releaseName) to staging"",
+                  },
+                  "retryCountOnTaskFailure": 0,
+                  "source": {
+                    "file": "08-deployment-runonce.final.yml",
+                    "line": 50,
+                  },
+                  "task": "CmdLine@2",
+                  "warnings": [],
+                },
+                {
+                  "continueOnError": false,
+                  "displayName": "CmdLine",
+                  "enabled": true,
+                  "env": {},
+                  "failOnStderr": false,
+                  "id": 2,
+                  "inputs": {
+                    "script": "echo "artifact at $(Pipeline.Workspace)/drop/app.txt"",
+                  },
+                  "retryCountOnTaskFailure": 0,
+                  "source": {
+                    "file": "08-deployment-runonce.final.yml",
+                    "line": 54,
+                  },
+                  "task": "CmdLine@2",
+                  "warnings": [],
+                },
+                {
+                  "continueOnError": false,
+                  "displayName": "Health check",
+                  "enabled": true,
+                  "env": {},
+                  "failOnStderr": false,
+                  "id": 3,
+                  "inputs": {
+                    "script": "echo "probing /healthz"",
+                  },
+                  "retryCountOnTaskFailure": 3,
+                  "source": {
+                    "file": "08-deployment-runonce.final.yml",
+                    "line": 57,
+                  },
+                  "task": "CmdLine@2",
+                  "warnings": [],
+                },
+              ],
+            },
+            "kind": "runOnce",
+            "onFailure": {
+              "steps": [
+                {
+                  "continueOnError": false,
+                  "displayName": "Rollback",
+                  "enabled": true,
+                  "env": {},
+                  "failOnStderr": false,
+                  "id": 1,
+                  "inputs": {
+                    "script": "echo "rolling back"",
+                  },
+                  "retryCountOnTaskFailure": 0,
+                  "source": {
+                    "file": "08-deployment-runonce.final.yml",
+                    "line": 75,
+                  },
+                  "task": "CmdLine@2",
+                  "warnings": [],
+                },
+              ],
+            },
+            "onSuccess": {
+              "steps": [
+                {
+                  "continueOnError": false,
+                  "displayName": "CmdLine",
+                  "enabled": true,
+                  "env": {},
+                  "failOnStderr": false,
+                  "id": 1,
+                  "inputs": {
+                    "script": "echo "deployment succeeded"",
+                  },
+                  "retryCountOnTaskFailure": 0,
+                  "source": {
+                    "file": "08-deployment-runonce.final.yml",
+                    "line": 81,
+                  },
+                  "task": "CmdLine@2",
+                  "warnings": [],
+                },
+              ],
+            },
+            "postRouteTraffic": {
+              "steps": [
+                {
+                  "continueOnError": false,
+                  "displayName": "CmdLine",
+                  "enabled": true,
+                  "env": {},
+                  "failOnStderr": false,
+                  "id": 1,
+                  "inputs": {
+                    "script": "echo "smoke test"",
+                  },
+                  "retryCountOnTaskFailure": 0,
+                  "source": {
+                    "file": "08-deployment-runonce.final.yml",
+                    "line": 69,
+                  },
+                  "task": "CmdLine@2",
+                  "warnings": [],
+                },
+              ],
+            },
+            "preDeploy": {
+              "steps": [
+                {
+                  "continueOnError": false,
+                  "displayName": "30f35852-3f7e-4c0c-9a88-e127b4f97211",
+                  "enabled": true,
+                  "env": {},
+                  "failOnStderr": false,
+                  "id": 1,
+                  "inputs": {
+                    "alias": "current",
+                    "artifact": "drop",
+                  },
+                  "origin": "download",
+                  "retryCountOnTaskFailure": 0,
+                  "source": {
+                    "file": "08-deployment-runonce.final.yml",
+                    "line": 41,
+                  },
+                  "task": "30f35852-3f7e-4c0c-9a88-e127b4f97211@1",
+                  "warnings": [],
+                },
+                {
+                  "continueOnError": false,
+                  "displayName": "CmdLine",
+                  "enabled": true,
+                  "env": {},
+                  "failOnStderr": false,
+                  "id": 2,
+                  "inputs": {
+                    "script": "echo "preDeploy for $(releaseName) into $(slot)"",
+                  },
+                  "retryCountOnTaskFailure": 0,
+                  "source": {
+                    "file": "08-deployment-runonce.final.yml",
+                    "line": 45,
+                  },
+                  "task": "CmdLine@2",
+                  "warnings": [],
+                },
+              ],
+            },
+            "routeTraffic": {
+              "steps": [
+                {
+                  "continueOnError": false,
+                  "displayName": "CmdLine",
+                  "enabled": true,
+                  "env": {},
+                  "failOnStderr": false,
+                  "id": 1,
+                  "inputs": {
+                    "script": "echo "routing traffic"",
+                  },
+                  "retryCountOnTaskFailure": 0,
+                  "source": {
+                    "file": "08-deployment-runonce.final.yml",
+                    "line": 64,
+                  },
+                  "task": "CmdLine@2",
+                  "warnings": [],
+                },
+              ],
+            },
+          },
+          "variables": [
+            {
+              "name": "slot",
+              "readonly": false,
+              "value": "staging",
+            },
+          ],
+        },
+      ],
+      "variables": [],
+    },
+    {
+      "condition": "succeeded()",
+      "dependsOn": [
+        "deploy_staging",
+      ],
+      "displayName": "Deploy to production",
+      "id": "deploy_production",
+      "jobs": [
+        {
+          "dependsOn": [],
+          "environment": {
+            "name": "corpus-production",
+          },
+          "id": "production",
+          "kind": "deployment",
+          "steps": [],
+          "strategy": {
+            "kind": "rolling",
+          },
+          "variables": [],
+        },
+        {
+          "condition": "always()",
+          "dependsOn": [
+            "production",
+          ],
+          "id": "notify",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "deployment result was $(Agent.JobStatus)"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "08-deployment-runonce.final.yml",
+                "line": 116,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [],
+        },
+      ],
+      "variables": [],
+    },
+  ],
+  "tools": [],
+  "unsupported": [],
+  "warnings": [],
+}
+`;
+
+exports[`golden corpus manifests > 09-multi-checkout serializes stably 1`] = `
+{
+  "env": [],
+  "expansion": {
+    "apiVersion": "7.1",
+    "degraded": false,
+    "finalYamlHash": "350037b15cfd5c46ee6ace5a14a5921db1c8e98c832c80a54245a6e28d2c4d40",
+    "fromCache": false,
+    "mode": "service",
+    "pipelineId": 0,
+    "requestHash": "1a97d55fdbf4f1908fb79314cad7c2c7b9c22ffc6530325d6b3bcbbcf1ea9279",
+  },
+  "pipeline": {
+    "parameters": {},
+  },
+  "schemaVersion": 1,
+  "stages": [
+    {
+      "dependsOn": [],
+      "id": "__default",
+      "jobs": [
+        {
+          "dependsOn": [],
+          "displayName": "Two repositories in one workspace",
+          "id": "multi_checkout",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "6d15af64-176c-496d-b583-fd2ae21d4df4",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "clean": "true",
+                "fetchDepth": "0",
+                "fetchTags": "false",
+                "path": "s/product",
+                "persistCredentials": "true",
+                "repository": "self",
+                "submodules": "recursive",
+              },
+              "origin": "checkout",
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "09-multi-checkout.final.yml",
+                "line": 21,
+              },
+              "task": "6d15af64-176c-496d-b583-fd2ae21d4df4@1",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "6d15af64-176c-496d-b583-fd2ae21d4df4",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 2,
+              "inputs": {
+                "lfs": "false",
+                "path": "s/tools",
+                "repository": "tools",
+              },
+              "origin": "checkout",
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "09-multi-checkout.final.yml",
+                "line": 30,
+              },
+              "task": "6d15af64-176c-496d-b583-fd2ae21d4df4@1",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Both repositories are present",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 3,
+              "inputs": {
+                "script": "test -d "$(Build.SourcesDirectory)/../product"
+echo "sources at $(Build.SourcesDirectory)"
+echo "repo local path $(Build.Repository.LocalPath)"
+",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "09-multi-checkout.final.yml",
+                "line": 35,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Cross-repo template step",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 4,
+              "inputs": {
+                "script": "echo "shared tooling step (from-the-tools-repo)"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "09-multi-checkout.final.yml",
+                "line": 42,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [],
+        },
+        {
+          "dependsOn": [
+            "multi_checkout",
+          ],
+          "displayName": "No sources at all",
+          "id": "no_checkout",
+          "kind": "agent",
+          "steps": [
+            {
+              "condition": "false",
+              "continueOnError": false,
+              "displayName": "6d15af64-176c-496d-b583-fd2ae21d4df4",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "repository": "none",
+              },
+              "origin": "checkout",
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "09-multi-checkout.final.yml",
+                "line": 51,
+              },
+              "task": "6d15af64-176c-496d-b583-fd2ae21d4df4@1",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 2,
+              "inputs": {
+                "script": "echo "nothing cloned; $(Build.SourcesDirectory) is empty"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "09-multi-checkout.final.yml",
+                "line": 55,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [],
+        },
+        {
+          "dependsOn": [],
+          "displayName": "Implicit self checkout",
+          "id": "self_only",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "no checkout step, so the agent checks out self implicitly"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "09-multi-checkout.final.yml",
+                "line": 61,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [],
+        },
+      ],
+      "variables": [],
+    },
+  ],
+  "tools": [],
+  "unsupported": [],
+  "warnings": [],
+}
+`;
+
+exports[`golden corpus manifests > 10-monorepo-triggers-pools serializes stably 1`] = `
+{
+  "env": [],
+  "expansion": {
+    "apiVersion": "7.1",
+    "degraded": false,
+    "finalYamlHash": "c8ef9cc100abe8e7591406c6db5934b00364e88bbce769741e82fa8282ea0e17",
+    "fromCache": false,
+    "mode": "service",
+    "pipelineId": 0,
+    "requestHash": "3f05b72c7a4aa3d33bed2462a507fc63bcb1340035010b26e95c3403efa0a039",
+  },
+  "pipeline": {
+    "parameters": {},
+  },
+  "schemaVersion": 1,
+  "stages": [
+    {
+      "dependsOn": [],
+      "id": "__default",
+      "jobs": [
+        {
+          "dependsOn": [],
+          "displayName": "Job inside a container",
+          "id": "container_job",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "Node from the container image",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "node --version",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "10-monorepo-triggers-pools.final.yml",
+                "line": 54,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Bash",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": true,
+              "id": 2,
+              "inputs": {
+                "failOnStderr": "true",
+                "script": "echo "running as $(id -u)"",
+                "targetType": "inline",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "10-monorepo-triggers-pools.final.yml",
+                "line": 58,
+              },
+              "task": "Bash@3",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "Bash task with explicit working directory",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": true,
+              "id": 3,
+              "inputs": {
+                "failOnStderr": "true",
+                "script": "set -euo pipefail
+echo "cwd=$PWD"
+",
+                "targetType": "inline",
+                "workingDirectory": "$(Build.SourcesDirectory)",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "10-monorepo-triggers-pools.final.yml",
+                "line": 63,
+              },
+              "task": "Bash@3",
+              "warnings": [],
+              "workingDirectory": "$(Build.SourcesDirectory)",
+            },
+          ],
+          "variables": [],
+        },
+        {
+          "dependsOn": [],
+          "displayName": "Self-hosted pool with demands",
+          "id": "demand_job",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "needs a specific agent"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "10-monorepo-triggers-pools.final.yml",
+                "line": 80,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "PowerShell on a Linux agent",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 2,
+              "inputs": {
+                "errorActionPreference": "stop",
+                "script": "Write-Host "cross-platform powershell step"",
+                "targetType": "inline",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "10-monorepo-triggers-pools.final.yml",
+                "line": 83,
+              },
+              "task": "PowerShell@2",
+              "warnings": [],
+            },
+            {
+              "continueOnError": false,
+              "displayName": "PowerShell task",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 3,
+              "inputs": {
+                "pwsh": "true",
+                "script": "Write-Host "from the task"",
+                "targetType": "inline",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "10-monorepo-triggers-pools.final.yml",
+                "line": 89,
+              },
+              "task": "PowerShell@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [],
+        },
+        {
+          "dependsOn": [],
+          "displayName": "Sidecar service container",
+          "id": "services_job",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "CmdLine",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo "app can reach the sidecar"",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "10-monorepo-triggers-pools.final.yml",
+                "line": 101,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [],
+        },
+      ],
+      "variables": [],
+    },
+  ],
+  "tools": [],
+  "unsupported": [],
+  "warnings": [],
+}
+`;
