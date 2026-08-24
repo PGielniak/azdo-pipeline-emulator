@@ -119,6 +119,13 @@ export interface Job {
   readonly provenance: ModelProvenance;
   /** E04-S03: the matrix leg this job was expanded from. Unset before matrix expansion. */
   readonly matrixKey?: string;
+  /**
+   * E04-S03: `strategy.maxParallel` — the maximum number of simultaneous legs, recorded verbatim.
+   *
+   * It is a scheduling cap, not a shape change (C-E04-113): `0`/absent means "no limit", and it does
+   * not merge or drop legs. Carried so E05 can surface it; the local runner is sequential anyway.
+   */
+  readonly maxParallel?: number;
   /** E04-S02-T04 / docs/01 §5: `container:` and `services:`. Carried raw until then. */
   readonly container?: string;
 }
