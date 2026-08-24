@@ -37,3 +37,4 @@ export * from './model/graph.js';
 export * from './model/variables.js';
 export * from './model/classify.js';
 export * from './model/predefined.js';
+export * from './model/manifest.js';

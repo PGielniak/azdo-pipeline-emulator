@@ -1,0 +1,262 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://azdo-emu.dev/schemas/manifest.schema.json",
+  "title": "azdo-emu generated-project manifest",
+  "description": "The machine-readable graph + metadata of a converted pipeline (docs/04 §11), written by the emitter and consumed by doctor, --list, and tooling.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "expansion",
+    "pipeline",
+    "stages",
+    "env",
+    "tools",
+    "warnings",
+    "unsupported"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "description": "Version of this manifest schema. Bump on a breaking shape change.",
+      "const": 1
+    },
+    "expansion": {
+      "description": "How the pipeline's finalYaml was obtained (E12-S01-T01's ExpansionManifestEntry). Discriminated: the offline arm cannot claim a service api-version or pipeline id.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "degraded",
+            "requestHash",
+            "finalYamlHash",
+            "apiVersion",
+            "pipelineId",
+            "fromCache"
+          ],
+          "properties": {
+            "mode": { "const": "service" },
+            "degraded": { "const": false },
+            "requestHash": { "type": "string" },
+            "finalYamlHash": { "type": "string" },
+            "apiVersion": { "type": "string" },
+            "pipelineId": { "type": "integer" },
+            "fromCache": { "type": "boolean" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "degraded", "requestHash", "finalYamlHash"],
+          "properties": {
+            "mode": { "const": "offline" },
+            "degraded": { "const": true },
+            "requestHash": { "type": "string" },
+            "finalYamlHash": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "pipeline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["parameters"],
+      "properties": {
+        "name": { "type": "string" },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "stages": { "type": "array", "items": { "$ref": "#/definitions/stage" } },
+    "env": { "type": "array", "items": { "$ref": "#/definitions/envEntry" } },
+    "tools": { "type": "array", "items": { "$ref": "#/definitions/tool" } },
+    "warnings": { "type": "array", "items": { "$ref": "#/definitions/warning" } },
+    "unsupported": { "type": "array", "items": { "type": "string" } }
+  },
+  "definitions": {
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "dependsOn", "variables", "jobs"],
+      "properties": {
+        "id": { "type": "string" },
+        "displayName": { "type": "string" },
+        "dependsOn": { "type": "array", "items": { "type": "string" } },
+        "condition": { "type": "string" },
+        "variables": { "type": "array", "items": { "$ref": "#/definitions/variable" } },
+        "jobs": { "type": "array", "items": { "$ref": "#/definitions/job" } }
+      }
+    },
+    "job": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "dependsOn", "variables", "steps"],
+      "properties": {
+        "id": { "type": "string" },
+        "displayName": { "type": "string" },
+        "kind": { "enum": ["agent", "server", "deployment"] },
+        "dependsOn": { "type": "array", "items": { "type": "string" } },
+        "condition": { "type": "string" },
+        "matrixKey": { "type": "string" },
+        "maxParallel": { "type": "integer", "minimum": 0 },
+        "variables": { "type": "array", "items": { "$ref": "#/definitions/variable" } },
+        "steps": { "type": "array", "items": { "$ref": "#/definitions/step" } },
+        "environment": { "$ref": "#/definitions/environment" },
+        "strategy": { "$ref": "#/definitions/deploymentStrategy" },
+        "autoDownloadArtifacts": { "type": "boolean" }
+      }
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "displayName",
+        "task",
+        "inputs",
+        "env",
+        "continueOnError",
+        "retryCountOnTaskFailure",
+        "enabled",
+        "failOnStderr",
+        "source",
+        "warnings"
+      ],
+      "properties": {
+        "id": { "type": "integer", "minimum": 1 },
+        "name": { "type": "string" },
+        "displayName": { "type": "string" },
+        "task": { "type": "string" },
+        "origin": { "enum": ["checkout", "download", "publish"] },
+        "inputs": { "type": "object", "additionalProperties": { "type": "string" } },
+        "condition": { "type": "string" },
+        "env": { "type": "object", "additionalProperties": { "type": "string" } },
+        "continueOnError": { "type": "boolean" },
+        "timeoutInMinutes": { "type": "integer" },
+        "retryCountOnTaskFailure": { "type": "integer" },
+        "enabled": { "type": "boolean" },
+        "target": { "$ref": "#/definitions/stepTarget" },
+        "workingDirectory": { "type": "string" },
+        "failOnStderr": { "type": "boolean" },
+        "fidelity": { "enum": ["exact", "equivalent", "degraded", "stub", "unsupported"] },
+        "disposition": { "enum": ["native", "real-task", "stub"] },
+        "source": { "$ref": "#/definitions/source" },
+        "warnings": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "variable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "value", "readonly"],
+      "properties": {
+        "name": { "type": "string" },
+        "value": { "type": "string" },
+        "readonly": { "type": "boolean" },
+        "group": { "type": "string" }
+      }
+    },
+    "envEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "secret"],
+      "properties": {
+        "name": { "type": "string" },
+        "secret": { "type": "boolean" },
+        "origin": { "type": "string" }
+      }
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cmd", "neededBy"],
+      "properties": {
+        "cmd": { "type": "string" },
+        "min": { "type": "string" },
+        "neededBy": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "location": { "$ref": "#/definitions/location" }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "line"],
+      "properties": {
+        "file": { "type": "string" },
+        "line": { "type": "integer" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "line"],
+      "properties": {
+        "file": { "type": "string" },
+        "line": { "type": "integer" }
+      }
+    },
+    "stepTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["container"],
+      "properties": {
+        "container": { "type": "string" },
+        "commands": { "type": "string" }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "resourceName": { "type": "string" },
+        "resourceType": { "type": "string" }
+      }
+    },
+    "deploymentStrategy": {
+      "oneOf": [
+        { "$ref": "#/definitions/runOnceStrategy" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": { "kind": { "enum": ["rolling", "canary"] } }
+        }
+      ]
+    },
+    "runOnceStrategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "const": "runOnce" },
+        "preDeploy": { "$ref": "#/definitions/deploymentHook" },
+        "deploy": { "$ref": "#/definitions/deploymentHook" },
+        "routeTraffic": { "$ref": "#/definitions/deploymentHook" },
+        "postRouteTraffic": { "$ref": "#/definitions/deploymentHook" },
+        "onSuccess": { "$ref": "#/definitions/deploymentHook" },
+        "onFailure": { "$ref": "#/definitions/deploymentHook" }
+      }
+    },
+    "deploymentHook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["steps"],
+      "properties": {
+        "steps": { "type": "array", "items": { "$ref": "#/definitions/step" } }
+      }
+    }
+  }
+}

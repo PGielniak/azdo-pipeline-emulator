@@ -295,6 +295,17 @@ E07-S03-T01 registry's output, and since E12-S02-T03 the only per-task classific
   "warnings": [], "unsupported": [] }
 ```
 
+The shape above is illustrative; the **authoritative** schema is committed at
+`packages/engine/schema/manifest.schema.json` (draft-07) and the serializer is
+`packages/engine/src/model/manifest.ts` (`serializeManifest`, E04-S03-T04). Concrete differences from
+the sketch: the document is **versioned** via `schemaVersion: 1`; the expansion record (which arm
+produced `finalYaml` — service or the `--offline-expand` fallback) is a discriminated `expansion`
+field, not prose; a stage's `dependsOn` is the **effective** list with the sequential default already
+applied; a step's `source` is `{file, line}` (the `via` template chain lives in the bundler's
+`bundle.json`, E03-S07-T01); `file` (the emitted script path) and `targetOs` are filled by E05 and
+were deferred with it; and `env`/`tools`/`unsupported` are aggregation hooks defaulting to empty until
+E07/E08 fill them. The `condition` is a plain string, not the object form sketched above.
+
 ## 12. Sample emitted steps (illustrative)
 
 Two shapes, and only two (PLAN D4 revised — E12-S02-T03 dropped the per-task transpiler): a **script
