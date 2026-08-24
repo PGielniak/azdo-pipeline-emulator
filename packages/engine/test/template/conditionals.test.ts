@@ -225,7 +225,7 @@ describe('reconciled conditional oracle union — C-E03-120..137', () => {
   });
 });
 
-describe('conditional rejection controls — C-E03-126/127', () => {
+describe('conditional rejection controls — C-E03-129/130/134/137', () => {
   it.each([
     ['else', '${{ else }}'],
     ['elseif', '${{ elseif true }}'],
@@ -311,7 +311,7 @@ describe('conditional evaluation edges', () => {
     [versionValue([1, 2, 3]), true],
     [arrayValue([]), true],
     [objectValue({}), true],
-  ] as const)('C-E03-125 — truthiness of $kind is %s', (value, expected) => {
+  ] as const)('C-E03-131/135 — truthiness of $kind is %s', (value, expected) => {
     expect(conditionTruth(value)).toBe(expected);
   });
 

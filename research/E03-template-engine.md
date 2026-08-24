@@ -11,7 +11,7 @@ time the IDs were load-bearing in code comments and test names) is the reason th
 |---|---|---|---|
 | `C-E03-001..099` | E03-S05-T01 normalizer | `research/E03-normalizer.md` | 001–003 used |
 | `C-E03-100..119` | **E03-S01-T01 DOM walker with context stack** | this file | 100–117 used |
-| `C-E03-120..139` | E03-S01-T02 conditional insertion chains | this file | **120–121 used; 122+ owed** — 24 transcripts captured in `research/experiments/E03-conditionals/`, entries unwritten (E03-S01-T06) |
+| `C-E03-120..139` | E03-S01-T02 conditional insertion chains | this file | 120–139 used — recorded 2026-08-23 from the two committed surveys (`research/experiments/E03-conditionals/` 24 probes, `research/experiments/E03-if/` 22 probes) |
 | `C-E03-140..159` | E03-S01-T03 iterative insertion (`each`) | this file | **not free — owed.** 13 transcripts in `research/experiments/E03-each/` cite these IDs; no entry written (E03-S01-T06) |
 | `C-E03-160..174` | E03-S01-T04 `${{ insert }}` merge | this file | **not free — owed.** 32 transcripts in `research/experiments/E03-insert/`; no entry written (E03-S01-T06) |
 | `C-E03-175..194` | E03-S01-T05 scalar interpolation | this file | **not free — owed.** 34 transcripts in `research/experiments/E03-interpolation/`; no entry written (E03-S01-T06) |
@@ -258,12 +258,18 @@ statement about the variation and not about the harness.
 
 ## E03-S01-T02 — conditional insertion chains (`C-E03-120..139`)
 
-Grounding pass started 2026-08-18. The official documentation resolves the public syntax and the
-two supported parent shapes, but it does not specify chain grouping/adjacency, nested-chain
-behavior, or what happens to an `elseif`/`else` without a preceding winning `if`. Those are the
-task's mandatory oracle-fixture questions. The local checkout has none of `AZDO_ORG_URL`,
-`AZDO_PROJECT`, `AZDO_ORACLE_PIPELINE_ID`, or `AZDO_PAT`, and no `.env.oracle`; consequently no
-oracle result is claimed here and implementation remains blocked rather than inferred.
+Grounding pass started 2026-08-18 and completed 2026-08-23. The official documentation resolves the
+public syntax and the two supported parent shapes (C-E03-120/121), but not chain grouping/adjacency,
+nested-chain behavior, or what happens to an `elseif`/`else` without a preceding winning `if`. Those
+were the task's mandatory oracle-fixture questions, answered by **two live-preview surveys whose
+transcripts are already committed**: 24 probes in `research/experiments/E03-conditionals/` (checked
+2026-08-18) and 22 in `research/experiments/E03-if/` (checked 2026-08-19), with 37 successful pairs
+promoted to `fixtures/oracle/directives/` and the rejections asserted against their transcripts.
+`packages/engine/src/template/conditionals.ts` and its suite were written against these probes and
+cite these IDs; this block records them so the citations resolve. The two questions E03-S01-T02
+could not answer on its own — a *directive* sibling between two chain members (C-E03-138), and the
+mapping-position orphan's second sentence (C-E03-139) — were settled by E03-S01-T04's `insert`
+survey and are recorded here because they live in this task's block.
 
 [C-E03-120] **Conditional insertion is supported in both a sequence and a mapping, and an `if`
 directive may also be used outside a template when written with template syntax.** The official
@@ -284,6 +290,136 @@ page does not define malformed/orphan-chain behavior; that remains an oracle que
     values are `bar`, `qux`, and `default`.
   — https://github.com/MicrosoftDocs/azure-devops-docs/blob/7ba9a9ac7d28a7edbbddf0d9bfd480bce665b55b/docs/pipelines/process/template-expressions.md#L263-L282
     (source pin checked 2026-08-18)
+
+[C-E03-122] **In a sequence, a conditional chain contributes exactly one body — the body of the
+first `if`/`elseif` whose condition is true, or of `else` when every condition is false — spliced
+into the parent sequence at the directive's position.**
+  — `research/experiments/E03-conditionals/sequence-if-wins.md`, `sequence-elseif-wins.md`,
+    `sequence-else-wins.md` (live preview, checked 2026-08-18) — `sequence-if-wins` request
+    `- ${{ if eq(1, 1) }}:` / `- ${{ elseif eq(2, 2) }}:` / `- ${{ else }}:`; response contains only
+    `script: echo selected-if` between the ordinary `before`/`after` steps, the `elseif` and `else`
+    bodies absent.
+
+[C-E03-123] **In a mapping, only the winning branch's entries are merged into the containing mapping
+at the directive's position, between ordinary sibling keys — and a conditional in mapping position
+requires a mapping body, a sequence body there being rejected "Expected a mapping".**
+  — `research/experiments/E03-conditionals/mapping-elseif-wins.md`,
+    `mapping-sequence-body.md` (checked 2026-08-18) — an `env:` with `BEFORE`, an
+    `if`/`elseif`/`else` chain each setting `PICKED`, and `AFTER` expands to `BEFORE`,
+    `PICKED: elseif`, `ELSEIF_ONLY: yes`, `AFTER` — the two unselected branches' keys absent; while
+    `${{ if eq(1, 1) }}:` whose body is `- A` (a sequence) returns
+    `"/azure-pipelines.yml (Line: 5, Col: 5): Expected a mapping"`.
+
+[C-E03-124] **`else` is selected only when every preceding `if`/`elseif` condition evaluated false;
+a true earlier condition suppresses it.**
+  — `research/experiments/E03-conditionals/sequence-else-wins.md`, `sequence-if-wins.md` (checked
+    2026-08-18) — `- ${{ if eq(1, 2) }}` / `- ${{ elseif eq(2, 3) }}` / `- ${{ else }}:` expands to
+    `script: echo selected-else` alone.
+
+[C-E03-125] **A chain whose conditions all evaluate false and which has no `else` contributes
+nothing, and ordinary siblings keep their authored order.**
+  — `research/experiments/E03-conditionals/sequence-no-match-no-else.md`,
+    `mapping-no-match-no-else.md` (checked 2026-08-18) — `- script: echo before` / two false
+    directives / `- script: echo after` expands to `echo before`, `echo after` with no trace of the
+    directive bodies.
+
+[C-E03-126] **A selected body is expanded recursively: a nested chain inside it gets its own
+independent state and is selected on its own terms.**
+  — `research/experiments/E03-conditionals/nested-sequence-chain.md`, `nested-mapping-chain.md`
+    (checked 2026-08-18) — an outer `if eq(1, 1)` whose body contains a full `if/elseif/else` chain
+    expands to the outer `echo outer-before`, the nested `echo nested-selected-elseif`, and the outer
+    `echo outer-after`, the nested `else` not selected.
+
+[C-E03-127] **A new `if` begins a fresh chain regardless of proximity to a prior unmatched `if`; the
+following `else` belongs to the newest `if`.**
+  — `research/experiments/E03-conditionals/adjacent-independent-if.md` (checked 2026-08-18) —
+    `if eq(1, 2)` (false) immediately followed by `if eq(2, 2)` (true) then `else`: the response
+    contains `echo second-selected` and no `else` body, so the `else` paired with the second `if`.
+
+[C-E03-128] **Chain membership is stateful over the whole containing sequence/mapping, not
+adjacency-based: an ordinary sibling does not end a chain, and the winning body is emitted at its own
+directive's position, not at the chain head.**
+  — `research/experiments/E03-conditionals/interrupted-else-sequence.md`,
+    `interrupted-elseif-sequence.md`, `interrupted-else-after-true.md`,
+    `interrupted-else-mapping.md` (checked 2026-08-18) — `- ${{ if eq(1, 2) }}` /
+    `- script: echo interruption` / `- ${{ else }}` expands to `echo interruption` then `echo orphan`,
+    the `else` still bound to the earlier `if` and its body landing where the `else` was written.
+
+[C-E03-129] **An `elseif` or `else` with no live preceding `if` (an orphan) is rejected, in a
+sequence, as "The expression directive '<kw>' is not supported in this context" followed by
+"Unexpected value '<raw>'".**
+  — `research/experiments/E03-conditionals/orphan-else-sequence.md`, `orphan-elseif-sequence.md`
+    (checked 2026-08-18) — response `"/azure-pipelines.yml (Line: 2, Col: 3): The expression
+    directive 'else' is not supported in this context\n… Unexpected value '${{ else }}'"`,
+    `typeKey: PipelineValidationException`.
+
+[C-E03-130] **A clause written after an `else` has already closed the chain is rejected identically
+to an orphan — an `elseif` following `else` fails even though its own condition is valid.**
+  — `research/experiments/E03-if/elseif-after-else/response.json` (live preview, checked
+    2026-08-19) — `else` then `elseif parameters.b` returns "The expression directive 'elseif' is
+    not supported in this context … Unexpected value '${{ elseif parameters.b }}'".
+
+[C-E03-131] **A condition uses expression truthiness for primitives: nonempty String, nonzero
+Number, and Boolean true are true; empty String, zero, and Null are false.**
+  — `research/experiments/E03-conditionals/condition-truthiness-primitives.md` (checked 2026-08-18) —
+    `${{ if 'text' }}` and `${{ if 1 }}` select their body; `${{ if '' }}`, `${{ if 0 }}`, and
+    `${{ if variables.absent }}` fall through to their `else`.
+
+[C-E03-132] **Conditions evaluate in document order and stop at the first winner: after a branch is
+selected, later `elseif` conditions are not evaluated at all.**
+  — `research/experiments/E03-conditionals/condition-short-circuit-after-if.md`,
+    `condition-short-circuit-after-elseif.md` (checked 2026-08-18) — a true `if` followed by
+    `elseif lt(1, 'not-a-number')` expands HTTP 200, i.e. the raising later condition was never
+    reached (control: the same `lt(1, 'not-a-number')` reached as the *first* condition is a hard 400
+    — C-E03-134).
+
+[C-E03-133] **An unselected branch's body is never evaluated: a false `if` whose body reads a missing
+parameter still expands.**
+  — `research/experiments/E03-if/untaken-body-not-evaluated/` (live preview, checked 2026-08-19) —
+    `${{ if parameters.a }}` with `a` false and body `script: echo ${{ parameters.missing }}` returns
+    HTTP 200, where a *reached* `parameters.missing` read is a hard 400 (C-E03-134).
+
+[C-E03-134] **A condition that is actually evaluated and reads a missing value is a hard 400, not a
+false-y fallback — which is what makes C-E03-132/133's laziness observable.**
+  — `research/experiments/E03-if/ctl-missing-parameter/response.json` (checked 2026-08-19) —
+    `${{ if parameters.missing }}` returns `"/azure-pipelines.yml (Line: 13, Col: 9): Key not found
+    'missing'"`, `typeKey: PipelineValidationException`.
+
+[C-E03-135] **Array and Object results are truthy in a condition even when empty; collection
+truthiness does not depend on count.**
+  — `research/experiments/E03-conditionals/condition-truthiness-collections.md`,
+    `condition-truthiness-empty-collections.md` (checked 2026-08-18) — `${{ if split('a,b', ',') }}`
+    and `${{ if parameters.items }}` (where `items: []`) both select their body.
+
+[C-E03-136] **In sequence position, a selected mapping body is inserted as one item, while a sequence
+body is flattened into the parent sequence.**
+  — `research/experiments/E03-conditionals/sequence-mapping-body.md` (checked 2026-08-18) —
+    `- ${{ if eq(1, 1) }}:\n    script: echo wrong-shape` (a mapping body, no list) expands to one
+    `CmdLine@2` step.
+
+[C-E03-137] **Only one `else` may terminate a chain; a second `else` is rejected as orphaned.**
+  — `research/experiments/E03-conditionals/duplicate-else-sequence.md` (checked 2026-08-18) —
+    `if false` / `else` / `else` returns "The expression directive 'else' is not supported in this
+    context … Unexpected value '${{ else }}'" located at the second `else`.
+
+[C-E03-138] **A *directive* sibling (`${{ each }}` or `${{ insert }}`) written between two chain
+members ends the chain: the member that follows is orphaned, even though an ordinary sibling does not
+(C-E03-128).**
+  — `research/experiments/E03-insert/chain-insert-between/`, `chain-each-between/`,
+    `chain-elseif-after-insert/` (live preview, checked 2026-08-19) — `if parameters.a` /
+    `${{ insert }}: ${{ parameters.extra }}` / `${{ else }}` returns "The expression directive 'else'
+    is not supported in this context" — with controls `chain-insert-before`/`chain-insert-after` (an
+    insert written *outside* the chain) expanding successfully.
+
+[C-E03-139] **The orphan rejection's second sentence depends on the parent shape: in a sequence the
+service echoes the raw key ("Unexpected value '…'"), while in a mapping it reports "A mapping was not
+expected" located at the branch body — followed by a third sentence dumping the engine's internal
+reader stack, which is deliberately not reproduced (docs/06 §5 decision 33).**
+  — `research/experiments/E03-insert/orphan-elseif-mapping/`, `orphan-else-mapping/` (live preview,
+    checked 2026-08-19) vs `orphan-elseif-sequence.md` (2026-08-18) — mapping form:
+    `"/azure-pipelines.yml (Line: 7, Col: 3): The expression directive 'elseif' is not supported in
+    this context\n… (Line: 8, Col: 5): A mapping was not expected\n… Expected end of template object.
+    State: …"`.
 
 
 ---
