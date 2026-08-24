@@ -16,6 +16,7 @@
 // because inventing one here would hide it from E05, which is where a filename actually has to be
 // chosen.
 import type { Diagnostic } from '../frontend/diagnostics.js';
+import { resolveJobGraph, resolveStageGraph } from './graph.js';
 import { stepOriginOf } from './shorthand.js';
 import { expandJobStrategy } from './strategy.js';
 import type { VariableDeclaration } from './variables.js';
@@ -69,6 +70,12 @@ export function buildPipeline(parsed: ParseResult): BuildResult {
   const provenance = provenanceOf(parsed.file, root);
   const stages = buildStages(root, parsed.file, diagnostics);
 
+  // The dependency graphs are a model-build invariant (docs/01 §6): acyclic, references valid, at
+  // least one dependency-free node — enforced here so every consumer gets a validated graph, not
+  // just the ones that remember to call the graph module (E04-S03-T02).
+  resolveStageGraph(stages, parsed.file, diagnostics);
+  for (const stage of stages) resolveJobGraph(stage, parsed.file, diagnostics);
+
   return {
     pipeline: {
       ...optional('name', scalarEntry(root, 'name')),
@@ -107,7 +114,9 @@ function buildStages(root: MappingNode, file: string, diagnostics: Diagnostic[])
     return [
       {
         id: SYNTHETIC_STAGE_ID,
-        dependsOn: [],
+        // Absent, like any single authored stage with no `dependsOn` (C-E04-123); the graph treats a
+        // sole stage's absence as "no dependency" anyway.
+        dependsOn: undefined,
         variables: [],
         jobs: [job],
         provenance: provenanceOf(file, root),
@@ -134,7 +143,7 @@ function syntheticStage(
 ): Stage {
   return {
     id: SYNTHETIC_STAGE_ID,
-    dependsOn: [],
+    dependsOn: undefined,
     variables: [],
     jobs: items
       .filter((item): item is MappingNode => item.kind === 'mapping')
@@ -152,6 +161,7 @@ function syntheticJob(
 ): Job {
   return {
     id: SYNTHETIC_JOB_ID,
+    referenceName: SYNTHETIC_JOB_ID,
     kind: 'agent',
     dependsOn: [],
     variables: [],
@@ -202,9 +212,13 @@ function buildJob(node: MappingNode, file: string, diagnostics: Diagnostic[]): r
 
   const base: Job = {
     id,
+    // `referenceName` is the authored name before strategy suffixing; the legs inherit it so the
+    // graph can resolve `dependsOn: Build` against every leg (C-E04-136).
+    referenceName: id,
     ...optional('displayName', scalarEntry(node, 'displayName')),
     kind,
-    dependsOn: dependsOn(node),
+    // Jobs have no implicit dependency, so an absent `dependsOn:` is empty, not `undefined`.
+    dependsOn: dependsOn(node) ?? [],
     ...optional('condition', scalarEntry(node, 'condition')),
     variables: variableMap(entryValue(node, 'variables')),
     steps: stepsNode === undefined ? [] : buildSteps(stepsNode, file, diagnostics),
@@ -321,11 +335,14 @@ function parseTask(value: string | undefined): TaskReference | undefined {
   return { name: value.slice(0, at), version: value.slice(at + 1) };
 }
 
-/** `dependsOn:` is a scalar or a sequence of scalars; both normalize to a list. */
-function dependsOn(node: MappingNode): readonly string[] {
+/** `dependsOn:` is a scalar or a sequence of scalars; both normalize to a list. Absent → `undefined`. */
+function dependsOn(node: MappingNode): readonly string[] | undefined {
   const value = entryValue(node, 'dependsOn');
-  if (value === undefined) return [];
-  if (value.kind === 'scalar') return [text(value.value)];
+  if (value === undefined) return undefined;
+  if (value.kind === 'scalar') {
+    // A valueless `dependsOn:` parses as null and means "empty" (nothing to depend on).
+    return value.value === null ? [] : [text(value.value)];
+  }
   if (value.kind !== 'sequence') return [];
   return value.items.filter((item) => item.kind === 'scalar').map((item) => text(item.value));
 }

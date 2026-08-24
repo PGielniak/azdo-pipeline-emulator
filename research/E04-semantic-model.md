@@ -12,7 +12,7 @@ collision that made this convention mandatory.
 | `C-E04-030..059` | E04-S01-T02 normalization boundary | this file | 030–037 used |
 | `C-E04-060..079` | E04-S01-T03 common step fields | this file | 060–067 used |
 | `C-E04-080..109` | E04-S02 variables & scoping | this file | 080–086 (S02-T01), 087–092 (S02-T02), 093–096 (S02-T03) |
-| `C-E04-110..139` | E04-S03 dependency graph & matrix | this file | 110–122 used (T01) |
+| `C-E04-110..139` | E04-S03 dependency graph & matrix | this file | 110–122 (T01), 123–138 (T02) |
 
 Leave gaps. A branch that numbers from what it can see collides silently with every sibling.
 
@@ -461,3 +461,111 @@ matrix key, and the two slice variables are exactly `{1..N}` for `JobPositionInP
 run: `MATRIX_VAR=b` in the `Beta` leg and `MATRIX_VAR=a` in `Alpha` — checked 2026-08-24. This
 confirms C-E04-112 executes as documented: the leg's `$(MATRIX_VAR)` resolves to its own value, so
 the model injecting the mapping as job-level variables reproduces the service.
+
+---
+
+## E04-S03-T02 — dependency graphs & defaults (`C-E04-123..138`)
+
+Evidence: the **stages** doc (…/process/stages, fetched 2026-08-24, `git_commit_id`
+`1eeaa8de39f8b7130d8eb45ec907d9e47d6f5a32`) and the **jobs** doc (…/process/phases, same commit),
+for the differing defaults; plus **12 live preview probes** under
+`research/experiments/E04-dependency-graph/` (six committed as transcripts by
+`pnpm dependency-survey`, six more run inline during grounding) for the error phrasing the docs do
+not state. The two defaults are the one thing the docs settle outright; everything about a broken
+graph is measured.
+
+[C-E04-123] **Stages default to sequential: a stage without `dependsOn` runs after the stage before
+it in YAML order.** — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/stages —
+"When you define multiple stages in a pipeline, they run sequentially by default in the order you
+define them in the YAML file. The exception to this is when you add dependencies. With dependencies,
+stages run in the order of the `dependsOn` requirements." — checked 2026-08-24. So the stage graph's
+default edge is stage *i* → stage *i+1*; the model applies it, the service leaves it implicit in the
+expanded YAML.
+
+[C-E04-124] **Jobs default to parallel: a job without `dependsOn` has no dependency.** —
+https://learn.microsoft.com/en-us/azure/devops/pipelines/process/phases — "By default Azure DevOps
+YAML pipeline jobs run in parallel unless the `dependsOn` value is set." — checked 2026-08-24. The
+job graph's default is therefore no edge at all — the opposite default of stages, which is exactly
+the asymmetry the task's **Do** names.
+
+[C-E04-125] **`dependsOn: []` is the explicit opt-out that breaks the sequential stage default, and
+it survives expansion verbatim.** — stages doc example: `- stage: AcceptanceTest` /
+`dependsOn: [] # Runs in parallel with FunctionalTest` — checked 2026-08-24; and
+`research/experiments/E04-dependency-graph/empty-dependson-stage/` (HTTP 200) shows the expanded
+YAML still carries `dependsOn: []` unchanged, so the "run in parallel" meaning is run-time ordering,
+not something the expansion rewrites. The model therefore must distinguish **absent** `dependsOn`
+(→ sequential default) from **explicit empty** (→ no dependency), which is why `Stage.dependsOn`
+carries `undefined` for the former.
+
+[C-E04-126] **A missing *stage* dependency is a validation error with a fixed sentence.**
+`research/experiments/E04-dependency-graph/missing-stage-dep/` — HTTP 400 `PipelineValidationException`,
+`"Stage B depends on unknown stage NoSuchStage."` — checked 2026-08-24. One sentence per missing
+target, naming the source stage and the unknown name.
+
+[C-E04-127] **A missing *job* dependency names its stage too.**
+`research/experiments/E04-dependency-graph/missing-job-dep/` — HTTP 400, `"Stage A job A2 depends on
+unknown job NoSuchJob."` — checked 2026-08-24. The job-level sentence is the stage-level one with the
+owning stage prefixed.
+
+[C-E04-128] **A graph with no dependency-free stage is rejected by a dedicated sentence, not by a
+cycle message.** `research/experiments/E04-dependency-graph/stage-cycle/` and `stage-self-dep/` —
+HTTP 400, `"The pipeline must contain at least one stage with no dependencies."` — checked
+2026-08-24. This is the service's spelling of the docs' "Pipelines must contain at least one stage
+with no dependencies", and it fires on the **effective** graph — a bare `dependsOn: [Z]` (even one
+naming a nonexistent stage) still makes a stage "have a dependency" for this check, as does the
+sequential default on a later stage.
+
+[C-E04-129] **The job-level equivalent of C-E04-128.**
+`research/experiments/E04-dependency-graph/job-cycle/` — HTTP 400, `"Stage A must contain at least
+one job with no dependencies."` — checked 2026-08-24.
+
+[C-E04-130] **A cycle that leaves a root elsewhere is reported edge-by-edge.**
+`stage-cycle-with-root` (A root; B `dependsOn: [A, C]`; C `dependsOn: B`) → HTTP 400 with **two**
+sentences, `"Stage B depends on stage C which creates a cycle in the dependency graph."` and
+`"Stage C depends on stage B which creates a cycle in the dependency graph."` — checked 2026-08-24.
+So cycle detection is not a single "cycle" error: every edge that participates in a cycle gets its
+own sentence, phrased `"<src> depends on <dst> which creates a cycle in the dependency graph."`.
+
+[C-E04-131] **The job-level cycle sentence is the stage one with the stage prefixed.**
+`job-cycle-with-root` → HTTP 400, `"Stage A job B depends on job C which creates a cycle in the
+dependency graph."` + `"Stage A job C depends on job B which creates a cycle in the dependency
+graph."` — checked 2026-08-24.
+
+[C-E04-132] **Cycle edges are reported in source-declaration order.** In both C-E04-130's and
+C-E04-131's transcripts the earlier-declared node's edge precedes the later's — checked 2026-08-24.
+The model reports each cycle edge in node order (then authored edge order within a node), matching
+that transcript byte-for-byte.
+
+[C-E04-133] **The three checks have a fixed precedence: "no dependency-free node" shadows everything.**
+`stage-missing-and-noroot` (A `dependsOn: Z` unknown, B `dependsOn: A`) → HTTP 400 with **only**
+`"The pipeline must contain at least one stage with no dependencies."` — the missing `Z` is not
+reported — checked 2026-08-24. So when no stage/job has zero effective dependencies, that single
+sentence is emitted and the reference and cycle checks do not run.
+
+[C-E04-134] **Cycle detection runs before the missing-target check.**
+`stage-root-missing-cycle` (A root; B `dependsOn: [A, C]`; C `dependsOn: [B, Z]`) → HTTP 400 with the
+two cycle sentences (C-E04-130) **first**, then `"Stage C depends on unknown stage Z."` — checked
+2026-08-24. So the order is: root check → cycle edges → missing targets.
+
+[C-E04-135] **A self-loop is a cycle edge, reported when a root exists elsewhere.**
+`stage-self-loop-with-root` (A no deps; B `dependsOn: B`) → HTTP 400, `"Stage B depends on stage B
+which creates a cycle in the dependency graph."` — checked 2026-08-24. A lone self-loop with no
+other stage is instead the C-E04-128 "no dependency-free stage" case (the loop itself makes the
+stage depend on something), which is the measured asymmetry.
+
+[C-E04-136] **`dependsOn` references the *authored job name*, not a matrix/parallel leg name.** A job
+`dependsOn: Build` where `Build` has `strategy: matrix` (and likewise `parallel`) is **accepted**
+(HTTP 200, three probes) — checked 2026-08-24. The reference resolves to the whole matrix/parallel
+job, i.e. every leg, so the model's job graph must resolve `dependsOn` targets against the base job
+name and not against the leg ids (`Build Alpha`, `Build Beta`) that E04-S03-T01 renamed them to.
+
+[C-E04-137] **Duplicate stage names are rejected before any graph is built.**
+`stage-duplicate-name` → HTTP 400, `"The stage name A appears more than once. Stage names must be
+unique within a pipeline."` — checked 2026-08-24. Recorded for completeness; it is **not** this
+task's to implement (out of the **Do** field) — the service rejects duplicates before expansion, so
+a `finalYaml` reaching the model on the default path is already unique. The offline-expand arm would
+need it as a separate check.
+
+[C-E04-138] **Duplicate job names are rejected the same way, scoped to a stage.**
+`job-dup-in-stage` → HTTP 400, `"Stage A job A1 appears more than once. Job names must be unique
+within a stage."` — checked 2026-08-24. Same out-of-scope status as C-E04-137.
