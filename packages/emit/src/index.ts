@@ -1,2 +1,4 @@
-// @azdo-emu/emit — empty entry point (E00-S01-T01); real modules land in later epics.
+// @azdo-emu/emit — the emitter: turns the E04 semantic model into a generated project.
 export const PACKAGE_NAME = '@azdo-emu/emit';
+
+export * from './scaffold.js';
