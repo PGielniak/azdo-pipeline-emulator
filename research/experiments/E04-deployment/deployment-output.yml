@@ -1,0 +1,29 @@
+trigger: none
+pr: none
+stages:
+- stage: StageA
+  jobs:
+  - deployment: A1
+    pool:
+      vmImage: ubuntu-latest
+    environment: corpus-staging
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - bash: echo "##vso[task.setvariable variable=myOutputVar;isOutput=true]deployment-value"
+            name: setvarStep
+          - bash: echo "CASE SAME_JOB=$(setvarStep.myOutputVar)"
+- stage: StageB
+  dependsOn: StageA
+  variables:
+    jobNameKey: $[stageDependencies.StageA.A1.outputs['A1.setvarStep.myOutputVar']]
+    hookNameKey: $[stageDependencies.StageA.A1.outputs['deploy.setvarStep.myOutputVar']]
+  jobs:
+  - job: B1
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+    - bash: |
+        echo "CASE JOBNAME_KEY=[$(jobNameKey)]"
+        echo "CASE HOOKNAME_KEY=[$(hookNameKey)]"

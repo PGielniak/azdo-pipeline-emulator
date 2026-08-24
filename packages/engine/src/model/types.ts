@@ -93,6 +93,48 @@ export interface Step {
   readonly warnings: readonly string[];
 }
 
+/** `environment:` on a deployment job, parsed into its name and optional targeted resource. */
+export interface Environment {
+  readonly name: string;
+  /**
+   * Set when the environment names a specific resource — the `.resource` shorthand (C-E04-143) or
+   * the full syntax's `resourceName:` (C-E04-145). Its presence is what switches the runOnce
+   * output-variable key from the job name to `Deploy_<resourceName>` (C-E04-152).
+   */
+  readonly resourceName?: string;
+  /** `virtualMachine` or `Kubernetes`, as authored (C-E04-145). */
+  readonly resourceType?: string;
+}
+
+/** One lifecycle hook: a named step list. The optional hook-level `pool` is E08's (C-E04-147). */
+export interface DeploymentHook {
+  readonly steps: readonly Step[];
+}
+
+/**
+ * The runOnce deployment strategy: a fixed, ordered set of lifecycle hooks
+ * (`preDeploy → deploy → routeTraffic → postRouteTraffic`, then `on: success|failure` — C-E04-146).
+ * Only the authored hooks are present.
+ */
+export interface RunOnceStrategy {
+  readonly kind: 'runOnce';
+  readonly preDeploy?: DeploymentHook;
+  readonly deploy?: DeploymentHook;
+  readonly routeTraffic?: DeploymentHook;
+  readonly postRouteTraffic?: DeploymentHook;
+  /** `on: success` — runs after a successful deployment. */
+  readonly onSuccess?: DeploymentHook;
+  /** `on: failure` — runs after a failed deployment. */
+  readonly onFailure?: DeploymentHook;
+}
+
+/**
+ * A deployment job's `strategy:`. `runOnce` is modelled (E04-S03-T03); `rolling`/`canary` are
+ * recorded as a bare marker and are **reserved for E08** (C-E04-154) — their hooks and output-key
+ * naming are not implemented here.
+ */
+export type DeploymentStrategy = RunOnceStrategy | { readonly kind: 'rolling' | 'canary' };
+
 export interface Job {
   /**
    * The job's identity as the service wrote it.
@@ -141,6 +183,18 @@ export interface Job {
   readonly maxParallel?: number;
   /** E04-S02-T04 / docs/01 §5: `container:` and `services:`. Carried raw until then. */
   readonly container?: string;
+  /** E04-S03-T03: `environment:` — populated only for `kind === 'deployment'`. */
+  readonly environment?: Environment;
+  /** E04-S03-T03: the deployment strategy — populated only for `kind === 'deployment'`. */
+  readonly strategy?: DeploymentStrategy;
+  /**
+   * E04-S03-T03: does the deploy hook auto-download the current pipeline's artifacts?
+   *
+   * `true` by default (C-E06-096, C-E04-149) and `false` when the deploy hook carries a
+   * `download: none` step, which the service desugars to the `download` GUID task with
+   * `condition: false` and `inputs.alias: none` (C-E04-150). Populated only for deployment jobs.
+   */
+  readonly autoDownloadArtifacts?: boolean;
 }
 
 export interface Stage {
