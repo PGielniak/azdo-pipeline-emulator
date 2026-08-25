@@ -22,7 +22,10 @@ import { scaffold } from '../src/scaffold.js';
 import { defaultFidelity, emitStepScript, hasMacro, nativeScriptKind } from '../src/step.js';
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
-const shellcheck = join(repoRoot, 'packages/runtime/node_modules/.bin/shellcheck');
+// CI installs a system shellcheck and exports it as `$SHELLCHECK` (see the workflow); locally it
+// falls back to the runtime package's npm wrapper (which lazily downloads the real binary).
+const shellcheck =
+  process.env.SHELLCHECK ?? join(repoRoot, 'packages/runtime/node_modules/.bin/shellcheck');
 // The ADO-macro false positives (C-E06-018/024): `$(name)` is a macro the runtime expands, not a
 // shell command substitution, so shellcheck's `echo "$(cmd)"` (SC2005) and "quote the unquoted
 // `$(…)`" (SC2046) findings are by construction — the emitter must leave the macro verbatim.
@@ -252,7 +255,8 @@ describe('emitted corpus scripts pass shellcheck', () => {
         [...SHELLCHECK_MACRO_EXCLUDES.flatMap((code) => ['-e', code]), ...files],
         { encoding: 'utf8' },
       );
-      expect(check.stdout).toBe('');
+      // Exit 0 is the "no findings" signal; the npm wrapper may print a download `[INFO]` line to
+      // stdout on its first run, so an empty stdout is *not* the condition.
       expect(check.status, check.stdout || check.stderr).toBe(0);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
