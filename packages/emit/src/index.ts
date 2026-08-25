@@ -5,3 +5,4 @@ export * from './scaffold.js';
 export * from './step.js';
 export * from './entrypoints.js';
 export * from './env-example.js';
+export * from './readme.js';

@@ -31,7 +31,7 @@ Acceptance: synthesis per docs/04 §10 with per-entry provenance comments.
   **Do:** sections in docs/04 §10 order; entries fed by E04 classification + task env requirements; provenance comments ("used by <stage/job/step>", "from group '<name>'"); secret flags to manifest for masking.
   **Ground:** docs/04 §10; `SYSTEM_ACCESSTOKEN` filling instructions grounded in the OAuth/PAT docs (verify the Entra resource GUID from the official page).
   **Done:** corpus `.env.example` snapshots; lint: no entry without a provenance comment.
-- [ ] **E05-S02-T02 — Generated README + warnings report**
+- [x] **E05-S02-T02 — Generated README + warnings report**
   **Do:** README generator: conversion summary, per-step fidelity labels, warnings/unsupported list, `.env` how-to, run instructions, tool prereqs (from manifest).
   **Ground:** docs/04 §12; content assembled only from manifest data (no free text at emit time).
   **Done:** README snapshot for corpus; broken-link check over generated links.
