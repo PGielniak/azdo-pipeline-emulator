@@ -24,6 +24,16 @@ Acceptance: output tree per docs/04 §1 generated deterministically.
   **Ground:** docs/04 §2–§3 as spec; ordering-semantics claims from E04-S03-T02 (cite IDs).
   **Done:** bats E2E on a fixture project: full run, partial run, `--only-step`, `--list` output snapshot.
 
+- [ ] **E05-S01-T04 — `.env` names must resolve to the variables they spell** *(filed 2026-08-25 by E05-S03-T01)*
+  **Do:** the variable store keys on the name as written, folded to lower case (`azdo__canonical_var_name`), with no dot/underscore mapping, while `.env` names are the **env spelling** of a variable (decision 63(b)) and cannot contain a dot at all (`azdo_env_load` requires `^[a-zA-Z_][a-zA-Z0-9_]*$`). Consequence: the `.env.example` entry `BUILD_SOURCEBRANCH` is stored as a variable *called* `BUILD_SOURCEBRANCH`, and `$(Build.SourceBranch)` never sees it — every run-identity override docs/04 §10 documents is currently inert. Decide the mapping (canonicalize `_`→`.`? a manifest-driven alias table? store both keys?) and implement it.
+  **Ground:** the store's case-folding rule is C-E06-003; the `.env` spelling is decision 63(b). No new Azure DevOps behavior — the agent has no `.env`, so this is internal-spec reconciliation between two of our own decisions.
+  **Done:** a `.env` run-identity override is readable through its dotted predefined name from a step; `.env.example`'s own entries round-trip; E05-S03-T01's `azdo_seed_branch_name` two-spelling fallback (Δ C-E05-026) is removed as redundant.
+
+- [ ] **E05-S01-T05 — Pipeline-scope variables must reach the job scopes steps read from** *(filed 2026-08-25 by E05-S03-T01)*
+  **Do:** `run.sh` loads `.env` into the `pipeline` scope (`azdo_env_load`, default scope) and `run-job.sh` exports `AZDO_VAR_SCOPE=job-<id>` (decision 62(b)); `azdo__var_path`/`azdo__macro_preexpanded_value` resolve **one** scope with no chain, so nothing loaded at pipeline level is visible to a step. Give the store a scope chain (job → stage → pipeline) or seed each job scope from the pipeline scope at job start.
+  **Ground:** Azure Pipelines' variable layering (docs/01 §7, pipeline → stage → job) is already grounded; what is missing is the local store's implementation of it.
+  **Done:** a `.env`-supplied variable is readable from a step through `$( )` and through `azdo_var`; a job-scoped variable still shadows the pipeline-scoped one of the same name; the E05-S03-T01 workaround (run identity published through `AZDO_BUILD_NUMBER`/`AZDO_BUILD_ID` and re-seeded per job, decision 65) is revisited.
+
 ## E05-S02 — As a pipeline developer, everything unresolvable lands in a documented `.env.example`, so I know exactly what to fill and why.
 Acceptance: synthesis per docs/04 §10 with per-entry provenance comments.
 
@@ -39,7 +49,7 @@ Acceptance: synthesis per docs/04 §10 with per-entry provenance comments.
 ## E05-S03 — As a pipeline developer, run-number and identity variables behave like the service, so `Build.BuildNumber`-dependent logic works.
 Acceptance: `name:` format evaluation + counters local semantics.
 
-- [ ] **E05-S03-T01 — Run-number formatter**
+- [x] **E05-S03-T01 — Run-number formatter**
   **Do:** `name:` format evaluation at run start (emitted into runtime init): `$(Date:yyyyMMdd)`, `$(Rev:.r)`, variable tokens, literal text; `Build.BuildId` monotonic local counter.
   **Ground:** run-number doc (…/process/run-number) — quote token table incl. `Rev` reset semantics; local deviation (Rev per local state) documented as a delta claim.
   **Done:** formatter tests per token; runtime integration test shows `Build.BuildNumber` set before first step.

@@ -14,7 +14,7 @@
 //     `Pipeline.Workspace` and `Agent.TempDirectory` seeded into the store before any step;
 //   - `run_step --id --file --cond --display --wd --continue-on-error --fail-on-stderr --retries
 //     --timeout` per step, with a compiled `cond_step_<NNN>`/`cond_job_<slug>`/`cond_stage` function.
-import type { Diagnostic } from '@azdo-emu/engine';
+import type { Diagnostic, ManifestWarning } from '@azdo-emu/engine';
 import {
   compileBash,
   parseExpression,
@@ -26,6 +26,7 @@ import {
   type Stage,
 } from '@azdo-emu/engine';
 
+import { DEFAULT_RUN_NUMBER_FORMAT, emitRunNumberInit } from './run-number.js';
 import { slugify, type Scaffold, type ScaffoldJob, type ScaffoldStage } from './scaffold.js';
 import { defaultFidelity } from './step.js';
 
@@ -200,6 +201,9 @@ export function emitRunJob(job: ScaffoldJob, stage: ScaffoldStage): string {
     '',
     'if [[ -z "$(azdo_var System.DefaultWorkingDirectory)" ]]; then',
     ...RUN_DIR_VARS.map(([name, value]) => `  azdo_var_set ${shQuote(name)} ${value}`),
+    // The run identity is computed once per run by `run.sh` and published through the environment;
+    // the store has no scope chain, so every job scope seeds its own copy (E05-S03-T01, decision 65).
+    '  azdo_run_identity_seed "${AZDO_BUILD_NUMBER:-}" "${AZDO_BUILD_ID:-}"',
     'fi',
     '',
   ];
@@ -270,6 +274,7 @@ export function emitRunScript(
   pipeline: Pipeline,
   plan: Scaffold,
   stageOrder: readonly string[],
+  warnings?: ManifestWarning[],
 ): string {
   const stagesById = new Map(plan.stages.map((s) => [s.stage.id, s]));
   const listLines = plan.stages.flatMap((stage) => [
@@ -282,6 +287,11 @@ export function emitRunScript(
       ),
     ]),
   ]);
+  const runNumber = emitRunNumberInit(
+    pipeline.name ?? DEFAULT_RUN_NUMBER_FORMAT,
+    pipeline.provenance.file,
+  );
+  if (warnings !== undefined) warnings.push(...runNumber.warnings);
   const lines: string[] = [
     '#!/usr/bin/env bash',
     '# Generated pipeline runner — run.sh',
@@ -325,6 +335,10 @@ export function emitRunScript(
     '',
     'azdo_env_load "$PROJECT_DIR/.env" "${env_file:-}"',
     '',
+    // The run number is rendered here and nowhere earlier: the format may read `.env`-supplied and
+    // user-defined variables (C-E05-012), and `Build.BuildNumber` has to exist before the first
+    // step reads it.
+    ...runNumber.lines,
   ];
   for (const stageId of stageOrder) {
     const stage = stagesById.get(stageId);
@@ -348,10 +362,11 @@ export function emitEntrypoints(
   plan: Scaffold,
   file: string,
   diagnostics: Diagnostic[],
+  warnings?: ManifestWarning[],
 ): Map<string, string> {
   const files = new Map<string, string>();
   const stageGraph = resolveStageGraph(pipeline.stages, file, diagnostics);
-  files.set('run.sh', emitRunScript(pipeline, plan, topologicalOrder(stageGraph)));
+  files.set('run.sh', emitRunScript(pipeline, plan, topologicalOrder(stageGraph), warnings));
   for (const stage of plan.stages) {
     const jobGraph = resolveJobGraph(stage.stage, file, diagnostics);
     files.set(
