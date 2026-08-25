@@ -156,7 +156,8 @@ describe('emitRunNumberInit', () => {
     expect(text).toContain("azdo__run_number_head=('1.0.')");
     expect(text).toContain(`azdo__run_number_tail=('-' "$(azdo_var 'Build.DefinitionName')")`);
     expect(text).toContain('azdo_rev "$azdo__run_number_key" 2');
-    expect(text).toContain('AZDO_BUILD_NUMBER="$azdo_build_number" AZDO_BUILD_ID="$run_number"');
+    expect(text).toContain('azdo_run_identity_seed "$azdo_build_number" "$run_number"');
+    expect(text).not.toContain('AZDO_BUILD_NUMBER');
   });
 
   it('skips the revision machinery entirely when the format has no `Rev` token', () => {

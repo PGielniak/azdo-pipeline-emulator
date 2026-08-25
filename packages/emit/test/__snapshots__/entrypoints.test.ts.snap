@@ -20,6 +20,8 @@ AZDO_ENV_ALIASES=(
   'SYSTEM_PULLREQUEST_SOURCEBRANCH=System.PullRequest.SourceBranch'
   'SYSTEM_PULLREQUEST_TARGETBRANCH=System.PullRequest.TargetBranch'
   'SYSTEM_ACCESSTOKEN=System.AccessToken'
+  'PIPELINE_ONLY=PIPELINE_ONLY'
+  'AZDO_VAR_PIPELINE_ONLY=azdo_var PIPELINE_ONLY'
 )
 
 # Flags: --list --env-file FILE --resume
@@ -67,9 +69,7 @@ azdo__run_number_tail=()
 azdo__run_number_key="$(azdo__join_parts "\${azdo__run_number_head[@]+"\${azdo__run_number_head[@]}"}" "\${azdo__run_number_tail[@]+"\${azdo__run_number_tail[@]}"}")"
 azdo__run_number_rev="$(azdo_rev "$azdo__run_number_key" 1)"
 azdo_build_number="$(azdo__join_parts "\${azdo__run_number_head[@]+"\${azdo__run_number_head[@]}"}" "$azdo__run_number_rev" "\${azdo__run_number_tail[@]+"\${azdo__run_number_tail[@]}"}")"
-AZDO_BUILD_NUMBER="$azdo_build_number" AZDO_BUILD_ID="$run_number"
-export AZDO_BUILD_NUMBER AZDO_BUILD_ID
-azdo_run_identity_seed "$AZDO_BUILD_NUMBER" "$AZDO_BUILD_ID"
+azdo_run_identity_seed "$azdo_build_number" "$run_number"
 
 AZDO_STAGE_DIR="$PROJECT_DIR/stages/010-build"
 AZDO_STAGE_ID='Build'
@@ -142,12 +142,12 @@ export AZDO_LOG_DIR AZDO_RESULT_DIR AZDO_OUTPUT_DIR AZDO_HAS_MULTIPLE_CHECKOUTS
 mkdir -p "$AZDO_LOG_DIR" "$AZDO_RESULT_DIR" "$AZDO_OUTPUT_DIR"
 
 if [[ -z "$(azdo_var System.DefaultWorkingDirectory)" ]]; then
+  azdo_var_scope_copy pipeline "$AZDO_VAR_SCOPE"
   azdo_var_set 'System.DefaultWorkingDirectory' "$AZDO_WORKSPACE_DIR/s"
   azdo_var_set 'Build.SourcesDirectory' "$AZDO_WORKSPACE_DIR/s"
   azdo_var_set 'Agent.BuildDirectory' "$AZDO_WORKSPACE_DIR"
   azdo_var_set 'Pipeline.Workspace' "$AZDO_WORKSPACE_DIR"
   azdo_var_set 'Agent.TempDirectory' "$AZDO_WORKSPACE_DIR/tmp"
-  azdo_run_identity_seed "\${AZDO_BUILD_NUMBER:-}" "\${AZDO_BUILD_ID:-}"
 fi
 
 id='010'

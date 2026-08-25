@@ -255,13 +255,10 @@ export function emitRunNumberInit(
     );
   }
   lines.push(
-    // Published as environment values, not written here: the variable store has no scope chain, and
-    // steps read the `job-<id>` scope while `run.sh` works in `pipeline`. `run-job.sh` seeds both
-    // names into its own scope alongside the predefined directory variables (decision 65).
+    // Seed once in the pipeline scope. Each generated job copies that scope with its complete
+    // metadata before applying job-local values (C-E05-017, decision 68).
     // `Build.BuildId` is the local monotonic run counter, not an org-unique Run ID (C-E05-022).
-    'AZDO_BUILD_NUMBER="$azdo_build_number" AZDO_BUILD_ID="$run_number"',
-    'export AZDO_BUILD_NUMBER AZDO_BUILD_ID',
-    'azdo_run_identity_seed "$AZDO_BUILD_NUMBER" "$AZDO_BUILD_ID"',
+    'azdo_run_identity_seed "$azdo_build_number" "$run_number"',
     '',
   );
   return { lines, warnings };

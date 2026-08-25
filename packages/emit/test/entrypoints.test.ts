@@ -42,7 +42,9 @@ const FIXTURE = `stages:
     - task: CmdLine@2
       displayName: Say hello
       inputs:
-        script: echo "hello from compile"
+        script: |
+          echo "hello from compile"
+          printf 'from-macro=%s from-api=%s\\n' "$(PIPELINE_ONLY)" "$(azdo_var PIPELINE_ONLY)"
     - task: Bash@3
       displayName: Fail loudly
       inputs:
@@ -76,8 +78,7 @@ function generateProject(dir: string): void {
   copyFileSync(join(repoRoot, 'packages/runtime/lib/core.sh'), join(dir, 'lib/runtime.sh'));
   copyFileSync(join(repoRoot, 'packages/runtime/lib/expr.sh'), join(dir, 'lib/expr.sh'));
 
-  // .env is optional; azdo_env_load tolerates a missing base file.
-  writeFileSync(join(dir, '.env'), '');
+  writeFileSync(join(dir, '.env'), 'PIPELINE_ONLY=from-env\n');
 
   for (const file of plan.directories) mkdirSync(join(dir, file), { recursive: true });
   for (const stage of plan.stages) {
@@ -111,6 +112,12 @@ describe('emitEntrypoints', () => {
     ]);
     expect(files.get('run.sh')).toContain("'BUILD_SOURCEBRANCH=Build.SourceBranch'");
     expect(files.get('run.sh')).toContain("'SYSTEM_ACCESSTOKEN=System.AccessToken'");
+    expect(files.get('stages/010-build/jobs/010-compile-and-test/run-job.sh')).toContain(
+      'azdo_var_scope_copy pipeline "$AZDO_VAR_SCOPE"',
+    );
+    expect(files.get('stages/010-build/jobs/010-compile-and-test/run-job.sh')).not.toContain(
+      'azdo_run_identity_seed',
+    );
     expect(files.get('run.sh')).toMatchSnapshot();
     expect(files.get('stages/010-build/conditions.sh')).toMatchSnapshot();
     expect(files.get('stages/010-build/jobs/010-compile-and-test/run-job.sh')).toMatchSnapshot();
@@ -210,6 +217,7 @@ describe('generated project runs end-to-end', () => {
         'utf8',
       );
       expect(log).toContain('hello from compile');
+      expect(log).toContain('from-macro=from-env from-api=from-env');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
