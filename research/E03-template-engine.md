@@ -14,7 +14,7 @@ time the IDs were load-bearing in code comments and test names) is the reason th
 | `C-E03-120..139` | E03-S01-T02 conditional insertion chains | this file | 120–139 used — recorded 2026-08-23 from the two committed surveys (`research/experiments/E03-conditionals/` 24 probes, `research/experiments/E03-if/` 22 probes) |
 | `C-E03-140..159` | E03-S01-T03 iterative insertion (`each`) | this file | 140–151 used — recorded 2026-08-24 from the 12 committed probes (`research/experiments/E03-each/`, 11 pairs + 1 rejection); 152..159 free |
 | `C-E03-160..174` | E03-S01-T04 `${{ insert }}` merge | this file | 160–174 used — recorded 2026-08-24 from the 32 committed probes (`research/experiments/E03-insert/`, 13 pairs + 19 rejections) |
-| `C-E03-175..194` | E03-S01-T05 scalar interpolation | this file | **not free — owed.** 34 transcripts in `research/experiments/E03-interpolation/`; no entry written (E03-S01-T06) |
+| `C-E03-175..194` | E03-S01-T05 scalar interpolation | this file | 175–194 used — recorded 2026-08-25 from the 34 committed probes (`research/experiments/E03-interpolation/`, 27 pairs + 7 rejections), plus `E03-insert/value-position/` for 194 |
 | `C-E03-195..229` | E03-S02 template resolution & parameters | this file | **204 used; 195..203 and 205..215 owed** — `packages/engine/src/template/reference.ts` and its test **cite** those IDs, and 34 transcripts sit in `research/experiments/E03-references/`, but no entry is written, so a reader following a citation finds nothing (E03-S01-T06). E03-S06's shipped code consumes several of them. |
 | `C-E03-230..249` | E03-S03 compile-time variable visibility | this file | free |
 | `C-E03-250..279` | E03-S04 limits, emitter, strict validation | this file | free |
@@ -33,6 +33,11 @@ pointing at nothing, which is worse than an unstarted block, because the code *l
 Recording those entries is the remaining work on E03-S01-T02..T05 and E03-S02-T01; the transcripts
 they must be written from are already here, so it is transcription, not new measurement, and no
 oracle budget is needed.
+
+*Progress:* `C-E03-120..139` (T02) and `C-E03-140..151` (T03) were recorded 2026-08-23/24,
+`C-E03-160..174` (T04) on 2026-08-24, and `C-E03-175..194` (T05) on 2026-08-25. The one block still
+owed is `C-E03-195..229` — E03-S02-T01's, whose citations in
+`packages/engine/src/template/reference.ts` still point at entries that do not exist here.
 
 ---
 
@@ -669,6 +674,202 @@ replacement item rather than `if`/`each`'s spliced list.
     checked 2026-08-19) — `sequence-position` returns `"/azure-pipelines.yml (Line: 11, Col: 24):
     Unexpected value 'A'"`; `sequence-position-valid` expands to one `task: CmdLine@2` with
     `displayName: Merged` and `script: echo merged`.
+
+---
+
+## E03-S01-T05 — scalar interpolation (`C-E03-175..194`)
+
+Evidence: `research/experiments/E03-interpolation/` — **34** live preview probes (27 expanded pairs,
+7 rejections), captured by the 2026-08-23 interpolation survey and replayed as goldens by
+`packages/engine/test/template/interpolate.test.ts`. Two docs pages carry the rest: the expressions
+page's type-casting table and the template-expressions page's single structural sentence.
+
+Bookkeeping note: `packages/engine/src/template/interpolate.ts` and its suite have cited these IDs
+since 2026-08-23, and this entry is the record they were citing — written from the transcripts that
+were already on disk, with **no re-implementation** (the reconciliation E03-S01-T06 asked for). Each
+claim below names the probe directory that measures it, so a reader following a citation from the
+code lands on the transcript, not on a summary of it.
+
+### What the documentation actually says
+
+[C-E03-175] **The documented conversion table is the source for three of the four scalar
+stringifications, and is wrong about the fourth.** The expressions page's type-casting table gives
+`Null → ''` and Boolean → `False`/`True` outright (transcribed cell-for-cell as C-E02-020), and
+those two are exactly what the service does in interpolation. Its Number row is the one that does
+not survive contact: the page describes Int32-shaped behavior, while the live service round-trips a
+double (C-E02-021, and C-E03-182 below).
+  — https://learn.microsoft.com/azure/devops/pipelines/process/expressions#type-casting
+    (checked 2026-08-12 as C-E02-020, re-read for this task 2026-08-19)
+
+[C-E03-176] **The template-expressions page never states the rule the whole pass rests on.** It
+documents *one* structural case — "When you insert an array into an array, you flatten the nested
+array" — and nothing else: not the mapping case, not the lone-expression-vs-mixed-content
+distinction, not expressions in keys, even though its own `each` example is built on
+`${{ pair.key }}: ${{ pair.value }}`. Everything below that is not C-E03-175 or C-E03-178 is
+therefore measured, not read.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions
+    ("Insertion", re-read 2026-08-19; page-source pins `MicrosoftDocs/azure-devops-docs@7ba9a9ac`,
+    `@7d36475a`)
+
+### A lone expression inserts collections structurally
+
+[C-E03-177] **An Object in lone value position becomes a real mapping, not text.** `env: ${{
+parameters.envVars }}` where the parameter is `{ALPHA: a, BETA: b}` expands to a two-entry `env:`
+mapping. The host scalar's own quoting does not matter: the double-quoted spelling
+`env: "${{ parameters.envVars }}"` produces the identical mapping.
+  — `research/experiments/E03-interpolation/lone-object-value/`, `lone-object-value-quoted/`
+    (live preview, checked 2026-08-23) — both expand to `env:\n  ALPHA: a\n  BETA: b`
+
+[C-E03-178] **Array into array flattens; Object into array does not.** A lone array expression as a
+sequence *item* splices its elements into the parent sequence — `- ${{ parameters.preBuild }}` with
+two steps yields two steps followed by the literal one. A lone **Object** in the same position stays
+**one** item. This is the page's single structural sentence (C-E03-176) confirmed, plus the case it
+never mentions.
+  — `research/experiments/E03-interpolation/lone-array-sequence-item/`,
+    `lone-object-sequence-item/` (live preview, checked 2026-08-23) — the array probe expands to
+    `echo pre-one`, `echo pre-two`, `echo probe`; the object probe to one `displayName: From Object`
+    step plus the literal one
+
+[C-E03-179] **The structure survives at every depth, including in a well-known schema mapping.** An
+object spliced through `${{ insert }}` into a job carries a nested mapping (`workspace: {clean:
+all}`), an empty sequence (`dependsOn: []`) and a plain scalar (`displayName: Nested`) into the
+expansion unchanged — no depth limit, and no flattening of the nested mapping.
+  — `research/experiments/E03-interpolation/lone-object-nested/` (live preview, checked 2026-08-23)
+
+[C-E03-180] **The lone/mixed boundary is not whitespace-tolerant.** `'  ${{ parameters.envVars }}  '`
+— the same object expression with padding *outside* the delimiters — is **mixed content**, and the
+service rejects it (`Unable to convert from Object to String. Value: Object`). The same padding
+around a *string* result is preserved verbatim: `"  ${{ 'x' }}  "` expands to `'  x  '`. So the
+padding is neither trimmed before the decision nor trimmed after it.
+  — `research/experiments/E03-interpolation/whitespace-around-lone-object/`,
+    `whitespace-around-lone-string/` (live preview, checked 2026-08-23) — the object probe is
+    HTTP 400 and also reports `Unexpected value ''`
+
+### Every other kind becomes its String form
+
+[C-E03-181] **Boolean stringifies `True`/`False`, capitalized, in every position.** A `type:
+boolean` parameter and the literals `${{ true }}`/`${{ false }}` all render `True`/`False`, and the
+casing is what the *service* emits before YAML re-types it (C-E03-193).
+  — `research/experiments/E03-interpolation/lone-boolean/` (live preview, checked 2026-08-23) —
+    `FROM_PARAM: True`, `LITERAL_TRUE: True`, `LITERAL_FALSE: False`
+
+[C-E03-182] **Number stringifies as an invariant double, not as the source text.** `${{ 1.0 }}`
+renders `1` — the trailing zero is *lost*, which is only possible if the value is a double rather
+than the characters that were written. `${{ 0.5 }}` → `0.5`, `${{ 1000000 }}` → `1000000` (no
+grouping separators), `${{ -1.25 }}` → `-1.25` (a leading `-`, and no leading `+` anywhere). Mixed
+content produces the same four renderings.
+  — `research/experiments/E03-interpolation/lone-number/`, `mixed-number/` (live preview, checked
+    2026-08-23) — `HALF: '0.5'`, `ONE_POINT_ZERO: 1`, `MILLION: 1000000`, `NEGATIVE: -1.25`
+
+[C-E03-183] **Null renders as the empty string even in lone position — which is what proves the
+lone case converts at all.** `PROBE: ${{ variables.nosuchvariable }}` expands to `PROBE: ''`: the
+entry is present with an empty value, not dropped and not a YAML null. A lone `${{ '' }}` is
+indistinguishable from it. If a lone expression simply handed its typed result to the emitter, Null
+would have come back as `null`; it does not, so every scalar kind goes through the String
+conversion and only collections stay structural.
+  — `research/experiments/E03-interpolation/lone-null/`, `lone-empty-string/` (live preview, checked
+    2026-08-23) — both expand `BEFORE: before` then `PROBE: ''`
+
+[C-E03-184] **Version stringifies by its dotted components, in both lone and mixed position.**
+`${{ 1.2.3 }}` renders `1.2.3` and `v${{ 1.2.3.4 }}` renders `v1.2.3.4` — the four-component form
+keeps all four. A Version is therefore *not* a Number that happens to have dots, which is what makes
+`1.0` (Number, C-E03-182) and `1.2.3` (Version) render by different rules.
+  — `research/experiments/E03-interpolation/lone-version/`, `mixed-version/` (live preview, checked
+    2026-08-23)
+
+[C-E03-185] **The result is never re-parsed as YAML.** `${{ '0123' }}` stays the four characters
+`0123` rather than becoming the number 123, and `"${{ 'a: b' }}"` — a string whose content is a
+YAML mapping — comes back as the scalar `'a: b'`. The unquoted spelling of the same probe is a
+**parse** failure of the source document (`Mapping values are not allowed in this context`), which
+is the host scalar's own YAML, not the expression's result.
+  — `research/experiments/E03-interpolation/lone-string-numeric/`,
+    `lone-string-yamlish-quoted/`, `lone-string-yamlish/` (live preview, checked 2026-08-23)
+
+### Mixed content is one `format` call
+
+[C-E03-186] **Anything that is not exactly one expression is mixed content: each hole is stringified
+and concatenated with the literal text around it.** `pre-${{ true }}-post` → `pre-True-post`;
+`pre-${{ variables.nosuchvariable }}-post` → `pre--post` (the Null hole contributes nothing but the
+entry keeps its shape); `${{ 'a' }} then ${{ 'b' }}` → `a then b`; and — the case that pins the
+boundary — **two adjacent expressions** `${{ 'a' }}${{ 'b' }}` → `ab`, i.e. adjacency does not make
+a lone expression. This is not a second stringification rule: the service compiles the whole scalar
+into a synthetic `format('<literal with {0} holes>', …)` and parses *that* (C-E02-109), so the
+conversion is `format`'s own.
+  — `research/experiments/E03-interpolation/mixed-boolean/`, `mixed-null/`,
+    `mixed-two-expressions/` (live preview, checked 2026-08-23)
+
+[C-E03-187] **A collection reaching a string position is rejected with a sentence that names the
+kind twice.** `pre-${{ parameters.obj }}` returns `Unable to convert from Object to String. Value:
+Object`, and the Array form returns the same sentence with `Array` — the ` Value: <Kind>` suffix
+names the *kind* again rather than rendering the value. The sentence carries no "For more help"
+link, unlike the schema-layer rejections in the same corpus.
+  — `research/experiments/E03-interpolation/mixed-object/`, `mixed-array/` (live preview, checked
+    2026-08-23) — `"/azure-pipelines.yml (Line: 15, Col: 18): Unable to convert from Object to
+    String. Value: Object"` and the `Array` counterpart at `(Line: 16, Col: 18)`
+
+[C-E03-188] **The documented escape spelling works by execution, not merely by recognition.**
+`${{ 'my${{value' }}` expands to the literal `my${{value` — so the scanner's quote-awareness
+(C-E03-117) is *required*, and the result is **not** re-scanned for expressions. The doubled-quote
+form `${{ 'my${{value with a '' single quote too' }}` expands with a single `'`, confirming the
+string literal's own escape rule survives the same path.
+  — `research/experiments/E03-interpolation/escape-literal/`, `escape-literal-quote/` (live preview,
+    checked 2026-08-23)
+
+[C-E03-189] **A block scalar interpolates as one scalar and keeps its lines.** A `script: |` body
+carrying `echo ${{ parameters.who }}` on its middle line expands with the substitution in place and
+the line structure intact; the service re-emits it as a folded (`>`) scalar with blank-line
+separators, which is a *rendering* choice of its emitter and not a change to the value.
+  — `research/experiments/E03-interpolation/block-scalar-expression/` (live preview, checked
+    2026-08-23)
+
+### Keys run through the same split, with their own rejection
+
+[C-E03-190] **A key is *always* the String form — it has no structural option.** `${{ true }}: value`
+becomes the key `True`; `${{ 1.0 }}`/`${{ 0.5 }}` become `1` and `'0.5'` (the same Number rendering
+as C-E03-182); `${{ 'PROBE' }}` becomes `PROBE`; and a **Null** key becomes the **empty key** `'':
+value` — present, in place, not a dropped entry. Mixed content in key position concatenates like any
+other scalar: `PRE_${{ parameters.suffix }}` → `PRE_TAIL`.
+  — `research/experiments/E03-interpolation/key-boolean/`, `key-number/`, `key-string/`,
+    `key-null/`, `key-mixed/` (live preview, checked 2026-08-23)
+
+[C-E03-191] **Key position has *two* rejection sentences, and which one fires depends on lone vs
+mixed.** A **lone** collection key is `Expected a scalar value`; the **same** object in **mixed**
+key content is `Unable to convert from Object to String. Value: Object` — C-E03-187's sentence. One
+rule could not produce two sentences, so keys go through the same lone/mixed split as values, with a
+structural rejection where a value would have inserted structurally.
+  — `research/experiments/E03-interpolation/key-object/`, `key-mixed-object/` (live preview, checked
+    2026-08-23) — `"(Line: 15, Col: 11): Expected a scalar value"` and `"(Line: 15, Col: 11): Unable
+    to convert from Object to String. Value: Object"`
+
+[C-E03-192] **The rendered key is text by the time the schema sees it.** In a mapping with a known
+schema, where an unexpected key is a hard error, `${{ true }}` is rejected as `Unexpected value
+'True'` — the capitalized String form of C-E03-181, quoted as a string. The rendering therefore
+happens before schema validation and is not an artifact of the loose `env:` mapping the other key
+probes use. This is the docs/02 §8 entry "Boolean stringification casing in keys" — an open
+question there, closed here and by C-E03-190.
+  — `research/experiments/E03-interpolation/key-boolean-nonloose/` (live preview, checked
+    2026-08-23) — `"/azure-pipelines.yml (Line: 5, Col: 5): Unexpected value 'True'"`
+
+[C-E03-193] **The service's own `finalYaml` is lossy about exactly the cases C-E03-185 and C-E03-190
+pin.** The expansion is re-emitted as YAML, so the string `0123` and the key `True` come back as an
+unquoted `0123` and an unquoted `True` — text that a YAML reader re-types as a number and a boolean.
+The **value** the service computed is the string, proven by the probes above; only the transport is
+ambiguous. Consequence for us: these two goldens are compared against the raw `finalYaml` text
+rather than a re-parsed tree, and closing the gap on our own emitter side is E03-S05-T03's.
+  — `research/experiments/E03-interpolation/lone-string-numeric/`, `key-boolean/` (live preview,
+    checked 2026-08-23) — `PROBE: 0123` and `True: value`, both unquoted in `finalYaml`
+
+[C-E03-194] **The interpolation pass must leave a lone directive keyword in *value* position
+untouched.** This is C-E03-173 read as a requirement on *this* pass rather than on directive
+recognition: the service does not evaluate `KEY: ${{ insert }}` as an expression — the text survives
+the whole expansion verbatim and is rejected only by schema validation, `Unexpected value
+'${{ insert }}'`. An interpolator that treated it as an ordinary lone expression would instead
+produce `Unrecognized value: 'insert'`, the one sentence the probe proves the service never emits.
+So the exemption is keyed on the **keyword set**, not on the text looking like a directive.
+  — `research/experiments/E03-insert/value-position/` (live preview, checked 2026-08-19) —
+    `"/azure-pipelines.yml (Line: 3, Col: 8): Unexpected value '${{ insert }}'"`. No new probe was
+    run for this task: E03-S01-T04's transcript is decisive and `interpolate.test.ts` replays it
+    directly.
 
 ---
 
