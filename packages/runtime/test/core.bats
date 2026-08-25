@@ -2779,3 +2779,117 @@ ENV
   [[ "${lines[1]}" == *'Skipped'* ]]
   [[ "${lines[1]}" == *'  0s '* ]]
 }
+
+# --- E05-S03-T01: run number -------------------------------------------------------------------
+
+setup_rev() {
+  AZDO_PERSIST_DIR="$(azdo_emu_scratch_dir persist)"
+  export AZDO_PERSIST_DIR
+}
+
+@test "azdo_rev starts a new series at 1 and increments while the key is unchanged (C-E05-009)" {
+  setup_rev
+  run -0 azdo_rev '20240506.'
+  [ "$output" = '1' ]
+  run -0 azdo_rev '20240506.'
+  [ "$output" = '2' ]
+  run -0 azdo_rev '20240506.'
+  [ "$output" = '3' ]
+}
+
+@test "azdo_rev resets to 1 when any other part of the number changes (C-E05-010)" {
+  setup_rev
+  run -0 azdo_rev '1.0.'
+  [ "$output" = '1' ]
+  run -0 azdo_rev '1.0.'
+  [ "$output" = '2' ]
+  # The version changed: the series restarts, exactly as the run-number page's `1.1.$(Rev:r)` example.
+  run -0 azdo_rev '1.1.'
+  [ "$output" = '1' ]
+}
+
+@test "azdo_rev zero-pads to the requested width (C-E05-011)" {
+  setup_rev
+  run -0 azdo_rev 'k' 2
+  [ "$output" = '01' ]
+  run -0 azdo_rev 'k' 2
+  [ "$output" = '02' ]
+  run -0 azdo_rev 'k' 4
+  [ "$output" = '0003' ]
+}
+
+@test "azdo_rev keeps a key that spans multiple lines distinct" {
+  setup_rev
+  run -0 azdo_rev $'a\nb'
+  [ "$output" = '1' ]
+  run -0 azdo_rev $'a\nb'
+  [ "$output" = '2' ]
+  run -0 azdo_rev $'a\nc'
+  [ "$output" = '1' ]
+}
+
+@test "azdo_rev rejects a non-numeric width and a missing persist directory" {
+  setup_rev
+  run -2 azdo_rev 'k' 'x'
+  [[ "$output" == *'width must be a number'* ]]
+  run -2 azdo_rev
+  [[ "$output" == *'usage: azdo_rev'* ]]
+
+  unset AZDO_PERSIST_DIR
+  run -2 azdo_rev 'k'
+  [[ "$output" == *'AZDO_PERSIST_DIR is not set'* ]]
+}
+
+@test "azdo_seed_branch_name derives the short name from either ref spelling (C-E05-005)" {
+  azdo_var_set 'Build.SourceBranch' 'refs/heads/release/1.2'
+  run -0 azdo_seed_branch_name
+  run -0 azdo_var 'Build.SourceBranchName'
+  [ "$output" = '1.2' ]
+}
+
+@test "azdo_seed_branch_name falls back to the .env spelling BUILD_SOURCEBRANCH (Δ C-E05-026)" {
+  azdo_var_set 'BUILD_SOURCEBRANCH' 'refs/heads/main'
+  run -0 azdo_seed_branch_name
+  run -0 azdo_var 'Build.SourceBranchName'
+  [ "$output" = 'main' ]
+}
+
+@test "azdo_seed_branch_name leaves an already-seeded name alone and tolerates no ref at all" {
+  azdo_var_set 'Build.SourceBranchName' 'already'
+  azdo_var_set 'Build.SourceBranch' 'refs/heads/other'
+  run -0 azdo_seed_branch_name
+  run -0 azdo_var 'Build.SourceBranchName'
+  [ "$output" = 'already' ]
+
+  AZDO_VAR_SCOPE='empty-scope'
+  run -0 azdo_seed_branch_name
+  run -0 azdo_var 'Build.SourceBranchName'
+  [ "$output" = '' ]
+}
+
+@test "azdo_run_identity_seed publishes both names read-only and is idempotent" {
+  run -0 azdo_run_identity_seed '20240506.2' '752'
+  run -0 azdo_var 'Build.BuildNumber'
+  [ "$output" = '20240506.2' ]
+  run -0 azdo_var 'Build.BuildId'
+  [ "$output" = '752' ]
+  run -0 azdo_var_meta 'Build.BuildNumber'
+  [[ "$output" == *'readonly=true'* ]]
+
+  # A resumed run re-enters with the same store: the number it was given survives.
+  run -0 azdo_run_identity_seed 'different' '999'
+  run -0 azdo_var 'Build.BuildNumber'
+  [ "$output" = '20240506.2' ]
+}
+
+@test "azdo_run_identity_seed rejects a wrong argument count" {
+  run -2 azdo_run_identity_seed 'only-one'
+  [[ "$output" == *'usage: azdo_run_identity_seed'* ]]
+}
+
+@test "build.updatebuildnumber can still overwrite the seeded number (C-E06-081)" {
+  prepare_artifact_dirs
+  run -0 azdo_run_identity_seed '20240506.2' '752'
+  run -0 dispatch_line '##vso[build.updatebuildnumber]custom-1.0'
+  [ "$(azdo_var 'Build.BuildNumber')" = 'custom-1.0' ]
+}

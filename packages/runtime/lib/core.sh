@@ -3911,3 +3911,123 @@ azdo_run_summary() {
   overall="$(azdo_run_result)" || return
   printf '\nResult: %s\n' "$overall"
 }
+
+# ---------------------------------------------------------------------------------------------
+# E05-S03-T01: run number (`name:`) support.
+#
+# The pipeline's `name:` is a format string that Azure DevOps renders into `Build.BuildNumber` at
+# queue time (C-E05-003). The emitter compiles the format into straight-line bash (see
+# `packages/emit/src/run-number.ts`); what lives here is the part that needs state — the revision
+# counter and the identity seed.
+# ---------------------------------------------------------------------------------------------
+
+# azdo__join_parts <part>... — concatenate arguments with no separator.
+#
+# `printf '%s'` over "$@" would do it, but the run number is assembled from arrays that may be empty
+# and `set -u` makes an unguarded `"${a[@]}"` fatal on bash 4.2; the callers guard the expansion and
+# this stays a plain loop so an empty argument list is simply an empty string.
+azdo__join_parts() {
+  local part
+  for part in "$@"; do
+    printf '%s' "$part"
+  done
+  printf '\n'
+}
+
+# azdo__persist_dir — the project-level state directory, which outlives a single run.
+#
+# `azdo__state_dir` is per-run (`.work/run-<n>/state`), and the revision counter must survive across
+# runs, so it lives beside `run.sh`'s run counter in `.work/.state` instead.
+azdo__persist_dir() {
+  local dir="${AZDO_PERSIST_DIR:-}"
+  if [[ -z "$dir" ]]; then
+    printf '%s\n' 'AZDO_PERSIST_DIR is not set' >&2
+    return 2
+  fi
+  printf '%s\n' "$dir"
+}
+
+# azdo_rev <key> [width] — the next `$(Rev:r)` revision for this run number.
+#
+# The service resets `Rev` to 1 whenever any other part of the build number changes (C-E05-009) —
+# including a version change, not only a date change (C-E05-010). That is implemented literally: the
+# caller renders everything *except* the revision and passes it as `<key>`; the store remembers one
+# key and its revision, so a different key starts a new series at 1 (Δ C-E05-021).
+#
+# `width` is the number of `r` characters in the token, i.e. the zero-padding (C-E05-011).
+#
+# Δ The increment happens at run **start**, not at build completion (C-E05-020): locally the number
+# has to exist before the first step reads `Build.BuildNumber`, and there is no server to revise it.
+azdo_rev() {
+  (($# >= 1 && $# <= 2)) || {
+    printf '%s\n' 'usage: azdo_rev <key> [width]' >&2
+    return 2
+  }
+
+  local key="$1" width="${2:-1}" dir file stored_rev='' stored_key='' rev=1
+  [[ "$width" =~ ^[0-9]+$ ]] || {
+    printf 'azdo_rev: width must be a number, got: %s\n' "$width" >&2
+    return 2
+  }
+  dir="$(azdo__persist_dir)" || return
+  file="$dir/rev"
+  mkdir -p "$dir" || return
+
+  if [[ -f "$file" ]]; then
+    # Line 1 is the revision; everything after it is the key, so a key containing anything at all
+    # (including a newline) round-trips.
+    IFS= read -r stored_rev <"$file" || stored_rev=''
+    stored_key="$(tail -n +2 "$file")"
+    if [[ "$stored_key" = "$key" && "$stored_rev" =~ ^[0-9]+$ ]]; then
+      rev=$((stored_rev + 1))
+    fi
+  fi
+
+  printf '%s\n%s' "$rev" "$key" >"$file" || return
+  printf '%0*d\n' "$width" "$rev"
+}
+
+# azdo_seed_branch_name — derive `Build.SourceBranchName` from the run's source ref when unset.
+#
+# `checkout` seeds both, but the run number is rendered before any step runs and may read the short
+# name (C-E05-005). The full ref is `refs/heads/main`; the short name is its last segment, the same
+# derivation `azdo__checkout_finish` performs.
+#
+# Two spellings are consulted, and the second is the one that actually carries a value today: the
+# variable store keys on the name as written (folded to lower case) with no dot/underscore mapping,
+# so the `.env` run-identity override `BUILD_SOURCEBRANCH` (docs/04 §10, decision 63(b)) is stored
+# under that literal name and is *not* reachable as `Build.SourceBranch`. Reading both here keeps the
+# documented override working for the run number without papering over the wider gap, which is filed
+# as E05-S01-T05 (Δ C-E05-026).
+azdo_seed_branch_name() {
+  local ref name
+  [[ -z "$(azdo_var 'Build.SourceBranchName')" ]] || return 0
+  ref="$(azdo_var 'Build.SourceBranch')" || return
+  if [[ -z "$ref" ]]; then
+    ref="$(azdo_var 'BUILD_SOURCEBRANCH')" || return
+  fi
+  [[ -n "$ref" ]] || return 0
+  name="${ref##*/}"
+  [[ -n "$name" ]] || return 0
+  azdo_var_set 'Build.SourceBranchName' "$name"
+}
+
+# azdo_run_identity_seed <build-number> <build-id> — publish the run's identity variables.
+#
+# Both names are members of the agent's read-only set, so they are written read-only here; the one
+# command allowed to overwrite `Build.BuildNumber` afterwards is `build.updatebuildnumber`, which
+# goes through `azdo__write_var_unchecked` for exactly that reason (C-E06-081).
+#
+# Idempotent, because `run.sh --resume` re-enters with the same run directory and therefore the same
+# variable store: an already-seeded run keeps the number it was given rather than failing the
+# read-only check or consuming a second revision.
+azdo_run_identity_seed() {
+  (($# == 2)) || {
+    printf '%s\n' 'usage: azdo_run_identity_seed <build-number> <build-id>' >&2
+    return 2
+  }
+
+  [[ -z "$(azdo_var 'Build.BuildNumber')" ]] || return 0
+  azdo_var_set 'Build.BuildNumber' "$1" false false true || return
+  azdo_var_set 'Build.BuildId' "$2" false false true
+}

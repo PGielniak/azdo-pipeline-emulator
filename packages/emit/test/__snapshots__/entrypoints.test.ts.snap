@@ -49,6 +49,18 @@ mkdir -p "$AZDO_WORKSPACE_DIR/s" "$AZDO_WORKSPACE_DIR/tmp" "$AZDO_WORKSPACE_DIR/
 
 azdo_env_load "$PROJECT_DIR/.env" "\${env_file:-}"
 
+# Run number (\`name:\`) — evaluated once per run, before the first stage (E05-S03-T01).
+export AZDO_PERSIST_DIR="$WORK_DIR/.state"
+azdo_seed_branch_name
+azdo__run_number_head=("$(date -u +'%Y%m%d')" '.')
+azdo__run_number_tail=()
+azdo__run_number_key="$(azdo__join_parts "\${azdo__run_number_head[@]+"\${azdo__run_number_head[@]}"}" "\${azdo__run_number_tail[@]+"\${azdo__run_number_tail[@]}"}")"
+azdo__run_number_rev="$(azdo_rev "$azdo__run_number_key" 1)"
+azdo_build_number="$(azdo__join_parts "\${azdo__run_number_head[@]+"\${azdo__run_number_head[@]}"}" "$azdo__run_number_rev" "\${azdo__run_number_tail[@]+"\${azdo__run_number_tail[@]}"}")"
+AZDO_BUILD_NUMBER="$azdo_build_number" AZDO_BUILD_ID="$run_number"
+export AZDO_BUILD_NUMBER AZDO_BUILD_ID
+azdo_run_identity_seed "$AZDO_BUILD_NUMBER" "$AZDO_BUILD_ID"
+
 AZDO_STAGE_DIR="$PROJECT_DIR/stages/010-build"
 AZDO_STAGE_ID='Build'
 export AZDO_STAGE_DIR AZDO_STAGE_ID
@@ -125,6 +137,7 @@ if [[ -z "$(azdo_var System.DefaultWorkingDirectory)" ]]; then
   azdo_var_set 'Agent.BuildDirectory' "$AZDO_WORKSPACE_DIR"
   azdo_var_set 'Pipeline.Workspace' "$AZDO_WORKSPACE_DIR"
   azdo_var_set 'Agent.TempDirectory' "$AZDO_WORKSPACE_DIR/tmp"
+  azdo_run_identity_seed "\${AZDO_BUILD_NUMBER:-}" "\${AZDO_BUILD_ID:-}"
 fi
 
 id='010'
