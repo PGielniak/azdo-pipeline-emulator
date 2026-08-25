@@ -19,7 +19,7 @@ time the IDs were load-bearing in code comments and test names) is the reason th
 | `C-E03-230..249` | E03-S03 compile-time variable visibility | this file | free |
 | `C-E03-250..279` | E03-S04 limits, emitter, strict validation | this file | free |
 | `C-E03-280..299` | E03-S05-T02 `preview-diff` | this file | free |
-| `C-E03-300..339` | E03-S02-T02 typed parameter binding | this file | **effectively taken** — the 2026-08-20 lane cited this block in `research/experiments/E03-parameters/` READMEs and never consolidated it here (`grep -c 'C-E03-3'` = 0). Do not reallocate; that task reclaims it. |
+| `C-E03-300..339` | E03-S02-T02 typed parameter binding | this file | 300–333 used — recorded 2026-08-25 from the 88 committed probes (`research/experiments/E03-parameters/`, 42 pairs + 46 rejections); 334–339 free |
 | `C-E03-400..429` | **E03-S06 local bundler** | this file | 400–407 used (S06-T01), 408–413 (S06-T02), 414–418 (S06-T03), 419–420 (S06-T04) |
 | `C-E03-430..449` | E03-S07 bundle provenance & diagnostics | this file | free |
 
@@ -1084,6 +1084,284 @@ twice.** This is the control that stops cycle detection from degenerating into "
 path before" — a `Set` of visited paths would reject a legal pipeline.
   — `research/experiments/E03-references/diamond-not-cycle/` (live preview, checked 2026-08-20) —
     the expansion contains `script: echo self-leaf` twice
+
+---
+
+## E03-S02-T02 — typed parameter binding (`C-E03-300..333`)
+
+Evidence: `research/experiments/E03-parameters/` — **88** live preview probes (42 expanded pairs,
+46 rejections), captured by `pnpm parameter-binding-survey` and replayed by
+`packages/engine/test/template/parameters.test.ts`.
+
+This block is unusual in one way worth stating up front: **the three documented sources disagree
+with each other**, before the service was asked. Two process pages list 13 type names, the
+yaml-schema page 12, and the vendored service schema 16 in one position and 20 in the other. Four
+documented statements turn out to be false as written. The probes are therefore not confirmation of
+a doc — they are the arbiter between docs, which is why the survey is this large.
+
+Bookkeeping note: `packages/engine/src/template/parameters.ts` has cited `C-E03-300..333` since
+2026-08-20 and the probe READMEs cite `300..303`; nothing was ever written into this file. Recorded
+2026-08-25 from the transcripts on disk. Three IDs the code never cited — `C-E03-310`, `C-E03-319`,
+`C-E03-331` — are assigned here to findings the survey made and nothing had recorded.
+
+### What the three sources say (and where they are wrong)
+
+[C-E03-300] **The two process pages list 13 type names and state that `stringList` is unavailable in
+templates.** The list is `string`, `number`, `boolean`, `object`, `step`, `stepList`, `job`,
+`jobList`, `deployment`, `deploymentList`, `stage`, `stageList`, `stringList`.
+  — https://learn.microsoft.com/azure/devops/pipelines/process/runtime-parameters and
+    …/process/template-parameters (checked 2026-08-20)
+  — "The `stringList` data type isn't available in templates. Use the `object` data type in
+    templates instead." — **measured false**, C-E03-306.
+
+[C-E03-301] **The yaml-schema page lists 12 type names — `stringList` is absent — and states that
+`type` and `name` are required and that a parameter "must include a default value".**
+  — https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/parameters-parameter
+    (checked 2026-08-20)
+  — the requiredness half is **measured false**, C-E03-308 (`type:` is optional) and C-E03-309
+    (a parameter with no default is legal; it is simply required at call time).
+
+[C-E03-302] **The vendored service schema has *two* type vocabularies, of 16 and 20 names**:
+`definitions.templateParameterType` (template position) and
+`definitions.pipelineTemplateParameterType` (root position). They are not nested — `legacyObject`
+is in the first and not the second — and neither matches either documentation page.
+  — `packages/engine/schema/` (the vendored org schema, C-E00-007/008), read 2026-08-20
+
+[C-E03-303] **The documented account of a missing default is self-contradictory.** The yaml-schema
+page's prose says a parameter "must include a default value", its own `default` row says the value
+must then be given at runtime, and runtime-parameters says that when there is no default "the first
+available value is used" — i.e. `values:` supplies one.
+  — as C-E03-301, plus …/process/runtime-parameters (checked 2026-08-20) — the "first available
+    value" statement is **measured false**, C-E03-309.
+
+### The real vocabulary, measured name by name
+
+[C-E03-304] **Inside a template the accepted vocabulary is the vendored schema's
+`templateParameterType`, exactly — all 16 names, no more.** Every documented name is accepted, and
+so are `container`, `containerList`, `legacyObject` and `stringList`, none of which the yaml-schema
+page lists.
+  — `research/experiments/E03-parameters/type-tmpl-documented/`, `type-tmpl-stringlist/`,
+    `type-tmpl-legacyobject/`, `type-tmpl-containerlist/`, `type-tmpl-container/` (live preview,
+    checked 2026-08-20)
+
+[C-E03-305] **The two positions are genuinely different vocabularies, not a superset and a subset.**
+`legacyObject` is accepted in a template and rejected at the root; `environment`, `filePath`,
+`pool`, `secureFile` and `serviceConnection` are accepted at the root and rejected in a template.
+Six names, six probes, both directions — a single `PARAMETER_TYPES` set would accept five names the
+service refuses in templates and refuse one it accepts.
+  — `research/experiments/E03-parameters/type-tmpl-legacyobject/`, `type-root-legacyobject/`,
+    `type-root-schema-only/`, `type-tmpl-environment/`, `type-tmpl-filepath/`, `type-tmpl-pool/`,
+    `type-tmpl-securefile/`, `type-tmpl-serviceconnection/` (live preview, checked 2026-08-20) —
+    the root rejection is `"Unexpected value 'legacyObject'"`, the template ones name each
+    root-only type
+
+[C-E03-306] **`stringList` *is* available in templates** — C-E03-300's flat statement is false. The
+template probe expands, and a `stringList` argument binds as an array of strings with per-item
+`values:` checking.
+  — `research/experiments/E03-parameters/type-tmpl-stringlist/`, `pass-stringlist-values/`
+    (live preview, checked 2026-08-20)
+
+[C-E03-307] **An unknown type is rejected `Unexpected value '<spelling>'` at the `type:` node, and
+the match is case-sensitive.** `String` is as unknown as `notAType`, and the sentence is identical
+in both positions — it does not enumerate the accepted names, which is why the vocabulary had to be
+measured name by name.
+  — `research/experiments/E03-parameters/type-root-unknown/`, `type-tmpl-unknown/`,
+    `type-root-case/` (live preview, checked 2026-08-20)
+
+[C-E03-310] **A `container` parameter takes a resource-shaped *mapping*, not a bare string.** The
+bare-string default is rejected `The 'p' parameter is not a valid Container.` followed by
+`Unexpected value 'alpine'`, while a mapping spelled like a `resources.containers` entry
+(`container: c1`, `image: alpine`) binds and keeps both keys. `containerList` is the sequence form.
+  — `research/experiments/E03-parameters/type-container-string/`, `type-container-resource/`,
+    `type-root-container/`, `type-tmpl-container/`, `type-tmpl-containerlist/` (live preview,
+    checked 2026-08-20)
+
+### Declarations
+
+[C-E03-308] **`type:` is optional and defaults to `string`** — not "required", and not inferred from
+the default. Omitting it is accepted; omitting it *and* giving a mapping default is rejected
+`The 'p' parameter is not a valid String.`, which is only possible if the missing type became
+`string` rather than being read off the value.
+  — `research/experiments/E03-parameters/type-root-missing/`,
+    `type-root-missing-untyped-object/` (live preview, checked 2026-08-20)
+
+[C-E03-333] **A declaration with no `name:` never reaches the binder**: the schema's
+"required as first property" rule rejects the document first, with `Unexpected value 'type'` at the
+declaration's first key. A binder that checked for a missing name would be reproducing a sentence
+that is not the service's.
+  — `research/experiments/E03-parameters/decl-missing-name/` (live preview, checked 2026-08-20)
+
+[C-E03-313] **A name declared twice is rejected `The 'p' parameter is declared more than once in the
+parameter list.`**, located at the *second* declaration. Declarations are sequence items, so the
+parser's duplicate-key rule (E01-S01-T04) does not apply and this is a binder-level check.
+  — `research/experiments/E03-parameters/decl-duplicate-name/` (live preview, checked 2026-08-20) —
+    `"(Line: 5, Col: 3): The 'p' parameter is declared more than once…"`
+
+[C-E03-316] **Parameter names fold case, on both sides.** A parameter declared `myParam` is readable
+as `${{ parameters.MYPARAM }}`, and an argument spelled `P:` binds a parameter declared `p`. So the
+declaration table, the argument lookup and the context read all compare case-insensitively.
+  — `research/experiments/E03-parameters/decl-name-case/`, `pass-name-case/` (live preview, checked
+    2026-08-20)
+
+[C-E03-317] **Reading an undeclared parameter is `Key not found '<name>'`** — the `parameters`
+context raises on a miss rather than null-propagating, which is the general provider rule
+(C-E02-087) confirmed in this position.
+  — `research/experiments/E03-parameters/decl-unknown-name/` (live preview, checked 2026-08-20)
+
+[C-E03-315] **A `default:` is not an expression slot.** It admits exactly one expression form — a
+lone **single-quoted string literal**, which folds to its text — and nothing else. `${{ 42 }}`,
+`${{ true }}`, `${{ format(…) }}`, `${{ parameters.other }}`, `${{ variables.x }}` and mixed content
+are all rejected `A template expression is not allowed in this context`. The deciding factor is the
+literal *kind*, not the parameter type: `${{ 42 }}` on a `string` parameter still rejects, while
+`${{ 'x' }}` on a `number` parameter is accepted. This is template-parameters' "You can only use
+literals for parameter default values", enforced far more narrowly than it reads.
+  — `research/experiments/E03-parameters/default-expression/`,
+    `default-expression-literal-string-on-number/` (accepted) and
+    `default-expression-function/`, `default-expression-literal-boolean/`,
+    `default-expression-literal-number/`, `default-expression-literal-number-on-string/`,
+    `default-expression-mixed/`, `default-expression-parameter/`, `default-expression-variables/`
+    (all rejected with the one sentence) — live preview, checked 2026-08-20
+
+[C-E03-312] **A default is type-checked at the declaration**, with the same sentence a passed value
+gets: `The 'p' parameter value 'abc' is not a valid Number.`
+  — `research/experiments/E03-parameters/default-wrong-type/` (live preview, checked 2026-08-20)
+
+[C-E03-309] **A parameter with no default is legal and simply required at call time**, rejected
+`A value for the '<name>' parameter must be provided.` — and **`values:` does not supply one**,
+which makes C-E03-303's "the first available value is used" false. Every requiredness rejection is
+*accumulated*: four undefaulted parameters produce four sentences in one response.
+  — `research/experiments/E03-parameters/default-missing-string/`, `default-missing-values/`,
+    `default-missing-typed/`, `pass-missing-required/` (live preview, checked 2026-08-20) —
+    `default-missing-typed` returns the sentence for `n`, `b`, `o` and `l` together
+
+### Binding a value
+
+[C-E03-321] **A scalar binds as its *source text*, and the per-type parse runs on that string.**
+There is no Number→String or Boolean→String conversion: `42` binds to a `string` parameter as
+`"42"`, `true` as `"true"`, YAML `True` as `"True"` and `007` as `"007"`. The `True` case is
+decisive twice over — it shows the source text rather than the value (a value-based conversion would
+give `"true"`), and it shows binding is **not** the expression language's stringification, which
+renders Boolean as `True`/`False` regardless of spelling (C-E03-181).
+  — `research/experiments/E03-parameters/pass-number-to-string/`, `pass-boolean-to-string/`,
+    `pass-boolean-titlecase-to-string/`, `pass-leading-zero-to-string/` (live preview, checked
+    2026-08-20) — `OUT: '"42"'`, `'"true"'`, `'"True"'`, `'"007"'`
+
+[C-E03-332] **Null binds as the empty string, in one step rather than as a per-type special case.**
+`p:` bound to `string` is `""`; the same `p:` bound to `number` or `boolean` is rejected quoting the
+**empty string** — `The 'p' parameter value '' is not a valid Number.` — which is exactly what an
+explicit `''` produces. So Null became `''` first and then failed the per-type parse.
+  — `research/experiments/E03-parameters/pass-null/`, `default-null/`, `pass-null-to-number/`,
+    `pass-null-to-boolean/`, `empty-string-to-number/` (live preview, checked 2026-08-20)
+
+[C-E03-322] **`number` accepts any number-like string and binds a double.** `'8'` binds 8, a
+`number` default `'8'` binds 8, `1.0` binds `1` and `0.5` binds `0.5`; `abc` and `''` are rejected
+`The 'p' parameter value '<text>' is not a valid Number.` Binding `1.0` to a **string** parameter
+gives `"1.0"` — the source text (C-E03-321) — so the trailing-zero loss belongs to the number parse,
+not to a stringification.
+  — `research/experiments/E03-parameters/pass-string-to-number/`, `default-number-like-string/`,
+    `number-float-binding/`, `pass-nonnumeric-to-number/`, `empty-string-to-number/` (live preview,
+    checked 2026-08-20) — `number-float-binding` returns `{"a": 1, "b": 0.5, "c": "1.0"}`
+
+[C-E03-323] **`boolean` accepts exactly the two literals, case-insensitively, and nothing else.**
+`true`, the quoted `'true'` and YAML `True` all bind; `yes` and `1` are rejected
+`The 'p' parameter value 'yes' is not a valid Boolean.` A `boolean` default written `'true'` binds
+`true`, so the quoting is invisible by the time the parse runs — consistent with C-E03-321.
+  — `research/experiments/E03-parameters/pass-bool-titlecase/`, `pass-bool-quoted-true/`,
+    `default-boolean-quoted/`, `pass-bool-yes/`, `pass-bool-number/` (live preview, checked
+    2026-08-20)
+
+[C-E03-324] **`object` keeps every leaf's YAML type, at any depth, and accepts a scalar.** A deep
+value round-trips as `{"s":"text","n":3,"f":0.5,"b":true,"nil":"","list":[1,"two"],"nested":{…}}` —
+strings stay strings, numbers numbers, booleans booleans — with the one exception that a **null leaf
+is the empty string**. A bare scalar bound to `object` is that scalar, and `p:` (null) is `""`.
+  — `research/experiments/E03-parameters/pass-object-deep/`, `pass-string-to-object/`,
+    `pass-null-to-object/` (live preview, checked 2026-08-20)
+
+[C-E03-325] **`legacyObject` is `object` with every scalar leaf stringified.** The *same* deep value
+bound to both types differs leaf by leaf: `3` becomes `"3"`, `true` becomes `"true"`, the sequence
+`[1, "two"]` becomes `["1","two"]`; a null leaf is `""` in both. Undocumented on every page, and the
+only place in the system where the reader's types are deliberately discarded.
+  — `research/experiments/E03-parameters/legacyobject-deep/` (live preview, checked 2026-08-20)
+
+[C-E03-326] **`stringList` binds a sequence of strings, and its rejections are quoted where the other
+list types' are not.** A bare scalar is rejected `The 'p' parameter value 'a' is not a valid
+StringList.` — with the value quoted — while a scalar bound to `stepList` gets the value-less form
+(C-E03-327). Membership is checked **per item**, at the item's own position.
+  — `research/experiments/E03-parameters/pass-stringlist-values/`, `pass-stringlist-scalar/`,
+    `pass-stringlist-invalid/` (live preview, checked 2026-08-20) —
+    `"(Line: 5, Col: 5): The 'p' parameter value 'zzz' is not a valid value."`
+
+[C-E03-327] **The structural types are schema-validated at binding time, and a shape mismatch takes
+the value-less sentence.** A scalar bound to `stepList` returns *two* sentences —
+`The 'p' parameter is not a valid StepList.` and `Unexpected value 'nope'` — and a mapping with no
+known step keyword bound to `step` returns `The 'p' parameter is not a valid Step.` plus
+`Unexpected value 'notAStep'`. A mapping bound to a scalar type takes the same value-less form
+(`The 'p' parameter is not a valid String.`), because there is no single token to quote.
+  — `research/experiments/E03-parameters/pass-steplist-scalar/`, `pass-step-invalid-shape/`,
+    `pass-object-to-string/` (live preview, checked 2026-08-20)
+
+[C-E03-328] **A bound `stepList` is already normalized.** The two-step probe comes back as
+`task: CmdLine@2` with `inputs.script` and `task: Bash@3` with `inputs.targetType`/`script` — the
+shortcut→task rewrite has already run by the time a template reads the parameter, so a binder must
+not run it a second time.
+  — `research/experiments/E03-parameters/pass-steplist-valid/` (live preview, checked 2026-08-20)
+
+### `values:`
+
+[C-E03-311] **A value outside `values:` is rejected `The '<name>' parameter value '<text>' is not a
+valid value.`**, whether it arrives as a default, as an argument, or at queue time.
+  — `research/experiments/E03-parameters/default-not-in-values/`, `pass-not-in-values/`,
+    `runtime-not-in-values/` (live preview, checked 2026-08-20)
+
+[C-E03-314] **The membership test is case-sensitive and runs *after* coercion.** `ALPHA` against
+`values: [alpha]` is rejected, while a `number` restricted to `[1, 2]` accepts the *string* `'2'` —
+which is only possible if the string became the number 2 before the comparison. A `values:` list on
+a type that cannot carry one (`object`) is silently ignored rather than rejected.
+  — `research/experiments/E03-parameters/values-case/`, `values-number-coerced/`,
+    `values-on-object/` (live preview, checked 2026-08-20)
+
+### Arguments and scope
+
+[C-E03-318] **An argument the callee never declared is rejected `Unexpected parameter '<name>'` — but
+only if the callee declares a `parameters:` block at all.** A template with *no* `parameters:` block
+accepts any argument silently. The asymmetry is measured, not a courtesy.
+  — `research/experiments/E03-parameters/pass-extra-parameter/`, `pass-extra-to-none/` (live
+    preview, checked 2026-08-20)
+
+[C-E03-320] **Argument values are ordinary expression slots evaluated in the *caller's* frame.**
+`${{ parameters.outer }}` in an argument mapping resolves to the caller's parameter, while
+`${{ parameters.p }}` naming the *callee's* parameter is rejected `Key not found 'p'` — the callee's
+parameters do not exist yet when its arguments are evaluated.
+  — `research/experiments/E03-parameters/pass-expression/`,
+    `pass-expression-callee-param/` (live preview, checked 2026-08-20)
+
+[C-E03-319] **Each file gets its own `parameters` frame; the contexts do not merge.** A template that
+dumps `parameters` wholesale prints `{"p": "ok"}` — its own parameter alone — with no trace of the
+caller's `outer`. So binding replaces the context rather than layering onto it.
+  — `research/experiments/E03-parameters/pass-callee-scope/` (live preview, checked 2026-08-20)
+
+### Queue-time (runtime) parameters
+
+[C-E03-329] **Queue-time values are strings run through the same per-type conversion as YAML values,
+with one addition: a JSON string bound to an `object` parameter is parsed.** `"8"` binds the number
+8 to a `number` parameter exactly as YAML `'8'` does, `"true"` binds `true` to a `boolean`, and
+`{"a": 1}` binds the object `{"a": 1}` rather than the six-character string.
+  — `research/experiments/E03-parameters/runtime-override-number/`, `runtime-override-boolean/`,
+    `runtime-override-string/`, `runtime-override-object/` (live preview via the preview body's
+    `templateParameters`, checked 2026-08-20)
+
+[C-E03-331] **A queue-time value satisfies requiredness and is subject to `values:`.** A root
+parameter with no default expands when supplied only at queue time, and a queue-time value outside
+`values:` is rejected with C-E03-311's sentence — so the queue-time path runs the whole binding
+pipeline, not just the conversion.
+  — `research/experiments/E03-parameters/runtime-required/`, `runtime-not-in-values/` (live preview,
+    checked 2026-08-20)
+
+[C-E03-330] **An undeclared queue-time parameter is rejected `Unexpected parameter '<name>'` with no
+file position.** The sentence matches the argument-site one (C-E03-318) but arrives without the
+`/azure-pipelines.yml (Line: n, Col: m):` prefix every in-document rejection carries, because a
+queue-time value has no source location.
+  — `research/experiments/E03-parameters/runtime-undeclared/` (live preview, checked 2026-08-20)
 
 ---
 
