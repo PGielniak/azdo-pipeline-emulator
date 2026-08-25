@@ -251,13 +251,18 @@ because it bounds what the default path can do (2026-08-23, C-E03-408..413):** a
 *reads* its own `${{ parameters.* }}` cannot be inlined at all, because the splice drops the scope
 those references resolve in. Such a reference stays in the override and the service reads the
 **committed** file, so local edits to parameterized templates are not visible on the default path —
-a warning, not an error, and the boundary **E03-S06-T05** exists to decide about (docs/06 §5
-decision 54). Scope per task, none of it invented here:
+a warning, not an error. **Product answer (2026-08-25, E03-S06-T05; docs/06 §5 decision 66): this is
+a documented default-path limitation.** The tool does not silently switch expansion authority based
+on pipeline shape: commit the template to let the service see it, or explicitly choose
+`--offline-expand`, whose local result is labelled degraded because it can differ from the service.
+The same answer covers `extends:` targets and references inside a `parameters:` value. Bundle
+warnings carry that consequence and remedy into the generated README. Scope per task, none of it
+invented here:
 
 | Mechanic | Owner | Note |
 |---|---|---|
 | Detect `extends.template` and stage/job/step `- template:` references (incl. `@self`) in the raw DOM, with `file:line` | E03-S06-T01 | reference forms are §5's, above |
-| Resolve each `@self`/relative reference against the **local working tree** and inline it, recursing into nested references; report cycles | E03-S06-T02 | **measured 2026-08-23, and narrower than this row read:** a mechanical splice is equivalent only for a file that reads no `${{ parameters.* }}` (C-E03-408..413). One that does is HTTP 400 `Key not found` when the parent lacks the name and, when the parent *has* it, expands the **wrong value** at HTTP 200 — so those are refused and warned about. `extends:` and references inside a `parameters:` value are likewise reported, not inlined. See **E03-S06-T05**. |
+| Resolve each `@self`/relative reference against the **local working tree** and inline it, recursing into nested references; report cycles | E03-S06-T02 | **measured 2026-08-23, and narrower than this row read:** a mechanical splice is equivalent only for a file that reads no `${{ parameters.* }}` (C-E03-408..413). One that does is HTTP 400 `Key not found` when the parent lacks the name and, when the parent *has* it, expands the **wrong value** at HTTP 200 — so those are refused and warned about. `extends:` and references inside a `parameters:` value are likewise reported, not inlined. **Resolved 2026-08-25 (E03-S06-T05):** documented limitation on the service-backed path; commit, or explicitly select the degraded `--offline-expand` fallback. |
 | Pass `parameters:` / `templateParameters` through to the `preview` request — binding stays the service's | E03-S06-T03 | request shape C-E00-018 |
 | Cross-repo (`@other`) references: convert-time **diagnostic**, never a silent wrong expansion | E03-S06-T04 | v1 answer is "resolves against the committed repo; see E09" |
 | Write the exact (redacted) `yamlOverride` plus a `local path → inlined location` map and file hashes into the output | E03-S07-T01 | **done 2026-08-23:** `pipeline.bundled.yml` + `bundle.json`, now pinned in docs/04 §1. The map records the **skipped** references too, with the reason — that half is what separates "expanded from your working tree" from "expanded from what is committed". Hashes are of the **working-tree** content, pre-recursion, so an edit is attributable to the file the user edited. |

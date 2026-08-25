@@ -29,6 +29,7 @@ import { createHash } from 'node:crypto';
 import type { Diagnostic } from '../frontend/diagnostics.js';
 import type { MappingNode, PipelineNode, SourceRange } from '../frontend/parse.js';
 import { parsePipelineYaml } from '../frontend/parse.js';
+import type { ManifestWarning } from '../model/manifest.js';
 import type { ReferenceSite, TemplateReference } from './bundle.js';
 import { findTemplateReferences } from './bundle.js';
 import { directoryOf, joinReference, normalizeRepositoryPath } from './reference.js';
@@ -114,6 +115,14 @@ export interface BundleResult {
   readonly inlined: readonly InlinedFile[];
   readonly skipped: readonly SkippedReference[];
   readonly diagnostics: readonly Diagnostic[];
+  /**
+   * Warning diagnostics in the manifest shape consumed by the generated README.
+   *
+   * The hint is folded into the message because `ManifestWarning` deliberately has no separate
+   * remediation field. That keeps the user-facing consequence and remedy intact when E10 wires the
+   * bundle into `serializeManifest`, instead of leaving the README with only half the diagnostic.
+   */
+  readonly manifestWarnings: readonly ManifestWarning[];
 }
 
 /**
@@ -125,7 +134,23 @@ export function inlineTemplates(source: string, options: InlineOptions): BundleR
   const rootPath = options.rootPath ?? '/azure-pipelines.yml';
   const state: State = { read: options.read, inlined: [], skipped: [], diagnostics: [] };
   const yaml = inlineDocument(source, rootPath, [rootPath], state);
-  return { yaml, inlined: state.inlined, skipped: state.skipped, diagnostics: state.diagnostics };
+  const manifestWarnings = state.diagnostics
+    .filter((diagnostic) => diagnostic.severity === 'warning')
+    .map((diagnostic) => ({
+      code: diagnostic.code,
+      message:
+        diagnostic.hint === undefined
+          ? diagnostic.message
+          : `${diagnostic.message} ${diagnostic.hint}`,
+      location: { file: diagnostic.file, line: diagnostic.range.line },
+    }));
+  return {
+    yaml,
+    inlined: state.inlined,
+    skipped: state.skipped,
+    diagnostics: state.diagnostics,
+    manifestWarnings,
+  };
 }
 
 interface State {
@@ -221,10 +246,10 @@ function inlineDocument(
       state.diagnostics.push({
         severity: 'warning',
         code: INLINE_UNSUPPORTED_SITE,
-        message: `\`${reference.text}\` is referenced from \`${reference.site}\`, which the bundler does not inline; the service will read the committed file.`,
+        message: `\`${reference.text}\` is referenced from \`${reference.site}\`, which the mechanical bundler cannot inline. The default service-backed expansion will read the committed file, so working-tree edits are invisible.`,
         file,
         range: reference.range,
-        hint: 'Local edits to this template are not visible to the expansion. Commit them, or see E03-S06-T05.',
+        hint: 'Commit the template first, or explicitly use `--offline-expand` (degraded fallback). azdo-emu does not switch expansion authority automatically because the local fallback can differ from the service.',
       });
       continue;
     }
@@ -321,10 +346,10 @@ function inlineDocument(
       state.diagnostics.push({
         severity: 'warning',
         code: INLINE_USES_PARAMETERS,
-        message: `\`${target}\` reads \`\${{ parameters.* }}\`, so it cannot be inlined without binding; the service will read the committed file.`,
+        message: `\`${target}\` reads \`\${{ parameters.* }}\`, so it cannot be mechanically inlined without losing its template scope. The default service-backed expansion will read the committed file, so working-tree edits are invisible.`,
         file,
         range: reference.range,
-        hint: 'Local edits to this template are not visible to the expansion (C-E03-412). Commit them, or see E03-S06-T05.',
+        hint: 'Commit the template first, or explicitly use `--offline-expand` (degraded fallback). azdo-emu does not switch expansion authority automatically because the local fallback can differ from the service.',
       });
       continue;
     }

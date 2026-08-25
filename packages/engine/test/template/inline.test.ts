@@ -153,6 +153,20 @@ describe('inlineTemplates — the shapes it must refuse (C-E03-411/412/413)', ()
     expect(result.skipped[0]?.reason).toBe('uses-parameters');
     expect(result.diagnostics[0]?.code).toBe(INLINE_USES_PARAMETERS);
     expect(result.diagnostics[0]?.severity).toBe('warning');
+    expect(result.diagnostics[0]?.message).toBe(
+      '`/t/param.yml` reads `${{ parameters.* }}`, so it cannot be mechanically inlined without losing its template scope. The default service-backed expansion will read the committed file, so working-tree edits are invisible.',
+    );
+    expect(result.diagnostics[0]?.hint).toBe(
+      'Commit the template first, or explicitly use `--offline-expand` (degraded fallback). azdo-emu does not switch expansion authority automatically because the local fallback can differ from the service.',
+    );
+    expect(result.manifestWarnings).toStrictEqual([
+      {
+        code: INLINE_USES_PARAMETERS,
+        location: { file: '/azure-pipelines.yml', line: 2 },
+        message:
+          '`/t/param.yml` reads `${{ parameters.* }}`, so it cannot be mechanically inlined without losing its template scope. The default service-backed expansion will read the committed file, so working-tree edits are invisible. Commit the template first, or explicitly use `--offline-expand` (degraded fallback). azdo-emu does not switch expansion authority automatically because the local fallback can differ from the service.',
+      },
+    ]);
   });
 
   it('inlines a template that declares parameters but never reads one (C-E03-410)', () => {
@@ -215,6 +229,11 @@ describe('inlineTemplates — the shapes it must refuse (C-E03-411/412/413)', ()
     expect(result.yaml).toBe(source);
     expect(result.skipped[0]?.reason).toBe('unsupported-site');
     expect(result.diagnostics[0]?.code).toBe(INLINE_UNSUPPORTED_SITE);
+    expect(result.diagnostics[0]?.message).toContain(
+      'The default service-backed expansion will read the committed file, so working-tree edits are invisible.',
+    );
+    expect(result.diagnostics[0]?.hint).toContain('explicitly use `--offline-expand`');
+    expect(result.diagnostics[0]?.hint).not.toContain('E03-S06-T05');
   });
 
   it('does not inline a reference inside a parameters value', () => {
@@ -223,6 +242,11 @@ describe('inlineTemplates — the shapes it must refuse (C-E03-411/412/413)', ()
       { '/t/j.yml': 'jobs:\n- job: A\n', '/t/x.yml': 'steps:\n- script: echo x\n' },
     );
     expect(result.skipped.map((entry) => entry.reason)).toContain('unsupported-site');
+    const diagnostic = result.diagnostics.find(
+      (entry) => entry.code === INLINE_UNSUPPORTED_SITE && entry.message.includes('`parameters`'),
+    );
+    expect(diagnostic?.message).toContain('working-tree edits are invisible');
+    expect(diagnostic?.hint).toContain('explicitly use `--offline-expand`');
   });
 });
 
