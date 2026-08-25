@@ -24,8 +24,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildPipeline,
+  inlineTemplates,
   parsePipelineYaml,
   serializeManifest,
+  treeReader,
   type Diagnostic,
   type ManifestExpansion,
   type Pipeline,
@@ -308,6 +310,22 @@ describe('rankWarnings', () => {
     expect(generateReadme(manifest, plan)).toContain(
       'No warnings: every step converted to a faithful local equivalent.',
     );
+  });
+
+  it('preserves the parameterized-template limitation and remedy in the generated README', () => {
+    const bundled = inlineTemplates('steps:\n- template: /t/param.yml\n', {
+      read: treeReader({
+        '/t/param.yml':
+          'parameters:\n- name: greeting\n  default: hi\nsteps:\n- script: echo ${{ parameters.greeting }}\n',
+      }),
+    });
+    const { plan, manifest } = conversion(MINIMAL);
+    const readme = generateReadme({ ...manifest, warnings: bundled.manifestWarnings }, plan);
+
+    expect(readme).toContain('working-tree edits are invisible');
+    expect(readme).toContain('explicitly use `--offline-expand` (degraded fallback)');
+    expect(readme).toContain('does not switch expansion authority automatically');
+    expect(readme).not.toContain('E03-S06-T05');
   });
 });
 
