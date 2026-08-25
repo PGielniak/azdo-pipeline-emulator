@@ -957,14 +957,24 @@ scenario — and `@self` needs no `resources:` block to be legal.
   — `research/experiments/E03-references/cross-back-to-self/`, `self-alias-root/` (live preview,
     checked 2026-08-20)
 
-[C-E03-196] **Repositories are resolved once, at pipeline start, and pinned for the whole
-expansion.** Every not-found sentence in the corpus names one `version <40-hex>` per repository, and
-the same commit appears across probes in a run; the aliased repository carries its own, different
-commit. This is why a repository resource can carry a pinned commit rather than a ref to be
-re-resolved per reference.
+[C-E03-196] **Each repository resource is pinned to one commit per run, and the two repositories in
+an expansion carry different commits.** The schema page documents the pinning directly: a repository
+resource's metadata "is available to all jobs in the form of runtime variables", among them
+`resources.repositories.<Alias>.version` — one version per resource per run. The transcripts show
+the second half: within one survey the definition's repository resolves to `version da8a3041…` while
+the aliased `azdo-emu-templates` resolves to `version 2cc1a2e5…`, so a reference's commit is a
+property of the repository it names, not of the expansion as a whole. This is what lets a repository
+resource carry a pinned commit rather than a ref to be re-resolved per reference.
+  — https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/resources-repositories-repository
+    (deep-verified 2026-08-25, "Variables") — "In each run, the metadata for a repository resource is
+    available to all jobs in the form of runtime variables", listing
+    `resources.repositories.<Alias>.version`
   — `research/experiments/E03-references/missing-file/`, `cross-missing-file/` (live preview,
-    checked 2026-08-20) — `version da8a3041…` for the definition's repository and
-    `version 2cc1a2e5…` for `azdo-emu-templates`, in the same survey
+    checked 2026-08-20)
+  — **Not measured:** *when* within a run the resolution happens. `reference.ts`'s header reads
+    "once, at pipeline start", which is a design reading of per-run pinning plus the fact that a
+    synchronous `read` is only sound if every repository is already fetched by expansion time — not
+    something these probes establish. Recorded so a reader following the citation is not misled.
 
 [C-E03-198] **A repository resource that omits `ref:` defaults to `refs/heads/main`, and an explicit
 `ref:` is accepted.** The documented default, confirmed against the service.
@@ -1011,8 +1021,11 @@ project `<project-id>` could not be retrieved. Verify the name and credentials b
 permissions." — a retrieval/permissions failure that names the project, where C-E03-211 names only
 the alias. A converter that reported one sentence for both would lose the distinction between "you
 did not declare it" and "we could not read it".
-  — `research/experiments/E03-references/alias-undeclared-repo/` (live preview, checked 2026-08-20;
-    project GUID redacted here, present in the transcript)
+  — `research/experiments/E03-references/alias-undeclared-repo/` (live preview, checked 2026-08-20)
+    — the project GUID is elided in the sentence above but kept in the transcript, as it is in
+    `research/experiments/E02-resources/real-run.md` and `packages/engine/test/expr/resources.test.ts`:
+    the redaction rule (`research/oracle-setup.md`) is about the **org name**, which is redacted
+    everywhere in this corpus.
 
 ### Crossing a repository boundary
 
