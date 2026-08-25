@@ -51,7 +51,7 @@ function serviceFetch(finalYaml = SERVICE_YAML) {
   );
 }
 
-/** Stand-in for the retained local engine (E03); the real binding lands with E03-S04-T02. */
+/** Stand-in for the retained local engine; the real binding is the convert wiring's (E10-S02-T01). */
 const offlineExpander: OfflineExpander = () => ({ finalYaml: OFFLINE_YAML });
 
 describe('resolveExpansion — default (service) path', () => {
@@ -221,7 +221,7 @@ describe('resolveExpansion — `--offline-expand` fallback', () => {
     ).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('refuses with a pointer to E03-S04-T02 when no local expander is bound', async () => {
+  it('refuses, pointing at the wiring task, when no local expander is bound', async () => {
     const cacheDir = await makeTempDir();
     await expect(
       resolveExpansion(REQUEST, { cacheDir, config: CONFIG, offlineExpand: true }),
