@@ -9,7 +9,7 @@ setup() {
   AZDO_STATE_DIR="$(azdo_emu_scratch_dir state)"
   AZDO_VAR_SCOPE='pipeline'
   export AZDO_STATE_DIR AZDO_VAR_SCOPE
-  unset AZDO_OUTPUT_DIR AZDO_STEP_NAME
+  unset AZDO_OUTPUT_DIR AZDO_STEP_NAME AZDO_MANIFEST_ENV AZDO_ENV_ALIASES
 }
 
 cond_for_later_task() {
@@ -230,6 +230,49 @@ ENV
   [[ "$output" == secret=true$'\n'* ]]
 }
 
+@test ".env aliases store generated names under their exact variable spelling (decision 67)" {
+  local env_file="$BATS_TEST_TMPDIR/aliases.env"
+  cat >"$env_file" <<'ENV'
+BUILD_SOURCEBRANCH=refs/heads/main
+VARIABLE_WITH_SPACE=spaced
+SYSTEM_ACCESSTOKEN=secret-token
+USER_ADDED=literal
+ENV
+  AZDO_MANIFEST_ENV=('SYSTEM_ACCESSTOKEN=true')
+  AZDO_ENV_ALIASES=(
+    'BUILD_SOURCEBRANCH=Build.SourceBranch'
+    'VARIABLE_WITH_SPACE=Variable With Space'
+    'SYSTEM_ACCESSTOKEN=System.AccessToken'
+  )
+
+  azdo_env_load "$env_file"
+
+  [ "$(azdo_var 'Build.SourceBranch')" = 'refs/heads/main' ]
+  [ "$(azdo_var 'Variable With Space')" = spaced ]
+  [ "$(azdo_var 'System.AccessToken')" = secret-token ]
+  [ "$(azdo_var USER_ADDED)" = literal ]
+  # Generated aliases do not also write a guessed or env-spelled key.
+  [ -z "$(azdo_var BUILD_SOURCEBRANCH)" ]
+  [ -z "$(azdo_var VARIABLE_WITH_SPACE)" ]
+  run -0 azdo_var_meta 'System.AccessToken'
+  [[ "$output" == secret=true$'\n'* ]]
+  [[ "$output" == *$'name=System.AccessToken' ]]
+}
+
+@test "a .env run-identity alias is readable through its dotted name from a step (decision 67)" {
+  local env_file="$BATS_TEST_TMPDIR/run-identity.env"
+  local source_file="$BATS_TEST_TMPDIR/read-run-identity.sh"
+  printf '%s\n' 'BUILD_SOURCEBRANCH=refs/heads/main' >"$env_file"
+  printf '%s\n' 'printf "branch=%s\\n" "$(Build.SourceBranch)"' >"$source_file"
+  AZDO_ENV_ALIASES=('BUILD_SOURCEBRANCH=Build.SourceBranch')
+
+  azdo_env_load "$env_file"
+  prepare_run_step
+  run -0 run_test_step reads-dotted-env "$source_file" 10
+
+  [ "$output" = 'branch=refs/heads/main' ]
+}
+
 @test ".env loader fails atomically on Bash syntax errors" {
   local env_file="$BATS_TEST_TMPDIR/invalid.env"
   printf '%s\n' 'BEFORE=not-written' "BROKEN='unterminated" >"$env_file"
@@ -251,6 +294,15 @@ ENV
   [[ "$output" == *'duplicate manifest environment name: value'* ]]
   run -0 azdo_var VALUE
   [ -z "$output" ]
+
+  AZDO_MANIFEST_ENV=()
+  AZDO_ENV_ALIASES=('VALUE=One.Name' 'value=Other_Name')
+  run ! azdo_env_load "$env_file"
+  [[ "$output" == *'duplicate environment alias name: value'* ]]
+
+  AZDO_ENV_ALIASES=('NOT-AN-ENV-NAME=Valid.Variable')
+  run ! azdo_env_load "$env_file"
+  [[ "$output" == *'invalid AZDO_ENV_ALIASES entry'* ]]
 }
 
 @test "environment materialization transforms public names and excludes secrets (C-E06-007..009)" {
@@ -2840,18 +2892,18 @@ setup_rev() {
   [[ "$output" == *'AZDO_PERSIST_DIR is not set'* ]]
 }
 
-@test "azdo_seed_branch_name derives the short name from either ref spelling (C-E05-005)" {
+@test "azdo_seed_branch_name derives the short name from the dotted source ref (C-E05-005)" {
   azdo_var_set 'Build.SourceBranch' 'refs/heads/release/1.2'
   run -0 azdo_seed_branch_name
   run -0 azdo_var 'Build.SourceBranchName'
   [ "$output" = '1.2' ]
 }
 
-@test "azdo_seed_branch_name falls back to the .env spelling BUILD_SOURCEBRANCH (Δ C-E05-026)" {
+@test "azdo_seed_branch_name does not retain the redundant env-spelling fallback (decision 67)" {
   azdo_var_set 'BUILD_SOURCEBRANCH' 'refs/heads/main'
   run -0 azdo_seed_branch_name
   run -0 azdo_var 'Build.SourceBranchName'
-  [ "$output" = 'main' ]
+  [ "$output" = '' ]
 }
 
 @test "azdo_seed_branch_name leaves an already-seeded name alone and tolerates no ref at all" {

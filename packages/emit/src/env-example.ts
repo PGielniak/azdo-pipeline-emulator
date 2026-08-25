@@ -17,10 +17,17 @@ import {
   type Pipeline,
 } from '@azdo-emu/engine';
 
-/** The generated `.env.example` plus the manifest `env` entries (secret flags for masking). */
+/** One exact `.env` spelling → variable-store name mapping emitted beside `run.sh`. */
+export interface EnvAlias {
+  readonly name: string;
+  readonly variable: string;
+}
+
+/** The generated `.env.example` plus its masking metadata and exact variable-name aliases. */
 export interface EnvExampleResult {
   readonly content: string;
   readonly manifestEnv: readonly ManifestEnvEntry[];
+  readonly envAliases: readonly EnvAlias[];
 }
 
 const SECTION_RULE = '# ─────────────────────────────────────────────────────────────────';
@@ -35,35 +42,62 @@ function provenanceComment(variable: ClassifiedVariable): string {
 }
 
 /**
- * The `.env` spelling of a variable name: dots and spaces become `_`, then upper-cased — the same
- * transform the runtime applies (`azdo__env_name`). For a plain name this is just upper-casing.
+ * A Bash-assignment-safe base spelling. This is deliberately stricter than the agent's public-env
+ * transform (`azdo__env_name` preserves hyphens, C-E06-011/012): `.env` is sourced as Bash and
+ * cannot carry those names. The exact original survives in `EnvAlias` (decision 67).
  */
 function envName(name: string): string {
-  return name.replaceAll('.', '_').replaceAll(' ', '_').toUpperCase();
+  const safe = name.replaceAll(/[^a-zA-Z0-9_]/g, '_').toUpperCase();
+  return /^[a-zA-Z_]/.test(safe) ? safe : `AZDO_${safe}`;
 }
 
-/** One `.env` entry line plus its provenance comment(s). */
-function entry(name: string, comments: readonly string[], value = ''): string[] {
-  return [...comments, `${envName(name)}=${value}`];
+/** Allocate one deterministic env spelling, reusing an existing alias for the same variable. */
+function aliasFor(variable: string, aliases: EnvAlias[]): string {
+  const existing = aliases.find((alias) => alias.variable.toLowerCase() === variable.toLowerCase());
+  if (existing !== undefined) return existing.name;
+
+  const base = envName(variable);
+  const used = new Set(aliases.map((alias) => alias.name.toLowerCase()));
+  let name = base;
+  let suffix = 2;
+  while (used.has(name.toLowerCase())) {
+    name = `${base}__${suffix}`;
+    suffix += 1;
+  }
+  aliases.push({ name, variable });
+  return name;
+}
+
+/** One `.env` entry plus the exact variable name that value must enter the runtime store under. */
+function entry(
+  variable: string,
+  comments: readonly string[],
+  aliases: EnvAlias[],
+  value = '',
+): string[] {
+  const name = aliasFor(variable, aliases);
+  return [...comments, `${name}=${value}`];
 }
 
 export function synthesizeEnvExample(pipeline: Pipeline): EnvExampleResult {
   const classification = classifyVariables(pipeline, { predefined: predefinedNames() });
   const sections: string[][] = [];
   const manifestEnv: ManifestEnvEntry[] = [];
+  const envAliases: EnvAlias[] = [];
 
   // 1. Run identity overrides — optional, for simulating triggers (docs/04 §10).
   const runIdentity: string[] = [
     SECTION_RULE,
     '# 1. Run identity overrides (optional — simulate a trigger)',
   ];
-  for (const name of [
-    'BUILD_SOURCEBRANCH',
-    'BUILD_REASON',
-    'SYSTEM_PULLREQUEST_SOURCEBRANCH',
-    'SYSTEM_PULLREQUEST_TARGETBRANCH',
+  for (const variable of [
+    'Build.SourceBranch',
+    'Build.Reason',
+    'System.PullRequest.SourceBranch',
+    'System.PullRequest.TargetBranch',
   ]) {
-    runIdentity.push(...entry(name, [`# ${name} — e.g. refs/heads/main`]));
+    const name = aliasFor(variable, envAliases);
+    runIdentity.push(...entry(variable, [`# ${name} — e.g. refs/heads/main`], envAliases));
   }
   sections.push(runIdentity);
 
@@ -74,7 +108,7 @@ export function synthesizeEnvExample(pipeline: Pipeline): EnvExampleResult {
     '# Mint an org-scoped PAT, or use device-code OAuth against the Entra resource',
     '# 499b84ac-1321-427f-aa17-267ca6975798 (C-E00-011).',
   ];
-  accessToken.push('SYSTEM_ACCESSTOKEN=');
+  accessToken.push(...entry('System.AccessToken', [], envAliases));
   sections.push(accessToken);
   manifestEnv.push({ name: 'SYSTEM_ACCESSTOKEN', secret: true, origin: 'ADO REST / feeds access' });
 
@@ -88,7 +122,7 @@ export function synthesizeEnvExample(pipeline: Pipeline): EnvExampleResult {
       '# 3. Pipeline variables (unresolved — fill in a value)',
     ];
     for (const variable of envRequired) {
-      section.push(...entry(variable.name, [provenanceComment(variable)]));
+      section.push(...entry(variable.name, [provenanceComment(variable)], envAliases));
     }
     sections.push(section);
   }
@@ -104,7 +138,7 @@ export function synthesizeEnvExample(pipeline: Pipeline): EnvExampleResult {
     ];
     for (const variable of groupMembers) {
       const groups = variable.groups?.map((g) => `'${g}'`).join(', ') ?? 'unknown group';
-      section.push(...entry(variable.name, [`# from group ${groups}`]));
+      section.push(...entry(variable.name, [`# from group ${groups}`], envAliases));
     }
     sections.push(section);
   }
@@ -114,7 +148,7 @@ export function synthesizeEnvExample(pipeline: Pipeline): EnvExampleResult {
   if (parameters.length > 0) {
     const section: string[] = [SECTION_RULE, '# 5. Runtime parameters (prefilled with defaults)'];
     for (const [name, defaultValue] of parameters) {
-      section.push(...entry(name, [`# runtime parameter '${name}'`], defaultValue));
+      section.push(...entry(name, [`# runtime parameter '${name}'`], envAliases, defaultValue));
     }
     sections.push(section);
   }
@@ -134,5 +168,5 @@ export function synthesizeEnvExample(pipeline: Pipeline): EnvExampleResult {
   ];
 
   const content = [...header, ...sections.flatMap((s) => [...s, ''])].join('\n');
-  return { content, manifestEnv };
+  return { content, manifestEnv, envAliases };
 }

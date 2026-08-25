@@ -237,7 +237,8 @@ export function emitRunNumberInit(
     '# Run number (`name:`) — evaluated once per run, before the first stage (E05-S03-T01).',
     'export AZDO_PERSIST_DIR="$WORK_DIR/.state"',
     // `Build.SourceBranchName` is otherwise seeded by `checkout`, which has not run yet; the format
-    // may read it (C-E05-005), and `.env` supplies `BUILD_SOURCEBRANCH` as the full ref.
+    // may read it (C-E05-005), and decision 67 maps `.env`'s `BUILD_SOURCEBRANCH` spelling back to
+    // the exact `Build.SourceBranch` store name before this runs.
     'azdo_seed_branch_name',
     `azdo__run_number_head=(${before.join(' ')})`,
   ];

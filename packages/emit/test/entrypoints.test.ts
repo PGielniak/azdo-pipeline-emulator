@@ -109,6 +109,8 @@ describe('emitEntrypoints', () => {
       'stages/020-report/jobs/010-report/run-job.sh',
       'stages/020-report/run-stage.sh',
     ]);
+    expect(files.get('run.sh')).toContain("'BUILD_SOURCEBRANCH=Build.SourceBranch'");
+    expect(files.get('run.sh')).toContain("'SYSTEM_ACCESSTOKEN=System.AccessToken'");
     expect(files.get('run.sh')).toMatchSnapshot();
     expect(files.get('stages/010-build/conditions.sh')).toMatchSnapshot();
     expect(files.get('stages/010-build/jobs/010-compile-and-test/run-job.sh')).toMatchSnapshot();

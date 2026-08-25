@@ -26,6 +26,7 @@ import {
   type Stage,
 } from '@azdo-emu/engine';
 
+import { synthesizeEnvExample } from './env-example.js';
 import { DEFAULT_RUN_NUMBER_FORMAT, emitRunNumberInit } from './run-number.js';
 import { slugify, type Scaffold, type ScaffoldJob, type ScaffoldStage } from './scaffold.js';
 import { defaultFidelity } from './step.js';
@@ -291,6 +292,7 @@ export function emitRunScript(
     pipeline.name ?? DEFAULT_RUN_NUMBER_FORMAT,
     pipeline.provenance.file,
   );
+  const envAliases = synthesizeEnvExample(pipeline).envAliases;
   if (warnings !== undefined) warnings.push(...runNumber.warnings);
   const lines: string[] = [
     '#!/usr/bin/env bash',
@@ -303,6 +305,12 @@ export function emitRunScript(
     '# shellcheck disable=SC1091',
     'source "$AZDO_EMU_LIB/runtime.sh"',
     'source "$AZDO_EMU_LIB/expr.sh"',
+    '',
+    '# Exact `.env` spelling → variable-store name map (decision 67).',
+    '# shellcheck disable=SC2034 # consumed indirectly by azdo_env_load in runtime.sh',
+    'AZDO_ENV_ALIASES=(',
+    ...envAliases.map(({ name, variable }) => `  ${shQuote(`${name}=${variable}`)}`),
+    ')',
     '',
     '# Flags: --list --env-file FILE --resume',
     'list_only=false resume=false env_file=""',
