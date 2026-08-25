@@ -115,8 +115,12 @@ run_result_step() {
   [ "$output" = $'secret=false\noutput=false\nreadonly=false\nname=Build.Note' ]
 }
 
-@test "a job scope copies parent values without leaking its later writes back" {
-  azdo_var_set 'release' 'pipeline-value'
+@test "a job scope inherits .env values and shadows them without leaking writes back (C-E05-017)" {
+  local env_file="$BATS_TEST_TMPDIR/pipeline-scope.env"
+  printf '%s\n' 'release=pipeline-value' >"$env_file"
+  AZDO_MANIFEST_ENV=('release=true')
+  azdo_env_load "$env_file"
+  azdo_var_set 'locked' 'pipeline-readonly' false false true pipeline
   azdo_var_scope_copy pipeline build
   azdo_var_set 'release' 'job-value' false false false build
 
@@ -124,6 +128,10 @@ run_result_step() {
   [ "$output" = 'pipeline-value' ]
   run -0 azdo_var release build
   [ "$output" = 'job-value' ]
+  run -0 azdo_var_meta release build
+  [[ "$output" == secret=true$'\n'* ]]
+  run -0 azdo_var_meta locked build
+  [[ "$output" == *$'readonly=true\n'* ]]
 }
 
 @test "a read-only overwrite errors and retains the original value" {

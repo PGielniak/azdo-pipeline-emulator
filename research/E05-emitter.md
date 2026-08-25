@@ -117,6 +117,20 @@ Source, deep-verified 2026-08-25:
   — "An internal, immutable ID, also called the `Run ID`, that's unique in the Azure DevOps
     organization."
 
+[C-E05-017] A root-level YAML variable is available to every job, while a job-level variable with
+  the same name overrides the stage- and root-level values for that job.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/variables (checked 2026-08-25)
+  — "At the root level, to make it available to all jobs in the pipeline." / "Variables at the job
+    level override variables at the root and stage level."
+
+### E05-S01-T05 grounding composition
+
+C-E04-082/083 establish the full pipeline → stage → job precedence and isolation rule, including
+the fact that preview expansion leaves the three blocks for the local runtime to layer. C-E05-017
+re-checks the two parts this repair directly encodes: root values reach all jobs, and a job value
+shadows its inherited value. The eager metadata-preserving store copy is a local mechanism recorded
+in docs/06 §5 decision 68; it introduces no additional Azure behavior or oracle requirement.
+
 ### Local deltas (documented deviations, not measured behavior)
 
 The emulator has no server, no organization and no queue, so several things cannot be reproduced

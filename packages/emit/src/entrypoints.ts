@@ -201,10 +201,10 @@ export function emitRunJob(job: ScaffoldJob, stage: ScaffoldStage): string {
     'mkdir -p "$AZDO_LOG_DIR" "$AZDO_RESULT_DIR" "$AZDO_OUTPUT_DIR"',
     '',
     'if [[ -z "$(azdo_var System.DefaultWorkingDirectory)" ]]; then',
+    // Root variables are available to every job, after which job-local writes shadow them
+    // (C-E04-082/083, C-E05-017). The copy preserves value bytes and metadata, unlike an env bridge.
+    '  azdo_var_scope_copy pipeline "$AZDO_VAR_SCOPE"',
     ...RUN_DIR_VARS.map(([name, value]) => `  azdo_var_set ${shQuote(name)} ${value}`),
-    // The run identity is computed once per run by `run.sh` and published through the environment;
-    // the store has no scope chain, so every job scope seeds its own copy (E05-S03-T01, decision 65).
-    '  azdo_run_identity_seed "${AZDO_BUILD_NUMBER:-}" "${AZDO_BUILD_ID:-}"',
     'fi',
     '',
   ];
@@ -345,7 +345,7 @@ export function emitRunScript(
     '',
     // The run number is rendered here and nowhere earlier: the format may read `.env`-supplied and
     // user-defined variables (C-E05-012), and `Build.BuildNumber` has to exist before the first
-    // step reads it.
+    // step reads it. Every job inherits the pipeline store before it starts (C-E05-017).
     ...runNumber.lines,
   ];
   for (const stageId of stageOrder) {
