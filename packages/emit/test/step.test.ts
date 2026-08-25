@@ -19,7 +19,13 @@ import { describe, expect, it } from 'vitest';
 
 import { buildPipeline, parsePipelineYaml, type Step } from '@azdo-emu/engine';
 import { scaffold } from '../src/scaffold.js';
-import { defaultFidelity, emitStepScript, hasMacro, nativeScriptKind } from '../src/step.js';
+import {
+  defaultFidelity,
+  emitStepScript,
+  hasMacro,
+  isNativeScript,
+  nativeScriptKind,
+} from '../src/step.js';
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
 // CI installs a system shellcheck and exports it as `$SHELLCHECK` (see the workflow); locally it
@@ -73,6 +79,15 @@ describe('defaultFidelity', () => {
     expect(defaultFidelity(stepOf('task: Bash@3'))).toBe('exact');
     expect(defaultFidelity(stepOf('task: PowerShell@2'))).toBe('degraded');
     expect(defaultFidelity(stepOf('task: PublishTestResults@2'))).toBe('stub');
+  });
+});
+
+describe('isNativeScript', () => {
+  it('is true only for the four native kinds', () => {
+    expect(isNativeScript(stepOf('task: CmdLine@2'))).toBe(true);
+    expect(isNativeScript(stepOf('task: Bash@3'))).toBe(true);
+    expect(isNativeScript(stepOf('task: PowerShell@2'))).toBe(true);
+    expect(isNativeScript(stepOf('task: PublishTestResults@2'))).toBe(false);
   });
 });
 
@@ -212,6 +227,24 @@ describe('emitStepScript', () => {
     expect(output).toContain(
       "# condition: eq(variables.build, '1')      continueOnError: true      timeout: 5 min",
     );
+  });
+
+  it('renders a step warning into the header', () => {
+    const { step } = emitOne(`stages:
+- stage: A
+  jobs:
+  - job: build
+    steps:
+    - task: CmdLine@2
+      displayName: Build
+      inputs:
+        script: echo hi
+`);
+    const output = emitStepScript(
+      { ...step, warnings: ['checkout needs a self repository'] },
+      '030',
+    );
+    expect(output).toContain('# warning: checkout needs a self repository');
   });
 });
 
