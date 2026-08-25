@@ -191,6 +191,19 @@ describe('generateReadme — structure', () => {
     expect(generateReadme(manifest, plan)).toContain('- depends on: `A`');
   });
 
+  it('handles a pipeline with no stages at all', () => {
+    // `convert` rejects this shape (`model-empty-pipeline` is an error diagnostic), so the build is
+    // done directly rather than through `conversion()`. The README still has to render it: the
+    // emitter is a library, and a caller holding an empty model deserves a page, not a crash.
+    const yaml = 'variables:\n  a: b\n';
+    const { pipeline, diagnostics } = build(yaml);
+    expect(diagnostics.map((d) => d.code)).toContain('model-empty-pipeline');
+    const plan = scaffold(pipeline!);
+    expect(plan.stages).toEqual([]);
+    const manifest = serializeManifest(pipeline!, { expansion: serviceExpansion(yaml) });
+    expect(generateReadme(manifest, plan)).toContain('This pipeline has no stages.');
+  });
+
   it('lists the baked parameters the expansion was performed with', () => {
     const { plan, manifest } = conversion(`parameters:
   - name: deployEnv
