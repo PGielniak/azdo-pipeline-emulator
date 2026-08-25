@@ -16,8 +16,9 @@
  *
  * The local engine is reached through the {@link OfflineExpander} port rather than an import: the
  * direction `fetch → engine` would be wrong, and the port keeps the default binding a decision of
- * whoever wires `convert` (E10-S02-T01). Its default implementation refuses — a whole-document
- * offline expander does not exist yet (E03-S04-T02 owns it).
+ * whoever wires `convert` (E10-S02-T01). There is no default implementation: an unbound port
+ * refuses. Since E03-S04-T02 the engine side exists — `expandDocument` in
+ * `packages/engine/src/template/expand.ts` — so what is left is the wiring, not the expander.
  */
 
 import {
@@ -58,8 +59,8 @@ export class OfflineExpansionUnavailableError extends Error {
   constructor() {
     super(
       'offline expansion is not available: no local expander is bound. ' +
-        'Whole-document offline expansion lands in E03-S04-T02; until then use the service ' +
-        'expansion (drop --offline-expand).',
+        "The engine's `expandDocument` provides one (E03-S04-T02); binding it to this port is " +
+        'the convert wiring (E10-S02-T01). Until then, drop --offline-expand and use the service.',
     );
     this.name = 'OfflineExpansionUnavailableError';
   }

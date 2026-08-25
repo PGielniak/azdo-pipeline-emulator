@@ -17,7 +17,7 @@ time the IDs were load-bearing in code comments and test names) is the reason th
 | `C-E03-175..194` | E03-S01-T05 scalar interpolation | this file | 175–194 used — recorded 2026-08-25 from the 34 committed probes (`research/experiments/E03-interpolation/`, 27 pairs + 7 rejections), plus `E03-insert/value-position/` for 194 |
 | `C-E03-195..229` | E03-S02 template resolution & parameters | this file | 195–218 used — recorded 2026-08-25 from the 34 committed probes (`research/experiments/E03-references/`, 21 pairs + 13 rejections, two-repository fixture at `fixtures/oracle/references/repos/`); `C-E03-204` was recorded earlier by E03-S02-T05. 219..229 free — E03-S02-T02 (typed parameter binding) has its own block at 300. |
 | `C-E03-230..249` | E03-S03 compile-time variable visibility | this file | free |
-| `C-E03-250..279` | E03-S04 limits, emitter, strict validation | this file | free |
+| `C-E03-250..279` | E03-S04 limits, emitter, strict validation | this file | 250–253 used (E03-S04-T02, recorded 2026-08-25 from the ten corpus pairs); 254–279 free |
 | `C-E03-280..299` | E03-S05-T02 `preview-diff` | this file | free |
 | `C-E03-300..339` | E03-S02-T02 typed parameter binding | this file | 300–333 used — recorded 2026-08-25 from the 88 committed probes (`research/experiments/E03-parameters/`, 42 pairs + 46 rejections); 334–339 free |
 | `C-E03-400..429` | **E03-S06 local bundler** | this file | 400–407 used (S06-T01), 408–413 (S06-T02), 414–418 (S06-T03), 419–420 (S06-T04) |
@@ -1362,6 +1362,45 @@ file position.** The sentence matches the argument-site one (C-E03-318) but arri
 `/azure-pipelines.yml (Line: n, Col: m):` prefix every in-document rejection carries, because a
 queue-time value has no source location.
   — `research/experiments/E03-parameters/runtime-undeclared/` (live preview, checked 2026-08-20)
+
+---
+
+## E03-S04-T02 — expanded-YAML serialization (`C-E03-250..253`)
+
+Evidence: the ten committed corpus pairs (`fixtures/oracle/*.final.yml`). No new probe was run and
+none is needed — these claims are about the **shape of the service's own output**, and ten samples
+of it are already on disk. The test that pins them is a *fixpoint*: parse each `final.yml`,
+re-serialize it, and compare bytes.
+
+[C-E03-250] **`finalYaml` is block YAML whose sequences are not indented under their key.** A
+sequence item sits at the same column as its key (`stages:` then `- stage: build`), which is the
+`yaml` library's non-default `indentSeq: false`. The default indents and diverges on line 8 of every
+corpus entry.
+  — `fixtures/oracle/*.final.yml` (ten samples, checked 2026-08-25) — re-serializing with
+    `indentSeq: false` reproduces all ten; with the default, none.
+
+[C-E03-251] **Where a quote is needed the service uses single quotes, it never folds a long scalar,
+and the document ends with a blank line.** `'**' + '/*.sln'` comes back single-quoted; no line is
+wrapped at any width; every `finalYaml` ends `\n\n`.
+  — `fixtures/oracle/*.final.yml` (checked 2026-08-25) — the three settings that complete the
+    fixpoint are `singleQuote: true`, `lineWidth: 0`, and one appended newline.
+
+[C-E03-252] **The service preserves the author's quoting on a scalar that would also be legal
+plain.** `'0 3 * * Mon-Fri'` is a valid *plain* scalar, and comes back quoted because that is how it
+was written. Consequence for us: an emitter that serializes from plain JavaScript values cannot
+reach the fixpoint — the authored style has to survive into the emitter, which is why
+`serializeExpandedYaml` walks the DOM and sets each scalar's type from `ScalarNode.style`.
+  — `fixtures/oracle/10-monorepo-triggers-pools.final.yml` vs
+    `fixtures/corpus/10-monorepo-triggers-pools/pipeline.yml` (checked 2026-08-25) — the one
+    corpus entry where a value-based emitter and the service disagree
+
+[C-E03-253] **Every node in an expanded DOM has a provenance, including the synthesized ones.**
+`insert` stamps its merged mapping with the directive site's `pos`, `each` gives every copy of a
+body the body's own `pos`, and interpolation gives a replacement the host scalar's. So "the map
+covers 100% of emitted nodes" is a property of the walk rather than of the map builder, and the
+useful fact it records is that two emitted nodes on different lines can share one authored line.
+  — `packages/engine/src/template/{insert,each,interpolate}.ts` (read 2026-08-25) and the
+    corpus-wide coverage test in `packages/engine/test/template/expand.test.ts`
 
 ---
 
