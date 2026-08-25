@@ -1,0 +1,359 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`synthesizeEnvExample > emits the documented sections with provenance comments and secret flags 1`] = `
+"# Generated .env.example — copy to .env and fill in values.
+#
+# This is a trusted Bash assignment file: \`NAME=value\`, one per line; names are
+# letters/digits/underscores and cannot begin with a digit (C-E06-014).
+
+# ─────────────────────────────────────────────────────────────────
+# 1. Run identity overrides (optional — simulate a trigger)
+# BUILD_SOURCEBRANCH — e.g. refs/heads/main
+BUILD_SOURCEBRANCH=
+# BUILD_REASON — e.g. refs/heads/main
+BUILD_REASON=
+# SYSTEM_PULLREQUEST_SOURCEBRANCH — e.g. refs/heads/main
+SYSTEM_PULLREQUEST_SOURCEBRANCH=
+# SYSTEM_PULLREQUEST_TARGETBRANCH — e.g. refs/heads/main
+SYSTEM_PULLREQUEST_TARGETBRANCH=
+
+# ─────────────────────────────────────────────────────────────────
+# 2. SYSTEM_ACCESSTOKEN — needed by steps that call the ADO REST API or package feeds
+# Mint an org-scoped PAT, or use device-code OAuth against the Entra resource
+# 499b84ac-1321-427f-aa17-267ca6975798 (C-E00-011).
+SYSTEM_ACCESSTOKEN=
+
+# ─────────────────────────────────────────────────────────────────
+# 3. Pipeline variables (unresolved — fill in a value)
+# used by Build/noGroup/step 1 (macro in input)
+MYSECRETTOKEN=
+
+# ─────────────────────────────────────────────────────────────────
+# 4. Variable groups — names only; values are never fetched (PLAN D7)
+# from group 'my-var-group'
+FROMGROUP=
+
+# ─────────────────────────────────────────────────────────────────
+# 5. Runtime parameters (prefilled with defaults)
+# runtime parameter 'deployEnv'
+DEPLOYENV=dev
+
+# ─────────────────────────────────────────────────────────────────
+# 6. Service connections and secure files are populated once E08 lands.
+"
+`;
+
+exports[`synthesizeEnvExample > synthesizes every corpus pipeline deterministically 1`] = `
+"# Generated .env.example — copy to .env and fill in values.
+#
+# This is a trusted Bash assignment file: \`NAME=value\`, one per line; names are
+# letters/digits/underscores and cannot begin with a digit (C-E06-014).
+
+# ─────────────────────────────────────────────────────────────────
+# 1. Run identity overrides (optional — simulate a trigger)
+# BUILD_SOURCEBRANCH — e.g. refs/heads/main
+BUILD_SOURCEBRANCH=
+# BUILD_REASON — e.g. refs/heads/main
+BUILD_REASON=
+# SYSTEM_PULLREQUEST_SOURCEBRANCH — e.g. refs/heads/main
+SYSTEM_PULLREQUEST_SOURCEBRANCH=
+# SYSTEM_PULLREQUEST_TARGETBRANCH — e.g. refs/heads/main
+SYSTEM_PULLREQUEST_TARGETBRANCH=
+
+# ─────────────────────────────────────────────────────────────────
+# 2. SYSTEM_ACCESSTOKEN — needed by steps that call the ADO REST API or package feeds
+# Mint an org-scoped PAT, or use device-code OAuth against the Entra resource
+# 499b84ac-1321-427f-aa17-267ca6975798 (C-E00-011).
+SYSTEM_ACCESSTOKEN=
+
+# ─────────────────────────────────────────────────────────────────
+# 6. Service connections and secure files are populated once E08 lands.
+"
+`;
+
+exports[`synthesizeEnvExample > synthesizes every corpus pipeline deterministically 2`] = `
+"# Generated .env.example — copy to .env and fill in values.
+#
+# This is a trusted Bash assignment file: \`NAME=value\`, one per line; names are
+# letters/digits/underscores and cannot begin with a digit (C-E06-014).
+
+# ─────────────────────────────────────────────────────────────────
+# 1. Run identity overrides (optional — simulate a trigger)
+# BUILD_SOURCEBRANCH — e.g. refs/heads/main
+BUILD_SOURCEBRANCH=
+# BUILD_REASON — e.g. refs/heads/main
+BUILD_REASON=
+# SYSTEM_PULLREQUEST_SOURCEBRANCH — e.g. refs/heads/main
+SYSTEM_PULLREQUEST_SOURCEBRANCH=
+# SYSTEM_PULLREQUEST_TARGETBRANCH — e.g. refs/heads/main
+SYSTEM_PULLREQUEST_TARGETBRANCH=
+
+# ─────────────────────────────────────────────────────────────────
+# 2. SYSTEM_ACCESSTOKEN — needed by steps that call the ADO REST API or package feeds
+# Mint an org-scoped PAT, or use device-code OAuth against the Entra resource
+# 499b84ac-1321-427f-aa17-267ca6975798 (C-E00-011).
+SYSTEM_ACCESSTOKEN=
+
+# ─────────────────────────────────────────────────────────────────
+# 6. Service connections and secure files are populated once E08 lands.
+"
+`;
+
+exports[`synthesizeEnvExample > synthesizes every corpus pipeline deterministically 3`] = `
+"# Generated .env.example — copy to .env and fill in values.
+#
+# This is a trusted Bash assignment file: \`NAME=value\`, one per line; names are
+# letters/digits/underscores and cannot begin with a digit (C-E06-014).
+
+# ─────────────────────────────────────────────────────────────────
+# 1. Run identity overrides (optional — simulate a trigger)
+# BUILD_SOURCEBRANCH — e.g. refs/heads/main
+BUILD_SOURCEBRANCH=
+# BUILD_REASON — e.g. refs/heads/main
+BUILD_REASON=
+# SYSTEM_PULLREQUEST_SOURCEBRANCH — e.g. refs/heads/main
+SYSTEM_PULLREQUEST_SOURCEBRANCH=
+# SYSTEM_PULLREQUEST_TARGETBRANCH — e.g. refs/heads/main
+SYSTEM_PULLREQUEST_TARGETBRANCH=
+
+# ─────────────────────────────────────────────────────────────────
+# 2. SYSTEM_ACCESSTOKEN — needed by steps that call the ADO REST API or package feeds
+# Mint an org-scoped PAT, or use device-code OAuth against the Entra resource
+# 499b84ac-1321-427f-aa17-267ca6975798 (C-E00-011).
+SYSTEM_ACCESSTOKEN=
+
+# ─────────────────────────────────────────────────────────────────
+# 6. Service connections and secure files are populated once E08 lands.
+"
+`;
+
+exports[`synthesizeEnvExample > synthesizes every corpus pipeline deterministically 4`] = `
+"# Generated .env.example — copy to .env and fill in values.
+#
+# This is a trusted Bash assignment file: \`NAME=value\`, one per line; names are
+# letters/digits/underscores and cannot begin with a digit (C-E06-014).
+
+# ─────────────────────────────────────────────────────────────────
+# 1. Run identity overrides (optional — simulate a trigger)
+# BUILD_SOURCEBRANCH — e.g. refs/heads/main
+BUILD_SOURCEBRANCH=
+# BUILD_REASON — e.g. refs/heads/main
+BUILD_REASON=
+# SYSTEM_PULLREQUEST_SOURCEBRANCH — e.g. refs/heads/main
+SYSTEM_PULLREQUEST_SOURCEBRANCH=
+# SYSTEM_PULLREQUEST_TARGETBRANCH — e.g. refs/heads/main
+SYSTEM_PULLREQUEST_TARGETBRANCH=
+
+# ─────────────────────────────────────────────────────────────────
+# 2. SYSTEM_ACCESSTOKEN — needed by steps that call the ADO REST API or package feeds
+# Mint an org-scoped PAT, or use device-code OAuth against the Entra resource
+# 499b84ac-1321-427f-aa17-267ca6975798 (C-E00-011).
+SYSTEM_ACCESSTOKEN=
+
+# ─────────────────────────────────────────────────────────────────
+# 4. Variable groups — names only; values are never fetched (PLAN D7)
+# from group 'azdo-emu-corpus-group'
+NOT-A-VARIABLE=
+
+# ─────────────────────────────────────────────────────────────────
+# 5. Runtime parameters (prefilled with defaults)
+# runtime parameter 'environmentName'
+ENVIRONMENTNAME=staging
+
+# ─────────────────────────────────────────────────────────────────
+# 6. Service connections and secure files are populated once E08 lands.
+"
+`;
+
+exports[`synthesizeEnvExample > synthesizes every corpus pipeline deterministically 5`] = `
+"# Generated .env.example — copy to .env and fill in values.
+#
+# This is a trusted Bash assignment file: \`NAME=value\`, one per line; names are
+# letters/digits/underscores and cannot begin with a digit (C-E06-014).
+
+# ─────────────────────────────────────────────────────────────────
+# 1. Run identity overrides (optional — simulate a trigger)
+# BUILD_SOURCEBRANCH — e.g. refs/heads/main
+BUILD_SOURCEBRANCH=
+# BUILD_REASON — e.g. refs/heads/main
+BUILD_REASON=
+# SYSTEM_PULLREQUEST_SOURCEBRANCH — e.g. refs/heads/main
+SYSTEM_PULLREQUEST_SOURCEBRANCH=
+# SYSTEM_PULLREQUEST_TARGETBRANCH — e.g. refs/heads/main
+SYSTEM_PULLREQUEST_TARGETBRANCH=
+
+# ─────────────────────────────────────────────────────────────────
+# 2. SYSTEM_ACCESSTOKEN — needed by steps that call the ADO REST API or package feeds
+# Mint an org-scoped PAT, or use device-code OAuth against the Entra resource
+# 499b84ac-1321-427f-aa17-267ca6975798 (C-E00-011).
+SYSTEM_ACCESSTOKEN=
+
+# ─────────────────────────────────────────────────────────────────
+# 5. Runtime parameters (prefilled with defaults)
+# runtime parameter 'runTests'
+RUNTESTS=true
+
+# ─────────────────────────────────────────────────────────────────
+# 6. Service connections and secure files are populated once E08 lands.
+"
+`;
+
+exports[`synthesizeEnvExample > synthesizes every corpus pipeline deterministically 6`] = `
+"# Generated .env.example — copy to .env and fill in values.
+#
+# This is a trusted Bash assignment file: \`NAME=value\`, one per line; names are
+# letters/digits/underscores and cannot begin with a digit (C-E06-014).
+
+# ─────────────────────────────────────────────────────────────────
+# 1. Run identity overrides (optional — simulate a trigger)
+# BUILD_SOURCEBRANCH — e.g. refs/heads/main
+BUILD_SOURCEBRANCH=
+# BUILD_REASON — e.g. refs/heads/main
+BUILD_REASON=
+# SYSTEM_PULLREQUEST_SOURCEBRANCH — e.g. refs/heads/main
+SYSTEM_PULLREQUEST_SOURCEBRANCH=
+# SYSTEM_PULLREQUEST_TARGETBRANCH — e.g. refs/heads/main
+SYSTEM_PULLREQUEST_TARGETBRANCH=
+
+# ─────────────────────────────────────────────────────────────────
+# 2. SYSTEM_ACCESSTOKEN — needed by steps that call the ADO REST API or package feeds
+# Mint an org-scoped PAT, or use device-code OAuth against the Entra resource
+# 499b84ac-1321-427f-aa17-267ca6975798 (C-E00-011).
+SYSTEM_ACCESSTOKEN=
+
+# ─────────────────────────────────────────────────────────────────
+# 6. Service connections and secure files are populated once E08 lands.
+"
+`;
+
+exports[`synthesizeEnvExample > synthesizes every corpus pipeline deterministically 7`] = `
+"# Generated .env.example — copy to .env and fill in values.
+#
+# This is a trusted Bash assignment file: \`NAME=value\`, one per line; names are
+# letters/digits/underscores and cannot begin with a digit (C-E06-014).
+
+# ─────────────────────────────────────────────────────────────────
+# 1. Run identity overrides (optional — simulate a trigger)
+# BUILD_SOURCEBRANCH — e.g. refs/heads/main
+BUILD_SOURCEBRANCH=
+# BUILD_REASON — e.g. refs/heads/main
+BUILD_REASON=
+# SYSTEM_PULLREQUEST_SOURCEBRANCH — e.g. refs/heads/main
+SYSTEM_PULLREQUEST_SOURCEBRANCH=
+# SYSTEM_PULLREQUEST_TARGETBRANCH — e.g. refs/heads/main
+SYSTEM_PULLREQUEST_TARGETBRANCH=
+
+# ─────────────────────────────────────────────────────────────────
+# 2. SYSTEM_ACCESSTOKEN — needed by steps that call the ADO REST API or package feeds
+# Mint an org-scoped PAT, or use device-code OAuth against the Entra resource
+# 499b84ac-1321-427f-aa17-267ca6975798 (C-E00-011).
+SYSTEM_ACCESSTOKEN=
+
+# ─────────────────────────────────────────────────────────────────
+# 5. Runtime parameters (prefilled with defaults)
+# runtime parameter 'imageName'
+IMAGENAME=ubuntu-latest
+# runtime parameter 'retries'
+RETRIES=2
+# runtime parameter 'verbose'
+VERBOSE=false
+# runtime parameter 'settings'
+SETTINGS=
+# runtime parameter 'customStep'
+CUSTOMSTEP=
+# runtime parameter 'extraSteps'
+EXTRASTEPS=
+
+# ─────────────────────────────────────────────────────────────────
+# 6. Service connections and secure files are populated once E08 lands.
+"
+`;
+
+exports[`synthesizeEnvExample > synthesizes every corpus pipeline deterministically 8`] = `
+"# Generated .env.example — copy to .env and fill in values.
+#
+# This is a trusted Bash assignment file: \`NAME=value\`, one per line; names are
+# letters/digits/underscores and cannot begin with a digit (C-E06-014).
+
+# ─────────────────────────────────────────────────────────────────
+# 1. Run identity overrides (optional — simulate a trigger)
+# BUILD_SOURCEBRANCH — e.g. refs/heads/main
+BUILD_SOURCEBRANCH=
+# BUILD_REASON — e.g. refs/heads/main
+BUILD_REASON=
+# SYSTEM_PULLREQUEST_SOURCEBRANCH — e.g. refs/heads/main
+SYSTEM_PULLREQUEST_SOURCEBRANCH=
+# SYSTEM_PULLREQUEST_TARGETBRANCH — e.g. refs/heads/main
+SYSTEM_PULLREQUEST_TARGETBRANCH=
+
+# ─────────────────────────────────────────────────────────────────
+# 2. SYSTEM_ACCESSTOKEN — needed by steps that call the ADO REST API or package feeds
+# Mint an org-scoped PAT, or use device-code OAuth against the Entra resource
+# 499b84ac-1321-427f-aa17-267ca6975798 (C-E00-011).
+SYSTEM_ACCESSTOKEN=
+
+# ─────────────────────────────────────────────────────────────────
+# 6. Service connections and secure files are populated once E08 lands.
+"
+`;
+
+exports[`synthesizeEnvExample > synthesizes every corpus pipeline deterministically 9`] = `
+"# Generated .env.example — copy to .env and fill in values.
+#
+# This is a trusted Bash assignment file: \`NAME=value\`, one per line; names are
+# letters/digits/underscores and cannot begin with a digit (C-E06-014).
+
+# ─────────────────────────────────────────────────────────────────
+# 1. Run identity overrides (optional — simulate a trigger)
+# BUILD_SOURCEBRANCH — e.g. refs/heads/main
+BUILD_SOURCEBRANCH=
+# BUILD_REASON — e.g. refs/heads/main
+BUILD_REASON=
+# SYSTEM_PULLREQUEST_SOURCEBRANCH — e.g. refs/heads/main
+SYSTEM_PULLREQUEST_SOURCEBRANCH=
+# SYSTEM_PULLREQUEST_TARGETBRANCH — e.g. refs/heads/main
+SYSTEM_PULLREQUEST_TARGETBRANCH=
+
+# ─────────────────────────────────────────────────────────────────
+# 2. SYSTEM_ACCESSTOKEN — needed by steps that call the ADO REST API or package feeds
+# Mint an org-scoped PAT, or use device-code OAuth against the Entra resource
+# 499b84ac-1321-427f-aa17-267ca6975798 (C-E00-011).
+SYSTEM_ACCESSTOKEN=
+
+# ─────────────────────────────────────────────────────────────────
+# 6. Service connections and secure files are populated once E08 lands.
+"
+`;
+
+exports[`synthesizeEnvExample > synthesizes every corpus pipeline deterministically 10`] = `
+"# Generated .env.example — copy to .env and fill in values.
+#
+# This is a trusted Bash assignment file: \`NAME=value\`, one per line; names are
+# letters/digits/underscores and cannot begin with a digit (C-E06-014).
+
+# ─────────────────────────────────────────────────────────────────
+# 1. Run identity overrides (optional — simulate a trigger)
+# BUILD_SOURCEBRANCH — e.g. refs/heads/main
+BUILD_SOURCEBRANCH=
+# BUILD_REASON — e.g. refs/heads/main
+BUILD_REASON=
+# SYSTEM_PULLREQUEST_SOURCEBRANCH — e.g. refs/heads/main
+SYSTEM_PULLREQUEST_SOURCEBRANCH=
+# SYSTEM_PULLREQUEST_TARGETBRANCH — e.g. refs/heads/main
+SYSTEM_PULLREQUEST_TARGETBRANCH=
+
+# ─────────────────────────────────────────────────────────────────
+# 2. SYSTEM_ACCESSTOKEN — needed by steps that call the ADO REST API or package feeds
+# Mint an org-scoped PAT, or use device-code OAuth against the Entra resource
+# 499b84ac-1321-427f-aa17-267ca6975798 (C-E00-011).
+SYSTEM_ACCESSTOKEN=
+
+# ─────────────────────────────────────────────────────────────────
+# 3. Pipeline variables (unresolved — fill in a value)
+# used by __default/container_job/step 2 (macro in input)
+ID_-U=
+
+# ─────────────────────────────────────────────────────────────────
+# 6. Service connections and secure files are populated once E08 lands.
+"
+`;
