@@ -44,6 +44,7 @@
     "bundle-survey": "node scripts/bundle-survey.ts",
     "template-parameters-survey": "node scripts/template-parameters-survey.ts",
     "normalization-survey": "node scripts/normalization-survey.ts",
+    "strict-validation-survey": "node scripts/strict-validation-survey.ts",
     "expansion-provenance": "pnpm --filter @azdo-emu/engine build && node scripts/expansion-provenance.ts",
     "dependency-survey": "node scripts/dependency-survey.ts",
     "predefined-vars": "node scripts/predefined-vars.ts",

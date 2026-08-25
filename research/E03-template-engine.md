@@ -17,7 +17,7 @@ time the IDs were load-bearing in code comments and test names) is the reason th
 | `C-E03-175..194` | E03-S01-T05 scalar interpolation | this file | 175–194 used — recorded 2026-08-25 from the 34 committed probes (`research/experiments/E03-interpolation/`, 27 pairs + 7 rejections), plus `E03-insert/value-position/` for 194 |
 | `C-E03-195..229` | E03-S02 template resolution & parameters | this file | 195–218 used — recorded 2026-08-25 from the 34 committed probes (`research/experiments/E03-references/`, 21 pairs + 13 rejections, two-repository fixture at `fixtures/oracle/references/repos/`); `C-E03-204` was recorded earlier by E03-S02-T05. 219..229 free — E03-S02-T02 (typed parameter binding) has its own block at 300. |
 | `C-E03-230..249` | E03-S03 compile-time variable visibility | this file | free |
-| `C-E03-250..279` | E03-S04 limits, emitter, strict validation | this file | 250–253 used (E03-S04-T02, recorded 2026-08-25 from the ten corpus pairs); 254–279 free |
+| `C-E03-250..279` | E03-S04 limits, emitter, strict validation | this file | 250–253 used (E03-S04-T02) and 254–258 used (E03-S04-T03, three live mutation probes), both recorded 2026-08-25; 259–279 free |
 | `C-E03-280..299` | E03-S05-T02 `preview-diff` | this file | free |
 | `C-E03-300..339` | E03-S02-T02 typed parameter binding | this file | 300–333 used — recorded 2026-08-25 from the 88 committed probes (`research/experiments/E03-parameters/`, 42 pairs + 46 rejections); 334–339 free |
 | `C-E03-400..429` | **E03-S06 local bundler** | this file | 400–407 used (S06-T01), 408–413 (S06-T02), 414–418 (S06-T03), 419–420 (S06-T04) |
@@ -1401,6 +1401,55 @@ covers 100% of emitted nodes" is a property of the walk rather than of the map b
 useful fact it records is that two emitted nodes on different lines can share one authored line.
   — `packages/engine/src/template/{insert,each,interpolate}.ts` (read 2026-08-25) and the
     corpus-wide coverage test in `packages/engine/test/template/expand.test.ts`
+
+---
+
+## E03-S04-T03 — strict validation of the expanded document (`C-E03-254..258`)
+
+Evidence: `research/experiments/E03-strict-validation/` — three live preview probes, each injecting
+one mutation into a **known-good expansion** (`fixtures/oracle/10-monorepo-triggers-pools.final.yml`,
+a document the service itself produced, so it accepts it unmutated by C-E03-001). The mutation is
+therefore the only difference between an accepted and a rejected document.
+
+The check runs in **one direction on purpose**. A validator that rejects what the service accepts
+turns a working pipeline into a conversion failure — the one failure mode a user cannot tell from
+their own mistake — so what needs proving is that each family we reject is also rejected there.
+
+[C-E03-254] **The service rejects an unknown property in an expanded document.** `notAStageKey`
+injected at stage level returns `Unexpected value 'notAStageKey'`, the same sentence an authored
+document gets, located at the injected line.
+  — `research/experiments/E03-strict-validation/unknown-key/` (live preview, checked 2026-08-25) —
+    `"/azure-pipelines.yml (Line: 44, Col: 3): Unexpected value 'notAStageKey'"`
+
+[C-E03-255] **The service type-checks the expanded document, not only its shape.** A `condition:`
+given a mapping where the schema says string returns `A mapping was not expected` — so a strict
+validator's type family is not stricter than the authority.
+  — `research/experiments/E03-strict-validation/bad-type/` (live preview, checked 2026-08-25) —
+    `"/azure-pipelines.yml (Line: 45, Col: 5): A mapping was not expected"`
+
+[C-E03-256] **The service resolves task references during preview and rejects an unknown one, with
+a sentence that names the task, its version, the job and the step.** `task: NoSuchTask@9` returns
+"A task is missing. The pipeline references a task called 'NoSuchTask'. … (Task version 9, job
+'container_job', step ''.)" — including the Marketplace suggestion.
+  — `research/experiments/E03-strict-validation/unknown-task/` (live preview, checked 2026-08-25)
+
+[C-E03-257] **Δ We report an unknown task as a *warning* where the service rejects, deliberately.**
+The two catalogues are not the same thing: ours is the vendored snapshot of in-box tasks, the
+service's is the organization's installed set (C-E01-033). Erroring against the vendored snapshot
+would fail every pipeline that uses a marketplace task — a false positive on a working pipeline,
+which is the failure this whole comparison exists to avoid. The divergence is **severity, not
+detection**: the diagnostic is raised either way, and it becomes an error once an org schema is
+supplied (E01-S02-T03 / E09).
+
+[C-E03-258] **An expansion is a different dialect from an authored document, and the difference is
+measurable on the corpus.** Validating the ten committed `final.yml`s with the authored-document
+validator reports two families in nine of them — `trigger:`/`pr:` `{enabled: false}`, which the
+service emits and refuses as input (C-E03-002), and the three desugared GUID tasks, which have no
+name spelling for a name-keyed catalogue to find (C-E04-030/031). Both are output-only, and a
+post-expansion validator that does not accept them reports errors in documents the authority
+produced.
+  — `fixtures/oracle/*.final.yml` (ten samples, checked 2026-08-25) — 2 diagnostics in each of
+    seven entries, 4–6 in the three that carry desugared GUIDs, 0 in the one with neither
 
 ---
 

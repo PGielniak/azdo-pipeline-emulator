@@ -6,6 +6,7 @@ export * from './frontend/diagnostics.js';
 export * from './frontend/schema.js';
 export * from './frontend/org-schema.js';
 export * from './frontend/validate.js';
+export * from './frontend/validate-expanded.js';
 export * from './normalize/normalize.js';
 export * from './expr/lexer.js';
 export * from './expr/parser.js';
