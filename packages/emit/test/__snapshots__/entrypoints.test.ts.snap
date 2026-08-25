@@ -1,0 +1,183 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`emitEntrypoints > emits run.sh, run-stage.sh, run-job.sh and conditions.sh for the fixture 1`] = `
+"#!/usr/bin/env bash
+# Generated pipeline runner — run.sh
+set -euo pipefail
+PROJECT_DIR="$(cd "$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+export AZDO_EMU_LIB="$PROJECT_DIR/lib"
+export AZDO_ARTIFACT_DIR="$PROJECT_DIR/.artifacts"
+mkdir -p "$AZDO_ARTIFACT_DIR"
+# shellcheck disable=SC1091
+source "$AZDO_EMU_LIB/runtime.sh"
+source "$AZDO_EMU_LIB/expr.sh"
+
+# Flags: --list --env-file FILE --resume
+list_only=false resume=false env_file=""
+while (($# > 0)); do
+  case "$1" in
+    --list) list_only=true; shift ;;
+    --resume) resume=true; shift ;;
+    --env-file) env_file="$2"; shift 2 ;;
+    *) printf 'unknown run.sh option: %s\\n' "$1" >&2; exit 2 ;;
+  esac
+done
+
+if [[ "$list_only" = true ]]; then
+  echo "stages:"
+  echo '- Build'
+  echo '    - compile'
+  echo '      010  Say hello  [exact]'
+  echo '      020  Fail loudly  [exact]'
+  echo '- Report'
+  echo '    - report'
+  echo '      010  Report  [exact]'
+  exit 0
+fi
+
+WORK_DIR="$PROJECT_DIR/.work"
+COUNTER_FILE="$WORK_DIR/.state/run-counter"
+mkdir -p "$WORK_DIR/.state"
+run_number="$(cat "$COUNTER_FILE" 2>/dev/null || echo 0)"
+if [[ "$resume" != true ]]; then
+  run_number=$((run_number + 1))
+  echo "$run_number" > "$COUNTER_FILE"
+fi
+AZDO_RUN_DIR="$WORK_DIR/run-$run_number"
+export AZDO_RUN_DIR AZDO_STATE_DIR="$AZDO_RUN_DIR/state" AZDO_WORKSPACE_DIR="$AZDO_RUN_DIR/workspace" AZDO_ATTACHMENT_DIR="$AZDO_RUN_DIR/logs/attachments"
+mkdir -p "$AZDO_WORKSPACE_DIR/s" "$AZDO_WORKSPACE_DIR/tmp" "$AZDO_WORKSPACE_DIR/TestResults" "$AZDO_STATE_DIR" "$AZDO_ATTACHMENT_DIR"
+
+azdo_env_load "$PROJECT_DIR/.env" "\${env_file:-}"
+
+AZDO_STAGE_DIR="$PROJECT_DIR/stages/010-build"
+AZDO_STAGE_ID='Build'
+export AZDO_STAGE_DIR AZDO_STAGE_ID
+bash "$AZDO_STAGE_DIR/run-stage.sh" "$@"
+
+AZDO_STAGE_DIR="$PROJECT_DIR/stages/020-report"
+AZDO_STAGE_ID='Report'
+export AZDO_STAGE_DIR AZDO_STAGE_ID
+bash "$AZDO_STAGE_DIR/run-stage.sh" "$@"
+
+azdo_run_summary
+exit "$(azdo_run_exit_code)""
+`;
+
+exports[`emitEntrypoints > emits run.sh, run-stage.sh, run-job.sh and conditions.sh for the fixture 2`] = `
+"#!/usr/bin/env bash
+# Compiled conditions for this stage (E02-S05 compiler). Generated — do not edit.
+# A condition function's exit status is the truth: 0 True, 1 False, 2 evaluation error.
+set -euo pipefail
+# shellcheck disable=SC1091  # resolved at run time via $AZDO_EMU_LIB
+source "$AZDO_EMU_LIB/runtime.sh"
+source "$AZDO_EMU_LIB/expr.sh"
+
+cond_stage() {
+  azdo_status_succeeded
+}
+cond_job_compile() {
+  azdo_status_succeeded
+}
+cond_step_010() {
+  azdo_status_succeeded
+}
+cond_step_020() {
+  azdo_status_succeeded
+}
+"
+`;
+
+exports[`emitEntrypoints > emits run.sh, run-stage.sh, run-job.sh and conditions.sh for the fixture 3`] = `
+"#!/usr/bin/env bash
+# compile sequencer (generated)
+set -euo pipefail
+# shellcheck disable=SC1091
+source "$AZDO_EMU_LIB/runtime.sh"
+source "$AZDO_EMU_LIB/expr.sh"
+# shellcheck disable=SC1091
+source "$AZDO_STAGE_DIR/conditions.sh"
+
+AZDO_JOB_DIR="$(cd "$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+
+# Flags: --from-step NNN --to-step NNN --only-step NNN --no-condition
+from_step="" to_step="" only_step="" no_condition=false
+while (($# > 0)); do
+  case "$1" in
+    --from-step) from_step="$2"; shift 2 ;;
+    --to-step) to_step="$2"; shift 2 ;;
+    --only-step) only_step="$2"; shift 2 ;;
+    --no-condition) no_condition=true; shift ;;
+    *) printf 'unknown run-job option: %s\\n' "$1" >&2; exit 2 ;;
+  esac
+done
+
+export AZDO_VAR_SCOPE='job-compile'
+AZDO_LOG_DIR="$AZDO_RUN_DIR/logs/010-build/010-compile-and-test"
+AZDO_RESULT_DIR="$AZDO_STATE_DIR/results/010-build/010-compile-and-test"
+AZDO_OUTPUT_DIR="$AZDO_STATE_DIR/outputs/Build/compile"
+AZDO_HAS_MULTIPLE_CHECKOUTS=false
+export AZDO_LOG_DIR AZDO_RESULT_DIR AZDO_OUTPUT_DIR AZDO_HAS_MULTIPLE_CHECKOUTS
+mkdir -p "$AZDO_LOG_DIR" "$AZDO_RESULT_DIR" "$AZDO_OUTPUT_DIR"
+
+if [[ -z "$(azdo_var System.DefaultWorkingDirectory)" ]]; then
+  azdo_var_set 'System.DefaultWorkingDirectory' "$AZDO_WORKSPACE_DIR/s"
+  azdo_var_set 'Build.SourcesDirectory' "$AZDO_WORKSPACE_DIR/s"
+  azdo_var_set 'Agent.BuildDirectory' "$AZDO_WORKSPACE_DIR"
+  azdo_var_set 'Pipeline.Workspace' "$AZDO_WORKSPACE_DIR"
+  azdo_var_set 'Agent.TempDirectory' "$AZDO_WORKSPACE_DIR/tmp"
+fi
+
+id='010'
+if [[ -z "$from_step" || "$id" > "$from_step" || "$id" = "$from_step" ]] && [[ -z "$to_step" || "$id" < "$to_step" || "$id" = "$to_step" ]] && [[ -z "$only_step" || "$id" = "$only_step" ]]; then
+  run_step --id '010' --file "$AZDO_JOB_DIR/steps/010-say-hello.sh" --cond cond_step_010 \\
+    --display 'Say hello' --wd '$(System.DefaultWorkingDirectory)' \\
+    --continue-on-error false --fail-on-stderr false \\
+    --retries 0 --timeout 3600 \\
+    \${no_condition:+--no-condition}
+fi
+
+id='020'
+if [[ -z "$from_step" || "$id" > "$from_step" || "$id" = "$from_step" ]] && [[ -z "$to_step" || "$id" < "$to_step" || "$id" = "$to_step" ]] && [[ -z "$only_step" || "$id" = "$only_step" ]]; then
+  run_step --id '020' --file "$AZDO_JOB_DIR/steps/020-fail-loudly.sh" --cond cond_step_020 \\
+    --display 'Fail loudly' --wd '$(System.DefaultWorkingDirectory)' \\
+    --continue-on-error false --fail-on-stderr false \\
+    --retries 0 --timeout 3600 \\
+    \${no_condition:+--no-condition}
+fi
+"
+`;
+
+exports[`emitEntrypoints > emits run.sh, run-stage.sh, run-job.sh and conditions.sh for the fixture 4`] = `
+"#!/usr/bin/env bash
+# Build stage orchestrator (generated)
+set -euo pipefail
+# shellcheck disable=SC1091
+source "$AZDO_EMU_LIB/runtime.sh"
+source "$AZDO_EMU_LIB/expr.sh"
+# shellcheck disable=SC1091
+source "$AZDO_STAGE_DIR/conditions.sh"
+
+if ! cond_stage; then
+  printf 'Skipping stage %s due to condition.\\n' "$AZDO_STAGE_ID"
+  exit 0
+fi
+
+if cond_job_compile; then
+  bash "$AZDO_STAGE_DIR/jobs/010-compile-and-test/run-job.sh" "$@"
+else
+  printf 'Skipping job %s due to condition.\\n' 'compile'
+fi
+"
+`;
+
+exports[`generated project runs end-to-end > run.sh --list prints the tree 1`] = `
+"stages:
+- Build
+    - compile
+      010  Say hello  [exact]
+      020  Fail loudly  [exact]
+- Report
+    - report
+      010  Report  [exact]
+"
+`;
