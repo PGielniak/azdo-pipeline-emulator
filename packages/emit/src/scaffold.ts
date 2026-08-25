@@ -54,6 +54,8 @@ const RUNONCE_HOOK_ORDER = [
 export interface ScaffoldStep {
   /** Path relative to the project root, POSIX-separated, e.g. `stages/010-build/jobs/010-build/steps/010-build-solution.sh`. */
   readonly path: string;
+  /** The `NNN-` number prefix of this step's file (e.g. `"010"`), for the header's `Step 030` rule line. */
+  readonly number: string;
   /** The model step this file will emit (E05-S01-T02). */
   readonly step: Step;
   /** The runOnce hook this step lives in, when the job is a `runOnce` deployment. */
@@ -190,7 +192,7 @@ function uniquify(candidate: string, taken: ReadonlySet<string>): string {
 }
 
 /** The input that distinguishes a shorthand-desugared step, per origin, and its default when absent. */
-const ORIGIN_DISTINGUISHER: Readonly<
+export const ORIGIN_DISTINGUISHER: Readonly<
   Record<'checkout' | 'download' | 'publish', { readonly input: string; readonly fallback: string }>
 > = {
   checkout: { input: 'repository', fallback: 'self' },
@@ -199,21 +201,26 @@ const ORIGIN_DISTINGUISHER: Readonly<
 };
 
 /**
- * The slug for a step file name.
+ * The readable label of a shorthand-desugared step whose `displayName` is the builder's GUID
+ * default, or `undefined` for any other step (which uses its `displayName` as-is).
  *
- * A `checkout`/`download`/`publish` step is desugared by the service to a bare GUID task (C-E04-031),
- * and the builder defaults its `displayName` to that GUID (docs/01 §6) — `010-6d15af64-….sh` is not
- * navigable. Prefer the recovered `origin` keyword and the input that distinguishes it
- * (`checkout-self`, `download-current`, `publish-drop`), which is the shape docs/04 §1's
- * `010-checkout-self.sh` shows. The `displayName === task.name` guard is what tells an *authored*
- * `displayName:` apart from the defaulted GUID, so a user-written name still wins.
+ * `checkout`/`download`/`publish` arrive as a bare GUID task (C-E04-031) and the builder defaults
+ * their `displayName` to that GUID (docs/01 §6) — `010-6d15af64-….sh` is not navigable. The
+ * `displayName === task.name` guard is what tells an *authored* `displayName:` apart from the
+ * defaulted GUID, so a user-written name still wins. Shared by the scaffolder (file names) and the
+ * step emitter (header display), so the two stay consistent.
+ */
+export function originStepLabel(step: Step): string | undefined {
+  if (step.origin === undefined || step.displayName !== step.task.name) return undefined;
+  const { input, fallback } = ORIGIN_DISTINGUISHER[step.origin];
+  return `${step.origin}-${slugify(step.inputs[input] ?? '') || fallback}`;
+}
+
+/**
+ * The slug for a step file name (docs/04 §1's `010-checkout-self.sh`).
  */
 function stepSlug(step: Step): string {
-  if (step.origin !== undefined && step.displayName === step.task.name) {
-    const { input, fallback } = ORIGIN_DISTINGUISHER[step.origin];
-    return `${step.origin}-${slugify(step.inputs[input] ?? '') || fallback}`;
-  }
-  return slugOf(step.displayName, step.name, 'step');
+  return originStepLabel(step) ?? slugOf(step.displayName, step.name, 'step');
 }
 
 export function scaffold(pipeline: Pipeline): Scaffold {
@@ -268,6 +275,7 @@ export function scaffold(pipeline: Pipeline): Scaffold {
             stepNames.add(fileName);
             steps.push({
               path: `${stepsDir}/${fileName}`,
+              number: number(stepIndex + 1),
               step: entry.step,
               ...(entry.hook === undefined ? {} : { hook: entry.hook }),
             });
