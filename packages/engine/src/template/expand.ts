@@ -45,6 +45,7 @@ import {
 } from '../frontend/parse.js';
 import type { ExprValue } from '../expr/value.js';
 import { conditionalVisitor } from './conditionals.js';
+import { desugarExpansion } from './desugar.js';
 import { eachVisitor, evaluateTemplateExpression } from './each.js';
 import { insertVisitor } from './insert.js';
 import { interpolationVisitor } from './interpolate.js';
@@ -352,8 +353,13 @@ export function expandDocument(
   const walked = walkTemplate(parsed.root, rootFrame(file), visitor);
   diagnostics.push(...walked.diagnostics);
 
-  const yaml = serializeExpandedYaml(walked.node);
-  const map = buildExpansionMap(walked.node, yaml, {
+  // The service applies three more rewrites while producing `finalYaml` — implicit structure,
+  // `trigger: none`, and the step shorthands (E03-S04-T04). Without them an offline expansion is a
+  // different document from the service's for the same input.
+  const expanded = desugarExpansion(walked.node);
+
+  const yaml = serializeExpandedYaml(expanded);
+  const map = buildExpansionMap(expanded, yaml, {
     file,
     ...(options.repo === undefined ? {} : { repo: options.repo }),
     ...(() => {

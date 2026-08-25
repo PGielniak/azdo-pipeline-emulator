@@ -31,6 +31,7 @@ export * from './template/bundle.js';
 export * from './template/inline.js';
 export * from './template/provenance.js';
 export * from './template/expand.js';
+export * from './template/desugar.js';
 export * from './template/parameters.js';
 export * from './model/shorthand.js';
 export * from './model/types.js';

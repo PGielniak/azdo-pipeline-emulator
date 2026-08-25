@@ -17,7 +17,7 @@ time the IDs were load-bearing in code comments and test names) is the reason th
 | `C-E03-175..194` | E03-S01-T05 scalar interpolation | this file | 175–194 used — recorded 2026-08-25 from the 34 committed probes (`research/experiments/E03-interpolation/`, 27 pairs + 7 rejections), plus `E03-insert/value-position/` for 194 |
 | `C-E03-195..229` | E03-S02 template resolution & parameters | this file | 195–218 used — recorded 2026-08-25 from the 34 committed probes (`research/experiments/E03-references/`, 21 pairs + 13 rejections, two-repository fixture at `fixtures/oracle/references/repos/`); `C-E03-204` was recorded earlier by E03-S02-T05. 219..229 free — E03-S02-T02 (typed parameter binding) has its own block at 300. |
 | `C-E03-230..249` | E03-S03 compile-time variable visibility | this file | free |
-| `C-E03-250..279` | E03-S04 limits, emitter, strict validation | this file | 250–253 used (E03-S04-T02) and 254–258 used (E03-S04-T03, three live mutation probes), both recorded 2026-08-25; 259–279 free |
+| `C-E03-250..279` | E03-S04 limits, emitter, strict validation | this file | 250–253 used (E03-S04-T02) and 254–258 used (E03-S04-T03, three live mutation probes), both recorded 2026-08-25; 259–261 used (E03-S04-T04); 262–279 free |
 | `C-E03-280..299` | E03-S05-T02 `preview-diff` | this file | free |
 | `C-E03-300..339` | E03-S02-T02 typed parameter binding | this file | 300–333 used — recorded 2026-08-25 from the 88 committed probes (`research/experiments/E03-parameters/`, 42 pairs + 46 rejections); 334–339 free |
 | `C-E03-400..429` | **E03-S06 local bundler** | this file | 400–407 used (S06-T01), 408–413 (S06-T02), 414–418 (S06-T03), 419–420 (S06-T04) |
@@ -1450,6 +1450,38 @@ post-expansion validator that does not accept them reports errors in documents t
 produced.
   — `fixtures/oracle/*.final.yml` (ten samples, checked 2026-08-25) — 2 diagnostics in each of
     seven entries, 4–6 in the three that carry desugared GUIDs, 0 in the one with neither
+
+---
+
+## E03-S04-T04 — normalization-time expansions (`C-E03-259..261`)
+
+Evidence: the committed corpus pairs, plus the `oracle-spike/five-line` probe C-E00-022 was measured
+on. No new probe: every rewrite this task implements was already measured, and what was missing was
+the implementation, not the fact.
+
+[C-E03-259] **Where `pool:` lands when the service synthesizes structure depends on *which* level it
+synthesized.** With a `steps:`-only root the service invents both a stage and a job, and `pool:`
+moves **into the job**; with a `jobs:`-only root it invents only the stage, and `pool:` **stays at
+the document root**. Two samples, one each way, and nothing here generalizes past them.
+  — `research/experiments/oracle-spike/five-line.md` (`steps:` root — `- job: Job` carries
+    `pool: {vmImage: ubuntu-latest}`) and `fixtures/corpus/01-matrix-multi-config/pipeline.yml` vs
+    `fixtures/oracle/01-matrix-multi-config.final.yml` (`jobs:` root — `pool:` is still a root key
+    in the expansion), checked 2026-08-25
+
+[C-E03-260] **`checkout: none` desugars to the checkout GUID *plus a synthesized* `condition:
+false`.** It is not dropped and it is not a no-op step: the expansion carries
+`task: 6d15af64-…@1` with `inputs: {repository: none}` and `condition: false` between the two. Two
+corpus entries show it identically.
+  — `fixtures/oracle/02-artifact-handoff.final.yml` and `09-multi-checkout.final.yml`
+    (checked 2026-08-25)
+
+[C-E03-261] **A desugared step keeps only the *common step properties*; every other authored sibling
+moves into `inputs:`, and the emitted key order is `task:` → properties → `inputs:` last.** The
+corpus shows `displayName` and `name` surviving as properties while `fetchDepth`, `artifact`,
+`patterns` and `workingDirectory` move into `inputs:` — `workingDirectory` being the one that looks
+like a property and is not (C-E04-061).
+  — `fixtures/oracle/02-artifact-handoff.final.yml`, `03-dependencies-and-conditions.final.yml`
+    (checked 2026-08-25) — e.g. `- task: Bash@3` / `name: flags` / `displayName: …` / `inputs:`
 
 ---
 
