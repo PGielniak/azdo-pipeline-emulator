@@ -153,7 +153,7 @@ SYSTEM_ACCESSTOKEN=
 # ─────────────────────────────────────────────────────────────────
 # 4. Variable groups — names only; values are never fetched (PLAN D7)
 # from group 'azdo-emu-corpus-group'
-NOT-A-VARIABLE=
+NOT_A_VARIABLE=
 
 # ─────────────────────────────────────────────────────────────────
 # 5. Runtime parameters (prefilled with defaults)
@@ -351,7 +351,7 @@ SYSTEM_ACCESSTOKEN=
 # ─────────────────────────────────────────────────────────────────
 # 3. Pipeline variables (unresolved — fill in a value)
 # used by __default/container_job/step 2 (macro in input)
-ID_-U=
+ID__U=
 
 # ─────────────────────────────────────────────────────────────────
 # 6. Service connections and secure files are populated once E08 lands.

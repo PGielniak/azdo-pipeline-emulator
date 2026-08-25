@@ -12,6 +12,16 @@ mkdir -p "$AZDO_ARTIFACT_DIR"
 source "$AZDO_EMU_LIB/runtime.sh"
 source "$AZDO_EMU_LIB/expr.sh"
 
+# Exact \`.env\` spelling → variable-store name map (decision 67).
+# shellcheck disable=SC2034 # consumed indirectly by azdo_env_load in runtime.sh
+AZDO_ENV_ALIASES=(
+  'BUILD_SOURCEBRANCH=Build.SourceBranch'
+  'BUILD_REASON=Build.Reason'
+  'SYSTEM_PULLREQUEST_SOURCEBRANCH=System.PullRequest.SourceBranch'
+  'SYSTEM_PULLREQUEST_TARGETBRANCH=System.PullRequest.TargetBranch'
+  'SYSTEM_ACCESSTOKEN=System.AccessToken'
+)
+
 # Flags: --list --env-file FILE --resume
 list_only=false resume=false env_file=""
 while (($# > 0)); do

@@ -259,6 +259,17 @@ by the former. The loader registers each final value in the case-insensitive var
 generated runner projects `manifest.json`'s `env` entries into `AZDO_MANIFEST_ENV=(NAME=secret …)`,
 and those flags mark secret store values for later masking (C-E06-013).
 
+**Exact name mapping (E05-S01-T04, decision 67).** A `.env` spelling is not reversible: `A.B`,
+`A_B`, `A-B`, and `A B` all have the Bash-safe base `A_B`. The emitter replaces every
+non-identifier character with `_`, prefixes a digit-leading base with `AZDO_`, and suffixes a
+collision `__2`, `__3`, … in declaration order. `run.sh` carries the resulting emitter-generated
+`AZDO_ENV_ALIASES=('BUILD_SOURCEBRANCH=Build.SourceBranch' …)` table covering every entry in its
+own `.env.example`. `azdo_env_load` writes a generated assignment under the exact variable name on
+the right, case-folded only by the ordinary store rule (C-E06-003); it never guesses `_` → `.` and
+never writes both spellings. A user-added assignment absent from the table retains its literal env
+name. This is what makes `BUILD_SOURCEBRANCH=…` readable as `$(Build.SourceBranch)` and keeps real
+underscores, punctuation, spaces, and transform-colliding declared names distinct.
+
 The generated README must state this `.env` contract verbatim in substance:
 
 - This is a **trusted Bash assignment file**, not a generic dotenv dialect. Use direct

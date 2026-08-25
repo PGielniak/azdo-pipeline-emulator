@@ -493,6 +493,68 @@ azdo__manifest_env_secret() {
   done
 }
 
+# E05-S01-T04 — `.env` names are shell identifiers, while the variable names they represent may
+# contain punctuation or spaces. The transform is not reversible (`A.B`, `A_B`, `A-B`, and `A B`
+# share the same safe base), so the generated runner supplies the exact mapping instead of guessing
+# `_` → `.` or writing several keys:
+#
+#   AZDO_ENV_ALIASES=('BUILD_SOURCEBRANCH=Build.SourceBranch')
+#
+# Names absent from the generated `.env.example` are not in the table and retain their literal
+# shell spelling, preserving the pre-task behavior for user-added entries (decision 67).
+azdo__env_alias_validate() {
+  local declaration entry env_name variable_name canonical seen_index
+  local -a seen_names=()
+
+  if ! declaration="$(declare -p AZDO_ENV_ALIASES 2>/dev/null)"; then
+    return 0
+  fi
+  if [[ "$declaration" != declare\ -*a*\ AZDO_ENV_ALIASES=* ]]; then
+    printf '%s\n' 'AZDO_ENV_ALIASES must be an indexed array of ENV_NAME=Variable.Name entries' >&2
+    return 2
+  fi
+
+  for entry in "${AZDO_ENV_ALIASES[@]}"; do
+    env_name="${entry%%=*}"
+    variable_name="${entry#*=}"
+    if [[ "$entry" != *=* ]] || [[ ! "$env_name" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] ||
+      ! azdo__valid_store_segment "$variable_name"; then
+      printf 'invalid AZDO_ENV_ALIASES entry: %s\n' "$entry" >&2
+      return 2
+    fi
+    canonical="$(azdo__canonical_var_name "$env_name")" || return
+    for ((seen_index = 0; seen_index < ${#seen_names[@]}; seen_index++)); do
+      if [[ "${seen_names[$seen_index]}" = "$canonical" ]]; then
+        printf 'duplicate environment alias name: %s\n' "$env_name" >&2
+        return 2
+      fi
+    done
+    seen_names+=("$canonical")
+  done
+}
+
+azdo__env_alias_variable() {
+  (($# == 2)) || {
+    printf '%s\n' 'usage: azdo__env_alias_variable <env-name> <destination-variable>' >&2
+    return 2
+  }
+
+  local wanted entry env_name variable_name canonical
+  wanted="$(azdo__canonical_var_name "$1")" || return
+  printf -v "$2" '%s' "$1"
+  declare -p AZDO_ENV_ALIASES >/dev/null 2>&1 || return 0
+
+  for entry in "${AZDO_ENV_ALIASES[@]}"; do
+    env_name="${entry%%=*}"
+    variable_name="${entry#*=}"
+    canonical="$(azdo__canonical_var_name "$env_name")" || return
+    if [[ "$canonical" = "$wanted" ]]; then
+      printf -v "$2" '%s' "$variable_name"
+      return 0
+    fi
+  done
+}
+
 azdo__absolute_env_path() {
   (($# == 2)) || {
     printf '%s\n' 'usage: azdo__absolute_env_path <path> <destination-variable>' >&2
@@ -526,10 +588,11 @@ azdo_env_load() {
 
   local base_path overlay_path='' scope="${3:-${AZDO_VAR_SCOPE:-pipeline}}"
   local state_dir temp_dir trace_file old_umask declarations declaration attributes
-  local declaration_name declaration_rhs parsed_value captured_name secret index status load_status=0
+  local declaration_name declaration_rhs parsed_value captured_name store_name secret index status load_status=0
   local -a declaration_names=() declaration_values=()
 
   azdo__manifest_env_validate || return
+  azdo__env_alias_validate || return
   azdo__absolute_env_path "$1" base_path || return
   if [[ -n "${2:-}" ]]; then
     azdo__absolute_env_path "$2" overlay_path || return
@@ -602,8 +665,14 @@ AZDO_ENV_LOADER
           load_status=$?
           break 2
         fi
+        if azdo__env_alias_variable "$captured_name" store_name; then
+          :
+        else
+          load_status=$?
+          break 2
+        fi
         if azdo_var_set \
-          "$captured_name" "${declaration_values[$index]}" "$secret" false false "$scope"; then
+          "$store_name" "${declaration_values[$index]}" "$secret" false false "$scope"; then
           :
         else
           load_status=$?
@@ -3993,19 +4062,13 @@ azdo_rev() {
 # name (C-E05-005). The full ref is `refs/heads/main`; the short name is its last segment, the same
 # derivation `azdo__checkout_finish` performs.
 #
-# Two spellings are consulted, and the second is the one that actually carries a value today: the
-# variable store keys on the name as written (folded to lower case) with no dot/underscore mapping,
-# so the `.env` run-identity override `BUILD_SOURCEBRANCH` (docs/04 §10, decision 63(b)) is stored
-# under that literal name and is *not* reachable as `Build.SourceBranch`. Reading both here keeps the
-# documented override working for the run number without papering over the wider gap, which is filed
-# as E05-S01-T05 (Δ C-E05-026).
+# E05-S01-T04 removed the old `BUILD_SOURCEBRANCH` fallback: the generated `.env` alias table now
+# stores that assignment under its exact variable name, so consulting a second spelling here would
+# hide a regression in the contract rather than provide compatibility (decision 67).
 azdo_seed_branch_name() {
   local ref name
   [[ -z "$(azdo_var 'Build.SourceBranchName')" ]] || return 0
   ref="$(azdo_var 'Build.SourceBranch')" || return
-  if [[ -z "$ref" ]]; then
-    ref="$(azdo_var 'BUILD_SOURCEBRANCH')" || return
-  fi
   [[ -n "$ref" ]] || return 0
   name="${ref##*/}"
   [[ -n "$name" ]] || return 0

@@ -155,12 +155,17 @@ faithfully. Each is a deliberate deviation, recorded here so it is not mistaken 
   emitted as a conversion warning and rendered literally, rather than implemented from memory
   (BACKLOG.md §3).
 
-[C-E05-026] **Δ The `.env` run-identity override reaches the run number under its `.env` spelling.**
-  The variable store keys on the variable name as written, folded to lower case
-  (`azdo__canonical_var_name`), with no dot/underscore mapping — so the `.env` entry
-  `BUILD_SOURCEBRANCH` that `.env.example` emits (docs/04 §10, decision 63(b)) is stored under that
-  literal name and is **not** reachable as `Build.SourceBranch`. `azdo_seed_branch_name` therefore
-  consults both spellings before deriving `Build.SourceBranchName` for the run number. This is a
-  local patch for one name, not a fix: the general gap — `.env` names never mapping back to their
-  dotted variable names, and pipeline-scope variables never reaching the `job-<id>` scope steps read
-  from — is filed as **E05-S01-T04** and **E05-S01-T05**.
+~~[C-E05-026] **Δ The `.env` run-identity override reaches the run number under its `.env`
+spelling.** The variable store keys on the variable name as written, folded to lower case
+(`azdo__canonical_var_name`), with no dot/underscore mapping — so the `.env` entry
+`BUILD_SOURCEBRANCH` that `.env.example` emits (docs/04 §10, decision 63(b)) is stored under that
+literal name and is **not** reachable as `Build.SourceBranch`. `azdo_seed_branch_name` therefore
+consults both spellings before deriving `Build.SourceBranchName` for the run number. This is a local
+patch for one name, not a fix: the general gap — `.env` names never mapping back to their dotted
+variable names, and pipeline-scope variables never reaching the `job-<id>` scope steps read from —
+is filed as **E05-S01-T04** and **E05-S01-T05**.~~
+
+**Superseded 2026-08-25 by E05-S01-T04 / docs/06 §5 decision 67.** The emitter now carries an exact
+`.env` spelling → original variable name alias table into `run.sh`; `BUILD_SOURCEBRANCH` is written
+once as `Build.SourceBranch`, and `azdo_seed_branch_name` no longer reads the workaround spelling.
+The separate pipeline→job scope gap remains E05-S01-T05.

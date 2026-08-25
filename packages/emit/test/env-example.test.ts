@@ -42,6 +42,13 @@ function assertEveryEntryHasProvenance(content: string): void {
   }
 }
 
+function envEntryNames(content: string): string[] {
+  return content
+    .split('\n')
+    .filter((line) => /^[A-Z][A-Z0-9_]*=/.test(line))
+    .map((line) => line.slice(0, line.indexOf('=')));
+}
+
 describe('synthesizeEnvExample', () => {
   it('emits the documented sections with provenance comments and secret flags', () => {
     const { pipeline } = build(`parameters:
@@ -66,7 +73,7 @@ stages:
         script: echo "token=$(mySecretToken)"
 `);
     expect(pipeline).toBeDefined();
-    const { content, manifestEnv } = synthesizeEnvExample(pipeline!);
+    const { content, manifestEnv, envAliases } = synthesizeEnvExample(pipeline!);
     expect(content).toContain('# 1. Run identity overrides');
     expect(content).toContain('# 2. SYSTEM_ACCESSTOKEN');
     expect(content).toContain('499b84ac-1321-427f-aa17-267ca6975798');
@@ -80,6 +87,16 @@ stages:
     expect(content).toContain('DEPLOYENV=dev');
     expect(manifestEnv).toEqual([
       { name: 'SYSTEM_ACCESSTOKEN', secret: true, origin: 'ADO REST / feeds access' },
+    ]);
+    expect(envAliases).toEqual([
+      { name: 'BUILD_SOURCEBRANCH', variable: 'Build.SourceBranch' },
+      { name: 'BUILD_REASON', variable: 'Build.Reason' },
+      { name: 'SYSTEM_PULLREQUEST_SOURCEBRANCH', variable: 'System.PullRequest.SourceBranch' },
+      { name: 'SYSTEM_PULLREQUEST_TARGETBRANCH', variable: 'System.PullRequest.TargetBranch' },
+      { name: 'SYSTEM_ACCESSTOKEN', variable: 'System.AccessToken' },
+      { name: 'MYSECRETTOKEN', variable: 'mySecretToken' },
+      { name: 'FROMGROUP', variable: 'fromGroup' },
+      { name: 'DEPLOYENV', variable: 'deployEnv' },
     ]);
     expect(content).toMatchSnapshot();
   });
@@ -102,12 +119,46 @@ stages:
     expect(content).toMatch(/^MYSECRETTOKEN=/m);
   });
 
+  it('allocates valid unique env identifiers while retaining exact colliding variable names', () => {
+    const { pipeline } = build(`stages:
+- stage: Build
+  jobs:
+  - job: build
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo "$(a-b) $(a.b) $(123name)"
+`);
+    const result = synthesizeEnvExample(pipeline!);
+
+    expect(result.envAliases.slice(-3)).toEqual([
+      { name: 'A_B', variable: 'a-b' },
+      { name: 'A_B__2', variable: 'a.b' },
+      { name: 'AZDO_123NAME', variable: '123name' },
+    ]);
+    for (const alias of result.envAliases) {
+      expect(alias.name).toMatch(/^[A-Z_][A-Z0-9_]*$/);
+    }
+  });
+
   it('every entry has a provenance comment (the lint invariant)', () => {
     for (const { name, finalYaml } of corpusFinalYamls()) {
       const { pipeline, diagnostics } = build(finalYaml, `${name}.final.yml`);
       expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
       expect(pipeline).toBeDefined();
       assertEveryEntryHasProvenance(synthesizeEnvExample(pipeline!).content);
+    }
+  });
+
+  it('gives every generated .env entry one exact runtime alias', () => {
+    for (const { name, finalYaml } of corpusFinalYamls()) {
+      const { pipeline } = build(finalYaml, `${name}.final.yml`);
+      expect(pipeline).toBeDefined();
+      const result = synthesizeEnvExample(pipeline!);
+      expect(
+        result.envAliases.map((alias) => alias.name),
+        name,
+      ).toEqual(envEntryNames(result.content));
     }
   });
 
