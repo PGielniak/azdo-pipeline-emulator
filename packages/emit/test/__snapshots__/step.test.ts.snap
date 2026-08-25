@@ -1,0 +1,90 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`emitStepScript > emits a bash step verbatim 1`] = `
+"#!/usr/bin/env bash
+# ── Step 030 · "Lint" · bash ──────────────────────────────────────────────────
+# from: pipeline.expanded.yml:6
+# condition: succeeded()      continueOnError: false      timeout: job default
+# fidelity: exact — script steps run verbatim; see README §fidelity
+
+set -euo pipefail
+# shellcheck disable=SC1091  # runtime.sh is generated into the project lib/ at convert time
+source "$AZDO_EMU_LIB/runtime.sh"
+
+set -euo pipefail
+echo "hello"
+"
+`;
+
+exports[`emitStepScript > emits a pwsh step through a quoted heredoc, reproducing errorActionPreference 1`] = `
+"#!/usr/bin/env bash
+# ── Step 030 · "Cross-platform" · pwsh ────────────────────────────────────────
+# from: pipeline.expanded.yml:6
+# condition: succeeded()      continueOnError: false      timeout: job default
+# fidelity: degraded — runs via pwsh on this host; see README §fidelity
+
+set -euo pipefail
+# shellcheck disable=SC1091  # runtime.sh is generated into the project lib/ at convert time
+source "$AZDO_EMU_LIB/runtime.sh"
+
+pwsh -NoLogo -NoProfile -Command - <<'AZDO_EMU_PWSH'
+$ErrorActionPreference = 'stop'
+Write-Host "hi"
+AZDO_EMU_PWSH
+"
+`;
+
+exports[`emitStepScript > emits a script step with macros intact (C-E06-018/024) 1`] = `
+"#!/usr/bin/env bash
+# ── Step 030 · "Build solution" · script ──────────────────────────────────────
+# from: pipeline.expanded.yml:6
+# condition: succeeded()      continueOnError: false      timeout: job default
+# fidelity: exact — script steps run verbatim; see README §fidelity
+# NOTE: $(…) below is an ADO macro — run_step expands it just-in-time.
+
+set -euo pipefail
+# shellcheck disable=SC1091  # runtime.sh is generated into the project lib/ at convert time
+source "$AZDO_EMU_LIB/runtime.sh"
+
+echo "config=$(buildConfiguration)"
+"
+`;
+
+exports[`emitStepScript > emits a stub for a desugared checkout step (native dispatch is E07-S03-T01) 1`] = `
+"#!/usr/bin/env bash
+# ── Step 030 · "checkout-self" · checkout ─────────────────────────────────────
+# from: pipeline.expanded.yml:6
+# condition: succeeded()      continueOnError: false      timeout: job default
+# fidelity: stub — no native emission yet (real-task mode is E07); inputs logged only
+
+set -euo pipefail
+# shellcheck disable=SC1091  # runtime.sh is generated into the project lib/ at convert time
+source "$AZDO_EMU_LIB/runtime.sh"
+
+printf '%s\\n' 'azdo-emu: stub — 6d15af64-176c-496d-b583-fd2ae21d4df4@1 (inputs only; the step does not run)'
+cat <<'AZDO_EMU_STUB_INPUTS'
+task: 6d15af64-176c-496d-b583-fd2ae21d4df4@1
+  repository: self
+AZDO_EMU_STUB_INPUTS
+"
+`;
+
+exports[`emitStepScript > emits a stub for a non-script task, dumping its resolved inputs 1`] = `
+"#!/usr/bin/env bash
+# ── Step 030 · "Publish tests" · PublishTestResults@2 ─────────────────────────
+# from: pipeline.expanded.yml:6
+# condition: succeeded()      continueOnError: false      timeout: job default
+# fidelity: stub — no native emission yet (real-task mode is E07); inputs logged only
+
+set -euo pipefail
+# shellcheck disable=SC1091  # runtime.sh is generated into the project lib/ at convert time
+source "$AZDO_EMU_LIB/runtime.sh"
+
+printf '%s\\n' 'azdo-emu: stub — PublishTestResults@2 (inputs only; the step does not run)'
+cat <<'AZDO_EMU_STUB_INPUTS'
+task: PublishTestResults@2
+  testResultsFiles: **/*.xml
+  failTaskOnFailedTests: true
+AZDO_EMU_STUB_INPUTS
+"
+`;

@@ -2,3 +2,4 @@
 export const PACKAGE_NAME = '@azdo-emu/emit';
 
 export * from './scaffold.js';
+export * from './step.js';

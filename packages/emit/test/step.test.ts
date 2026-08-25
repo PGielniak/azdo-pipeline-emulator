@@ -1,0 +1,261 @@
+// E05-S01-T02 — step script emission.
+//
+// The Done criteria are "emitted corpus scripts pass shellcheck" and "headers snapshot-tested", so
+// the suite does both:
+//   1. Focused snapshot cases for each native kind + the stub fallback, built from the same
+//      service-expanded shapes the corpus carries.
+//   2. A whole-corpus pass that emits every step script from all ten captured `final.yml`s, writes
+//      them to a temp tree, and runs shellcheck over them as one invocation — zero findings.
+//
+// The macro-preservation requirement (C-E06-018/024) is asserted directly: `$( )` in an input
+// survives verbatim in the emitted body, because it is the runtime (`azdo_expand_macros`), not the
+// emitter, that expands it just before the step runs.
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+
+import { buildPipeline, parsePipelineYaml, type Step } from '@azdo-emu/engine';
+import { scaffold } from '../src/scaffold.js';
+import { defaultFidelity, emitStepScript, hasMacro, nativeScriptKind } from '../src/step.js';
+
+const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
+const shellcheck = join(repoRoot, 'packages/runtime/node_modules/.bin/shellcheck');
+// The ADO-macro false positives (C-E06-018/024): `$(name)` is a macro the runtime expands, not a
+// shell command substitution, so shellcheck's `echo "$(cmd)"` (SC2005) and "quote the unquoted
+// `$(…)`" (SC2046) findings are by construction — the emitter must leave the macro verbatim.
+const SHELLCHECK_MACRO_EXCLUDES = ['SC2005', 'SC2046'];
+
+const build = (yaml: string, file = 'pipeline.expanded.yml') =>
+  buildPipeline(parsePipelineYaml(yaml, file));
+
+/** Build a one-stage, one-job, one-step model and return the step plus its emitted script. */
+function emitOne(yaml: string): { step: Step; output: string } {
+  const { pipeline, diagnostics } = build(yaml);
+  expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+  expect(pipeline).toBeDefined();
+  const job = pipeline!.stages[0]!.jobs[0]!;
+  const step = job.steps[0]!;
+  return { step, output: emitStepScript(step, '030') };
+}
+
+/** Build a single step from a step-mapping body (one `task:`/`checkout:` entry). */
+function stepOf(body: string): Step {
+  const { pipeline, diagnostics } = build(
+    `stages:\n- stage: A\n  jobs:\n  - job: b\n    steps:\n    - ${body}\n`,
+  );
+  expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+  return pipeline!.stages[0]!.jobs[0]!.steps[0]!;
+}
+
+describe('nativeScriptKind', () => {
+  it('classifies the four native kinds by task name and the pwsh flag', () => {
+    expect(nativeScriptKind(stepOf('task: CmdLine@2'))).toBe('script');
+    expect(nativeScriptKind(stepOf('task: Bash@3'))).toBe('bash');
+    // `pwsh` vs `powershell` is the `pwsh:` input (C-E04-037), not the reference.
+    expect(nativeScriptKind(stepOf('task: PowerShell@2'))).toBe('powershell');
+    expect(nativeScriptKind(stepOf('task: PublishTestResults@2'))).toBeUndefined();
+    // The desugared checkout GUID is not a script step either.
+    expect(
+      nativeScriptKind(stepOf('task: 6d15af64-176c-496d-b583-fd2ae21d4df4@1')),
+    ).toBeUndefined();
+  });
+});
+
+describe('defaultFidelity', () => {
+  it('labels script/bash exact, pwsh/powershell degraded, everything else stub', () => {
+    expect(defaultFidelity(stepOf('task: CmdLine@2'))).toBe('exact');
+    expect(defaultFidelity(stepOf('task: Bash@3'))).toBe('exact');
+    expect(defaultFidelity(stepOf('task: PowerShell@2'))).toBe('degraded');
+    expect(defaultFidelity(stepOf('task: PublishTestResults@2'))).toBe('stub');
+  });
+});
+
+describe('hasMacro', () => {
+  it('detects an ADO macro opener', () => {
+    expect(hasMacro('$(buildConfiguration)')).toBe(true);
+    expect(hasMacro('no macro here')).toBe(false);
+    expect(hasMacro('$ErrorActionPreference')).toBe(false);
+  });
+});
+
+describe('emitStepScript', () => {
+  it('emits a script step with macros intact (C-E06-018/024)', () => {
+    const { step, output } = emitOne(`stages:
+- stage: A
+  jobs:
+  - job: build
+    steps:
+    - task: CmdLine@2
+      displayName: Build solution
+      inputs:
+        script: echo "config=$(buildConfiguration)"
+`);
+    expect(step).toBeDefined();
+    expect(output).toContain('# ── Step 030 · "Build solution" · script ');
+    expect(output).toContain(
+      '# condition: succeeded()      continueOnError: false      timeout: job default',
+    );
+    expect(output).toContain('# fidelity: exact — script steps run verbatim; see README §fidelity');
+    expect(output).toContain(
+      '# NOTE: $(…) below is an ADO macro — run_step expands it just-in-time.',
+    );
+    expect(output).toContain('set -euo pipefail');
+    expect(output).toContain('source "$AZDO_EMU_LIB/runtime.sh"');
+    expect(output).toContain('echo "config=$(buildConfiguration)"');
+    expect(output).toMatchSnapshot();
+  });
+
+  it('emits a bash step verbatim', () => {
+    const { output } = emitOne(`stages:
+- stage: A
+  jobs:
+  - job: build
+    steps:
+    - task: Bash@3
+      displayName: Lint
+      inputs:
+        targetType: inline
+        script: |
+          set -euo pipefail
+          echo "hello"
+`);
+    expect(output).toContain('# ── Step 030 · "Lint" · bash ');
+    expect(output).toContain('echo "hello"');
+    expect(output).toMatchSnapshot();
+  });
+
+  it('emits a pwsh step through a quoted heredoc, reproducing errorActionPreference', () => {
+    const { output } = emitOne(`stages:
+- stage: A
+  jobs:
+  - job: build
+    steps:
+    - task: PowerShell@2
+      displayName: Cross-platform
+      inputs:
+        targetType: inline
+        script: Write-Host "hi"
+        errorActionPreference: stop
+        pwsh: 'true'
+`);
+    expect(output).toContain('# ── Step 030 · "Cross-platform" · pwsh ');
+    expect(output).toContain(
+      '# fidelity: degraded — runs via pwsh on this host; see README §fidelity',
+    );
+    expect(output).toContain("pwsh -NoLogo -NoProfile -Command - <<'AZDO_EMU_PWSH'");
+    expect(output).toContain("$ErrorActionPreference = 'stop'");
+    expect(output).toContain('Write-Host "hi"');
+    expect(output).toMatchSnapshot();
+  });
+
+  it('emits a stub for a non-script task, dumping its resolved inputs', () => {
+    const { output } = emitOne(`stages:
+- stage: A
+  jobs:
+  - job: build
+    steps:
+    - task: PublishTestResults@2
+      displayName: Publish tests
+      inputs:
+        testResultsFiles: '**/*.xml'
+        failTaskOnFailedTests: true
+`);
+    expect(output).toContain('# ── Step 030 · "Publish tests" · PublishTestResults@2 ');
+    expect(output).toContain(
+      '# fidelity: stub — no native emission yet (real-task mode is E07); inputs logged only',
+    );
+    expect(output).toContain(
+      "printf '%s\\n' 'azdo-emu: stub — PublishTestResults@2 (inputs only; the step does not run)'",
+    );
+    expect(output).toContain('task: PublishTestResults@2');
+    expect(output).toContain('  testResultsFiles: **/*.xml');
+    expect(output).toMatchSnapshot();
+  });
+
+  it('emits a stub for a desugared checkout step (native dispatch is E07-S03-T01)', () => {
+    const { output } = emitOne(`stages:
+- stage: A
+  jobs:
+  - job: build
+    steps:
+    - task: 6d15af64-176c-496d-b583-fd2ae21d4df4@1
+      inputs:
+        repository: self
+`);
+    expect(output).toContain('· checkout ');
+    expect(output).toContain(
+      '# fidelity: stub — no native emission yet (real-task mode is E07); inputs logged only',
+    );
+    expect(output).toMatchSnapshot();
+  });
+
+  it('leaves an authored condition and timeout in the header', () => {
+    const { output } = emitOne(`stages:
+- stage: A
+  jobs:
+  - job: build
+    steps:
+    - task: CmdLine@2
+      displayName: Guarded
+      condition: eq(variables.build, '1')
+      timeoutInMinutes: 5
+      continueOnError: true
+      inputs:
+        script: echo hi
+`);
+    expect(output).toContain(
+      "# condition: eq(variables.build, '1')      continueOnError: true      timeout: 5 min",
+    );
+  });
+});
+
+describe('emitted corpus scripts pass shellcheck', () => {
+  const corpusFinalYamls = (): { name: string; finalYaml: string }[] => {
+    const oracleDir = join(repoRoot, 'fixtures', 'oracle');
+    return readdirSync(oracleDir, { withFileTypes: true })
+      .filter((e) => e.isFile() && e.name.endsWith('.final.yml'))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((e) => ({
+        name: e.name.slice(0, -'.final.yml'.length),
+        finalYaml: readFileSync(join(oracleDir, e.name), 'utf8'),
+      }));
+  };
+
+  it('emits every corpus step and runs shellcheck over all of them', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'azdo-emit-shellcheck-'));
+    try {
+      const files: string[] = [];
+      let emitted = 0;
+      for (const { name, finalYaml } of corpusFinalYamls()) {
+        const { pipeline, diagnostics } = build(finalYaml, `${name}.final.yml`);
+        expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+        expect(pipeline).toBeDefined();
+        for (const stage of scaffold(pipeline!).stages) {
+          for (const job of stage.jobs) {
+            for (const scaffoldStep of job.steps) {
+              const content = emitStepScript(scaffoldStep.step, scaffoldStep.number);
+              const file = join(tmp, scaffoldStep.path);
+              mkdirSync(dirname(file), { recursive: true });
+              writeFileSync(file, content);
+              files.push(file);
+              emitted += 1;
+            }
+          }
+        }
+      }
+      expect(emitted).toBeGreaterThan(0);
+      const check = spawnSync(
+        shellcheck,
+        [...SHELLCHECK_MACRO_EXCLUDES.flatMap((code) => ['-e', code]), ...files],
+        { encoding: 'utf8' },
+      );
+      expect(check.stdout).toBe('');
+      expect(check.status, check.stdout || check.stderr).toBe(0);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 120_000);
+});
