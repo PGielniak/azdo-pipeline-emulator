@@ -15,7 +15,7 @@ time the IDs were load-bearing in code comments and test names) is the reason th
 | `C-E03-140..159` | E03-S01-T03 iterative insertion (`each`) | this file | 140–151 used — recorded 2026-08-24 from the 12 committed probes (`research/experiments/E03-each/`, 11 pairs + 1 rejection); 152..159 free |
 | `C-E03-160..174` | E03-S01-T04 `${{ insert }}` merge | this file | 160–174 used — recorded 2026-08-24 from the 32 committed probes (`research/experiments/E03-insert/`, 13 pairs + 19 rejections) |
 | `C-E03-175..194` | E03-S01-T05 scalar interpolation | this file | 175–194 used — recorded 2026-08-25 from the 34 committed probes (`research/experiments/E03-interpolation/`, 27 pairs + 7 rejections), plus `E03-insert/value-position/` for 194 |
-| `C-E03-195..229` | E03-S02 template resolution & parameters | this file | **204 used; 195..203 and 205..215 owed** — `packages/engine/src/template/reference.ts` and its test **cite** those IDs, and 34 transcripts sit in `research/experiments/E03-references/`, but no entry is written, so a reader following a citation finds nothing (E03-S01-T06). E03-S06's shipped code consumes several of them. |
+| `C-E03-195..229` | E03-S02 template resolution & parameters | this file | 195–218 used — recorded 2026-08-25 from the 34 committed probes (`research/experiments/E03-references/`, 21 pairs + 13 rejections, two-repository fixture at `fixtures/oracle/references/repos/`); `C-E03-204` was recorded earlier by E03-S02-T05. 219..229 free — E03-S02-T02 (typed parameter binding) has its own block at 300. |
 | `C-E03-230..249` | E03-S03 compile-time variable visibility | this file | free |
 | `C-E03-250..279` | E03-S04 limits, emitter, strict validation | this file | free |
 | `C-E03-280..299` | E03-S05-T02 `preview-diff` | this file | free |
@@ -34,10 +34,12 @@ Recording those entries is the remaining work on E03-S01-T02..T05 and E03-S02-T0
 they must be written from are already here, so it is transcription, not new measurement, and no
 oracle budget is needed.
 
-*Progress:* `C-E03-120..139` (T02) and `C-E03-140..151` (T03) were recorded 2026-08-23/24,
-`C-E03-160..174` (T04) on 2026-08-24, and `C-E03-175..194` (T05) on 2026-08-25. The one block still
-owed is `C-E03-195..229` — E03-S02-T01's, whose citations in
-`packages/engine/src/template/reference.ts` still point at entries that do not exist here.
+*Progress: the drift is closed.* `C-E03-120..139` (T02) and `C-E03-140..151` (T03) were recorded
+2026-08-23/24, `C-E03-160..174` (T04) on 2026-08-24, and `C-E03-175..194` (T05) and
+`C-E03-195..218` (E03-S02-T01) on 2026-08-25. No block on this epic now has code citing entries
+that do not exist. The one number set still outstanding is `C-E03-300..339`, which the 2026-08-20
+parameter lane cited from `research/experiments/E03-parameters/` READMEs and never consolidated
+here — E03-S02-T02 reclaims it.
 
 ---
 
@@ -870,6 +872,205 @@ So the exemption is keyed on the **keyword set**, not on the text looking like a
     `"/azure-pipelines.yml (Line: 3, Col: 8): Unexpected value '${{ insert }}'"`. No new probe was
     run for this task: E03-S01-T04's transcript is decisive and `interpolate.test.ts` replays it
     directly.
+
+---
+
+## E03-S02-T01 — reference resolution (`C-E03-195..218`)
+
+Evidence: `research/experiments/E03-references/` — **34** live preview probes (21 expanded pairs,
+13 rejections) against a **two-repository** oracle fixture, whose tree is committed at
+`fixtures/oracle/references/repos/` (`self/` and `templates/`). The second repository is not a
+convenience: every question this block answers is *which repository was that path read from*, and
+one repository cannot tell the answers apart. The probes were captured by `pnpm reference-survey`
+and are replayed by `packages/engine/test/template/reference.test.ts`.
+
+Bookkeeping note: `packages/engine/src/template/reference.ts` has cited `C-E03-195..218` since
+2026-08-20 and `packages/engine/src/template/inline.ts` and E03-S06's shipped bundler consume
+several of them, but only `C-E03-204` was ever written down (by E03-S02-T05). This entry records
+the rest **from the transcripts already on disk** — transcription, not new measurement, and no
+re-implementation. `C-E03-204` keeps its own section below and is not repeated here.
+
+Three IDs inside the block were never cited by the code and are assigned here to findings the survey
+made and nothing had recorded: `C-E03-199` (`./` prefix), `C-E03-202` (`../` from a subdirectory),
+`C-E03-214` (an alias naming a repository that does not exist).
+
+### Where a path is resolved from
+
+[C-E03-195] **A leading `/` makes the path repository-absolute, at any depth.** `/e03-refs/leaf.yml`
+from the root file and the *same* absolute path written inside `/e03-refs/dir/deep-abs.yml` both
+reach `/e03-refs/leaf.yml` — the two would differ if an absolute path were relative to the including
+template.
+  — `research/experiments/E03-references/abs-from-root/`, `abs-from-template/` (live preview,
+    checked 2026-08-20) — both expand to `script: echo self-leaf`
+
+[C-E03-199] **An explicit `./` prefix is accepted as relative, not as a literal path segment.**
+`./e03-refs/leaf.yml` from the root file resolves like the bare spelling. Undocumented; measured
+because the naive "starts with `/`?" test would send it down the relative branch and then fail on a
+`.` segment.
+  — `research/experiments/E03-references/dot-slash/` (live preview, checked 2026-08-20)
+
+[C-E03-201] **An absolute path discards the base directory entirely — in the *frame's* repository,
+not the definition's.** `/cross/leaf.yml` written inside `/cross/abs.yml`, itself read from the
+aliased repository, reaches the aliased repository's `/cross/leaf.yml`; the same string resolved
+against the definition's repository would not exist.
+  — `research/experiments/E03-references/cross-abs-inside/` (live preview, checked 2026-08-20)
+
+[C-E03-202] **`../` from a subdirectory is legal and resolves against the including file's
+directory.** `../leaf.yml` written in `/e03-refs/dir/deep-parent.yml` reaches `/e03-refs/leaf.yml` —
+the documented nested-hierarchy form, confirmed by execution.
+  — `research/experiments/E03-references/parent-traversal/`, and the bare-relative control
+    `rel-from-root/` + `nested-relative/` (live preview, checked 2026-08-20)
+
+[C-E03-203] **Backslashes are normalized to forward slashes.** `e03-refs\leaf.yml` resolves to
+`/e03-refs/leaf.yml`. Undocumented, and the opposite of what a strict POSIX reading would give (a
+single filename containing backslashes).
+  — `research/experiments/E03-references/backslash/` (live preview, checked 2026-08-20)
+
+[C-E03-205] **A reference is not trimmed before resolution.** The quoted spelling
+`"/e03-refs/leaf.yml "` — with the trailing space forced past the YAML parser — is looked up *with*
+the space and fails, and the failure sentence prints the path with the space still on it.
+  — `research/experiments/E03-references/trailing-space/` (live preview, checked 2026-08-20) —
+    `"File /e03-refs/leaf.yml  not found in repository …"` (two spaces before `not`)
+
+[C-E03-206] **The escape check is on the *resolved* path, not on each step.** `../leaf.yml` from a
+subdirectory is legal (C-E03-202) while three levels of `../` from the same place is not, so a
+traversal may dip toward the root mid-string as long as it does not end above it. Both escapes are
+rejected, one from the root file and one from two levels down.
+  — `research/experiments/E03-references/escape-root-direct/`, `escape-root-nested/` (live preview,
+    checked 2026-08-20) — `"The file path //../outside.yml is invalid"` and
+    `"/e03-refs/escape.yml: The file path /e03-refs/../../../outside.yml is invalid"`
+
+[C-E03-200] **The invalid-path rejection prints the *unnormalized* join, base directory and all.**
+The root file's base is `/`, so `../outside.yml` is printed `//../outside.yml` — a double slash that
+only exists before normalization — and a reference that crosses a repository boundary with an empty
+base prints a single-slash `/../e03-refs/leaf.yml`. Reproducing the sentence therefore requires
+keeping the joined string, not just the resolved one.
+  — `research/experiments/E03-references/escape-root-direct/`, `cross-rel-self/` (live preview,
+    checked 2026-08-20)
+
+### Repositories and aliases
+
+[C-E03-197] **`self` is the alias for the repository the *pipeline definition* came from, not
+"the current repository".** A template read from the aliased repository writes
+`/e03-refs/leaf.yml@self` and reaches the definition's repository — the documented cross-repo
+scenario — and `@self` needs no `resources:` block to be legal.
+  — `research/experiments/E03-references/cross-back-to-self/`, `self-alias-root/` (live preview,
+    checked 2026-08-20)
+
+[C-E03-196] **Repositories are resolved once, at pipeline start, and pinned for the whole
+expansion.** Every not-found sentence in the corpus names one `version <40-hex>` per repository, and
+the same commit appears across probes in a run; the aliased repository carries its own, different
+commit. This is why a repository resource can carry a pinned commit rather than a ref to be
+re-resolved per reference.
+  — `research/experiments/E03-references/missing-file/`, `cross-missing-file/` (live preview,
+    checked 2026-08-20) — `version da8a3041…` for the definition's repository and
+    `version 2cc1a2e5…` for `azdo-emu-templates`, in the same survey
+
+[C-E03-198] **A repository resource that omits `ref:` defaults to `refs/heads/main`, and an explicit
+`ref:` is accepted.** The documented default, confirmed against the service.
+  — https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/resources-repositories-repository
+    (deep-verified 2026-08-25; `git_commit_id` `d089fd2dbb54483ec611eeb478e3eff14be74393`,
+    `ms.date` 2026-07-29) — "`ref`: string # ref name to checkout; defaults to 'refs/heads/main'."
+  — `research/experiments/E03-references/alias-ref-pinned/` (live preview, checked 2026-08-20) —
+    the explicit `ref: refs/heads/main` probe expands identically to the omitted-`ref` probes
+
+[C-E03-218] **The default ref is observable in the service's own error text.** The not-found sentence
+prints `branch refs/heads/main` for a repository whose resource declared no `ref:` — so the default
+is applied at resolution time and is what a diagnostic must echo, not a value we may leave blank.
+  — `research/experiments/E03-references/missing-file/`, `cross-missing-file/` (live preview,
+    checked 2026-08-20)
+
+[C-E03-210] **The alias splits on the *first* `@`, not the last.** `a.yml@self@self` is rejected
+`No repository found by name self@self` — everything after the first `@` is the alias — and a file
+genuinely named `we@ird.yml` is unreachable, rejected `No repository found by name ird.yml`. A
+`lastIndexOf('@')` implementation reproduces neither sentence.
+  — `research/experiments/E03-references/double-at/`, `at-in-filename/` (live preview, checked
+    2026-08-20)
+
+[C-E03-212] **An empty alias is a real reference that lands on `self`, and is not the same as no
+alias at all.** `/e03-refs/leaf.yml@` expands. The distinction matters because an absent alias
+resolves in the *frame's* repository (C-E03-216) while an explicit one goes through the alias
+lookup, so collapsing `@` to "no alias" would change where a cross-repo template's references read
+from.
+  — `research/experiments/E03-references/empty-alias/` (live preview, checked 2026-08-20)
+
+[C-E03-213] **Alias lookup folds case; path lookup does not.** An alias declared `templates` and
+referenced `@TEMPLATES` resolves, while a path differing only in case is rejected (C-E03-204). The
+two halves of one reference string therefore obey different comparison rules.
+  — `research/experiments/E03-references/alias-case/` (live preview, checked 2026-08-20) — expands
+    to `script: echo cross-leaf`
+
+[C-E03-211] **An alias no `resources:` block declares is rejected `No repository found by name
+<alias>`**, with no help link and no mention of the file that would have been read.
+  — `research/experiments/E03-references/unknown-alias/` (live preview, checked 2026-08-20) —
+    `"/azure-pipelines.yml: No repository found by name nosuchalias"`
+
+[C-E03-214] **An alias that *is* declared but names a repository that does not exist fails
+differently — at fetch time, not at alias lookup.** The sentence is "The repository `<name>` in
+project `<project-id>` could not be retrieved. Verify the name and credentials being used and
+permissions." — a retrieval/permissions failure that names the project, where C-E03-211 names only
+the alias. A converter that reported one sentence for both would lose the distinction between "you
+did not declare it" and "we could not read it".
+  — `research/experiments/E03-references/alias-undeclared-repo/` (live preview, checked 2026-08-20;
+    project GUID redacted here, present in the transcript)
+
+### Crossing a repository boundary
+
+[C-E03-215] **Crossing a repository boundary resets the base directory to the repository root; a
+reference that stays home keeps the including file's directory.** The pair is decisive.
+`cross/leaf.yml@templates` written in `/e03-refs/dir/` resolves — which is only possible if the base
+became `/` rather than `/e03-refs/dir`. `../e03-refs/leaf.yml@self` written in `/cross/` (the other
+repository) is *rejected* `The file path /../e03-refs/leaf.yml is invalid` — which is only possible
+if the base became empty rather than `/cross`, where it would have resolved. The control:
+`../leaf.yml@self` written in `/e03-refs/dir/` of the **same** repository resolves, so an explicit
+`@self` does not reset the base by itself — only an actual change of repository does.
+  — `research/experiments/E03-references/cross-rel-outward/`, `cross-rel-self/`,
+    `self-alias-relative-nested/`, `self-alias-relative/`, `self-alias-nested/` (live preview,
+    checked 2026-08-20)
+
+[C-E03-216] **Inside a template read from another repository, a bare reference stays in *that*
+repository.** `leaf.yml` written in `/cross/outer.yml` of the aliased repository reads the aliased
+repository's `/cross/leaf.yml`; it does not fall back to the definition's repository (where the
+path does not exist). The repository context follows the frame, and the same is true of the
+absolute form (C-E03-201).
+  — `research/experiments/E03-references/cross-bare-inside/` (live preview, checked 2026-08-20) —
+    expands to `script: echo cross-leaf`
+
+[C-E03-207] **The not-found sentence names path, repository URL, branch and commit**, in that order:
+`File <path> not found in repository <url> branch <ref> version <commit>.` For a cross-repo
+reference it names the **other** repository, which is what makes the sentence usable for telling the
+two apart.
+  — `research/experiments/E03-references/missing-file/`, `cross-missing-file/`, `case-mismatch/`
+    (live preview, checked 2026-08-20) — the cross-repo probe names
+    `…/_git/azdo-emu-templates branch refs/heads/main version 2cc1a2e5…`
+
+[C-E03-217] **A file is *named* in diagnostics bare inside the definition's own repository and
+`<path>@<alias>` anywhere else.** The rejection raised inside the aliased repository's
+`/cross/rel-self.yml` is prefixed `/cross/rel-self.yml@templates:`, while every rejection inside the
+definition's repository is prefixed with the bare path. Error prefixes therefore encode the
+repository, and a frame must carry the alias to reproduce them.
+  — `research/experiments/E03-references/cross-rel-self/`, `escape-root-nested/` (live preview,
+    checked 2026-08-20)
+
+### Cycles
+
+[C-E03-208] **The service has no cycle detection: a cycle recurses until it dies of `Maximum object
+depth exceeded`, located at the repeated file.** A self-including template and a two-file mutual
+cycle produce the same sentence, prefixed with the file that repeats — not the file that opened the
+cycle.
+  — `research/experiments/E03-references/self-cycle/`, `mutual-cycle/` (live preview, checked
+    2026-08-20) — `"/e03-refs/self-cycle.yml: Maximum object depth exceeded"` and
+    `"/e03-refs/cycle-a.yml: Maximum object depth exceeded"`
+  — **Deliberate divergence:** we detect the repeat on `(repository, commit, path)` and report that
+    same sentence at that same file. Recursing until the stack blows is a hang, not a behavior. Same
+    observable result, terminating implementation; recorded here so the mechanism difference is not
+    mistaken for a parity bug.
+
+[C-E03-209] **The same file included twice from one parent is a diamond, not a cycle, and expands
+twice.** This is the control that stops cycle detection from degenerating into "have I seen this
+path before" — a `Set` of visited paths would reject a legal pipeline.
+  — `research/experiments/E03-references/diamond-not-cycle/` (live preview, checked 2026-08-20) —
+    the expansion contains `script: echo self-leaf` twice
 
 ---
 

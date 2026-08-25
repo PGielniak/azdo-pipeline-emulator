@@ -81,7 +81,7 @@ Pattern: `https://learn.microsoft.com/azure/devops/pipelines/yaml-schema/<slug>`
 `resources-containers-container` · `resources-containers-container-trigger` · `resources-packages` ·
 `resources-packages-package` · `resources-pipelines` · `resources-pipelines-pipeline` ·
 `resources-pipelines-pipeline-trigger` · `resources-pipelines-pipeline-trigger-branches` ·
-`resources-repositories` · `resources-repositories-repository` · `resources-webhooks` ·
+`resources-repositories` · `resources-repositories-repository` (**verified 2026-08-25** for E03-S02-T01, page `git_commit_id` `d089fd2dbb54483ec611eeb478e3eff14be74393`, `ms.date` 2026-07-29: the `ref` default, "ref name to checkout; defaults to 'refs/heads/main'", C-E03-198) · `resources-webhooks` ·
 `resources-webhooks-webhook` · `resources-webhooks-webhook-filters` ·
 `resources-webhooks-webhook-filters-filter` · `schedules` · `schedules-cron` · `stages` ·
 `stages-stage` · `stages-template` · `steps` · `steps-bash` · `steps-checkout` (**verified 2026-08-21** for E06-S05-T02, page `git_commit_id` `d089fd2dbb54483ec611eeb478e3eff14be74393`, `ms.date` 2026-07-29: every option's text plus the Shallow-fetch/Clean-property/Sync-tags remarks, the `$(Pipeline.Workspace)` root for `path`, and the implicit `self`/`none` default — C-E06-105/108, and the sprint-209 pipeline-setting defaults the agent contradicts at C-E06-099) · `steps-download` (**verified 2026-08-21** for E06-S05-T01, same `git_commit_id`: the keyword's `$(Pipeline.Workspace)/<artifact name>` layout and its status as a shorthand for the download task — C-E06-084) ·
