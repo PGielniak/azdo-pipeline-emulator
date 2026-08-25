@@ -262,6 +262,16 @@ export function buildExpansionMap(
 }
 
 /**
+ * The provenance port `validateExpandedPipeline` takes (E03-S04-T03), bound to this map.
+ *
+ * The validator lives a layer below this module and must not import it, so what crosses is a
+ * function rather than the map — the same shape the Redactor and the OfflineExpander ports take.
+ */
+export function originLookup(map: ExpansionMap): (line: number) => ProvenanceFrame | undefined {
+  return (line) => provenanceAtLine(map, line)?.from;
+}
+
+/**
  * The deepest entry covering `line` — what the spot-check tool prints.
  *
  * "Deepest" because entries nest: a step's line is also inside its job's and its stage's, and the
