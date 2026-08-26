@@ -108,6 +108,14 @@ export interface ManifestStep {
   readonly failOnStderr: boolean;
   readonly fidelity?: 'exact' | 'equivalent' | 'degraded' | 'stub' | 'unsupported';
   readonly disposition?: 'native' | 'real-task' | 'stub';
+  /**
+   * The emitted script's path, relative to the generated project root.
+   *
+   * Filled by the convert wiring (E10-S02-T01), not by this serializer: it is a fact about the
+   * *generated project* — the scaffolder decides it — and the serializer never sees a scaffold.
+   * docs/04 §11 always specified it; decision 64 deferred it here.
+   */
+  readonly file?: string;
   readonly source: ManifestSource;
   readonly warnings: readonly string[];
 }
@@ -146,6 +154,8 @@ export interface ManifestJob {
   readonly id: string;
   readonly displayName?: string;
   readonly kind: 'agent' | 'server' | 'deployment';
+  /** Resolved by the convert wiring from `output.targetOs` (E10-S02-T01, decision 64). */
+  readonly targetOs?: 'linux' | 'windows' | 'macos';
   readonly dependsOn: readonly string[];
   readonly condition?: string;
   readonly matrixKey?: string;

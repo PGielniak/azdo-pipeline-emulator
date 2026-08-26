@@ -44,6 +44,15 @@ importers:
 
   packages/cli:
     dependencies:
+      '@azdo-emu/emit':
+        specifier: workspace:*
+        version: link:../emit
+      '@azdo-emu/engine':
+        specifier: workspace:*
+        version: link:../engine
+      '@azdo-emu/fetch':
+        specifier: workspace:*
+        version: link:../fetch
       commander:
         specifier: 15.0.0
         version: 15.0.0

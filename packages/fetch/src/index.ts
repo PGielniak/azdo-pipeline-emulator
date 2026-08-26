@@ -29,6 +29,20 @@ export {
   type FetchLike,
 } from './expand.js';
 
+// E12-S01-T01's expansion gate: the arm selector `convert` binds (E10-S02-T01).
+export {
+  ExpansionConfigMissingError,
+  OfflineExpansionUnavailableError,
+  OFFLINE_EXPANSION_WARNING,
+  resolveExpansion,
+  type ExpansionManifestEntry,
+  type ExpansionMode,
+  type OfflineExpander,
+  type OfflineExpansion,
+  type ResolveExpansionOptions,
+  type ResolvedExpansion,
+} from './expansion-source.js';
+
 export {
   ExpansionCacheMissError,
   ExpansionError,

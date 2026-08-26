@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://azdo-emu.dev/schemas/manifest.schema.json",
   "title": "azdo-emu generated-project manifest",
-  "description": "The machine-readable graph + metadata of a converted pipeline (docs/04 §11), written by the emitter and consumed by doctor, --list, and tooling.",
+  "description": "The machine-readable graph + metadata of a converted pipeline (docs/04 \u00a711), written by the emitter and consumed by doctor, --list, and tooling.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -36,13 +36,27 @@
             "fromCache"
           ],
           "properties": {
-            "mode": { "const": "service" },
-            "degraded": { "const": false },
-            "requestHash": { "type": "string" },
-            "finalYamlHash": { "type": "string" },
-            "apiVersion": { "type": "string" },
-            "pipelineId": { "type": "integer" },
-            "fromCache": { "type": "boolean" }
+            "mode": {
+              "const": "service"
+            },
+            "degraded": {
+              "const": false
+            },
+            "requestHash": {
+              "type": "string"
+            },
+            "finalYamlHash": {
+              "type": "string"
+            },
+            "apiVersion": {
+              "type": "string"
+            },
+            "pipelineId": {
+              "type": "integer"
+            },
+            "fromCache": {
+              "type": "boolean"
+            }
           }
         },
         {
@@ -50,10 +64,18 @@
           "additionalProperties": false,
           "required": ["mode", "degraded", "requestHash", "finalYamlHash"],
           "properties": {
-            "mode": { "const": "offline" },
-            "degraded": { "const": true },
-            "requestHash": { "type": "string" },
-            "finalYamlHash": { "type": "string" }
+            "mode": {
+              "const": "offline"
+            },
+            "degraded": {
+              "const": true
+            },
+            "requestHash": {
+              "type": "string"
+            },
+            "finalYamlHash": {
+              "type": "string"
+            }
           }
         }
       ]
@@ -63,18 +85,47 @@
       "additionalProperties": false,
       "required": ["parameters"],
       "properties": {
-        "name": { "type": "string" },
+        "name": {
+          "type": "string"
+        },
         "parameters": {
           "type": "object",
-          "additionalProperties": { "type": "string" }
+          "additionalProperties": {
+            "type": "string"
+          }
         }
       }
     },
-    "stages": { "type": "array", "items": { "$ref": "#/definitions/stage" } },
-    "env": { "type": "array", "items": { "$ref": "#/definitions/envEntry" } },
-    "tools": { "type": "array", "items": { "$ref": "#/definitions/tool" } },
-    "warnings": { "type": "array", "items": { "$ref": "#/definitions/warning" } },
-    "unsupported": { "type": "array", "items": { "type": "string" } }
+    "stages": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/stage"
+      }
+    },
+    "env": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/envEntry"
+      }
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/tool"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/warning"
+      }
+    },
+    "unsupported": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
   },
   "definitions": {
     "stage": {
@@ -82,12 +133,33 @@
       "additionalProperties": false,
       "required": ["id", "dependsOn", "variables", "jobs"],
       "properties": {
-        "id": { "type": "string" },
-        "displayName": { "type": "string" },
-        "dependsOn": { "type": "array", "items": { "type": "string" } },
-        "condition": { "type": "string" },
-        "variables": { "type": "array", "items": { "$ref": "#/definitions/variable" } },
-        "jobs": { "type": "array", "items": { "$ref": "#/definitions/job" } }
+        "id": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "dependsOn": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "condition": {
+          "type": "string"
+        },
+        "variables": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/variable"
+          }
+        },
+        "jobs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/job"
+          }
+        }
       }
     },
     "job": {
@@ -95,18 +167,55 @@
       "additionalProperties": false,
       "required": ["id", "kind", "dependsOn", "variables", "steps"],
       "properties": {
-        "id": { "type": "string" },
-        "displayName": { "type": "string" },
-        "kind": { "enum": ["agent", "server", "deployment"] },
-        "dependsOn": { "type": "array", "items": { "type": "string" } },
-        "condition": { "type": "string" },
-        "matrixKey": { "type": "string" },
-        "maxParallel": { "type": "integer", "minimum": 0 },
-        "variables": { "type": "array", "items": { "$ref": "#/definitions/variable" } },
-        "steps": { "type": "array", "items": { "$ref": "#/definitions/step" } },
-        "environment": { "$ref": "#/definitions/environment" },
-        "strategy": { "$ref": "#/definitions/deploymentStrategy" },
-        "autoDownloadArtifacts": { "type": "boolean" }
+        "id": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": ["agent", "server", "deployment"]
+        },
+        "targetOs": {
+          "enum": ["linux", "windows", "macos"]
+        },
+        "dependsOn": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "condition": {
+          "type": "string"
+        },
+        "matrixKey": {
+          "type": "string"
+        },
+        "maxParallel": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "variables": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/variable"
+          }
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/step"
+          }
+        },
+        "environment": {
+          "$ref": "#/definitions/environment"
+        },
+        "strategy": {
+          "$ref": "#/definitions/deploymentStrategy"
+        },
+        "autoDownloadArtifacts": {
+          "type": "boolean"
+        }
       }
     },
     "step": {
@@ -126,25 +235,76 @@
         "warnings"
       ],
       "properties": {
-        "id": { "type": "integer", "minimum": 1 },
-        "name": { "type": "string" },
-        "displayName": { "type": "string" },
-        "task": { "type": "string" },
-        "origin": { "enum": ["checkout", "download", "publish"] },
-        "inputs": { "type": "object", "additionalProperties": { "type": "string" } },
-        "condition": { "type": "string" },
-        "env": { "type": "object", "additionalProperties": { "type": "string" } },
-        "continueOnError": { "type": "boolean" },
-        "timeoutInMinutes": { "type": "integer" },
-        "retryCountOnTaskFailure": { "type": "integer" },
-        "enabled": { "type": "boolean" },
-        "target": { "$ref": "#/definitions/stepTarget" },
-        "workingDirectory": { "type": "string" },
-        "failOnStderr": { "type": "boolean" },
-        "fidelity": { "enum": ["exact", "equivalent", "degraded", "stub", "unsupported"] },
-        "disposition": { "enum": ["native", "real-task", "stub"] },
-        "source": { "$ref": "#/definitions/source" },
-        "warnings": { "type": "array", "items": { "type": "string" } }
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "name": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string"
+        },
+        "task": {
+          "type": "string"
+        },
+        "origin": {
+          "enum": ["checkout", "download", "publish"]
+        },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "condition": {
+          "type": "string"
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "continueOnError": {
+          "type": "boolean"
+        },
+        "timeoutInMinutes": {
+          "type": "integer"
+        },
+        "retryCountOnTaskFailure": {
+          "type": "integer"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "target": {
+          "$ref": "#/definitions/stepTarget"
+        },
+        "workingDirectory": {
+          "type": "string"
+        },
+        "failOnStderr": {
+          "type": "boolean"
+        },
+        "fidelity": {
+          "enum": ["exact", "equivalent", "degraded", "stub", "unsupported"]
+        },
+        "disposition": {
+          "enum": ["native", "real-task", "stub"]
+        },
+        "file": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/definitions/source"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
     "variable": {
@@ -152,10 +312,18 @@
       "additionalProperties": false,
       "required": ["name", "value", "readonly"],
       "properties": {
-        "name": { "type": "string" },
-        "value": { "type": "string" },
-        "readonly": { "type": "boolean" },
-        "group": { "type": "string" }
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        },
+        "readonly": {
+          "type": "boolean"
+        },
+        "group": {
+          "type": "string"
+        }
       }
     },
     "envEntry": {
@@ -163,9 +331,15 @@
       "additionalProperties": false,
       "required": ["name", "secret"],
       "properties": {
-        "name": { "type": "string" },
-        "secret": { "type": "boolean" },
-        "origin": { "type": "string" }
+        "name": {
+          "type": "string"
+        },
+        "secret": {
+          "type": "boolean"
+        },
+        "origin": {
+          "type": "string"
+        }
       }
     },
     "tool": {
@@ -173,9 +347,18 @@
       "additionalProperties": false,
       "required": ["cmd", "neededBy"],
       "properties": {
-        "cmd": { "type": "string" },
-        "min": { "type": "string" },
-        "neededBy": { "type": "array", "items": { "type": "string" } }
+        "cmd": {
+          "type": "string"
+        },
+        "min": {
+          "type": "string"
+        },
+        "neededBy": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
     "warning": {
@@ -183,9 +366,15 @@
       "additionalProperties": false,
       "required": ["code", "message"],
       "properties": {
-        "code": { "type": "string" },
-        "message": { "type": "string" },
-        "location": { "$ref": "#/definitions/location" }
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "location": {
+          "$ref": "#/definitions/location"
+        }
       }
     },
     "location": {
@@ -193,8 +382,12 @@
       "additionalProperties": false,
       "required": ["file", "line"],
       "properties": {
-        "file": { "type": "string" },
-        "line": { "type": "integer" }
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer"
+        }
       }
     },
     "source": {
@@ -202,8 +395,12 @@
       "additionalProperties": false,
       "required": ["file", "line"],
       "properties": {
-        "file": { "type": "string" },
-        "line": { "type": "integer" }
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer"
+        }
       }
     },
     "stepTarget": {
@@ -211,8 +408,12 @@
       "additionalProperties": false,
       "required": ["container"],
       "properties": {
-        "container": { "type": "string" },
-        "commands": { "type": "string" }
+        "container": {
+          "type": "string"
+        },
+        "commands": {
+          "type": "string"
+        }
       }
     },
     "environment": {
@@ -220,19 +421,31 @@
       "additionalProperties": false,
       "required": ["name"],
       "properties": {
-        "name": { "type": "string" },
-        "resourceName": { "type": "string" },
-        "resourceType": { "type": "string" }
+        "name": {
+          "type": "string"
+        },
+        "resourceName": {
+          "type": "string"
+        },
+        "resourceType": {
+          "type": "string"
+        }
       }
     },
     "deploymentStrategy": {
       "oneOf": [
-        { "$ref": "#/definitions/runOnceStrategy" },
+        {
+          "$ref": "#/definitions/runOnceStrategy"
+        },
         {
           "type": "object",
           "additionalProperties": false,
           "required": ["kind"],
-          "properties": { "kind": { "enum": ["rolling", "canary"] } }
+          "properties": {
+            "kind": {
+              "enum": ["rolling", "canary"]
+            }
+          }
         }
       ]
     },
@@ -241,13 +454,27 @@
       "additionalProperties": false,
       "required": ["kind"],
       "properties": {
-        "kind": { "const": "runOnce" },
-        "preDeploy": { "$ref": "#/definitions/deploymentHook" },
-        "deploy": { "$ref": "#/definitions/deploymentHook" },
-        "routeTraffic": { "$ref": "#/definitions/deploymentHook" },
-        "postRouteTraffic": { "$ref": "#/definitions/deploymentHook" },
-        "onSuccess": { "$ref": "#/definitions/deploymentHook" },
-        "onFailure": { "$ref": "#/definitions/deploymentHook" }
+        "kind": {
+          "const": "runOnce"
+        },
+        "preDeploy": {
+          "$ref": "#/definitions/deploymentHook"
+        },
+        "deploy": {
+          "$ref": "#/definitions/deploymentHook"
+        },
+        "routeTraffic": {
+          "$ref": "#/definitions/deploymentHook"
+        },
+        "postRouteTraffic": {
+          "$ref": "#/definitions/deploymentHook"
+        },
+        "onSuccess": {
+          "$ref": "#/definitions/deploymentHook"
+        },
+        "onFailure": {
+          "$ref": "#/definitions/deploymentHook"
+        }
       }
     },
     "deploymentHook": {
@@ -255,7 +482,12 @@
       "additionalProperties": false,
       "required": ["steps"],
       "properties": {
-        "steps": { "type": "array", "items": { "$ref": "#/definitions/step" } }
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/step"
+          }
+        }
       }
     }
   }
