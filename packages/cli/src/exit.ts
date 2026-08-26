@@ -49,3 +49,25 @@ export class NotImplementedError extends CliError {
     this.name = 'NotImplementedError';
   }
 }
+
+/**
+ * The exit status of a **proxied** child process, carried out through the one exit path.
+ *
+ * `run` fronts `<outdir>/run.sh`, whose status is the pipeline's verdict — including values the CLI
+ * itself never produces: `128+N` for a fatal signal and `126`/`127` from the shell when the script
+ * cannot be found or executed (GNU Bash Reference Manual §3.7.5, C-E13-020/021). Collapsing those
+ * onto `EXIT` would make `azdo-emu run` and `bash run.sh` disagree about whether the pipeline
+ * passed, which is the one thing a proxy must not do (E10-S02-T02).
+ *
+ * It is an `Error` so it travels the path every other outcome travels; it carries no message
+ * because there is nothing to say — the child has already written whatever it had to write.
+ */
+export class ProxiedExit extends Error {
+  readonly exitCode: number;
+
+  constructor(exitCode: number) {
+    super(`proxied exit ${exitCode}`);
+    this.name = 'ProxiedExit';
+    this.exitCode = exitCode;
+  }
+}
