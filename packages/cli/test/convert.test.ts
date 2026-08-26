@@ -15,7 +15,14 @@
 // with bash, and its first step's log is read back. A conversion that writes plausible files but
 // produces a project that cannot execute would pass every structural assertion and fail this one.
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+  mkdirSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +36,7 @@ import {
 } from '../src/convert/index.js';
 import { EXIT } from '../src/exit.js';
 import { run, summaryLine, type Io } from '../src/program.js';
+import { validateExpandedPipeline } from '@azdo-emu/engine';
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
 
@@ -436,5 +444,90 @@ describe('failure paths', () => {
     await expect(
       convert(file, { out: join(dir, 'out'), offlineExpand: true, bundle: false }),
     ).rejects.toThrow(/could not be modelled|is invalid/);
+  });
+});
+
+// ── the two tasks this wiring unblocked ───────────────────────────────────────────────────────
+//
+// E01-S02-T02 and E12-S01-T01 were both `[!]` waiting on `convert`'s body. Their Done criteria are
+// asserted here, by name, rather than assumed to follow from the wiring existing.
+
+describe('E12-S01-T01 — the expansion gate', () => {
+  it('the default path never invokes the local engine', async () => {
+    // The stub answers with a *different* pipeline than the one submitted. If the local engine had
+    // produced this expansion it would describe the input; that it describes the corpus fixture is
+    // proof the bytes came off the wire (PLAN D3).
+    const dir = mkdtempSync(join(tmpdir(), 'azdo-gate-'));
+    const file = join(dir, 'azure-pipelines.yml');
+    writeFileSync(file, 'steps:\n- script: echo not-what-the-stub-returns\n');
+    const out = join(dir, 'out');
+    const service = stubService();
+
+    const result = await convert(file, { out }, service.deps);
+    expect(service.calls()).toBe(1);
+    expect(read(out, 'pipeline.expanded.yml')).toBe(finalYaml);
+    expect(read(out, 'pipeline.expanded.yml')).not.toContain('not-what-the-stub-returns');
+    expect(result.summary.expansion).toEqual({ mode: 'service', degraded: false });
+    // And no fallback warning, because no fallback happened.
+    expect(result.warnings.some((w) => w.code === 'E12-OFFLINE-EXPANSION')).toBe(false);
+  });
+
+  it('records the choice in the manifest, on both arms', async () => {
+    const { file, out } = workspace();
+    const { deps } = stubService();
+    await convert(file, { out }, deps);
+    const online = JSON.parse(read(out, 'manifest.json')) as {
+      expansion: { mode: string; degraded: boolean };
+    };
+    expect(online.expansion).toMatchObject({ mode: 'service', degraded: false });
+
+    const offlineOut = join(out, '..', 'offline');
+    await convert(file, { out: offlineOut, offlineExpand: true });
+    const offline = JSON.parse(read(offlineOut, 'manifest.json')) as {
+      expansion: { mode: string; degraded: boolean };
+    };
+    expect(offline.expansion).toMatchObject({ mode: 'offline', degraded: true });
+  });
+
+  it('emits a warning on the fallback path, and it reaches the README', async () => {
+    const { file, out } = workspace();
+    const result = await convert(file, { out, offlineExpand: true });
+    const warning = result.warnings.find((w) => w.code === 'E12-OFFLINE-EXPANSION')!;
+    expect(warning.message).toContain('--offline-expand');
+    expect(warning.message).toContain('degraded');
+    expect(read(out, 'README.md')).toContain('E12-OFFLINE-EXPANSION');
+  });
+});
+
+describe('E01-S02-T02 — strict validation of the expanded pipeline', () => {
+  it('a deliberately broken expansion fails with pointers into pipeline.expanded.yml', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'azdo-strict-'));
+    const file = join(dir, 'azure-pipelines.yml');
+    // The service stub answers with a *mutated* corpus expansion — a broken expansion is the case
+    // this criterion is about, and only the expansion side can produce one.
+    writeFileSync(file, 'steps:\n- script: echo x\n');
+    const broken = finalYaml.replace(/^(- stage: .*)$/m, '$1\n  notAStageKey: whatever');
+    const fetchImpl = (async () =>
+      new Response(JSON.stringify({ finalYaml: broken }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as NonNullable<ConvertDeps['fetchImpl']>;
+
+    await expect(
+      convert(file, { out: join(dir, 'out') }, { fetchImpl, oracle: ORACLE }),
+    ).rejects.toMatchObject({
+      message: expect.stringContaining('the expanded pipeline is invalid'),
+      // `file:line:col`, against the expanded document by name.
+      hint: expect.stringMatching(/pipeline\.expanded\.yml:\d+:\d+: /),
+    });
+  });
+
+  it('every known-good corpus expansion passes', async () => {
+    // The whole committed corpus, straight through the validator the wiring calls.
+    const dir = join(repoRoot, 'fixtures', 'oracle');
+    const finals = readdirSync(dir).filter((name) => name.endsWith('.final.yml'));
+    expect(finals.length).toBeGreaterThan(0);
+    for (const name of finals)
+      expect(validateExpandedPipeline(readFileSync(join(dir, name), 'utf8')), name).toEqual([]);
   });
 });
