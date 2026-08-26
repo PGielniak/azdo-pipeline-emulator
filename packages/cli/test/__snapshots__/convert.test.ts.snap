@@ -1,0 +1,18 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the \`--json\` summary > is versioned and shape-stable 1`] = `
+{
+  "errors": 0,
+  "expansion": {
+    "degraded": true,
+    "mode": "offline",
+  },
+  "files": 27,
+  "jobs": 3,
+  "out": "<tmp>",
+  "stages": 2,
+  "steps": 10,
+  "version": 1,
+  "warnings": 1,
+}
+`;

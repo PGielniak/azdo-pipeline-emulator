@@ -8,7 +8,17 @@
 // What this module owns is the shape: the surface a user sees, and the exit code they get.
 import { createRequire } from 'node:module';
 import { Command, CommanderError, Option } from 'commander';
-import { parseParameterOption, type ParameterValue } from './config/index.js';
+import {
+  CHECKOUT_MODES,
+  EXECUTION_ENVIRONMENTS,
+  TARGET_OS,
+  parseParameterOption,
+  type CheckoutMode,
+  type ExecutionEnvironment,
+  type ParameterValue,
+  type TargetOs,
+} from './config/index.js';
+import { convert, type ConvertFlags, type ConvertResult } from './convert/index.js';
 import { CliError, EXIT, NotImplementedError, type ExitCode } from './exit.js';
 
 /** Where the CLI writes, and what it knows about the terminal. Injected so tests are hermetic. */
@@ -103,8 +113,35 @@ export function createProgram(io: Io): Command {
       'expand with the retained local template engine instead of the service (degraded fallback)',
       false,
     )
-    .action(() => {
-      throw new NotImplementedError('convert', 'E10-S02-T01 (flag surface) on top of E05');
+    // E10-S02-T01 — the rest of docs/06 §1's surface. Grouped by what they influence: context for
+    // the service arm, the generated project's shape, lockfile discipline, and reporting.
+    .option('--org <url>', 'organization URL, e.g. https://dev.azure.com/contoso')
+    .option('--project <name>', 'project name, for @alias resolution and variable groups')
+    .addOption(choice('--target-os <os>', 'override pool inference', [...TARGET_OS]))
+    .addOption(choice('--checkout-mode <mode>', 'how `checkout` materializes', [...CHECKOUT_MODES]))
+    // Registered so `--help` is honest about the intended surface, and refused by the body: the
+    // container sandbox is deferred (docs/06 §1, E12-S02-T02). Silently accepting either would
+    // write a manifest claiming an execution environment the project does not have.
+    .addOption(
+      choice('--exec-env <env>', 'execution environment (`sandbox` is deferred)', [
+        ...EXECUTION_ENVIRONMENTS,
+      ]),
+    )
+    .option('--sandbox-image <image>', 'sandbox image override (deferred with the sandbox)')
+    .option('--group-names', 'list variable-group names in .env.example (values never fetched)')
+    .option('--no-group-names', 'omit variable-group names from .env.example')
+    .option('--only-stage <name>', 'convert only this stage (repeatable)', collectStage)
+    .option('--frozen', 'resolve the expansion from cache only; never fetch', false)
+    .option('--update', 'refresh the expansion and re-pin the lockfile', false)
+    .option('--offline', 'make no network call (needs --frozen or --offline-expand)', false)
+    .option('--strict', 'exit 2 when the conversion produced any warning', false)
+    .option('--no-bundle', 'send the pipeline as authored, without inlining local templates')
+    .action(async (pipeline: string, options: ConvertCommandOptions, command: Command) => {
+      const globals = command.parent?.opts<GlobalOptions>() ?? { json: false };
+      const result = await convert(pipeline, toConvertFlags(options));
+      io.out(
+        globals.json ? `${JSON.stringify(result.summary, undefined, 2)}\n` : summaryLine(result),
+      );
     });
 
   program
@@ -138,11 +175,63 @@ export function createProgram(io: Io): Command {
   return program;
 }
 
-/** Parse `argv` and return the process exit code. Never throws, never calls `process.exit`. */
-export function run(argv: readonly string[], io: Io): ExitCode {
+/** Commander's parsed `convert` options, before they become {@link ConvertFlags}. */
+interface ConvertCommandOptions {
+  readonly out: string;
+  readonly parameter?: Record<string, ParameterValue>;
+  readonly org?: string;
+  readonly project?: string;
+  readonly targetOs?: TargetOs;
+  readonly checkoutMode?: CheckoutMode;
+  readonly execEnv?: ExecutionEnvironment;
+  readonly sandboxImage?: string;
+  readonly groupNames?: boolean;
+  readonly onlyStage?: string[];
+  readonly frozen?: boolean;
+  readonly update?: boolean;
+  readonly offline?: boolean;
+  readonly offlineExpand?: boolean;
+  readonly strict?: boolean;
+  readonly bundle?: boolean;
+}
+
+/** Drop the keys commander left undefined, so `exactOptionalPropertyTypes` stays satisfied. */
+function toConvertFlags(options: ConvertCommandOptions): ConvertFlags {
+  const defined = Object.fromEntries(
+    Object.entries(options).filter(([, value]) => value !== undefined),
+  ) as ConvertCommandOptions;
+  return defined as ConvertFlags;
+}
+
+/**
+ * The one-line summary docs/06 §1 asks for.
+ *
+ * It names the expansion arm because that is the single most load-bearing fact about a generated
+ * project — a `degraded` conversion came from the retained local engine, not from the service.
+ */
+export function summaryLine(result: ConvertResult): string {
+  const { summary } = result;
+  const degraded = summary.expansion.degraded ? ' (degraded)' : '';
+  const warnings =
+    summary.warnings === 0
+      ? 'no warnings'
+      : `${summary.warnings} warning${summary.warnings === 1 ? '' : 's'} — see README.md`;
+  return (
+    `Converted ${summary.stages} stage(s), ${summary.jobs} job(s), ${summary.steps} step(s) ` +
+    `into ${summary.out} — expanded by ${summary.expansion.mode}${degraded}; ${warnings}.\n`
+  );
+}
+
+/**
+ * Parse `argv` and return the process exit code. Never throws, never calls `process.exit`.
+ *
+ * Asynchronous since E10-S02-T01: `convert` awaits the expansion. Commander's `parseAsync` still
+ * routes every failure through the same `report`, so the exit-code policy is unchanged.
+ */
+export async function run(argv: readonly string[], io: Io): Promise<ExitCode> {
   const program = createProgram(io);
   try {
-    program.parse([...argv], { from: 'user' });
+    await program.parseAsync([...argv], { from: 'user' });
     return EXIT.ok;
   } catch (error) {
     return report(error, io);
@@ -179,6 +268,11 @@ function collectParameter(
 ): Record<string, ParameterValue> {
   const [name, value] = parseParameterOption(raw);
   return { ...previous, [name]: value };
+}
+
+/** Accumulator for the repeatable `--only-stage`. */
+function collectStage(raw: string, previous: string[] | undefined): string[] {
+  return [...(previous ?? []), raw];
 }
 
 /** `--mode interactive|az|pat` style options: a choice list commander validates and documents. */

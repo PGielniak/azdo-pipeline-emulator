@@ -79,6 +79,30 @@ Options:
   --offline-expand          expand with the retained local template engine
                             instead of the service (degraded fallback) (default:
                             false)
+  --org <url>               organization URL, e.g. https://dev.azure.com/contoso
+  --project <name>          project name, for @alias resolution and variable
+                            groups
+  --target-os <os>          override pool inference (choices: "linux",
+                            "windows", "macos")
+  --checkout-mode <mode>    how \`checkout\` materializes (choices: "clone",
+                            "copy", "worktree")
+  --exec-env <env>          execution environment (\`sandbox\` is deferred)
+                            (choices: "host", "sandbox")
+  --sandbox-image <image>   sandbox image override (deferred with the sandbox)
+  --group-names             list variable-group names in .env.example (values
+                            never fetched)
+  --no-group-names          omit variable-group names from .env.example
+  --only-stage <name>       convert only this stage (repeatable)
+  --frozen                  resolve the expansion from cache only; never fetch
+                            (default: false)
+  --update                  refresh the expansion and re-pin the lockfile
+                            (default: false)
+  --offline                 make no network call (needs --frozen or
+                            --offline-expand) (default: false)
+  --strict                  exit 2 when the conversion produced any warning
+                            (default: false)
+  --no-bundle               send the pipeline as authored, without inlining
+                            local templates
   -h, --help                display help for command
 "
 `;

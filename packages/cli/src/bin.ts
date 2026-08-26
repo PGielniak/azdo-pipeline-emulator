@@ -4,7 +4,9 @@
 // testable in-process (no spawning, no process.exit interception).
 import { run } from './program.js';
 
-process.exitCode = run(process.argv.slice(2), {
+// `run` became async with E10-S02-T01 (`convert` awaits the expansion); this stays the only
+// place that touches process state.
+process.exitCode = await run(process.argv.slice(2), {
   out: (text) => process.stdout.write(text),
   err: (text) => process.stderr.write(text),
 });

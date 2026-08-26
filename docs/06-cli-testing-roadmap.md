@@ -31,7 +31,11 @@ azdo-emu convert <pipeline.yml> -o <dir>
                                           #   service — a **degraded fallback** (PLAN D3, docs/07 §6). Off by
                                           #   default; the conversion it produces is labelled degraded and
                                           #   carries a warning. Writes no expansion cache/lock entry (docs/05 §4).
-    [--only-stage NAME]...                # partial conversion for huge pipelines
+    [--only-stage NAME]...                # partial conversion for huge pipelines; a dependency on a stage
+                                          #   left out is dropped with a warning (E10-S02-T01, §5 decision 69(a))
+    [--strict]                            # exit 2 when the conversion produced any warning
+    [--no-bundle]                         # send the pipeline as authored, without inlining local templates
+                                          #   (E03-S06); the service then reads the committed files
 
 azdo-emu doctor <outdir> [--sandbox]      # verify tool prereqs from manifest.json — on the host by default; `--sandbox`
                                           #   checks inside the sandbox image and is deferred with it (D9 revised)
@@ -569,3 +573,17 @@ The re-baselined numbers *are* the left-hand column. The whole gap is a single 7
     (a) **Copy once, at the existing initialization boundary.** The copy sits inside the `System.DefaultWorkingDirectory` guard that already distinguishes a fresh job from `--resume`. A fresh target must be empty; a resumed job retains its previous values instead of re-importing possibly changed pipeline state. This is eager scope inheritance rather than a dynamic fallback chain: the agent job starts from its dispatched variable dictionary, and mutations in one local job must not appear in another except through output variables (C-E06-002/005).
 
     (b) **Decision 65(d)'s environment bridge is removed.** `run.sh` now calls `azdo_run_identity_seed` once in `pipeline`; it no longer exports `AZDO_BUILD_NUMBER` or `AZDO_BUILD_ID`, and `run-job.sh` no longer re-seeds them. Their read-only metadata reaches jobs through the same copy as every other pipeline variable. A generated-project test reads an arbitrary `.env` variable through both `$(PIPELINE_ONLY)` and `azdo_var PIPELINE_ONLY`; the run-number E2E still proves the first step sees `Build.BuildNumber`/`Build.BuildId`, so deleting the special path cannot hide a regression.
+
+69. **`convert`'s wiring: what the flags mean when they interact, and where the deferred fills landed (2026-08-26, E10-S02-T01).** `convert` is the first thing that runs every epic in order, and the order itself is forced — bundle before expand (the service reads *committed* bytes, so a local template edit reaches it only by being spliced into the override), expand before validate (the expansion is a different dialect with its own validator, C-E03-258), validate before model. Five choices are ours:
+
+    (a) **`--only-stage` drops a dependency on a stage it left out, and warns.** The three candidates were refuse, drop-and-warn, and keep-silently. Keeping is not available: `run.sh`'s topological order would name a stage that is not in the project. Refusing would make the flag useless for exactly the huge pipelines it exists for — a partial conversion is a debugging tool, and in a real pipeline nearly every interesting stage depends on something. So the dependency is dropped and a ranked `E10-ONLY-STAGE-DEPENDENCY` warning says which one, which means `--strict` still turns it into a failure for anyone who wants that.
+
+    (b) **`--exec-env sandbox` and `--sandbox-image` are refused, not ignored.** docs/06 §1 marks the container sandbox deferred (E12-S02-T02, PLAN D9 revised). Accepting either silently would write a `manifest.json` claiming an execution environment the project does not have — a lie in the machine-readable record that `doctor` reads. The flags stay on the surface so `--help` is honest about the intended shape, and the body rejects with exit 1.
+
+    (c) **`--offline` is a promise, not a synonym for `--offline-expand`.** §1 says it is "satisfiable only via `--frozen` over a warm expansion cache or `--offline-expand`". On its own it is a usage error, because the alternative is reaching for the network anyway and failing with a connection error the user cannot act on.
+
+    (d) **`--strict` is a verdict on a conversion that happened.** The project is written first, then the exit code is 2. A user who asked for strictness still gets the README's ranked warning list to read; failing before writing would leave them with the count and nothing to look at.
+
+    (e) **The three deferred fills landed here, by name.** `lib/runtime.sh` + `lib/expr.sh` are copied from `packages/runtime` (decision 62's closing note); `.shellcheckrc` ships with `SC2005,SC2046` (decision 61) and `SC2016,SC2071` (decision 62(d)), so a user's editor and CI agree with our own gate; and the manifest's per-step `file` and per-job `targetOs` (decision 64) are filled **after** `serializeManifest` rather than inside it, because both are facts about the generated *project* — the scaffolder decides the path, the resolved settings decide the OS — and the serializer sees neither. `packages/engine/schema/manifest.schema.json` gained both properties, which is what docs/04 §11 always specified.
+
+    Also settled: `run()` is now asynchronous (the expansion is awaited) and commander is driven through `parseAsync`, so a failing action still reaches the one exit-code path; and `--json` prints a **versioned** summary (`CONVERT_JSON_VERSION`) rather than a schema-validated document — nothing consumes it yet, and the manifest earned its committed schema because `doctor` and tooling read *that*.
