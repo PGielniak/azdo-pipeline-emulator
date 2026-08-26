@@ -185,3 +185,41 @@ path points), while paths **written inside the config file** — `repositories.<
 **from the config file's own directory**, so a config stays valid regardless of where it is invoked
 from. A literal value beginning with `@` is escaped by doubling it (`@@x` ⇒ `@x`); a missing file or
 invalid JSON is a `CliError` naming the resolved path, never a silent fallback to the literal string.
+
+---
+
+## E10-S02-T02 — the `run` proxy's exit-status contract (`C-E13-020..022`)
+
+The Ground field asks for two things: docs/04 §2's entry-point contract (whose flags are
+E05-S01-T03's, recorded as docs/06 §5 decision 62(c)) and POSIX `exec`/arg-forwarding semantics
+pinned to the GNU Bash manual. The second is where the substance is — a proxy's job is to
+*reproduce* a status convention, and the convention is the shell's.
+
+[C-E13-020] **A command terminated by a fatal signal N has exit status 128+N.**
+  — https://www.gnu.org/software/bash/manual/html_node/Exit-Status.html
+    (Bash Reference Manual, Version 5.3; checked 2026-08-26)
+  — "When a command terminates on a fatal signal whose number is N, Bash uses the value 128+N as
+    the exit status."
+
+[C-E13-021] **127 means "not found"; 126 means "found but not executable".**
+  — as C-E13-020 (checked 2026-08-26)
+  — "If a command is not found, the child process created to execute it returns a status of 127. If
+    a command is found but is not executable, the return status is 126."
+
+[C-E13-022] **Exit statuses fall between 0 and 255, and the shell reserves values above 125.**
+  — as C-E13-020 (checked 2026-08-26)
+  — "Exit statuses fall between 0 and 255, though, as explained below, the shell may use values
+    above 125 specially."
+
+### Δ Node cannot `exec(3)`-replace the process, so the proxy spawns and mirrors
+
+`exec` in the POSIX sense replaces the process image, which is what makes a shell proxy free: there
+is no second process whose status has to be translated. Node has no such call, so
+`packages/cli/src/run/run.ts` spawns `bash run.sh` with `stdio: 'inherit'` and reports the child's
+status as its own — passing a numeric status through untouched and converting a signal by
+C-E13-020. The observable result is the same, and the difference is recorded here rather than
+hidden: an intermediate process exists, so a signal delivered to the *proxy* is not automatically
+delivered to the child's process group the way it would be after a real `exec`.
+
+`os.constants.signals` supplies N rather than a hard-coded table: `SIGUSR1` is 10 on Linux and 30 on
+macOS, and a proxy that assumed one would report the wrong status on the other.

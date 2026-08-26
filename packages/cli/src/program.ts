@@ -19,7 +19,8 @@ import {
   type TargetOs,
 } from './config/index.js';
 import { convert, type ConvertFlags, type ConvertResult } from './convert/index.js';
-import { CliError, EXIT, NotImplementedError, type ExitCode } from './exit.js';
+import { runProject } from './run/index.js';
+import { CliError, EXIT, NotImplementedError, ProxiedExit } from './exit.js';
 
 /** Where the CLI writes, and what it knows about the terminal. Injected so tests are hermetic. */
 export interface Io {
@@ -53,6 +54,10 @@ export function createProgram(io: Io): Command {
     .version(version(), '-V, --version', 'print the version and exit')
     .option('--json', 'machine-readable output for tooling', false)
     .showHelpAfterError(`(run \`${PROGRAM_NAME} --help\` for usage)`)
+    // Required by `run`'s `passThroughOptions` (E10-S02-T02): with positional options on, a global
+    // flag is only global *before* the subcommand, which is what lets `azdo-emu run out --list`
+    // hand `--list` to `run.sh` instead of having commander reject it here.
+    .enablePositionalOptions()
     // Errors and --help/--version both leave through here (C-E13-005); `run()` maps them by their
     // exit code. Without an override commander would call process.exit itself.
     .exitOverride()
@@ -168,8 +173,15 @@ export function createProgram(io: Io): Command {
     .description(`convenience proxy to <outdir>/run.sh`)
     .argument('<outdir>', 'a generated project directory')
     .argument('[args...]', 'arguments forwarded verbatim to run.sh')
-    .action(() => {
-      throw new NotImplementedError('run', 'E10-S02-T02 (run proxy)');
+    // `passThroughOptions` so `azdo-emu run out --list` gives `--list` to `run.sh` rather than
+    // letting commander reject it as unknown. The proxy knows none of run.sh's flags by design
+    // (E10-S02-T02); it must not be in a position to reject one either.
+    .passThroughOptions()
+    .allowUnknownOption()
+    .action((outdir: string, args: string[]) => {
+      // The child's status *is* the pipeline's verdict, so it leaves through the same path an
+      // error would rather than being collapsed onto the CLI's own 0/1/2.
+      throw new ProxiedExit(runProject(outdir, args));
     });
 
   return program;
@@ -228,7 +240,7 @@ export function summaryLine(result: ConvertResult): string {
  * Asynchronous since E10-S02-T01: `convert` awaits the expansion. Commander's `parseAsync` still
  * routes every failure through the same `report`, so the exit-code policy is unchanged.
  */
-export async function run(argv: readonly string[], io: Io): Promise<ExitCode> {
+export async function run(argv: readonly string[], io: Io): Promise<number> {
   const program = createProgram(io);
   try {
     await program.parseAsync([...argv], { from: 'user' });
@@ -238,7 +250,11 @@ export async function run(argv: readonly string[], io: Io): Promise<ExitCode> {
   }
 }
 
-function report(error: unknown, io: Io): ExitCode {
+function report(error: unknown, io: Io): number {
+  // `run` proxies a child process, and a proxy that rewrote its status would make `azdo-emu run`
+  // and `bash run.sh` disagree about whether the pipeline passed (E10-S02-T02).
+  if (error instanceof ProxiedExit) return error.exitCode;
+
   // --help and --version arrive here as CommanderError with exitCode 0 (C-E13-005): the code is the
   // verdict, not the fact that something was thrown. Usage errors already carry commander's 1,
   // which is the code our own policy uses for them anyway (C-E13-007) — nothing to translate, and
@@ -257,8 +273,8 @@ function report(error: unknown, io: Io): ExitCode {
   return EXIT.error;
 }
 
-function asExitCode(code: number): ExitCode {
-  return (Object.values(EXIT) as number[]).includes(code) ? (code as ExitCode) : EXIT.error;
+function asExitCode(code: number): number {
+  return (Object.values(EXIT) as number[]).includes(code) ? code : EXIT.error;
 }
 
 /** Accumulator for the repeatable `--parameter`; later occurrences win per name (C-E13-012). */

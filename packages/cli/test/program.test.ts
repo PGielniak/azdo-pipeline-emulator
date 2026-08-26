@@ -101,14 +101,13 @@ describe('CLI scaffold (E13-S01-T01)', async () => {
     });
 
     it('every still-unimplemented command reports not-implemented rather than doing something', async () => {
-      // `convert` left this list with E10-S02-T01: it now does the work, and its own failure modes
-      // are exercised in `convert.test.ts`.
+      // `convert` left this list with E10-S02-T01 and `run` with E10-S02-T02: both now do the
+      // work, and their failure modes are exercised in `convert.test.ts` / `run.test.ts`.
       const invocations: readonly string[][] = [
         ['auth', 'login'],
         ['auth', 'status'],
         ['doctor', 'out'],
         ['fetch-artifacts', 'out'],
-        ['run', 'out'],
       ];
       for (const argv of invocations) {
         const { code, err } = await cli(...argv);
