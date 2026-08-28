@@ -56,3 +56,30 @@ export {
   type ExpandCachedOptions,
   type ExpansionLockEntry,
 } from './expansion-cache.js';
+
+export {
+  AZDO_KEYRING_SERVICE,
+  TOKEN_FILE_VERSION,
+  AzureCredentialStore,
+  CredentialStoreError,
+  normalizeAzureOrgUrl,
+  type AzureAuthMode,
+  type CredentialBackend,
+  type CredentialStoreOptions,
+  type KeyringEntry,
+  type KeyringLoader,
+  type KeyringModule,
+  type LoadedAzureCredential,
+  type StoredAzureCredential,
+} from './auth/storage.js';
+
+export {
+  PROFILE_API_VERSION,
+  authStatus,
+  credentialAuthorizationHeader,
+  profileUrl,
+  type AuthIdentity,
+  type AuthStatusOptions,
+  type AzureAuthStatus,
+  type StatusFetch,
+} from './auth/status.js';

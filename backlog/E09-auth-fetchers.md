@@ -23,7 +23,7 @@ Acceptance: three auth modes with secure storage, per docs/05 §1.
   **Do:** shell-out `az account get-access-token --resource <ADO-guid>` parse; `AZDO_PAT`/`AZURE_DEVOPS_EXT_PAT` Basic auth; mode auto-selection order per docs/05.
   **Ground:** az CLI docs for `get-access-token` (pin); PAT usage header format from ADO auth docs (quote the Basic scheme construction).
   **Done:** unit tests with fakes + one live check per mode.
-- [ ] **E09-S01-T03 — Token storage & `auth status`**
+- [x] **E09-S01-T03 — Token storage & `auth status`**
   **Do:** OS keyring via `@napi-rs/keyring` with 0600-file fallback; `auth status` probe (use the cheapest documented call; pin it).
   **Ground:** keyring lib docs (pin); chosen probe endpoint page + live sample.
   **Done:** status shows org/identity/mode/expiry; storage never world-readable (test).

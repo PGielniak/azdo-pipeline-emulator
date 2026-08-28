@@ -20,6 +20,17 @@ Everything that leaves the local machine happens **at convert time** through thi
 
 `azdo-emu auth login` runs interactive and verifies with a probe call; `auth status` shows org, identity, mode, expiry.
 
+**Credential storage contract (E09-S01-T03).** The secret-bearing versioned record is stored as one
+password in `@napi-rs/keyring`, service `azdo-emu`, username = the normalized organization URL. A
+missing or inaccessible native keyring falls back to `~/.azdo-emu/tokens.json`; the directory is
+0700 and each atomic replacement is repaired to 0600. A successfully returned but malformed
+keyring value is an error, not permission to read a possibly stale fallback. `auth status` never
+decodes a token: it proves the credential through Profile `me` at
+`https://vssps.dev.azure.com/<org>/_apis/profile/profiles/me?api-version=7.1` and reports the returned
+identity with the stored mode/expiry. The deployment host is deliberate — the REST page's global
+host returned 401 for the test-org PAT while the official Node client's organization-specific form
+returned 200 (C-E09-007..011; docs/06 §5 decision 71).
+
 ### GitHub (for `resources.repositories` with `type: github`, and github templates)
 1. Reuse `gh` CLI token (`gh auth token`) when present — default.
 2. `GITHUB_TOKEN` env var.

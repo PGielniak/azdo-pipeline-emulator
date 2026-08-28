@@ -78,3 +78,49 @@ is issued **only if** the original `scope` included `offline_access`.
   — Also load-bearing for what we may log: "Don't attempt to validate or read tokens for any API you
     don't own … may also be encrypted for consumer (Microsoft account) users." So `auth status` must
     report identity from the *store's* metadata or a probe call, never by decoding the access token.
+
+---
+
+## E09-S01-T03 — token storage and authenticated status (`C-E09-007..011`)
+
+Recorded 2026-08-28 before implementation. The live probe transcript is redacted at
+`research/experiments/E09-rest/profile-me/real-run.md`.
+
+[C-E09-007] **`@napi-rs/keyring` stores a password under an `Entry(service, username)` and exposes
+set, get, and delete operations.** The async getter's declared result is `string | undefined`, and
+`deleteCredential` returns whether it deleted an entry.
+  — https://github.com/Brooooooklyn/keyring-node/blob/e46be75c3ba8d5fde6b88a17c6153b87ffe4b946/index.d.ts#L3-L78
+    (commit-pinned v1.3.0; checked 2026-08-28)
+  — `README.md` at the same pin demonstrates `new Entry(...)`, `setPassword`, `getPassword`, and
+    `deletePassword`.
+
+[C-E09-008] **A missing or ambiguous OS credential may surface as a native keyring error.** The
+adapter therefore treats native lookup failures as the boundary for consulting the protected file,
+but it must not reinterpret a corrupt password value returned by a successful lookup as absence.
+  — https://github.com/Brooooooklyn/keyring-node/blob/e46be75c3ba8d5fde6b88a17c6153b87ffe4b946/index.d.ts#L35-L78
+    (commit-pinned v1.3.0; checked 2026-08-28)
+  — The v1.3.0 declarations name `NoEntry` and `Ambiguous` errors on get/delete operations.
+
+[C-E09-009] **The Azure DevOps Profile 7.1 endpoint accepts the special id `me` to return the current
+authenticated user's profile.** A successful response includes stable identity fields such as `id`
+and may include `displayName`, `emailAddress`, and `publicAlias`; the documented permission is
+`vso.profile`.
+  — https://learn.microsoft.com/en-us/rest/api/azure/devops/profile/profiles/get?view=azure-devops-rest-7.1
+    (checked 2026-08-28)
+  — "'me' to get the profile of the current authenticated user"; API version `7.1`.
+
+[C-E09-010] **For an organization-scoped PAT, the working Profile deployment URL is
+`https://vssps.dev.azure.com/<org>/_apis/profile/profiles/me?api-version=7.1`.** Microsoft's Node
+client notes that Profile APIs cannot be called at the ordinary org URL and must use the deployment
+host. The test-org run returned 200 and the documented seven-field compact profile; the Learn page's
+global `app.vssps.visualstudio.com` example returned an empty 401 for the same PAT.
+  — https://github.com/microsoft/azure-devops-node-api/blob/881adee3ff1974c83bf69cd7b85e518bc371b6b8/README.md#L34-L38
+    (commit-pinned; checked 2026-08-28)
+  — `research/experiments/E09-rest/profile-me/real-run.md` (redacted live measurement, 2026-08-28)
+
+[C-E09-011] **A portable 0600 fallback requires an explicit permission repair after replacement.**
+Node's creation `mode` applies only when a file is newly created, while `chmod` changes an existing
+file; therefore an atomic temp-file rename is followed by `chmod(0o600)` on the destination.
+  — https://nodejs.org/download/release/v22.23.2/docs/api/fs.html#fspromisesopenpath-flags-mode
+  — https://nodejs.org/download/release/v22.23.2/docs/api/fs.html#fspromiseschmodpath-mode
+    (checked 2026-08-28)
