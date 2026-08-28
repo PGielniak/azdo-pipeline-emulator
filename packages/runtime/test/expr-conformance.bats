@@ -347,6 +347,18 @@ setup() {
   azdo_var_set 'BuildId' '42'
   run -0 azdo_emu_expr_run 'azdo_expr_cmp lt str "$(azdo_var '\''Absent'\'')" str x'
 }
+@test "C-E02-092/094 dependencies-job-result-folds-case [agree]: eq(dependencies.build.result, 'Skipped')" {
+  azdo_job_result_set 'Current' 'Build' 'Skipped'
+  run -0 azdo_emu_expr_run 'azdo_expr_cmp eq str "$(azdo_job_result "$AZDO_STAGE_ID" '\''build'\'')" str Skipped'
+}
+@test "C-E02-092 dependencies-stage-result [agree]: eq(dependencies.Build.result, 'Skipped')" {
+  azdo_stage_result_set 'Build' 'Skipped'
+  run -0 azdo_emu_expr_run 'azdo_expr_cmp eq str "$(azdo_stage_result '\''Build'\'')" str Skipped'
+}
+@test "C-E02-093/094 stage-dependencies-job-result-folds-case [agree]: eq(stageDependencies.build.compile.result, 'SucceededWithIssues')" {
+  azdo_job_result_set 'Build' 'Compile' 'SucceededWithIssues'
+  run -0 azdo_emu_expr_run 'azdo_expr_cmp eq str "$(azdo_job_result '\''build'\'' '\''compile'\'')" str SucceededWithIssues'
+}
 @test "C-E02-131 condition-docs-canonical [agree]: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))" {
   azdo_var_set 'Build.SourceBranch' 'refs/heads/main'
   azdo_var_set 'BuildId' '42'

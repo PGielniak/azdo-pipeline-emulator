@@ -101,7 +101,10 @@ export function compileCondition(
     });
     return { fnName, body: 'return 2' };
   }
-  return { fnName, body: compileBash(parsed.node) };
+  return {
+    fnName,
+    body: compileBash(parsed.node, { dependencyKind: kind === 'stage' ? 'stage' : 'job' }),
+  };
 }
 
 /** All condition functions for a stage: one for the stage, one per job, one per step. */
@@ -194,7 +197,7 @@ export function emitRunJob(job: ScaffoldJob, stage: ScaffoldStage): string {
     '',
     `export AZDO_VAR_SCOPE=${shQuote(scope)}`,
     `AZDO_LOG_DIR="$AZDO_RUN_DIR/logs/${stage.name}/${job.name}"`,
-    `AZDO_RESULT_DIR="$AZDO_STATE_DIR/results/${stage.name}/${job.name}"`,
+    `AZDO_RESULT_DIR="$(azdo_result_dir ${shQuote(stage.stage.id)} ${shQuote(job.job.referenceName)})"`,
     `AZDO_OUTPUT_DIR="$AZDO_STATE_DIR/outputs/${stage.stage.id}/${job.job.referenceName}"`,
     `AZDO_HAS_MULTIPLE_CHECKOUTS=${checkoutCount > 1 ? 'true' : 'false'}`,
     'export AZDO_LOG_DIR AZDO_RESULT_DIR AZDO_OUTPUT_DIR AZDO_HAS_MULTIPLE_CHECKOUTS',
@@ -249,6 +252,10 @@ export function emitRunStage(stage: ScaffoldStage, jobOrder: readonly string[]):
     '',
     'if ! cond_stage; then',
     '  printf \'Skipping stage %s due to condition.\\n\' "$AZDO_STAGE_ID"',
+    '  azdo_stage_result_set "$AZDO_STAGE_ID" Skipped',
+    ...stage.jobs.map(
+      (job) => `  azdo_job_result_set "$AZDO_STAGE_ID" ${shQuote(job.job.referenceName)} Skipped`,
+    ),
     '  exit 0',
     'fi',
     '',
@@ -263,6 +270,7 @@ export function emitRunStage(stage: ScaffoldStage, jobOrder: readonly string[]):
       `  bash "$AZDO_STAGE_DIR/jobs/${job.name}/run-job.sh" "$@"`,
       'else',
       `  printf 'Skipping job %s due to condition.\\n' ${shQuote(referenceName)}`,
+      `  azdo_job_result_set "$AZDO_STAGE_ID" ${shQuote(referenceName)} Skipped`,
       'fi',
       '',
     );

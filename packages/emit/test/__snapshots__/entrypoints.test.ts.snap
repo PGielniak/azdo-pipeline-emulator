@@ -135,7 +135,7 @@ done
 
 export AZDO_VAR_SCOPE='job-compile'
 AZDO_LOG_DIR="$AZDO_RUN_DIR/logs/010-build/010-compile-and-test"
-AZDO_RESULT_DIR="$AZDO_STATE_DIR/results/010-build/010-compile-and-test"
+AZDO_RESULT_DIR="$(azdo_result_dir 'Build' 'compile')"
 AZDO_OUTPUT_DIR="$AZDO_STATE_DIR/outputs/Build/compile"
 AZDO_HAS_MULTIPLE_CHECKOUTS=false
 export AZDO_LOG_DIR AZDO_RESULT_DIR AZDO_OUTPUT_DIR AZDO_HAS_MULTIPLE_CHECKOUTS
@@ -182,6 +182,8 @@ source "$AZDO_STAGE_DIR/conditions.sh"
 
 if ! cond_stage; then
   printf 'Skipping stage %s due to condition.\\n' "$AZDO_STAGE_ID"
+  azdo_stage_result_set "$AZDO_STAGE_ID" Skipped
+  azdo_job_result_set "$AZDO_STAGE_ID" 'compile' Skipped
   exit 0
 fi
 
@@ -189,6 +191,7 @@ if cond_job_compile; then
   bash "$AZDO_STAGE_DIR/jobs/010-compile-and-test/run-job.sh" "$@"
 else
   printf 'Skipping job %s due to condition.\\n' 'compile'
+  azdo_job_result_set "$AZDO_STAGE_ID" 'compile' Skipped
 fi
 "
 `;

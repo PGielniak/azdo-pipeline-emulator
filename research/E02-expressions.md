@@ -49,6 +49,16 @@ it false — the context has no `pipeline` key at all. Kept for the audit trail;
 
 [C-E02-095] Runtime dependency records may carry service metadata (`name`, `attempt`, `state`, `result`, timestamps) in addition to the stable `result` and `outputs` contract; the engine keeps the expression-facing contract deliberately narrow. — research/experiments/E02-dependencies/real-run.md — checked 2026-08-12.
 
+**E02-S05-T05 grounding composition (re-checked 2026-08-28).** C-E02-092/093 are the two shell
+paths being added; the current Expressions page still publishes both object shapes and the exact
+`Succeeded|SucceededWithIssues|Skipped|Failed|Canceled` value set. C-E02-094 requires a missing
+record to remain Null, so the runtime cannot infer `Skipped` from an absent result directory. The
+local orchestrator instead records a private marker when it skips a known job (including every job
+inside a skipped stage); executed jobs remain an aggregate of E06's existing per-step result files.
+That marker/aggregation split is local storage policy, recorded in docs/06 §5 decision 70, and
+requires no new oracle run because the expression-facing shapes and values are already measured in
+`research/experiments/E02-dependencies/real-run.md`.
+
 **Why this file leans on the oracle rather than the fork.** E02's primary grounding set names
 `actions/runner` `src/Sdk/DTExpressions2` as the open reference for the DistributedTask expression
 engine (C-E00-012/013). Reading it first thing revealed that it is the **GitHub Actions** dialect

@@ -101,7 +101,8 @@ Stage result aggregates job results; `continueOnError: true` jobs degrade to `Su
 ```
 state/vars/<scope>/<NAME>          # value file; .meta sidecar: secret,output,readonly flags
 state/outputs/<stage>/<job>/<step>.<var>
-state/results/<stage>[/<job>[/<step>]]   # Succeeded|SucceededWithIssues|Failed|Skipped|Canceled
+state/results/<stage-id>[/<job-reference>[/<step>]] # five-state results; @empty for empty id
+                                                    # private .job-result/.stage-result skip markers
 state/path.d/NNN-<step>            # PATH prepends, applied in order to subsequent steps
 state/masks/mask.*                 # private exact values registered for streaming log masking
 state/summary/NNNN                 # one record per completed step, in completion order:

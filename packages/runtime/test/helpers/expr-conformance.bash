@@ -12,7 +12,8 @@ azdo_emu_expr_setup() {
   azdo_emu_load_runtime expr.sh
   AZDO_STATE_DIR="$(azdo_emu_scratch_dir state)"
   AZDO_VAR_SCOPE='job'
-  export AZDO_STATE_DIR AZDO_VAR_SCOPE
+  AZDO_STAGE_ID='Current'
+  export AZDO_STATE_DIR AZDO_VAR_SCOPE AZDO_STAGE_ID
   unset AZDO_OUTPUT_DIR AZDO_STEP_NAME
 }
 
