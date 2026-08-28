@@ -26,6 +26,10 @@ export interface BashValue {
 export interface BashCompileOptions {
   readonly variableFunction?: string;
   readonly outputFunction?: string;
+  readonly jobResultFunction?: string;
+  readonly stageResultFunction?: string;
+  /** `dependencies.X` names jobs in job conditions and stages in stage conditions. */
+  readonly dependencyKind?: 'job' | 'stage';
   /** Overrides for the `azdo_status_<name>` default (docs/02 §6). */
   readonly statusFunctions?: Readonly<Record<string, string>>;
   /** Shell parameter holding the current stage, for same-stage `dependencies` output reads. */
@@ -108,8 +112,22 @@ function outputRead(
   options: BashCompileOptions,
 ): string {
   const stageWord =
-    stage === undefined ? `"$${options.stageVariable ?? 'AZDO_STAGE_NAME'}"` : quote(stage);
+    stage === undefined ? `"$${options.stageVariable ?? 'AZDO_STAGE_ID'}"` : quote(stage);
   return `"$(${options.outputFunction ?? 'azdo_output'} ${stageWord} ${quote(job)} ${quote(variable)})"`;
+}
+
+function jobResultRead(
+  stage: string | undefined,
+  job: string,
+  options: BashCompileOptions,
+): string {
+  const stageWord =
+    stage === undefined ? `"$${options.stageVariable ?? 'AZDO_STAGE_ID'}"` : quote(stage);
+  return `"$(${options.jobResultFunction ?? 'azdo_job_result'} ${stageWord} ${quote(job)})"`;
+}
+
+function stageResultRead(stage: string, options: BashCompileOptions): string {
+  return `"$(${options.stageResultFunction ?? 'azdo_stage_result'} ${quote(stage)})"`;
 }
 
 /** Flatten `a.b['c'].d` into `['a','b','c','d']`, or undefined if any step is dynamic. */
@@ -143,10 +161,25 @@ function compileContext(node: ExprNode, options: BashCompileOptions): BashValue 
   if (context === 'variables' && rest.length >= 1) {
     return { kind: 'str', code: variableRead(rest.join('.'), options) };
   }
+  if (context === 'dependencies' && rest.length === 2 && rest[1]?.toLowerCase() === 'result') {
+    return {
+      kind: 'str',
+      code:
+        options.dependencyKind === 'stage'
+          ? stageResultRead(rest[0] as string, options)
+          : jobResultRead(undefined, rest[0] as string, options),
+    };
+  }
   if (context === 'dependencies' && rest.length === 3 && rest[1]?.toLowerCase() === 'outputs') {
     return {
       kind: 'str',
       code: outputRead(undefined, rest[0] as string, rest[2] as string, options),
+    };
+  }
+  if (context === 'stagedependencies' && rest.length === 3 && rest[2]?.toLowerCase() === 'result') {
+    return {
+      kind: 'str',
+      code: jobResultRead(rest[0] as string, rest[1] as string, options),
     };
   }
   if (

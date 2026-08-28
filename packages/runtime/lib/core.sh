@@ -324,6 +324,214 @@ azdo_step_result() {
   fi
 }
 
+# Dependency-result reads use the same state/results/<stage>/<job>/<step> tree as step status.
+# Executed jobs are folded from those existing files; an orchestrator skip needs a private marker
+# because an absent directory must remain Null for an unknown dependency (C-E02-092..094). Dotfile
+# markers stay outside azdo_run_result's `find ... ! -name '.*'` aggregate (decision 70).
+azdo__result_segment() {
+  (($# == 1)) || {
+    printf '%s\n' 'usage: azdo__result_segment <name>' >&2
+    return 2
+  }
+  if [[ -z "$1" ]]; then
+    # The service preserves an authored empty job identifier (C-E04-004). `@empty` cannot collide
+    # with a valid Azure stage/job identifier and keeps that node distinct from its parent path.
+    printf '%s\n' '@empty'
+    return 0
+  fi
+  azdo__valid_store_segment "$1" || return
+  printf '%s\n' "$1"
+}
+
+# azdo_result_dir <stage> <job> — physical directory for an expression-facing result record.
+azdo_result_dir() {
+  (($# == 2)) || {
+    printf '%s\n' 'usage: azdo_result_dir <stage> <job>' >&2
+    return 2
+  }
+  local state_dir stage_segment job_segment
+  state_dir="$(azdo__state_dir)" || return
+  stage_segment="$(azdo__result_segment "$1")" || return
+  job_segment="$(azdo__result_segment "$2")" || return
+  printf '%s/results/%s/%s\n' "$state_dir" "$stage_segment" "$job_segment"
+}
+
+azdo__result_marker_set() {
+  (($# == 2)) || {
+    printf '%s\n' 'usage: azdo__result_marker_set <path> <result>' >&2
+    return 2
+  }
+  azdo__valid_step_result "$2" || return
+
+  local marker_dir marker_tmp old_umask
+  marker_dir="${1%/*}"
+  mkdir -p "$marker_dir" || return
+  old_umask="$(umask)"
+  umask 077
+  marker_tmp="$(mktemp "$marker_dir/.result.XXXXXX")" || {
+    umask "$old_umask"
+    return
+  }
+  umask "$old_umask"
+  printf '%s\n' "$2" >"$marker_tmp" || {
+    rm -f -- "$marker_tmp"
+    return 1
+  }
+  mv -f -- "$marker_tmp" "$1"
+}
+
+# Resolve a result-store child directory case-insensitively (C-E02-094). Azure identifiers cannot
+# differ only by case, so the first match is unambiguous; missing children return status 1.
+azdo__result_child_dir() {
+  (($# == 3)) || {
+    printf '%s\n' 'usage: azdo__result_child_dir <parent> <name> <destination-variable>' >&2
+    return 2
+  }
+  local wanted wanted_segment child child_name canonical
+  wanted_segment="$(azdo__result_segment "$2")" || return
+  printf -v "$3" '%s' ''
+  [[ -d "$1" ]] || return 1
+  if [[ -z "$2" ]]; then
+    child="$1/$wanted_segment"
+    [[ -d "$child" ]] || return 1
+    printf -v "$3" '%s' "$child"
+    return 0
+  fi
+  wanted="$(azdo__canonical_var_name "$2")" || return
+  for child in "$1"/*; do
+    [[ -d "$child" ]] || continue
+    child_name="${child##*/}"
+    canonical="$(azdo__canonical_var_name "$child_name")" || return
+    if [[ "$canonical" = "$wanted" ]]; then
+      printf -v "$3" '%s' "$child"
+      return 0
+    fi
+  done
+  return 1
+}
+
+azdo_job_result_set() {
+  (($# == 3)) || {
+    printf '%s\n' 'usage: azdo_job_result_set <stage> <job> <result>' >&2
+    return 2
+  }
+  local result_dir
+  result_dir="$(azdo_result_dir "$1" "$2")" || return
+  azdo__result_marker_set "$result_dir/.job-result" "$3"
+}
+
+azdo_stage_result_set() {
+  (($# == 2)) || {
+    printf '%s\n' 'usage: azdo_stage_result_set <stage> <result>' >&2
+    return 2
+  }
+  local state_dir stage_segment
+  state_dir="$(azdo__state_dir)" || return
+  stage_segment="$(azdo__result_segment "$1")" || return
+  azdo__result_marker_set "$state_dir/results/$stage_segment/.stage-result" "$2"
+}
+
+# azdo_job_result <stage> <job>
+#
+# Prints the five-state dependency result, or nothing for a missing stage/job (shell Null→empty).
+azdo_job_result() {
+  (($# == 2)) || {
+    printf '%s\n' 'usage: azdo_job_result <stage> <job>' >&2
+    return 2
+  }
+  local state_dir results_dir stage_dir job_dir marker result_path result status=Succeeded
+  state_dir="$(azdo__state_dir)" || return
+  results_dir="$state_dir/results"
+  if ! azdo__result_child_dir "$results_dir" "$1" stage_dir; then
+    return 0
+  fi
+  if ! azdo__result_child_dir "$stage_dir" "$2" job_dir; then
+    return 0
+  fi
+
+  marker="$job_dir/.job-result"
+  if [[ -f "$marker" ]]; then
+    IFS= read -r result <"$marker" || [[ -n "$result" ]] || return 0
+    azdo__valid_step_result "$result" || return
+    printf '%s\n' "$result"
+    return 0
+  fi
+
+  for result_path in "$job_dir"/*; do
+    [[ -f "$result_path" ]] || continue
+    IFS= read -r result <"$result_path" || [[ -n "$result" ]] || continue
+    azdo__valid_step_result "$result" || return
+    case "$result" in
+      Canceled)
+        status=Canceled
+        break
+        ;;
+      Failed) status=Failed ;;
+      SucceededWithIssues)
+        [[ "$status" = Succeeded ]] && status=SucceededWithIssues
+        ;;
+      Succeeded | Skipped) ;;
+    esac
+  done
+  printf '%s\n' "$status"
+}
+
+# azdo_stage_result <stage>
+#
+# A skipped stage has an explicit marker. Otherwise fold its job results, treating Skipped as the
+# stage result only when every recorded job was skipped.
+azdo_stage_result() {
+  (($# == 1)) || {
+    printf '%s\n' 'usage: azdo_stage_result <stage>' >&2
+    return 2
+  }
+  local state_dir results_dir stage_dir marker result job_dir job_name status='' saw_skipped=false
+  state_dir="$(azdo__state_dir)" || return
+  results_dir="$state_dir/results"
+  if ! azdo__result_child_dir "$results_dir" "$1" stage_dir; then
+    return 0
+  fi
+  marker="$stage_dir/.stage-result"
+  if [[ -f "$marker" ]]; then
+    IFS= read -r result <"$marker" || [[ -n "$result" ]] || return 0
+    azdo__valid_step_result "$result" || return
+    printf '%s\n' "$result"
+    return 0
+  fi
+
+  for job_dir in "$stage_dir"/*; do
+    [[ -d "$job_dir" ]] || continue
+    job_name="${job_dir##*/}"
+    result="$(azdo_job_result "$1" "$job_name")" || return
+    case "$result" in
+      Canceled)
+        status=Canceled
+        break
+        ;;
+      Failed) status=Failed ;;
+      SucceededWithIssues)
+        [[ -n "$status" && "$status" != Succeeded ]] || status=SucceededWithIssues
+        ;;
+      Succeeded)
+        [[ -n "$status" ]] || status=Succeeded
+        ;;
+      Skipped) saw_skipped=true ;;
+      '') ;;
+      *)
+        printf 'invalid job result: %s\n' "$result" >&2
+        return 2
+        ;;
+    esac
+  done
+  if [[ -n "$status" ]]; then
+    printf '%s\n' "$status"
+  elif [[ "$saw_skipped" = true ]]; then
+    printf '%s\n' Skipped
+  else
+    printf '%s\n' Succeeded
+  fi
+}
+
 # azdo_step_issues <step-id>
 #
 # Prints `errors=<n>` and `warnings=<n>` recorded for a completed step. The counts live in an

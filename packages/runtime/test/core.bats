@@ -656,6 +656,67 @@ STREAM
   [ "$output" = Canceled ]
 }
 
+@test "dependency job results distinguish missing, skipped, and executed jobs (C-E02-092/094)" {
+  mkdir -p "$AZDO_STATE_DIR/results/Build/Web"
+  printf 'Succeeded\n' >"$AZDO_STATE_DIR/results/Build/Web/010"
+  printf 'SucceededWithIssues\n' >"$AZDO_STATE_DIR/results/Build/Web/020"
+
+  run -0 azdo_job_result build WEB
+  [ "$output" = SucceededWithIssues ]
+
+  printf 'Failed\n' >"$AZDO_STATE_DIR/results/Build/Web/030"
+  run -0 azdo_job_result Build Web
+  [ "$output" = Failed ]
+
+  printf 'Canceled\n' >"$AZDO_STATE_DIR/results/Build/Web/040"
+  run -0 azdo_job_result Build Web
+  [ "$output" = Canceled ]
+
+  azdo_job_result_set Build SkippedJob Skipped
+  run -0 azdo_job_result build skippedjob
+  [ "$output" = Skipped ]
+
+  run -0 azdo_job_result Build Unknown
+  [ -z "$output" ]
+
+  local empty_job_dir
+  empty_job_dir="$(azdo_result_dir Build '')"
+  mkdir -p "$empty_job_dir"
+  printf 'Succeeded\n' >"$empty_job_dir/010"
+  run -0 azdo_job_result build ''
+  [ "$output" = Succeeded ]
+
+  run ! azdo_job_result_set Build Bad Abandoned
+  [ "$status" -eq 2 ]
+  [[ "$output" == *'invalid step result: Abandoned'* ]]
+}
+
+@test "dependency stage results fold jobs and preserve an explicit skip (C-E02-092/093)" {
+  mkdir -p "$AZDO_STATE_DIR/results/Build/Compile"
+  printf 'Succeeded\n' >"$AZDO_STATE_DIR/results/Build/Compile/010"
+  azdo_job_result_set Build Lint Skipped
+
+  run -0 azdo_stage_result build
+  [ "$output" = Succeeded ]
+
+  azdo_job_result_set Test Unit Skipped
+  azdo_job_result_set Test Integration Skipped
+  run -0 azdo_stage_result test
+  [ "$output" = Skipped ]
+
+  azdo_stage_result_set Deploy Skipped
+  run -0 azdo_stage_result deploy
+  [ "$output" = Skipped ]
+
+  run -0 azdo_stage_result Unknown
+  [ -z "$output" ]
+
+  # Private dependency markers must not be mistaken for step files by the run-wide aggregate.
+  rm -f "$AZDO_STATE_DIR/results/Build/Compile/010"
+  run -0 azdo_run_result
+  [ "$output" = Succeeded ]
+}
+
 @test "exit, stderr, and continueOnError combinations produce grounded results (C-E06-032/033/036)" {
   local claim_ids row_id outcome continue_on_error fail_on_stderr expected_status expected_result
   local source_file

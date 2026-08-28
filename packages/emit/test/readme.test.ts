@@ -100,16 +100,8 @@ function plannedEntrypoints(plan: Scaffold): Set<string> {
   return paths;
 }
 
-/**
- * Corpus entries whose entry points cannot be emitted **today**, with the reason.
- *
- * `03` writes `condition: eq(dependencies.web.result, 'Skipped')` on a stage. docs/02 §6 lists
- * `dependencies.<job>.result` as a readable runtime context, but `compileBash` implements only the
- * `outputs[…]` arm and throws `BashCompileError` on `.result` — a gap in the shell backend, not in
- * this task. Filed as **E02-S05-T05**. The link check still runs for these entries against the
- * planned entry-point paths; only the "the emitter agrees with the plan" half is skipped.
- */
-const ENTRYPOINTS_BLOCKED = new Set(['03-dependencies-and-conditions']);
+/** Corpus entries with a known entry-point emission blocker; kept exact as a regression guard. */
+const ENTRYPOINTS_BLOCKED = new Set<string>();
 
 /** Everything a conversion of this pipeline actually writes, as project-relative paths. */
 function emittedPaths(plan: Scaffold): Set<string> {

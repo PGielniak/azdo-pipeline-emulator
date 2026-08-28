@@ -50,6 +50,20 @@ describe('Bash expression compiler (C-E02-128..131, C-E02-145..146)', () => {
     );
   });
 
+  it('reads dependency results through the runtime result store (C-E02-092..094)', () => {
+    expect(compileBash(parse("eq(dependencies.Build.result, 'Succeeded')"))).toBe(
+      'azdo_expr_cmp eq str "$(azdo_job_result "$AZDO_STAGE_ID" \'Build\')" str Succeeded',
+    );
+    expect(
+      compileBash(parse("eq(dependencies.Build.result, 'Skipped')"), {
+        dependencyKind: 'stage',
+      }),
+    ).toBe('azdo_expr_cmp eq str "$(azdo_stage_result \'Build\')" str Skipped');
+    expect(compileBash(parse("eq(stageDependencies.Build.Compile.result, 'Failed')"))).toBe(
+      "azdo_expr_cmp eq str \"$(azdo_job_result 'Build' 'Compile')\" str Failed",
+    );
+  });
+
   it('compiles a predicate used as a value through azdo_expr_bool', () => {
     expect(compileBashValue(parse('eq(1, 1)'))).toEqual({
       kind: 'bool',

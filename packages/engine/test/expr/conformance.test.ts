@@ -14,6 +14,7 @@ import {
   parseExpression,
   registryForSlot,
   variablesContext,
+  type BashCompileOptions,
   type ExprEvaluationContext,
   type ExprNode,
 } from '../../src/index.js';
@@ -26,6 +27,9 @@ const parse = (row: ConformanceRow): ExprNode => {
 };
 
 const label = (row: ConformanceRow): string => `${row.claim} ${row.id}: ${row.source}`;
+
+const compileOptions = (row: ConformanceRow): BashCompileOptions =>
+  row.slot === 'stage-condition' ? { dependencyKind: 'stage' } : {};
 
 const evaluationContext = (row: ConformanceRow): ExprEvaluationContext => ({
   slot: row.slot,
@@ -68,10 +72,12 @@ describe('shell backend compilation', () => {
       if (row.shell.kind === 'unsupported') {
         // Asserted, never skipped: if the compiler learns to emit this row, the reason recorded in
         // the table is stale and the row must be re-dispositioned rather than quietly widened.
-        expect(() => compileBash(node), row.shell.reason).toThrow(BashCompileError);
+        expect(() => compileBash(node, compileOptions(row)), row.shell.reason).toThrow(
+          BashCompileError,
+        );
         return;
       }
-      expect(compileBash(node)).toBeTypeOf('string');
+      expect(compileBash(node, compileOptions(row))).toBeTypeOf('string');
     });
   }
 });
@@ -99,7 +105,17 @@ function batsCase(row: ConformanceRow): string {
   for (const [name, status] of Object.entries(row.stubs ?? {})) {
     lines.push(`  azdo_status_${name.toLowerCase()}() { return ${status}; }`);
   }
-  lines.push(`  run -${statusFor(expected)} azdo_emu_expr_run ${shQuote(compileBash(parse(row)))}`);
+  for (const entry of row.jobResults ?? []) {
+    lines.push(
+      `  azdo_job_result_set ${shQuote(entry.stage)} ${shQuote(entry.job)} ${shQuote(entry.result)}`,
+    );
+  }
+  for (const entry of row.stageResults ?? []) {
+    lines.push(`  azdo_stage_result_set ${shQuote(entry.stage)} ${shQuote(entry.result)}`);
+  }
+  lines.push(
+    `  run -${statusFor(expected)} azdo_emu_expr_run ${shQuote(compileBash(parse(row), compileOptions(row)))}`,
+  );
   lines.push('}');
   return lines.join('\n');
 }

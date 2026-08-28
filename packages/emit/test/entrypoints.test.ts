@@ -22,7 +22,7 @@ import { describe, expect, it } from 'vitest';
 import { buildPipeline, parsePipelineYaml, type Diagnostic } from '@azdo-emu/engine';
 import { scaffold } from '../src/scaffold.js';
 import { emitStepScript } from '../src/step.js';
-import { emitEntrypoints } from '../src/entrypoints.js';
+import { compileCondition, emitEntrypoints } from '../src/entrypoints.js';
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
 const shellcheck =
@@ -131,6 +131,65 @@ describe('emitEntrypoints', () => {
     const reportConditions = files.get('stages/020-report/conditions.sh')!;
     expect(reportConditions).toContain('cond_step_010()');
     expect(reportConditions).toContain('azdo_expr_cmp eq str "$(azdo_var \'skip\')" str true');
+  });
+
+  it('compiles dependency result contexts to the matching runtime reader (C-E02-092..094)', () => {
+    const diagnostics: Diagnostic[] = [];
+    expect(
+      compileCondition(
+        'stage',
+        'Report',
+        "eq(dependencies.Build.result, 'Skipped')",
+        diagnostics,
+        'pipeline.expanded.yml',
+      ).body,
+    ).toContain("azdo_stage_result 'Build'");
+    expect(
+      compileCondition(
+        'job',
+        'Report',
+        "eq(dependencies.Build.result, 'Succeeded')",
+        diagnostics,
+        'pipeline.expanded.yml',
+      ).body,
+    ).toContain('azdo_job_result "$AZDO_STAGE_ID" \'Build\'');
+    expect(
+      compileCondition(
+        'job',
+        'Report',
+        "eq(stageDependencies.Build.Compile.result, 'SucceededWithIssues')",
+        diagnostics,
+        'pipeline.expanded.yml',
+      ).body,
+    ).toContain("azdo_job_result 'Build' 'Compile'");
+    expect(diagnostics).toEqual([]);
+  });
+
+  it('records skipped stage and job results for later dependency conditions', () => {
+    const { pipeline } = buildPipeline(parsePipelineYaml(FIXTURE, 'pipeline.expanded.yml'));
+    const plan = scaffold(pipeline!);
+    const files = emitEntrypoints(pipeline!, plan, 'pipeline.expanded.yml', []);
+    const buildStage = files.get('stages/010-build/run-stage.sh')!;
+    const buildJob = files.get('stages/010-build/jobs/010-compile-and-test/run-job.sh')!;
+
+    expect(buildStage).toContain('azdo_stage_result_set "$AZDO_STAGE_ID" Skipped');
+    expect(buildStage).toContain('azdo_job_result_set "$AZDO_STAGE_ID" \'compile\' Skipped');
+    expect(buildJob).toContain("AZDO_RESULT_DIR=\"$(azdo_result_dir 'Build' 'compile')\"");
+  });
+
+  it('keeps an authored empty job identifier in a distinct result directory (C-E04-004)', () => {
+    const yaml = `stages:
+- stage: Build
+  jobs:
+  - job: ''
+    steps: []
+`;
+    const { pipeline } = buildPipeline(parsePipelineYaml(yaml, 'pipeline.expanded.yml'));
+    const plan = scaffold(pipeline!);
+    const files = emitEntrypoints(pipeline!, plan, 'pipeline.expanded.yml', []);
+    const job = [...files.entries()].find(([path]) => path.endsWith('/run-job.sh'))?.[1];
+
+    expect(job).toContain("AZDO_RESULT_DIR=\"$(azdo_result_dir 'Build' '')\"");
   });
 
   it('records a diagnostic and emits a failing guard for an unparsable condition', () => {

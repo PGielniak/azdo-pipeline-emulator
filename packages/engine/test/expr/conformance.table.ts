@@ -23,6 +23,7 @@ import {
   type ExprSlot,
   type StatusState,
 } from '../../src/index.js';
+import { dependenciesContext, stageDependenciesContext } from '../../src/expr/dependencies.js';
 import { COERCION_ROWS } from './coercion.table.js';
 
 export type ShellDisposition =
@@ -52,6 +53,14 @@ export interface ConformanceRow {
   readonly counters?: CounterStateProvider;
   /** Variables seeded into the fixture store before the compiled form runs. */
   readonly store?: Readonly<Record<string, string>>;
+  /** Job result markers seeded into the shell result store before the compiled form runs. */
+  readonly jobResults?: readonly {
+    readonly stage: string;
+    readonly job: string;
+    readonly result: string;
+  }[];
+  /** Stage result markers seeded into the shell result store before the compiled form runs. */
+  readonly stageResults?: readonly { readonly stage: string; readonly result: string }[];
   /** Status-function stubs the generated bats defines, as `name → exit status`. */
   readonly stubs?: Readonly<Record<string, 0 | 1>>;
   readonly shell: ShellDisposition;
@@ -429,6 +438,44 @@ const CONTEXT_CONFORMANCE: readonly ConformanceRow[] = [
         'the shell backend has no Null: a missing variable reads as the empty String, which orders below "x" instead of failing the String→Null conversion',
       shellExpected: true,
     },
+  },
+  {
+    id: 'dependencies-job-result-folds-case',
+    claim: 'C-E02-092/094',
+    source: "eq(dependencies.build.result, 'Skipped')",
+    slot: 'job-condition',
+    expected: true,
+    values: {
+      dependencies: dependenciesContext({ Build: { result: 'Skipped' } }),
+    },
+    jobResults: [{ stage: 'Current', job: 'Build', result: 'Skipped' }],
+    shell: AGREE,
+  },
+  {
+    id: 'dependencies-stage-result',
+    claim: 'C-E02-092',
+    source: "eq(dependencies.Build.result, 'Skipped')",
+    slot: 'stage-condition',
+    expected: true,
+    values: {
+      dependencies: dependenciesContext({ Build: { result: 'Skipped' } }),
+    },
+    stageResults: [{ stage: 'Build', result: 'Skipped' }],
+    shell: AGREE,
+  },
+  {
+    id: 'stage-dependencies-job-result-folds-case',
+    claim: 'C-E02-093/094',
+    source: "eq(stageDependencies.build.compile.result, 'SucceededWithIssues')",
+    slot: 'job-condition',
+    expected: true,
+    values: {
+      stageDependencies: stageDependenciesContext({
+        Build: { Compile: { result: 'SucceededWithIssues' } },
+      }),
+    },
+    jobResults: [{ stage: 'Build', job: 'Compile', result: 'SucceededWithIssues' }],
+    shell: AGREE,
   },
   {
     id: 'condition-docs-canonical',
