@@ -16,7 +16,10 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --sourcemap --clean",
+    "build": "tsup src/index.ts --format esm --dts --sourcemap --clean --external @napi-rs/keyring",
     "typecheck": "tsc --noEmit"
+  },
+  "optionalDependencies": {
+    "@napi-rs/keyring": "^1.3.0"
   }
 }
