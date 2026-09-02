@@ -1,21 +1,55 @@
-# E00-S01-T02 — nightly oracle parity run, created DISABLED.
-# E12-S03 enables it by: (1) uncommenting the schedule trigger, (2) setting the repo
-# variable ORACLE_ENABLED=true, (3) adding secrets AZDO_ORG_URL / AZDO_PROJECT /
-# AZDO_ORACLE_PIPELINE_ID / AZDO_PAT, (4) replacing the placeholder step with
-# preview-diff over the fixture corpus (PLAN D6, docs/06 §3 L3).
+# E11-S03-T01 — nightly re-expansion + convert smoke (docs/06 §3 L3).
+#
+# Created disabled by E00-S01-T02 as a placeholder; enabled here with the real harness.
+#
+# What it answers: the corpus's oracle pairs are the evidence behind the golden harness, the
+# expansion validator and dozens of claims, and they were fetched once. This job re-asks the
+# service the same questions every night, so a change on their side surfaces within a day.
+#
+# Still gated on the repository variable `ORACLE_ENABLED`, so a fork never spends someone else's
+# organization quota, and the four secrets are the ones research/oracle-setup.md provisions.
+#
+# **The PAT expires.** research/oracle-setup.md ("Cleanup & rotation") says to create the
+# replacement >= 7 days before expiry and update both `.env.oracle` and the `AZDO_PAT` secret. A
+# lapsed token shows up here as every entry `rejected` with a 302 (C-E00-025), not as a 401.
 name: Oracle nightly
 
 on:
   workflow_dispatch:
-  # schedule:
-  #   - cron: '30 2 * * *'
+  schedule:
+    - cron: '30 2 * * *'
 
 jobs:
   preview-parity:
     if: vars.ORACLE_ENABLED == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Placeholder — harness lands in E12-S03
-        run: |
-          echo "::error::Oracle nightly is enabled but the preview-diff harness is not wired yet (E12-S03)."
-          exit 1
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The smoke phase drives the built `convert` as a library, so the bundle has to exist.
+      - run: pnpm build
+      - name: Re-expand the corpus and smoke the generated projects
+        env:
+          AZDO_ORG_URL: ${{ secrets.AZDO_ORG_URL }}
+          AZDO_PROJECT: ${{ secrets.AZDO_PROJECT }}
+          AZDO_ORACLE_PIPELINE_ID: ${{ secrets.AZDO_ORACLE_PIPELINE_ID }}
+          AZDO_PAT: ${{ secrets.AZDO_PAT }}
+        run: node scripts/drift.ts
+      # The failure artifact the task asks for: the diff and the captured logs. Every line of it
+      # went through `redact()` on the way out (the organization name is a real one), and it is
+      # uploaded on success too so a reader can see what "stable" looked like.
+      - name: Upload the drift report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: drift-report
+          # Just the reports: the diffs and every captured log already live inside them, while
+          # `.drift-report/projects/` holds ten generated projects that would bloat the upload.
+          path: |
+            .drift-report/report.md
+            .drift-report/report.json

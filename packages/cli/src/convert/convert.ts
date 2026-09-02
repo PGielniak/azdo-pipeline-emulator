@@ -233,10 +233,24 @@ function pruneDependencies(
   return { pipeline: { ...pipeline, stages }, warnings };
 }
 
-/** Where the runtime library lives in the installed package, and in this repo's source tree. */
+/**
+ * Where the runtime library lives in the installed package, and in this repo's source tree.
+ *
+ * The package-name candidate is the one that has to work: it is the only spelling that resolves
+ * from the **bundled** `dist/`, and it needs `@azdo-emu/runtime` declared as a dependency of this
+ * package to do so. It was not, and the relative candidate below is written for the source depth
+ * (`src/convert/` → `packages/runtime`), which from `dist/` points at a directory that does not
+ * exist — so every conversion through the built CLI failed with "cannot locate the runtime
+ * library" while the whole test suite, which runs from source, stayed green. Found by the nightly
+ * drift harness (E11-S03-T01) and guarded by `packages/cli/test/packaging.test.ts`.
+ */
 function runtimeLibDir(): string {
   const require = createRequire(import.meta.url);
-  for (const candidate of ['@azdo-emu/runtime/lib/core.sh', '../../../runtime/lib/core.sh']) {
+  for (const candidate of [
+    '@azdo-emu/runtime/lib/core.sh',
+    '../../../runtime/lib/core.sh',
+    '../../runtime/lib/core.sh',
+  ]) {
     try {
       return path.dirname(require.resolve(candidate));
     } catch {

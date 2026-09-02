@@ -53,6 +53,9 @@ importers:
       '@azdo-emu/fetch':
         specifier: workspace:*
         version: link:../fetch
+      '@azdo-emu/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       commander:
         specifier: 15.0.0
         version: 15.0.0

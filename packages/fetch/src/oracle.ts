@@ -111,7 +111,8 @@ export function configFromEnv(env: Readonly<Record<string, string | undefined>>)
   };
 }
 
-type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
+/** The `fetch` seam every caller injects in tests (E11-S03-T01 drives the drift harness through it). */
+export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
 /**
  * POST `{previewRun: true, yamlOverride}` and classify the outcome (C-E00-018).

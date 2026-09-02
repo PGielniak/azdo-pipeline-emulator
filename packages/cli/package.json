@@ -23,6 +23,7 @@
     "@azdo-emu/emit": "workspace:*",
     "@azdo-emu/engine": "workspace:*",
     "@azdo-emu/fetch": "workspace:*",
+    "@azdo-emu/runtime": "workspace:*",
     "commander": "15.0.0",
     "yaml": "2.9.0"
   },
