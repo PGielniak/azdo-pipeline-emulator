@@ -357,6 +357,32 @@ export async function writeLockfile(lockfilePath: string, lockfile: Lockfile): P
   await writeFile(lockfilePath, `${JSON.stringify(merged, null, 2)}\n`, 'utf8');
 }
 
+/**
+ * Add or replace one task pin, preserving every other section (E07-S01-T01).
+ *
+ * A convert resolves tasks one at a time, so this is a read-modify-write rather than a whole-file
+ * rewrite: rebuilding the document from just the tasks it happened to see would drop the repository
+ * and pipeline pins the same convert wrote earlier.
+ */
+export async function pinTask(
+  lockfilePath: string,
+  reference: string,
+  pin: TaskPin,
+  convertedAt: string,
+): Promise<Lockfile> {
+  const existing = (await readLockfile(lockfilePath)) ?? {
+    version: LOCKFILE_VERSION,
+    convertedAt,
+  };
+  const updated: Lockfile = {
+    ...existing,
+    convertedAt,
+    tasks: { ...existing.tasks, [reference]: pin },
+  };
+  await writeLockfile(lockfilePath, updated);
+  return updated;
+}
+
 /** One pin `--frozen` could not satisfy from cache. */
 export interface MissingPin {
   readonly kind: 'repository' | 'pipeline-artifact' | 'task' | 'expansion';

@@ -19,7 +19,7 @@
  *    calls: list to learn the version, then fetch.
  */
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { AzureDevOpsClient, RestError } from './client.js';
 import { extractArchive } from '../repo/extract.js';
@@ -210,19 +210,35 @@ export interface TaskZipDownload {
   readonly dir: string;
   readonly bytes: number;
   readonly files: number;
+  /** False when the package was already unpacked, i.e. nothing was downloaded. */
+  readonly fetched: boolean;
 }
 
+/** The unpacked package tree inside a task cache entry. */
+export const TASK_TREE_DIR = 'tree';
+
 /**
- * Download and unpack a task's zip beside its cached `task.json` (real-task mode, docs/03 §6).
+ * Download and unpack a task's package beside its cached `task.json` (real-task mode, docs/03 §6).
  *
  * C-E09-088: the route needs the exact `major.minor.patch`, so this takes a resolved `InstalledTask`
  * rather than a `name@major` string — the version has to come from the list call first.
+ *
+ * A complete entry is returned with **no request at all** (E07-S01-T01), which is what makes the
+ * cache offline-reproducible; the marker is the unpacked tree rather than the zip, because a zip
+ * present without a tree means an extraction that did not finish.
  */
 export async function downloadTaskZip(
   client: AzureDevOpsClient,
   task: InstalledTask,
   cacheDir: string,
 ): Promise<TaskZipDownload> {
+  const dir = taskCacheDir(cacheDir, task.name, task.version);
+  const treeDir = join(dir, TASK_TREE_DIR);
+  const existing = await countTree(treeDir);
+  if (existing !== undefined) {
+    return { dir, bytes: existing.bytes, files: existing.files, fetched: false };
+  }
+
   const { bytes } = await client.requestBinary({
     path: `distributedtask/tasks/${encodeURIComponent(task.id)}/${versionString(task.version)}`,
     area: 'distributedtask',
@@ -230,9 +246,46 @@ export async function downloadTaskZip(
     accept: 'application/zip',
   });
 
-  const dir = taskCacheDir(cacheDir, task.name, task.version);
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, 'task.zip'), bytes);
   const extracted = await extractArchive(bytes, 'zip', dir);
-  return { dir, bytes: bytes.length, files: extracted.files };
+  return { dir, bytes: bytes.length, files: extracted.files, fetched: true };
+}
+
+/** `undefined` when the tree is absent or empty — either way there is nothing usable to reuse. */
+async function countTree(treeDir: string): Promise<{ files: number; bytes: number } | undefined> {
+  let files: number;
+  try {
+    const entries = await readdir(treeDir, { withFileTypes: true, recursive: true });
+    files = entries.filter((entry) => entry.isFile()).length;
+  } catch {
+    return undefined;
+  }
+  if (files === 0) return undefined;
+  let bytes: number;
+  try {
+    bytes = (await stat(join(treeDir, '..', 'task.zip'))).size;
+  } catch {
+    // The tree is what makes the entry usable; a missing zip beside it is not fatal.
+    bytes = 0;
+  }
+  return { files, bytes };
+}
+
+/**
+ * The lockfile pin for a resolved task (E07-S01-T01, docs/05 §4 `tasks`).
+ *
+ * Keyed by the reference as the YAML wrote it — `replacetokens@6` — because that is what a
+ * re-convert looks up, while the *value* carries the exact `major.minor.patch` the download route
+ * needs (C-E09-088). Pinning only the major would leave the download unaddressable.
+ */
+export function taskPin(
+  task: InstalledTask,
+  reference?: string,
+): { key: string; id: string; version: string } {
+  return {
+    key: reference ?? `${task.name}@${task.version.major}`,
+    id: task.id,
+    version: versionString(task.version),
+  };
 }

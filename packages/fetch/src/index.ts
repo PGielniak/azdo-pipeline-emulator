@@ -254,6 +254,7 @@ export {
 
 export {
   TASK_NOT_FOUND_TYPE_KEY,
+  TASK_TREE_DIR,
   cacheTaskMetadata,
   downloadTaskZip,
   listInstalledTasks,
@@ -262,6 +263,7 @@ export {
   readCachedTask,
   selectTask,
   taskCacheDir,
+  taskPin,
   versionString,
   type CacheTaskOptions,
   type CachedTask,
@@ -278,6 +280,7 @@ export {
   frozenFailureMessage,
   lockfileFingerprint,
   parseLockfile,
+  pinTask,
   readLockfile,
   serializeLockfile,
   verifyLockfile,
