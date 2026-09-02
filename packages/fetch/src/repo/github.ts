@@ -26,6 +26,7 @@ import {
   type GitHubFetch,
   type GitHubRequestOptions,
 } from '../auth/github.js';
+import { EXTRACTED_TREE_DIR, extractArchive } from './extract.js';
 
 const CACHE_SUBDIR = '.cache/repos';
 const SNAPSHOT_MARKER = 'snapshot.json';
@@ -163,6 +164,8 @@ export interface GitHubSnapshotMarker {
 
 export interface GitHubSnapshot {
   readonly dir: string;
+  /** E09-S02-T04: the unpacked tarball, which is what files are actually read from. */
+  readonly treeDir: string;
   readonly method: 'tarball';
   readonly ref: string;
   readonly commit: string;
@@ -218,6 +221,7 @@ export async function snapshotGitHubRepo(
   if (existing !== undefined && existing.commit === resolved.commit) {
     return {
       dir,
+      treeDir: join(dir, EXTRACTED_TREE_DIR),
       method: 'tarball',
       ref: existing.ref,
       commit: existing.commit,
@@ -234,7 +238,11 @@ export async function snapshotGitHubRepo(
       ...options,
       credential,
     });
-    await writeFile(join(dir, 'snapshot.tar.gz'), Buffer.from(await archive.body.arrayBuffer()));
+    const bytes = Buffer.from(await archive.body.arrayBuffer());
+    await writeFile(join(dir, 'snapshot.tar.gz'), bytes);
+    // E09-S02-T04: unpack beside the archive; C-E09-050's `<owner>-<repo>-<short sha>/` prefix is
+    // derived rather than computed, because the archive abbreviates the sha we pinned.
+    await extractArchive(bytes, 'tar.gz', dir);
   } catch (error) {
     // Never leave a marker-less directory that looks like a snapshot.
     await rm(dir, { recursive: true, force: true });
@@ -249,7 +257,14 @@ export async function snapshotGitHubRepo(
     storedAt: new Date().toISOString(),
   };
   await writeFile(join(dir, SNAPSHOT_MARKER), `${JSON.stringify(marker, null, 2)}\n`, 'utf8');
-  return { dir, method: 'tarball', ref: resolved.ref, commit: resolved.commit, fetched: true };
+  return {
+    dir,
+    treeDir: join(dir, EXTRACTED_TREE_DIR),
+    method: 'tarball',
+    ref: resolved.ref,
+    commit: resolved.commit,
+    fetched: true,
+  };
 }
 
 /** Read a cached snapshot without fetching — the `--frozen` entry point. */
@@ -261,5 +276,12 @@ export async function readCachedGitHubSnapshot(
   const dir = githubRepoCacheDir(cacheDir, coordinates, commit);
   const marker = await readMarker(dir);
   if (marker === undefined || marker.commit !== commit) return undefined;
-  return { dir, method: 'tarball', ref: marker.ref, commit: marker.commit, fetched: false };
+  return {
+    dir,
+    treeDir: join(dir, EXTRACTED_TREE_DIR),
+    method: 'tarball',
+    ref: marker.ref,
+    commit: marker.commit,
+    fetched: false,
+  };
 }

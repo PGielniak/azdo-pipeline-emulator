@@ -14,6 +14,7 @@ import {
   type ResolvedGitHubRef,
 } from '../src/repo/github.js';
 import { GITHUB_API_VERSION, type GitHubFetch } from '../src/auth/github.js';
+import { githubTarball } from './helpers/archives.js';
 
 const COORDS: GitHubRepoCoordinates = { owner: 'octocat', repo: 'Hello-World' };
 const COMMIT = '7fd1a60b01f91b314f59955a4e4d4e80d8edf11d';
@@ -196,7 +197,7 @@ describe('snapshotGitHubRepo', () => {
       status: 302,
       headers: { location: 'https://codeload.example.invalid/archive/abc' },
     }),
-    new Response('tar-bytes', { status: 200 }),
+    new Response(githubTarball('octocat-Hello-World-7fd1a60'), { status: 200 }),
   ];
 
   it('downloads pinned by SHA and never sends the token to the storage origin (C-E09-042/015)', async () => {
@@ -219,9 +220,10 @@ describe('snapshotGitHubRepo', () => {
       `Bearer ${TOKEN}`,
     );
     expect((calls[1]?.init.headers as Record<string, string>).Authorization).toBeUndefined();
-    await expect(readFile(join(snapshot.dir, 'snapshot.tar.gz'), 'utf8')).resolves.toBe(
-      'tar-bytes',
-    );
+    // E09-S02-T04: the archive is kept *and* unpacked, so a file is readable from `tree/`.
+    await expect(stat(join(snapshot.dir, 'snapshot.tar.gz'))).resolves.toBeTruthy();
+    expect(snapshot.treeDir).toBe(join(snapshot.dir, 'tree'));
+    await expect(readFile(join(snapshot.treeDir, 'README'), 'utf8')).resolves.toBe('fixture\n');
   });
 
   it('returns a complete entry with no network call at all (cache hit, offline)', async () => {
@@ -297,7 +299,7 @@ describe('readCachedGitHubSnapshot (the --frozen entry point)', () => {
       cacheDir,
       fetchImpl: recorder([
         new Response('', { status: 302, headers: { location: 'https://x.invalid/a' } }),
-        new Response('tar', { status: 200 }),
+        new Response(githubTarball('octocat-Hello-World-7fd1a60'), { status: 200 }),
       ]).fetchImpl,
     });
 

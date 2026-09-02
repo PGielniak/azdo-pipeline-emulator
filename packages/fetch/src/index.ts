@@ -177,3 +177,17 @@ export {
   type ResolvedRepository,
   type SelfRepository,
 } from './repo/alias.js';
+
+export {
+  ArchiveError,
+  EXTRACTED_TREE_DIR,
+  commonPrefix,
+  extractArchive,
+  readTarEntries,
+  readZipEntries,
+  safeDestination,
+  writeEntries,
+  type ArchiveEntry,
+  type ArchiveFormat,
+  type ExtractionResult,
+} from './repo/extract.js';

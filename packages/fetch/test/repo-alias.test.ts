@@ -18,6 +18,7 @@ import {
 import type { RepoFetch } from '../src/repo/ado-git.js';
 import type { GitHubFetch } from '../src/auth/github.js';
 import type { StoredAzureCredential } from '../src/auth/storage.js';
+import { adoZip, githubTarball } from './helpers/archives.js';
 
 const ORG = { orgUrl: 'https://dev.azure.com/example-org', project: 'Example' };
 const CREDENTIAL: StoredAzureCredential = {
@@ -60,7 +61,7 @@ function adoFetchStub(): RepoFetch {
             JSON.stringify({ value: [{ name: DEFAULT_REPOSITORY_REF, objectId: COMMIT }] }),
             { status: 200 },
           )
-        : new Response(new Uint8Array([80, 75, 3, 4]), { status: 200 }),
+        : new Response(adoZip(), { status: 200 }),
     );
 }
 
@@ -75,7 +76,9 @@ function githubFetchStub(): GitHubFetch {
         new Response('', { status: 302, headers: { location: 'https://codeload.invalid/a' } }),
       );
     }
-    return Promise.resolve(new Response('tar', { status: 200 }));
+    return Promise.resolve(
+      new Response(githubTarball('Contoso-CommonTools-fa03743'), { status: 200 }),
+    );
   };
 }
 
@@ -134,6 +137,7 @@ describe('resolveRepositoryAliases', () => {
         ref: DEFAULT_REPOSITORY_REF,
         commit: '0'.repeat(40),
         dir: '/work/app',
+        treeDir: '/work/app',
         method: 'working-copy',
       },
     ]);
