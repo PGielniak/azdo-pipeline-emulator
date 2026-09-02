@@ -3131,3 +3131,77 @@ EOF
   run -0 azdo__task_execution_target "$json" Node24
   [ -z "$output" ]
 }
+
+# --- E07-S01-T04: a real task's ##vso output and exit code ------------------------------------
+
+@test "a real Node task's setvariable reaches the store like any other step (C-E07-009)" {
+  prepare_artifact_dirs
+  AZDO_EMU_CACHE="$BATS_TEST_TMPDIR/cache"
+  export AZDO_EMU_CACHE
+  # A real task emitting a logging command through task-lib's own escaping (C-E07-007).
+  seed_task_package 'Emitter' '1.0.0' '{"Node24":{"target":"main.js"}}' \
+    'console.log("##vso[task.setvariable variable=fromTask]" + process.env.INPUT_VALUE)'
+
+  # The step script is what the emitter writes; azdo_run_step is what pipes it through the parser.
+  CORE_SH="$(azdo_emu_repo_root)/packages/runtime/lib/core.sh" run -0 bash -c '
+    source "$CORE_SH"
+    azdo_run_task <<EOF | azdo_logging_stream
+task: Emitter@1
+  value: produced-by-the-task
+EOF
+  ' <<<''
+
+  [ "$(azdo_var 'fromTask')" = 'produced-by-the-task' ]
+}
+
+@test "a real task's secret is masked in the stream (C-E07-009, Done criterion)" {
+  prepare_artifact_dirs
+  AZDO_EMU_CACHE="$BATS_TEST_TMPDIR/cache"
+  export AZDO_EMU_CACHE
+  seed_task_package 'Secretive' '1.0.0' '{"Node24":{"target":"main.js"}}' \
+    'console.log("##vso[task.setsecret]" + process.env.INPUT_TOKEN); console.log("leaking " + process.env.INPUT_TOKEN)'
+
+  CORE_SH="$(azdo_emu_repo_root)/packages/runtime/lib/core.sh" run -0 bash -c '
+    source "$CORE_SH"
+    azdo_run_task <<EOF | azdo_logging_stream | azdo_mask_stream
+task: Secretive@1
+  token: hunter2-not-in-the-log
+EOF
+  '
+  # The registered secret must not survive the masker — this is the half a real task could break.
+  [[ "$output" != *'hunter2-not-in-the-log'* ]]
+  [[ "$output" == *'leaking ***'* ]]
+}
+
+@test "a real task's message round-trips the agent's escaping, not task-lib's (C-E07-008)" {
+  prepare_artifact_dirs
+  AZDO_EMU_CACHE="$BATS_TEST_TMPDIR/cache"
+  export AZDO_EMU_CACHE
+  # task-lib's escapedata leaves `]` and `;` alone in a message, but the agent decodes %5D and %3B
+  # in both halves — so a message carrying those tokens decodes, and we follow the agent.
+  seed_task_package 'Escaper' '1.0.0' '{"Node24":{"target":"main.js"}}' \
+    'console.log("##vso[task.setvariable variable=decoded]a%5Db%3Bc%AZP25d")'
+
+  CORE_SH="$(azdo_emu_repo_root)/packages/runtime/lib/core.sh" run -0 bash -c '
+    source "$CORE_SH"
+    azdo_run_task <<EOF | azdo_logging_stream
+task: Escaper@1
+EOF
+  ' <<<''
+  [ "$(azdo_var 'decoded')" = 'a]b;c%d' ]
+}
+
+@test "a failing real task's exit code reaches the caller (C-E07-010)" {
+  AZDO_EMU_CACHE="$BATS_TEST_TMPDIR/cache"
+  export AZDO_EMU_CACHE
+  seed_task_package 'Failing' '1.0.0' '{"Node24":{"target":"main.js"}}' 'process.exit(3)'
+
+  # `exec` is what carries this: without it the status would be the shell's and a failing task
+  # would report success.
+  CORE_SH="$(azdo_emu_repo_root)/packages/runtime/lib/core.sh" run -3 bash -c '
+    source "$CORE_SH"
+    azdo_run_task <<EOF
+task: Failing@1
+EOF
+  '
+}

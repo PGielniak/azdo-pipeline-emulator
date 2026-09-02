@@ -67,3 +67,51 @@ into the vault and deleted from `process.env`. Recorded because it bounds what t
 service-connection auth reaches a task as `ENDPOINT_AUTH_*`, not as an input, and is E07-S02/E08
 work rather than this task's.
   — same task-lib source, `_loadData` L788-818
+
+---
+
+## E07-S01-T04 — result and `##vso` capture from a real task (`C-E07-007..010`)
+
+Recorded 2026-09-02. The **parser** side is E06-S04's grounding (C-E06-044..068) and is not
+re-derived; what is pinned here is task-lib's **emission** side, so the claim that "the parser
+inverts it exactly" is checkable rather than assumed.
+
+[C-E07-007] **task-lib emits `##vso[area.action key=value;]message`, escaping properties and the
+message with *different* tables.** `TaskCommand.toString` writes `CMD_PREFIX + command`, then each
+truthy property as `key + '=' + escape(val) + ';'`, then `]`, then `escapedata(message)`. The two
+tables differ:
+
+| | `%` | `\r` | `\n` | `]` | `;` |
+| --- | --- | --- | --- | --- | --- |
+| `escape` (properties) | `%AZP25` | `%0D` | `%0A` | `%5D` | `%3B` |
+| `escapedata` (message) | `%AZP25` | `%0D` | `%0A` | — | — |
+
+A property whose value is falsy is **omitted entirely** (`if (val)`), so an empty property is
+indistinguishable from an absent one — the same shape as the empty-input rule (C-E07-002).
+  — https://github.com/microsoft/azure-pipelines-task-lib/blob/d4eecb2abcf7f2024f0d09c33f4bca7b63d6658a/node/taskcommand.ts
+    (`toString` L26-51, `escapedata` L93-97, `escape` L105-112; checked 2026-09-02)
+
+[C-E07-008] **The agent decodes both halves with one symmetric table, so the emission asymmetry does
+not round-trip.** `Command.cs` calls the *same* `CommandStringConvertor.Unescape` for a property
+value (L90) and for the message (L95). **Consequence:** a task that emits a message containing the
+literal text `%5D` has it decoded to `]` by the agent, even though task-lib's own `unescapedata`
+would have left it alone. Our runtime follows the **agent**, because the agent is what actually
+consumes the stream — `azdo__logging_unescape` decodes all five tokens for both halves, which is the
+behavior a real pipeline exhibits.
+  — https://github.com/microsoft/azure-pipelines-agent/blob/018456432195aff4c59112f93426620891703dd5/src/Microsoft.VisualStudio.Services.Agent/Command.cs
+    (L87-96; checked 2026-09-02), against task-lib `unescapedata` L99-103 as above
+
+[C-E07-009] **A real task needs no new capture path: it is already inside one.** `azdo_run_step`
+runs the step's `.sh` with its stdout and stderr joined into one FIFO which is consumed by
+`azdo_logging_stream | azdo_mask_stream` before being teed to the console and log (C-E06-029/033/044,
+docs/06 §5 decision 36). A real-task step is that same `.sh` — the emitter writes `azdo_run_task`
+into it — so `setvariable`, `setOutput` and `logissue` from a real task reach the store by exactly
+the path a script step's do. This is a *structural* claim about our own runtime, recorded because
+the obvious implementation of this task would have been a second, parallel capture path.
+
+[C-E07-010] **`exec` in the handler dispatch is what carries the exit code.** `azdo_run_task` ends
+in `exec node …` / `exec pwsh …`, so the handler *replaces* the step subshell and its status becomes
+the script's status, which `azdo_run_step` already maps through the result machine
+(C-E06-036..043). Without `exec` the status would be the shell's, and a failing task would report
+success.
+  — our runtime, `azdo_run_task`; result mapping grounded by E06-S03
