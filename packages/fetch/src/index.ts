@@ -226,3 +226,19 @@ export {
   type RunSummary,
   type SignedArtifact,
 } from './rest/runs.js';
+
+export {
+  ARTIFACT_NOT_FOUND_TYPE_KEY,
+  DOWNLOADABLE_ARTIFACT_TYPES,
+  downloadBuildArtifact,
+  findDefinitionByName,
+  getBuildArtifact,
+  getDefinition,
+  listBuildArtifacts,
+  resolveDefinition,
+  type BuildArtifact,
+  type BuildArtifactDownload,
+  type BuildDefinitionDetail,
+  type BuildDefinitionSummary,
+  type DownloadBuildArtifactOptions,
+} from './rest/build.js';
