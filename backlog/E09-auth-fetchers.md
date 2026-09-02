@@ -39,7 +39,7 @@ Acceptance: alias resolution + repo snapshot fetch with SHA pinning, per docs/05
   **Do:** ref→SHA resolve (Refs endpoint), snapshot via `git clone --bare` with token credential (preferred) or Items `$format=zip` fallback; cache layout per docs/05 §4.
   **Ground:** Git Refs + Items REST pages (pin; note `versionDescriptor` params) + live samples; git credential embedding format from git-scm docs (pin).
   **Done:** fixture: fetch repo@branch and @commit; cache hit path tested offline.
-- [ ] **E09-S02-T02 — GitHub fetcher**
+- [x] **E09-S02-T02 — GitHub fetcher**
   **Do:** ref→SHA via commits API; tarball download; same cache layout.
   **Ground:** GitHub REST "download tarball" + commits pages (pin) + live samples.
   **Done:** as T01 for a GitHub fixture repo.
