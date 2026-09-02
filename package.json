@@ -55,7 +55,8 @@
     "lint:es": "eslint .",
     "lint:format": "prettier --check .",
     "lint:shell": "pnpm --filter @azdo-emu/runtime run lint",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "claim-coverage": "bash scripts/claim-coverage.sh"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

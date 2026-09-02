@@ -44,6 +44,10 @@ jobs:
       - run: pnpm lint
       - name: Grounding guard (no unresolved research markers in code paths)
         run: bash scripts/check-verify-markers.sh --all
+      # E11-S02-T01: the report is part of review, so it prints on every run; --check only fails
+      # when the ratchet in .claim-coverage-floor slips.
+      - name: Claim↔test coverage (BACKLOG.md §3)
+        run: bash scripts/claim-coverage.sh --check
       # --coverage is what enforces the per-package thresholds in vitest.config.ts (E12-S01-T01);
       # without it the thresholds are inert. Same flags as `pnpm test:unit`, plus the junit report.
       - name: Unit tests (vitest + coverage thresholds, junit report)
