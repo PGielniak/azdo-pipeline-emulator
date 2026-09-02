@@ -178,3 +178,113 @@ Measured through the shipped chain, not merely inferred from C-E09-015: the manu
 ever sees the bearer token.
   — `research/experiments/E09-rest/github-auth/real-run.md` §"Second run — through the implemented
     chain" (redacted live measurement, 2026-09-02)
+
+---
+
+## E09-S02-T01 — the ADO Git fetcher (`C-E09-030..036`)
+
+Recorded 2026-09-02 before implementation. The redacted live transcript is at
+`research/experiments/E09-rest/ado-git/real-run.md`. Both REST pages carry the same
+`git_commit_id` `cb0d0b30ca71a83e03cc7a7bbd9361e1a432b377`.
+
+[C-E09-030] **Ref listing is `GET {org}/{project}/_apis/git/repositories/{repositoryId}/refs`, and
+its `filter` is a *prefix* match, not an exact one.** The parameter is documented as "[optional] A
+filter to apply to the refs (starts with)", and the samples pass `filter=heads/master` — i.e. the
+filter omits the leading `refs/` that the returned `name` carries. **Consequence:**
+`filter=heads/main` also matches `refs/heads/main-2` and `refs/heads/mainline`, so a resolver must
+select the entry whose `name` equals `refs/` + the filter and must not take the first result.
+  — https://learn.microsoft.com/en-us/rest/api/azure/devops/git/refs/list
+    (deep-verified 2026-09-02; `git_commit_id` `cb0d0b30ca71a83e03cc7a7bbd9361e1a432b377`,
+    api-version 7.1)
+
+[C-E09-031] **`GitRef` carries both `objectId` and `peeledObjectId`, and the latter is populated
+only when `peelTags=true` is requested.** The parameter reads "[optional] Annotated tags will
+populate the PeeledObjectId property. default is false." The existence of the second field is the
+documentation that `objectId` is *not* always a commit.
+  — same page as C-E09-030
+
+[C-E09-032] **An annotated tag's ref names a tag object whose SHA is not the commit's SHA; a
+lightweight tag's ref names the commit directly.** Measured locally with git 2.43.0 because the
+test organization contains no annotated tag (see C-E09-036): in a scratch repository at commit
+`9dd2a98c…`, `git rev-parse refs/tags/<annotated>` returned `53b81d2d…` while
+`refs/tags/<annotated>^{commit}` returned `9dd2a98c…`, and `git cat-file -t` reported `tag`; the
+lightweight tag resolved to `9dd2a98c…` both ways. **Consequence:** docs/05 §4's lockfile field is
+`"commit"`, so the resolver requests `peelTags=true` and prefers `peeledObjectId` when the service
+supplies it — taking `objectId` for an annotated tag would pin a tag object into every lockfile and
+fail only later, at checkout.
+  — local git measurement, 2026-09-02 (git 2.43.0); the ADO field that carries the peeled value is
+    documented by C-E09-031
+
+[C-E09-033] **The whole-repository snapshot is the Items route with `$format=zip`, and specifying
+`$format` obliges the caller to pass `api-version` as a query parameter.** Verbatim: "If specified,
+this overrides the HTTP Accept request header to return either 'json' or 'zip'. If $format is
+specified, then api-version should also be specified as a query parameter." The response media types
+include `application/zip`, and the endpoint description notes zipped content "is always returned as
+a download".
+  — https://learn.microsoft.com/en-us/rest/api/azure/devops/git/items/get
+    (deep-verified 2026-09-02; `git_commit_id` `cb0d0b30ca71a83e03cc7a7bbd9361e1a432b377`)
+
+[C-E09-034] **The ref a snapshot is taken at is expressed by `versionDescriptor.version` plus
+`versionDescriptor.versionType`, whose `GitVersionType` values are exactly `branch`, `tag` and
+`commit`.** The version parameter is "Version string identifier (name of tag/branch, SHA1 of
+commit)" and the type "Determines how Id is interpreted": `branch` = "Interpret the version as a
+branch name", `tag` = "as a tag name", `commit` = "as a commit ID (SHA1)". A full-repository
+snapshot also needs `recursionLevel=full` — "Return specified item and all descendants" — since the
+default is "'none', no recursion".
+  — same page as C-E09-033
+
+[C-E09-035] **The agent authenticates git over HTTP with an `http.extraheader` config value of
+`AUTHORIZATION: bearer <token>` (Entra/OAuth) or `AUTHORIZATION: basic <base64(user:pass)>` (PAT),
+and passes it via `--config-env` rather than `-c` whenever git is at least 2.31.** `GenerateAuthHeader`
+returns `$"bearer {password}"` or `$"basic {base64encodedAuthHeader}"`; `ComposeGitArgs` builds
+`$"AUTHORIZATION: {…}"`, and when `gitSupportsConfigEnv` it returns `$"--config-env={configKey}={envVariableName}"`,
+otherwise `$"-c {configKey}=\"{configValue}\""`. The threshold is `_minGitVersionConfigEnv = new Version(2, 31)`,
+commented "v2.31 git supports --config-env." The agent also calls `executionContext.SetSecret(base64encodedAuthHeader)`
+on the basic value, i.e. upstream treats the encoded header as a secret in its own right.
+  — https://github.com/microsoft/azure-pipelines-agent/blob/4f7b9d0d37f74eb2a81b9b12f34e77d2ccf7b8c4/src/Agent.Plugins/GitSourceProvider.cs
+    (commit-pinned official source; `GenerateAuthHeader` L239-257, `ComposeGitArgs` L1919-1945,
+    `_minGitVersionConfigEnv` L222; checked 2026-09-02)
+
+  **Why we implement only the `--config-env` arm.** `git --config-env=<name>=<envvar>` reads the
+  value "from which to retrieve the value" out of the environment, so the header — and therefore the
+  token — never appears in the process command line, where any local user can read it from `ps`. The
+  `-c` arm does put it there, so on git < 2.31 this fetcher takes the C-E09-033 zip route instead of
+  degrading its secret handling. Two further leak channels are closed the same way: the token is
+  never written into the clone URL, and never persisted into the mirror's `.git/config` — the agent
+  spends a dedicated block (L785-805) *removing* leftover `extraheader` keys and warns that a
+  surviving one "may cause errors", which is upstream evidence that a persisted header is a real
+  hazard rather than a theoretical one.
+  — https://git-scm.com/docs/git (`--config-env=<name>=<envvar>`, "Like -c <name>=<value>, give
+    configuration variable <name> a value, where <envvar> is the name of an environment variable
+    from which to retrieve the value"; verified against the local git 2.43.0 manual page 2026-09-02)
+
+[C-E09-036] **Scope note — the annotated-tag path is documented, not measured against the service.**
+The test organization's two repositories carry a single ref between them (`refs/heads/main`) and no
+tag of either kind, so the ADO-side half of C-E09-032 rests on C-E09-031's field documentation
+rather than on a live sample. Creating a tag would have been an outward-facing write to a personal
+organization, which was not taken unilaterally. **To close this:** create an annotated tag in
+`azdo-emu-templates` and re-run the transcript's ref-resolution section; the assertion to check is
+that `objectId` differs from `peeledObjectId` for that ref.
+
+[C-E09-037] **The whole-repository zip is scoped with `scopePath`, not `path`, and the service
+answers `application/octet-stream`.** Measured, and it contradicts the shape the endpoint's own
+parameter table suggests: `path` is the route's only *required* parameter and `recursionLevel` is
+listed as an independent filter, with nothing saying the two conflict. Sending
+`path=/&recursionLevel=full&$format=zip` returns **HTTP 400** —
+`"Cannot specify a \"recursionLevel\" other than \"None\" when providing a single item \"path\". Use
+the \"scopePath\" query parameter filter instead to get a collection of items."` Substituting
+`scopePath=/` returns 200 with a 1,032-byte PK-magic archive of six entries. The page's own Download
+sample does use `scopePath`, which is the only hint the prose gives. `Content-Type` came back as
+`application/octet-stream; api-version=7.1`, so an `Accept: application/zip` is a preference the
+service does not echo.
+  — `research/experiments/E09-rest/ado-git/real-run.md` (redacted live measurement, 2026-09-02);
+    endpoint documented by C-E09-033/034
+
+[C-E09-038] **The bare mirror leaves no credential on disk, and the three leak channels are closed
+in practice.** Measured through the shipped code against the test organization: after
+`snapshotAdoRepo` completed a `--config-env` clone, the mirror's `config` contained no `extraheader`
+key and no occurrence of the PAT, and its `url =` line is the plain clone URL with no embedded
+credential. `git --git-dir <mirror> rev-parse refs/heads/main` returned exactly the SHA the resolver
+had pinned, so the mirror is a usable snapshot and not merely a directory that was created.
+  — `research/experiments/E09-rest/ado-git/real-run.md` (redacted live measurement, 2026-09-02);
+    mechanism documented by C-E09-035
