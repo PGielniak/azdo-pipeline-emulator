@@ -99,6 +99,12 @@ export const PROBES: Readonly<Record<string, ProbeSpec>> = {
     parse: firstLine,
     claim: 'C-E10-004',
   },
+  azcopy: {
+    args: ['--version'],
+    // `azcopy version 10.29.1` — the version is the last field.
+    parse: (stdout) => firstLine(stdout)?.split(/\s+/).pop(),
+    claim: 'C-E08-018',
+  },
   pwsh: {
     args: ['-v'],
     // `PowerShell 7.4.1` — the version is the second field.
@@ -128,6 +134,12 @@ const REMEDIATION: Readonly<Record<string, Readonly<Record<string, string>>>> = 
     linux: 'https://helm.sh/docs/intro/install/ — or `curl … get-helm-3 | bash`',
     darwin: 'brew install helm',
     win32: 'winget install -e --id Helm.Helm',
+  },
+  azcopy: {
+    linux:
+      'https://learn.microsoft.com/azure/storage/common/storage-use-azcopy-v10#download-azcopy',
+    darwin: 'brew install azcopy',
+    win32: 'winget install -e --id Microsoft.Azure.AZCopy.10',
   },
   pwsh: {
     linux:

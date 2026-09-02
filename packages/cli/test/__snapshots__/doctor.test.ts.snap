@@ -1,0 +1,23 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the priority-set fixture (E08-S03-T02 Done criterion) > reports every tool the deployment set needs, worst-first 1`] = `
+"[missing] azcopy
+    needed by: build/compile/030
+    → https://learn.microsoft.com/azure/storage/common/storage-use-azcopy-v10#download-azcopy
+[missing] helm
+    needed by: build/compile/030
+    → https://helm.sh/docs/intro/install/ — or \`curl … get-helm-3 | bash\`
+[missing] kubectl
+    needed by: build/compile/030
+    → https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/
+[missing] pwsh
+    needed by: build/compile/030
+    → https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-linux
+[ok]      az 2.89.1
+    needed by: build/compile/030
+[ok]      docker 29.7.2
+    needed by: build/compile/030
+
+Some tools need attention.
+"
+`;

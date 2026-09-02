@@ -203,3 +203,37 @@ describe('aggregateTools keeps the stricter floor when two tasks disagree', () =
     expect(tools[0]?.min).toBe('24.0.0');
   });
 });
+
+describe('the priority set has a rule for every tool it needs (E08-S03-T02)', () => {
+  const PRIORITY_TASKS = [
+    'AzureCLI@2',
+    'AzurePowerShell@5',
+    'Docker@2',
+    'HelmDeploy@0',
+    'KubernetesManifest@1',
+    'AzureFileCopy@6',
+  ];
+
+  it('declares a tool for every priority task', () => {
+    for (const taskRef of PRIORITY_TASKS) {
+      expect(requirementsFor(taskRef).length, taskRef).toBeGreaterThan(0);
+    }
+  });
+
+  it('covers the six CLIs docs/03 D names', () => {
+    const tools = new Set(
+      PRIORITY_TASKS.flatMap((taskRef) => requirementsFor(taskRef).map((r) => r.cmd)),
+    );
+    expect([...tools].sort()).toEqual(['az', 'azcopy', 'docker', 'helm', 'kubectl', 'pwsh']);
+  });
+
+  it('still declares no floors — vendor matrices state support, not function (C-E08-019)', () => {
+    // Kubernetes and Helm publish skew policies, but neither says the older version stops working.
+    // A doctor that refused a kubectl a few minors behind would report a working setup as outdated.
+    for (const taskRef of PRIORITY_TASKS) {
+      for (const requirement of requirementsFor(taskRef)) {
+        expect(requirement.min, `${taskRef} / ${requirement.cmd}`).toBeUndefined();
+      }
+    }
+  });
+});
