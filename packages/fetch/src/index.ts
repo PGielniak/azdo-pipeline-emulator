@@ -269,3 +269,24 @@ export {
   type TaskVersion,
   type TaskZipDownload,
 } from './rest/tasks.js';
+
+export {
+  LOCKFILE_NAME,
+  LOCKFILE_VERSION,
+  LockfileError,
+  canonicalizeLockfile,
+  frozenFailureMessage,
+  lockfileFingerprint,
+  parseLockfile,
+  readLockfile,
+  serializeLockfile,
+  verifyLockfile,
+  writeLockfile,
+  type Lockfile,
+  type MissingPin,
+  type PipelinePin,
+  type RepositoryPin,
+  type RootPin,
+  type TaskPin,
+  type VerifyOptions,
+} from './lockfile.js';
