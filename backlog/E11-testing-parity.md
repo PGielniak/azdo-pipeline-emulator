@@ -27,7 +27,7 @@ Primary grounding set: the preview API and real runs in the test org are themsel
   **Done:** those 9 tests pass on macOS CI; no runtime source changes (the fix is in the harness); Linux stays green.
 
 ## E11-S02 — As an engine developer, table-driven conformance suites encode every grounded claim, so regressions name the claim they broke.
-- [ ] **E11-S02-T01 — Claim-linked test convention & tooling**
+- [x] **E11-S02-T01 — Claim-linked test convention & tooling**
   **Do:** test-name convention embedding claim IDs (`[C-E05-014]`); script listing claims ↔ tests coverage (claims without tests reported).
   **Ground:** BACKLOG §3; the tool output itself becomes part of review.
   **Done:** report runs in CI; E06/E02 tables adopt the convention first.
