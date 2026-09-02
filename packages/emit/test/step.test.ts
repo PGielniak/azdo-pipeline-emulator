@@ -239,6 +239,39 @@ describe('emitStepScript', () => {
     expect(output).toMatchSnapshot();
   });
 
+  it('surfaces a checkout input the runtime has no flag for, instead of dropping it', () => {
+    // Silently ignoring an authored option is the failure mode PLAN D10 exists to prevent: the
+    // script would look like it honoured the input while doing nothing with it.
+    const { output } = emitOne(`stages:
+- stage: A
+  jobs:
+  - job: build
+    steps:
+    - task: 6d15af64-176c-496d-b583-fd2ae21d4df4@1
+      inputs:
+        repository: self
+        workspaceRepo: 'true'
+`);
+    expect(output).toContain(
+      "# note: checkout input 'workspaceRepo' has no runtime flag and is not applied",
+    );
+    // The mapped input is still passed.
+    expect(output).toContain("--repository 'self'");
+  });
+
+  it('quotes a checkout value so a path with a space cannot become two arguments', () => {
+    const { output } = emitOne(`stages:
+- stage: A
+  jobs:
+  - job: build
+    steps:
+    - task: 6d15af64-176c-496d-b583-fd2ae21d4df4@1
+      inputs:
+        path: 'my repo/src'
+`);
+    expect(output).toContain("--path 'my repo/src'");
+  });
+
   it('leaves an authored condition and timeout in the header', () => {
     const { output } = emitOne(`stages:
 - stage: A
