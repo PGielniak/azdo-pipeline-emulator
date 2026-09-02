@@ -78,6 +78,6 @@ Acceptance: endpoints wrapped + lockfile discipline per docs/05 §4.
   **Do:** `azdo-emu.lock.json` schema per docs/05 §4; write/read/verify; `--frozen` offline guarantee; `fetch-artifacts.sh` emission (curl fallback documented).
   **Ground:** docs/05 §4 spec; offline guarantee proven by a network-disabled CI job converting from warm cache.
   **Done:** reproducibility test: two converts from lock → identical output hashes.
-- [ ] **E09-S03-T07 — Org yamlschema fetch** (feeds E01-S02-T03)
+- [x] **E09-S03-T07 — Org yamlschema fetch** (feeds E01-S02-T03)
   **Ground:** live sample from test org (already required there); this task pins caching+refresh.
   **Done:** cached schema used when present; refresh path tested.

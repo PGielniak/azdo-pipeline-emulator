@@ -290,3 +290,14 @@ export {
   type TaskPin,
   type VerifyOptions,
 } from './lockfile.js';
+
+export {
+  DEFAULT_SCHEMA_TTL_MS,
+  fetchOrgSchema,
+  organizationOf,
+  readCachedOrgSchema,
+  schemaCachePath,
+  type OrgSchemaOptions,
+  type OrgSchemaResult,
+  type SchemaOrigin,
+} from './rest/yamlschema.js';
