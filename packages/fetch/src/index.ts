@@ -208,3 +208,21 @@ export {
   type RestClientOptions,
   type Sleeper,
 } from './rest/client.js';
+
+export {
+  ARTIFACT_EXPAND_SIGNED_CONTENT,
+  artifactCacheDir,
+  downloadArtifact,
+  getArtifact,
+  getRun,
+  listRuns,
+  resolveRun,
+  type ArtifactDownload,
+  type DownloadArtifactOptions,
+  type RunDetail,
+  type RunResult,
+  type RunSelector,
+  type RunState,
+  type RunSummary,
+  type SignedArtifact,
+} from './rest/runs.js';
