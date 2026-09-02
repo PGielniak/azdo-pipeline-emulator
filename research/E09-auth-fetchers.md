@@ -288,3 +288,57 @@ credential. `git --git-dir <mirror> rev-parse refs/heads/main` returned exactly 
 had pinned, so the mirror is a usable snapshot and not merely a directory that was created.
   — `research/experiments/E09-rest/ado-git/real-run.md` (redacted live measurement, 2026-09-02);
     mechanism documented by C-E09-035
+
+---
+
+## E09-S02-T02 — the GitHub fetcher (`C-E09-039..043`)
+
+Recorded 2026-09-02. The redacted live transcript is at
+`research/experiments/E09-rest/github-fetcher/real-run.md`. Authentication is E09-S01-T04's chain
+(C-E09-012..017) and the cache layout is E09-S02-T01's (docs/05 §4); only the two GitHub-specific
+mechanics are grounded here.
+
+[C-E09-039] **Ref → commit SHA is `GET /repos/{owner}/{repo}/commits/{ref}`, whose `ref` "Can be a
+commit SHA, branch name (heads/BRANCH_NAME), or tag name (tags/TAG_NAME)" and whose response `sha`
+is a required string.**
+  — https://docs.github.com/en/rest/commits/commits (checked 2026-09-02, "Get a commit")
+  — https://github.com/github/docs/blob/484d28e95db7c592c368da359ff1a9fecb08a08a/content/rest/commits/commits.md
+    (commit-pinned official source; checked 2026-09-02)
+
+[C-E09-040] **The documented `tags/TAG_NAME` shorthand does not work; the full `refs/...` form
+does.** Measured against `git/git`, whose `v2.43.0` is an annotated tag:
+
+| `{ref}` sent | result |
+| --- | --- |
+| `refs/tags/v2.43.0` | 200, `sha` `564d0252…` |
+| `refs/heads/master` | 200 |
+| `heads/master` | 200 |
+| `v2.43.0` (bare) | 200, same `sha` |
+| **`tags/v2.43.0`** | **422** `"No commit found for SHA: tags/v2.43.0"` |
+| `heads/v2.43.0` | 422 (correctly type-scoped) |
+
+So the one shorthand the page names for tags is exactly the one the service rejects, while its
+`heads/` counterpart works. The fetcher therefore always sends the **full `refs/…` form**: it is
+accepted for both namespaces, and unlike the bare name it cannot be ambiguous when a branch and a
+tag share a name.
+  — `research/experiments/E09-rest/github-fetcher/real-run.md` (live measurement, 2026-09-02)
+
+[C-E09-041] **The commits endpoint dereferences an annotated tag for the caller — the opposite of
+the Azure DevOps Refs endpoint.** For `git/git` `refs/tags/v2.43.0`, the Git-refs endpoint reports
+`object.type: "tag"` with `object.sha` `c089584ac8dedc3aa7c2c404839bc098050298a2`, while the commits
+endpoint returns `sha` `564d0252ca632e0264ed670534a51d18a689ef5d` — the commit. **Consequence:**
+this fetcher needs no peeling step, and the asymmetry with C-E09-031/032 is deliberate rather than
+an inconsistency between the two fetchers.
+  — same transcript as C-E09-040
+
+[C-E09-042] **The tarball endpoint accepts a commit SHA as its `{ref}` and answers 302 there too.**
+`GET /repos/octocat/Hello-World/tarball/7fd1a60b01f91b314f59955a4e4d4e80d8edf11d` returned 302, so
+the snapshot can always be pinned by the SHA the resolver produced rather than by the moving ref —
+which closes the window in which a push between resolve and download would change what lands in
+cache.
+  — same transcript as C-E09-040; endpoint and redirect behavior documented by C-E09-014/015
+
+[C-E09-043] **Scope note.** Redirect handling, the no-cross-origin-credential rule, and the
+anonymous-404 reading are inherited unchanged from `packages/fetch/src/auth/github.ts`
+(C-E09-013/014/015/017) rather than re-grounded here; this task adds only ref resolution and the
+cache write.

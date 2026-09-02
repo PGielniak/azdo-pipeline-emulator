@@ -136,3 +136,20 @@ export {
   type SnapshotMethod,
   type SnapshotOptions,
 } from './repo/ado-git.js';
+
+export {
+  GITHUB_CACHE_HOST,
+  GitHubRepoError,
+  commitRefFor,
+  commitUrl,
+  githubRepoCacheDir,
+  readCachedGitHubSnapshot,
+  resolveGitHubRef,
+  snapshotGitHubRepo,
+  type GitHubRepoCoordinates,
+  type GitHubSnapshot,
+  type GitHubSnapshotMarker,
+  type GitHubSnapshotOptions,
+  type ResolveGitHubRefOptions,
+  type ResolvedGitHubRef,
+} from './repo/github.js';
