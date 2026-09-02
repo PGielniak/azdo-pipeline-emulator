@@ -35,7 +35,7 @@ Acceptance: three auth modes with secure storage, per docs/05 §1.
 ## E09-S02 — As a pipeline developer, templates from other repos resolve at convert time, so the bundler can inline them and cross-repo pipelines convert completely.
 Acceptance: alias resolution + repo snapshot fetch with SHA pinning, per docs/05 §2–§3.
 
-- [ ] **E09-S02-T01 — ADO Git fetcher**
+- [x] **E09-S02-T01 — ADO Git fetcher**
   **Do:** ref→SHA resolve (Refs endpoint), snapshot via `git clone --bare` with token credential (preferred) or Items `$format=zip` fallback; cache layout per docs/05 §4.
   **Ground:** Git Refs + Items REST pages (pin; note `versionDescriptor` params) + live samples; git credential embedding format from git-scm docs (pin).
   **Done:** fixture: fetch repo@branch and @commit; cache hit path tested offline.
