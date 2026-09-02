@@ -300,6 +300,45 @@ function fidelitySection(): string[] {
   ];
 }
 
+/**
+ * The drop-in handler contract (E07-S02-T02, docs/03 §4).
+ *
+ * Unconditional, not gated on the pipeline having a stub. A reader who wants to substitute *any*
+ * step — to try a fix, or to run a task the emulator handles poorly — needs to know the hatch
+ * exists, and a section that appears only after something has already gone wrong is a section
+ * nobody finds in time.
+ */
+function handlersSection(): string[] {
+  return [
+    '## Writing your own task handler',
+    '',
+    'Any step can be taken over by dropping an **executable** at one of:',
+    '',
+    '```',
+    'handlers/<TaskName>@<major>          # beside this README — commit it with the project',
+    '~/.azdo-emu/handlers/<TaskName>@<major>   # yours, across every converted project',
+    '```',
+    '',
+    'A `.sh` or `.js` suffix is accepted too. The first match wins, and a handler **overrides** a',
+    'downloaded task package rather than standing in for a failed download — so you can substitute',
+    'a step that would otherwise have run perfectly well.',
+    '',
+    'Your handler is invoked with the same environment a real task gets:',
+    '',
+    '- **Inputs** as `INPUT_<NAME>`, where the name has its dots *and* spaces replaced by',
+    '  underscores and is then upper-cased — `sonar.projectKey` arrives as `INPUT_SONAR_PROJECTKEY`.',
+    "  That is `azure-pipelines-task-lib`'s own transform, so a handler you write here reads its",
+    '  inputs exactly the way the real task does.',
+    '- **Service-connection data** as `ENDPOINT_*`, from `.env`.',
+    '- **`##vso[…]` output honored**: `task.setvariable`, `task.setsecret`, `task.logissue` and the',
+    '  rest work from your handler exactly as they do from a real task.',
+    '- **Exit code is the step result**: non-zero fails the step.',
+    '',
+    'A handler written for this project is therefore shaped like a real Azure Pipelines task, and',
+    'what you learn writing one transfers in both directions.',
+  ];
+}
+
 function environmentSection(manifest: SerializedManifest): string[] {
   const lines = ['## Environment', ''];
   if (manifest.env.length === 0) {
@@ -386,6 +425,7 @@ export function generateReadme(manifest: SerializedManifest, plan: Scaffold): st
     quickStartSection(),
     pipelineSection(manifest, plan),
     fidelitySection(),
+    handlersSection(),
     environmentSection(manifest),
     toolsSection(manifest),
     warningsSection(manifest, plan),

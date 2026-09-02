@@ -409,3 +409,47 @@ describe('corpus', () => {
     },
   );
 });
+
+describe('the handler contract section (E07-S02-T02)', () => {
+  const ANY = `stages:
+- stage: A
+  jobs:
+  - job: b
+    steps:
+    - task: DotNetCoreCLI@2
+      inputs:
+        command: build
+`;
+
+  it('documents both lookup paths and the INPUT_ transform', () => {
+    const { plan, manifest } = conversion(ANY);
+    const readme = generateReadme(manifest, plan);
+
+    expect(readme).toContain('## Writing your own task handler');
+    expect(readme).toContain('handlers/<TaskName>@<major>');
+    expect(readme).toContain('~/.azdo-emu/handlers/<TaskName>@<major>');
+    // The dotted half is the one a reader would otherwise get wrong (C-E07-001).
+    expect(readme).toContain('`sonar.projectKey` arrives as `INPUT_SONAR_PROJECTKEY`');
+    expect(readme).toContain('ENDPOINT_*');
+    expect(readme).toContain('Exit code is the step result');
+  });
+
+  it('appears even when nothing in the pipeline is stubbed', () => {
+    // A section that shows up only after something has gone wrong is one nobody finds in time.
+    const { plan, manifest } = conversion(`stages:
+- stage: A
+  jobs:
+  - job: b
+    steps:
+    - task: CmdLine@2
+      inputs:
+        script: echo only-native
+`);
+    expect(generateReadme(manifest, plan)).toContain('## Writing your own task handler');
+  });
+
+  it('says a handler overrides a package rather than replacing a failed download', () => {
+    const { plan, manifest } = conversion(ANY);
+    expect(generateReadme(manifest, plan)).toContain('**overrides** a');
+  });
+});
