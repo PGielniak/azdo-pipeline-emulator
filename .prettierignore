@@ -19,3 +19,6 @@ fixtures/
 *.bash
 *.sh
 *.md
+# Sibling sessions keep git worktrees here (untracked); their copies of the tree are not
+# this checkout's files to format.
+.claude/worktrees/

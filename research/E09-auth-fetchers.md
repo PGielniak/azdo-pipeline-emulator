@@ -124,3 +124,57 @@ file; therefore an atomic temp-file rename is followed by `chmod(0o600)` on the 
   — https://nodejs.org/download/release/v22.23.2/docs/api/fs.html#fspromisesopenpath-flags-mode
   — https://nodejs.org/download/release/v22.23.2/docs/api/fs.html#fspromiseschmodpath-mode
     (checked 2026-08-28)
+
+---
+
+## E09-S01-T04 — GitHub authentication (`C-E09-012..016`)
+
+Recorded 2026-08-28 before implementation. The redacted public/private request matrix is at
+`research/experiments/E09-rest/github-auth/real-run.md`. The selection order — `gh auth token`,
+then `GITHUB_TOKEN`, then anonymous — is project policy from the task and is not presented as a
+GitHub API behavior.
+
+[C-E09-012] **`gh auth token --hostname github.com` prints the token for the active account on the
+selected host and fails when no token is available.** Without `--user`, the active account is used;
+the implementation writes the token followed by a newline to standard output. A caller can
+therefore treat status zero plus non-empty trimmed stdout as the reusable credential while ignoring
+all command diagnostics so a secret never enters its own errors or logs.
+  — https://cli.github.com/manual/gh_auth_token (checked 2026-08-28)
+  — https://github.com/cli/cli/blob/2ea46117e59a9fbcb31f673565eb2b5207e08aae/pkg/cmd/auth/token/token.go
+    (commit-pinned official source; checked 2026-08-28)
+
+[C-E09-013] **GitHub REST accepts a token in `Authorization: Bearer <token>` and recommends an
+explicit `X-GitHub-Api-Version` header.** The current official examples use API version
+`2026-03-10`; requests in this task also ask for `application/vnd.github+json`.
+  — https://docs.github.com/en/rest/authentication/authenticating-to-the-rest-api
+  — https://github.com/github/docs/blob/b61ae1130e3fa80990dd869b8bb3bfe672e71aa2/content/rest/authentication/authenticating-to-the-rest-api.md
+    (commit-pinned official source; checked 2026-08-28)
+
+[C-E09-014] **The repository Contents and tarball endpoints both allow anonymous access to public
+resources; private access requires repository Contents read permission.** This supports the final
+anonymous arm without weakening private-repository behavior.
+  — https://docs.github.com/en/rest/repos/contents (checked 2026-08-28; endpoint sections
+    "Get repository content" and "Download a repository archive (tar)")
+
+[C-E09-015] **The tarball endpoint returns an HTTP redirect to the archive bytes, and a private
+repository's redirect URL is temporary.** The first request should therefore be made with manual
+redirect handling: authenticate only the GitHub API origin, then let the eventual downloader use
+the returned storage URL without forwarding the GitHub credential cross-origin.
+  — https://docs.github.com/en/rest/repos/contents (checked 2026-08-28; tar archive endpoint)
+
+[C-E09-016] **The live matrix matches the documented boundary.** Anonymous contents and tarball
+requests for `octocat/Hello-World` returned 200 and 302 respectively; an anonymous contents request
+for an accessible private fixture returned 404, while the same contents request with the token from
+`gh auth token` returned 200 and its authenticated tarball request returned 302. Token, redirect
+locations, private owner/repository/path, and payload contents are absent from the transcript.
+  — `research/experiments/E09-rest/github-auth/real-run.md` (redacted live measurement,
+    2026-08-28)
+
+[C-E09-017] **A private repository's tarball storage URL is honored with no `Authorization` header.**
+Measured through the shipped chain, not merely inferred from C-E09-015: the manual redirect from
+`GET /repos/<private>/tarball/<ref>` was followed with an empty header set and returned the complete
+199,698-byte archive from `codeload.github.com`. The signed storage URL carries its own grant, so
+`fetchGitHubTarball` forwards nothing cross-origin — the GitHub API origin is the only origin that
+ever sees the bearer token.
+  — `research/experiments/E09-rest/github-auth/real-run.md` §"Second run — through the implemented
+    chain" (redacted live measurement, 2026-09-02)

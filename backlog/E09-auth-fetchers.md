@@ -27,7 +27,7 @@ Acceptance: three auth modes with secure storage, per docs/05 §1.
   **Do:** OS keyring via `@napi-rs/keyring` with 0600-file fallback; `auth status` probe (use the cheapest documented call; pin it).
   **Ground:** keyring lib docs (pin); chosen probe endpoint page + live sample.
   **Done:** status shows org/identity/mode/expiry; storage never world-readable (test).
-- [ ] **E09-S01-T04 — GitHub auth chain**
+- [x] **E09-S01-T04 — GitHub auth chain**
   **Do:** `gh auth token` reuse → `GITHUB_TOKEN` → anonymous (public); applied to tarball + contents calls.
   **Ground:** gh CLI manual page for `auth token` (pin); GitHub REST auth docs.
   **Done:** fetch of a public and a private fixture repo path.
