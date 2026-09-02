@@ -1,0 +1,54 @@
+{
+  "entries": {
+    "01-matrix-multi-config": {
+      "finalYamlSha256": "eeeb28a058422d78c28e60103821ccc7154270f663941753a972f694c8c9588c",
+      "stepCount": 13,
+      "treeDigest": "ba3c834aabab27eb8f9fe6dc74115932f140f28fbf5d23b0143430bb6e568070"
+    },
+    "02-artifact-handoff": {
+      "finalYamlSha256": "7f7f1482919260e7edc5ce058917cfb18340a99f2dc29e53c64b1125452222df",
+      "stepCount": 10,
+      "treeDigest": "093e8330e1bd7f817d5c2f319fd749e39de29ddd3b9df5d3c9df553bc73463dc"
+    },
+    "03-dependencies-and-conditions": {
+      "finalYamlSha256": "187a1989a43588b1c69690c821061cb4d699e6f3d82fcde1d7102c3f7ce0beca",
+      "stepCount": 12,
+      "treeDigest": "719e9483c7f1757fd106d8e4be3d8a1c492964931e2835864d21735fca0342f5"
+    },
+    "04-variable-layers": {
+      "finalYamlSha256": "b59e8457e9924555b456554070ac80fecbc122061d3f80dc08df54b3c2dd2657",
+      "stepCount": 10,
+      "treeDigest": "fe6221e37ca325c811c2f43a68d819fc138838aeb8deb6bf729f8ab8b52af2d8"
+    },
+    "05-steps-template-nested": {
+      "finalYamlSha256": "6405dd919765a5770db1f31de2e8510ea57f68869ed107fca8117cb26f31dff1",
+      "stepCount": 8,
+      "treeDigest": "1cb8bb2ecc74f9a2b18bb8074a43d87d6e32d26409137bdcb66985bdd3e071c9"
+    },
+    "06-extends-each-joblist": {
+      "finalYamlSha256": "44d80b9d6061a15caddaa818eedc9db45ecdfde0f168ec7e7e8322b24e978f30",
+      "stepCount": 9,
+      "treeDigest": "f623b2542a3e52758f768a453fada27b179c53cb07eb3430bc72ed7c4e0a7acd"
+    },
+    "07-template-parameter-types": {
+      "finalYamlSha256": "3cb896bebe346f11fcc9a6e83f440d84c3a7e428d661cf6a70f89b69451adb2e",
+      "stepCount": 15,
+      "treeDigest": "0537fca57f77e8e52de0a9ef43a50521d93023f9dd7c0b90388a53f4777bf544"
+    },
+    "08-deployment-runonce": {
+      "finalYamlSha256": "9c6997799276b5456064558a4149f40877aa2f05d0e53823d3f452d75bcac8ae",
+      "stepCount": 12,
+      "treeDigest": "5dbc159bebb610fd077b4d5f21af085a42ee1bd4d918c1643663f9c95fdd9ca3"
+    },
+    "09-multi-checkout": {
+      "finalYamlSha256": "350037b15cfd5c46ee6ace5a14a5921db1c8e98c832c80a54245a6e28d2c4d40",
+      "stepCount": 7,
+      "treeDigest": "43fb0076c978a04afd5e8330db719da9a5adebf1073c29ac28c47de30e3d7ef6"
+    },
+    "10-monorepo-triggers-pools": {
+      "finalYamlSha256": "c8ef9cc100abe8e7591406c6db5934b00364e88bbce769741e82fa8282ea0e17",
+      "stepCount": 7,
+      "treeDigest": "c828e056eb71c8b43c69876702d9f2287c105d5bf480c811db8fb71e0335923a"
+    }
+  }
+}

@@ -21,6 +21,7 @@
     "oracle-provision": "node scripts/oracle-provision.ts",
     "corpus-probe": "node scripts/corpus-probe.ts",
     "corpus-oracle": "node scripts/corpus-oracle.ts",
+    "golden": "node scripts/golden.ts",
     "normalizer-survey": "node scripts/normalizer-survey.ts",
     "expr-grammar-survey": "node scripts/expr-grammar-survey.ts",
     "expr-error-survey": "node scripts/expr-error-survey.ts",

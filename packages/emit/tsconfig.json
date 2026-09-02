@@ -1,4 +1,11 @@
 {
   "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // E11-S02-T02: `test/golden.ts` consumes the corpus catalogue from `scripts/`, which node runs
+    // directly and whose imports therefore carry `.ts` extensions (same reason as
+    // `tsconfig.meta.json`). This tsconfig also covers `src`, so `test/test-layout.test.ts` guards
+    // the loosening: no file under any package's `src` may import a `.ts` path.
+    "allowImportingTsExtensions": true
+  },
   "include": ["src", "test"]
 }
