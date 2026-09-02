@@ -24,7 +24,7 @@ Acceptance: a marketplace/in-box Node task executes via the `INPUT_*` host and i
   **Do:** emit a runner that materializes `INPUT_<name>` env vars from resolved inputs using the task's own `task.json` name/type/transform rules, sets the `AGENT_*`/`ENDPOINT_*`/`BUILD_*` env the task reads, and invokes the task's handler (node/ps/script).
   **Ground:** `azure-pipelines-task-lib` `getInput` name/type conventions and the agent's `HandlerFactory` env contract — pin the exact transform (spaces→`_`, uppercase, prefix `INPUT_`).
   **Done:** a `CmdLine@2`-backed script task and one real Node task both observe the same `INPUT_*` values their `task.json` declares.
-- [ ] **E07-S01-T03 — Script-handler passthrough**
+- [x] **E07-S01-T03 — Script-handler passthrough**
   **Do:** tasks whose handler is a plain script already map to the native script path (E05); ensure the disposition registry classifies them as `native`, not `real-task`, with no double-exec.
   **Ground:** the task `task.json` `execution` shapes (Node/Node16/PowerShell3/script) — pin the field.
   **Done:** `Bash@3`/`PowerShell@2`/`CmdLine@2` are classified `native`; classification tests cover each execution kind.
@@ -48,7 +48,7 @@ Acceptance: stub policy + user handler drop-in.
 ## E07-S03 — As a converter developer, every task has a declared disposition and fidelity label, so the README is truthful.
 Acceptance: disposition registry consumed by the emitter and warnings list.
 
-- [ ] **E07-S03-T01 — Task disposition registry**
+- [!] **E07-S03-T01 — Task disposition registry** *(**The table is done and complete 2026-09-02 in `packages/emit/src/disposition.ts`; the "surfaced in the emitter (E05)" half of Do is the same one-line wiring E07-S01-T02 waits on, and both land together.** Classification, fidelity labels, the de-duplicated warnings list and the summary counts are all built and table-driven. `step.ts` still shows its own `defaultFidelity` guess until the wiring replaces it — deliberately not done piecemeal, because a half-wired emitter would label some steps from the registry and some from the old guess.)*
   **Do:** `name@major → native | real-task | stub` resolution (built-ins natively mapped; the rest default to real-task, falling back to stub when the package is unavailable); per-step fidelity label computed and surfaced in the emitter (E05) and warnings list.
   **Ground:** PLAN D4 + §6 fidelity labels; docs/03 §6.
   **Done:** disposition table-driven; every corpus step carries a correct label; a task that can't download degrades to `stub` with a warning.
