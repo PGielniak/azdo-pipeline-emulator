@@ -628,3 +628,48 @@ Runs-List (C-E09-068), and for the same reason it is worth stating rather than r
 E09-S03-T02.** No build in the test organization has ever published an artifact (C-E09-073), so the
 `downloadUrl` fetch and the cache write are unit-tested only. The definition lookup, the empty
 artifact list and the 404 **are** measured. The same single queued build closes both tasks.
+
+---
+
+## E09-S03-T04 — variable groups, names only (`C-E09-080..084`)
+
+Recorded 2026-09-02. Live transcript: `research/experiments/E09-rest/variable-groups/real-run.md`.
+Page `git_commit_id` `cb0d0b30ca71a83e03cc7a7bbd9361e1a432b377`.
+
+[C-E09-080] **The endpoint hands back non-secret values in plaintext; only *secret* values come back
+`null`.** The page's own sample is unambiguous: `"key1": {"value": "value1"}` alongside
+`"key2": {"value": null, "isSecret": true}`. Confirmed live — the test organization's group returns
+`corpusPlainValue` with its `value` present. **This is the whole reason the project's discard rule
+exists** (decision 2026-07-30, docs/05 §1): the API volunteers the values, so not persisting them is
+an act, not a side effect of the API withholding them.
+  — https://learn.microsoft.com/en-us/rest/api/azure/devops/distributedtask/variablegroups/get-variable-groups
+    (deep-verified 2026-09-02) and
+    `research/experiments/E09-rest/variable-groups/real-run.md` (live measurement)
+
+[C-E09-081] **`isSecret` is *absent* on a non-secret variable, not `false`.** Measured: the live
+group's two members carry key sets `['value']` and `['isReadOnly', 'value']` — no `isSecret` key at
+all. The docs' sample matches: only the secret member has the field. **Consequence:** a check written
+as `variable.isSecret === false` is never true, and `isSecret === undefined` must be read as "not
+secret". `isReadOnly` behaves the same way.
+  — same sources as C-E09-080
+
+[C-E09-082] **`groupName` accepts a `*` wildcard, like the Definitions `name` filter.** The page's
+second example is `?groupName=Test*&queryOrder=IdDescending`. The same trap as C-E09-077 therefore
+applies: a group whose name legitimately contains `*` cannot be sent as a filter, and the returned
+name must be re-checked rather than trusting the result count.
+  — page as C-E09-080
+
+[C-E09-083] **`VariableValue` is `{isReadOnly, isSecret, value}` and `VariableGroup` carries
+`variableGroupProjectReferences` and `isShared`.** The full member list is `createdBy, createdOn,
+description, id, isShared, modifiedBy, modifiedOn, name, providerData, type,
+variableGroupProjectReferences, variables`; the live response returned all of those except
+`providerData`. `type` was `Vsts` (as opposed to a key-vault-backed group).
+  — page as C-E09-080; live key set in the transcript
+
+[C-E09-084] **The discard rule is ours and is enforced structurally, not by convention.** No source
+says a client must drop the values — the API returns them and would happily let us cache them. So
+the fetcher's return type has **no value field at all**: values are dropped at the parse boundary
+rather than carried and filtered later, which is what makes "never persisted" checkable by a test
+that asserts the plaintext value appears in no output, including `JSON.stringify` of the whole
+result.
+  — project policy (CLAUDE.md rule 4; docs/05 §1 decision 2026-07-30); no source claims otherwise
