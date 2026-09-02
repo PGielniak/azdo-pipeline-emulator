@@ -569,3 +569,62 @@ unilaterally. Everything up to and including the artifact *metadata* call is mea
 download and the `.cache/artifacts/` write are covered by unit tests only. **To close it:** run a
 pipeline containing a `PublishBuildArtifacts`/`PublishPipelineArtifact` step once, then re-run the
 transcript's §4.
+
+---
+
+## E09-S03-T03 — classic build artifacts and definition lookup (`C-E09-074..079`)
+
+Recorded 2026-09-02. Live transcript: `research/experiments/E09-rest/build-fallback/real-run.md`.
+Page `git_commit_id` `cb0d0b30ca71a83e03cc7a7bbd9361e1a432b377`.
+
+[C-E09-074] **A classic build artifact is downloaded through `resource.downloadUrl`, and
+`resource.type` is what says whether that is meaningful.** `BuildArtifact` is `{id, name, resource,
+source}`; `ArtifactResource` carries `downloadUrl` ("A link to download the resource"), `type` ("The
+type of the resource: **File container, version control folder, UNC path, etc.**"), `data`
+("Type-specific data about the artifact"), `properties` and `url`. The response media types are
+`"application/zip", "application/json"`. **Consequence:** only a container-backed artifact has a URL
+we can fetch; a `FilePath` (UNC) artifact names a share that does not exist on this machine, so it is
+reported rather than attempted.
+  — https://learn.microsoft.com/en-us/rest/api/azure/devops/build/artifacts/get-artifact
+    (deep-verified 2026-09-02)
+
+[C-E09-075] **A missing build artifact is a 404, but the *list* of artifacts for the same build is a
+200 with an empty array.** Measured on build 527: `…/artifacts?api-version=7.1` returned
+`{"count":0,"value":[]}` while `…/artifacts?artifactName=drop&api-version=7.1` returned 404 with
+`"Artifact drop was not found for build 527."`, `typeKey` `ArtifactNotFoundException`. So "this build
+published nothing" and "this build has no artifact by that name" are two different answers from two
+different calls, and only the second is an error.
+  — `research/experiments/E09-rest/build-fallback/real-run.md` (live measurement, 2026-09-02)
+
+[C-E09-076] **The two artifact APIs report the same failure with different wording and different
+namespaces.** Pipelines says `An Artifact with name "drop" was not found.`
+(`Microsoft.Azure.Pipelines.WebApi.ArtifactNotFoundException`, C-E09-072); Build says
+`Artifact drop was not found for build 527.`
+(`Microsoft.TeamFoundation.Build.WebApi.ArtifactNotFoundException`). The `typeKey` is the same
+string in both, so **`typeKey` is the safe discriminator and the message is not** — which matters
+because the fallback path decides on it.
+  — same transcript as C-E09-075
+
+[C-E09-077] **The Definitions `name` filter is an exact, case-insensitive match that accepts `*`
+wildcards — it is *not* a prefix filter.** Measured: `name=oracle-anch` → **0** results, while
+`name=oracle-anch*` → 1, `name=oracle*` → 14, `name=*anchor` → 1, and `name=ORACLE-ANCHOR` → 1.
+**This is the opposite trap from the Git Refs filter (C-E09-030), which *is* starts-with:** here a
+caller who assumes prefix matching gets nothing, and a definition name legitimately containing `*`
+would be interpreted as a pattern. The lookup therefore sends the name unescaped only when it
+contains no `*`, and verifies the returned name case-insensitively rather than trusting the count.
+  — same transcript as C-E09-075
+
+[C-E09-078] **The definition *list* item omits both the YAML path and the repository; only the
+detail call has them.** A live list item's keys are `_links, authoredBy, createdDate, drafts, id,
+name, path, project, quality, queue, queueStatus, revision, type, uri, url`. Fetching
+`…/definitions/{id}` adds `process`, `repository`, `properties`, `tags`, `triggers` and
+`jobAuthorizationScope`, where `process` is `{"yamlFilename": "/experiments/status-skipped.yml",
+"type": 2}` and `repository` is `{id, name, type: "TfsGit", defaultBranch: "refs/heads/main", url}`.
+**Consequence:** name → id → *yaml path* is necessarily two calls — the same list/detail asymmetry as
+Runs-List (C-E09-068), and for the same reason it is worth stating rather than rediscovering.
+  — same transcript as C-E09-075
+
+[C-E09-079] **Scope note — the classic download is not live-verified, for the same reason as
+E09-S03-T02.** No build in the test organization has ever published an artifact (C-E09-073), so the
+`downloadUrl` fetch and the cache write are unit-tested only. The definition lookup, the empty
+artifact list and the 404 **are** measured. The same single queued build closes both tasks.
