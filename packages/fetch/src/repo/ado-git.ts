@@ -25,6 +25,7 @@ import { execFile } from 'node:child_process';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { authorizationHeader } from '../oracle.js';
+import { EXTRACTED_TREE_DIR, extractArchive } from './extract.js';
 import { credentialAuthorizationHeader } from '../auth/status.js';
 import type { StoredAzureCredential } from '../auth/storage.js';
 
@@ -237,6 +238,8 @@ export interface SnapshotMarker {
 
 export interface RepoSnapshot {
   readonly dir: string;
+  /** Readable tree for an archive snapshot; a bare mirror is read through git instead. */
+  readonly treeDir?: string;
   readonly method: SnapshotMethod;
   readonly commit: string;
   readonly ref: string;
@@ -421,6 +424,9 @@ async function downloadZip(
   }
   const bytes = Buffer.from(await response.arrayBuffer());
   await writeFile(join(dir, 'snapshot.zip'), bytes);
+  // E09-S02-T04: the archive alone is not readable. Unpack it beside itself so a template
+  // reference into this repository resolves like any working copy.
+  await extractArchive(bytes, 'zip', dir);
 }
 
 /**
@@ -439,6 +445,7 @@ export async function snapshotAdoRepo(
   if (existing !== undefined && existing.commit === resolved.commit) {
     return {
       dir,
+      ...(existing.method === 'items-zip' ? { treeDir: join(dir, EXTRACTED_TREE_DIR) } : {}),
       method: existing.method,
       commit: existing.commit,
       ref: existing.ref,
@@ -470,7 +477,14 @@ export async function snapshotAdoRepo(
     commit: resolved.commit,
     storedAt: new Date().toISOString(),
   });
-  return { dir, method, commit: resolved.commit, ref: resolved.ref, fetched: true };
+  return {
+    dir,
+    ...(method === 'items-zip' ? { treeDir: join(dir, EXTRACTED_TREE_DIR) } : {}),
+    method,
+    commit: resolved.commit,
+    ref: resolved.ref,
+    fetched: true,
+  };
 }
 
 /** Read a cached snapshot without fetching — the `--frozen` entry point. */
@@ -482,5 +496,12 @@ export async function readCachedSnapshot(
   const dir = repoCacheDir(cacheDir, coordinates, commit);
   const marker = await readMarker(dir);
   if (marker === undefined || marker.commit !== commit) return undefined;
-  return { dir, method: marker.method, commit: marker.commit, ref: marker.ref, fetched: false };
+  return {
+    dir,
+    ...(marker.method === 'items-zip' ? { treeDir: join(dir, EXTRACTED_TREE_DIR) } : {}),
+    method: marker.method,
+    commit: marker.commit,
+    ref: marker.ref,
+    fetched: false,
+  };
 }

@@ -22,6 +22,7 @@ import {
   type RepoFetch,
   type ResolvedRef,
 } from '../src/repo/ado-git.js';
+import { adoZip } from './helpers/archives.js';
 import type { StoredAzureCredential } from '../src/auth/storage.js';
 
 const COORDS: AdoRepoCoordinates = {
@@ -329,9 +330,7 @@ describe('snapshotAdoRepo', () => {
 
   it('falls back to the zip route rather than degrading to -c on old git (C-E09-035)', async () => {
     const cacheDir = await scratch();
-    const { calls, fetchImpl } = recorder([
-      new Response(new Uint8Array([80, 75, 3, 4]), { status: 200 }),
-    ]);
+    const { calls, fetchImpl } = recorder([new Response(adoZip(), { status: 200 })]);
 
     const snapshot = await snapshotAdoRepo(COORDS, resolved, {
       credential: PAT,
@@ -372,7 +371,7 @@ describe('snapshotAdoRepo', () => {
 
   it('records which method filled the entry, so --frozen does not assume a mirror', async () => {
     const cacheDir = await scratch();
-    const { fetchImpl } = recorder([new Response(new Uint8Array([80, 75, 3, 4]), { status: 200 })]);
+    const { fetchImpl } = recorder([new Response(adoZip(), { status: 200 })]);
     const snapshot = await snapshotAdoRepo(COORDS, resolved, {
       credential: PAT,
       cacheDir,

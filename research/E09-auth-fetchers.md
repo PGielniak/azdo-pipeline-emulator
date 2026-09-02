@@ -399,3 +399,45 @@ prevent (PLAN D10), every ignored endpoint emits a manifest note naming the alia
 the once-per-pipeline pinning that lets a resolved repository carry a commit rather than a ref
 (`C-E03-196`) are inherited from E03's reference resolution and are not re-grounded here. The
 local-path override is project policy from `docs/05` §3 item 1, not a service behavior.
+
+---
+
+## E09-S02-T04 — extracting archive snapshots (`C-E09-050..054`)
+
+Recorded 2026-09-02. Both archive *routes* were pinned by earlier tasks (C-E09-033/037 for the ADO
+zip, C-E09-014/015/042 for the GitHub tarball); what is measured here is what is **inside** them.
+The transcript is `research/experiments/E09-rest/archive-shapes/real-run.md`.
+
+[C-E09-050] **The GitHub tarball prefixes every entry with `<owner>-<repo>-<abbreviated sha>/`, and
+the sha is abbreviated to seven characters, not the full forty.** The archive for
+`octocat/Hello-World` at `7fd1a60b01f91b314f59955a4e4d4e80d8edf11d` contains
+`octocat-Hello-World-7fd1a60/` and `octocat-Hello-World-7fd1a60/README`. **Consequence:** a prefix
+computed from the SHA the resolver pinned would never match. The extractor instead *derives* the
+prefix — it strips one leading path component only when **every** entry shares it — which is correct
+for this archive and a no-op for one with no prefix.
+  — live measurement, 2026-09-02
+
+[C-E09-051] **The ADO Items zip has no prefix at all: its entries are repository-relative.** The
+same fixture repository yields `README.md`, `cross/abs.yml`, `cross/leaf.yml`, … So the two archive
+formats disagree about the prefix, and only the "strip a *common* leading component" rule of
+C-E09-050 handles both without a per-format special case.
+  — live measurement, 2026-09-02
+
+[C-E09-052] **The tarball's first member is a PAX global header, not a file.** Its typeflag is `g`
+(`pax_global_header`, 52 bytes) and the archive's magic is `ustar\0`; directories carry typeflag `5`
+and regular files `0`. A parser that treats every header as a file writes a spurious
+`pax_global_header` into the tree, so typeflags other than `0`/`\0` (regular) are skipped.
+  — live measurement, 2026-09-02
+
+[C-E09-053] **Every entry in the ADO zip is deflate-compressed (method 8).** Method 0 (stored) is
+also legal in the format and is handled, but the service used 8 for all six members of the fixture,
+so `inflateRawSync` is the path that actually runs.
+  — live measurement, 2026-09-02
+
+[C-E09-054] **Extraction is the point where an archive becomes untrusted input, and the guard is
+ours, not a documented behavior.** Neither service documents any constraint on the entry names it
+may emit, so the extractor rejects any member whose resolved destination is not strictly inside the
+target directory — absolute paths, `..` traversal, and anything reached through a symlink. This is
+local hardening (classic zip-slip), recorded here so it is not mistaken for parity with a service
+behavior.
+  — project policy; no source claims otherwise

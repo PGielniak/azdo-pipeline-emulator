@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadTemplate, resolveReference, type TemplateLocation } from '@azdo-emu/engine';
 import { resolveRepositoryAliases, type RepoFetch } from '@azdo-emu/fetch';
+import { adoZip } from '../../fetch/test/helpers/archives.js';
 import { readFromMirror, repositoryFetcher } from '../src/convert/repositories.js';
 
 const ORG = { orgUrl: 'https://dev.azure.com/example-org', project: 'Example' };
@@ -146,10 +147,10 @@ describe('readFromMirror — reading a bare mirror without extracting it', () =>
   });
 });
 
-describe('repositoryFetcher — archive snapshots', () => {
-  it('names an archive-backed alias as unreadable instead of answering "no such file"', async () => {
-    // The Items zip route pins correctly but leaves an archive on disk. Reporting it as absent
-    // would make an extraction gap look like a missing template, which is the wrong bug to chase.
+describe('repositoryFetcher — archive snapshots (E09-S02-T04)', () => {
+  it('resolves a cross-repo template out of an extracted ADO zip', async () => {
+    // Before T04 this alias pinned correctly but was reported `unreadable`. The archive is now
+    // unpacked at fetch time, so it reads through the same working-copy path as everything else.
     const zipFetch: RepoFetch = (url) =>
       Promise.resolve(
         url.includes('/refs?')
@@ -157,13 +158,20 @@ describe('repositoryFetcher — archive snapshots', () => {
               JSON.stringify({ value: [{ name: 'refs/heads/main', objectId: COMMIT }] }),
               { status: 200 },
             )
-          : new Response(new Uint8Array([80, 75, 3, 4]), { status: 200 }),
+          : new Response(
+              adoZip([
+                { name: 'README.md', body: '# templates\n' },
+                { name: 'ci/build.yml', body: 'steps:\n- script: from-zip\n' },
+              ]),
+              { status: 200 },
+            ),
       );
 
+    const self = await scratch();
     const resolution = await resolveRepositoryAliases(
       [{ alias: 'templates', type: 'git', name: 'pipeline-templates' }],
       {
-        self: { path: await scratch() },
+        self: { path: self },
         organization: ORG,
         cacheDir: await scratch(),
         azureCredential: {
@@ -173,21 +181,49 @@ describe('repositoryFetcher — archive snapshots', () => {
           token: 'fake-pat-for-cli-tests',
         },
         adoFetch: zipFetch,
+        // Force the archive route rather than depending on the host's git version.
+        snapshotMethod: 'items-zip',
       },
     );
-    // git is present in CI, so the default route is the mirror; force the archive route by
-    // asserting on what the resolution actually produced rather than assuming either.
-    const built = repositoryFetcher(resolution);
-    const templates = resolution.repositories.find((entry) => entry.alias === 'templates');
-    expect(templates?.commit).toBe(COMMIT);
 
-    if (templates?.method === 'items-zip') {
-      expect(built.unreadable).toEqual(['templates']);
-      expect(
-        built.fetcher.read({ repository: built.fetcher.repository('templates')!, path: '/a.yml' }),
-      ).toBeUndefined();
-    } else {
-      expect(built.unreadable).toEqual([]);
-    }
+    const templates = resolution.repositories.find((entry) => entry.alias === 'templates');
+    expect(templates).toMatchObject({ method: 'items-zip', commit: COMMIT });
+
+    const built = repositoryFetcher(resolution);
+    expect(built.unreadable).toEqual([]);
+
+    const loaded = loadTemplate(
+      'ci/build.yml@templates',
+      locationIn('self', '/azure-pipelines.yml', built),
+      built.fetcher,
+      RANGE,
+    );
+    expect(loaded.kind).toBe('loaded');
+    if (loaded.kind !== 'loaded') return;
+    expect(loaded.text).toContain('from-zip');
+  });
+
+  it('reports a repository with neither a tree nor a mirror as unreadable, not as missing', () => {
+    // The honest answer for a snapshot shape we cannot open: "we cannot read this", never
+    // "no such template" — the latter sends someone chasing the wrong bug.
+    const built = repositoryFetcher({
+      repositories: [
+        {
+          alias: 'opaque',
+          origin: 'ado',
+          url: 'https://dev.azure.com/example-org/Example/_git/opaque',
+          ref: 'refs/heads/main',
+          commit: COMMIT,
+          dir: '/nowhere',
+        },
+      ],
+      notes: [],
+      unresolved: [],
+    });
+
+    expect(built.unreadable).toEqual(['opaque']);
+    expect(
+      built.fetcher.read({ repository: built.fetcher.repository('opaque')!, path: '/a.yml' }),
+    ).toBeUndefined();
   });
 });

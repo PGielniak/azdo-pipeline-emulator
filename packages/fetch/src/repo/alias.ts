@@ -76,6 +76,11 @@ export interface ResolvedRepository {
   readonly commit: string;
   /** Where the bytes are: a cache entry, or the override path. */
   readonly dir: string;
+  /**
+   * A directory whose contents are the repository tree — an extracted archive (E09-S02-T04) or a
+   * working copy. Absent for a bare mirror, whose files are read through git instead.
+   */
+  readonly treeDir?: string;
   readonly method?: SnapshotMethod | 'tarball' | 'working-copy';
 }
 
@@ -109,6 +114,8 @@ export interface AliasResolutionOptions {
   /** Keyed by alias; compared case-insensitively (C-E03-213). */
   readonly overrides?: Readonly<Record<string, LocalRepositoryOverride>>;
   readonly azureCredential?: StoredAzureCredential;
+  /** Forces the ADO snapshot route; by default the fetcher picks the mirror when git allows it. */
+  readonly snapshotMethod?: SnapshotMethod;
   readonly adoFetch?: RepoFetch;
   readonly githubFetch?: GitHubFetch;
 }
@@ -171,6 +178,7 @@ function selfRepository(self: SelfRepository): ResolvedRepository {
     ref: normalizeRef(self.ref),
     commit: self.commit ?? UNPINNED_COMMIT,
     dir: self.path,
+    treeDir: self.path,
     method: 'working-copy',
   };
 }
@@ -194,6 +202,7 @@ function applyOverride(
     ref: normalizeRef(spec.ref),
     commit: UNPINNED_COMMIT,
     dir: override.path,
+    treeDir: override.path,
     method: 'working-copy',
   });
   accumulator.notes.push({
@@ -330,6 +339,7 @@ async function resolveAdo(
   const snapshot = await snapshotAdoRepo(coordinates, resolved, {
     credential: options.azureCredential,
     cacheDir: options.cacheDir,
+    ...(options.snapshotMethod === undefined ? {} : { method: options.snapshotMethod }),
     ...(options.adoFetch === undefined ? {} : { fetchImpl: options.adoFetch }),
   });
   return {
@@ -339,6 +349,7 @@ async function resolveAdo(
     ref: resolved.ref,
     commit: resolved.commit,
     dir: snapshot.dir,
+    ...(snapshot.treeDir === undefined ? {} : { treeDir: snapshot.treeDir }),
     method: snapshot.method,
   };
 }
@@ -368,6 +379,7 @@ async function resolveGitHub(
     ref: resolved.ref,
     commit: resolved.commit,
     dir: snapshot.dir,
+    treeDir: snapshot.treeDir,
     method: 'tarball',
   };
 }

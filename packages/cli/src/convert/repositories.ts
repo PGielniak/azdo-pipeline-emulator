@@ -15,11 +15,12 @@
  *    a file is read with `git --git-dir <mirror> show <commit>:<path>` — no extraction step, no
  *    dependency, and the read is pinned to the same commit the lockfile carries.
  *
- * An **archive** snapshot — the Items `$format=zip` fallback, or GitHub's tarball — is not readable
- * without an extraction step, which is not in this task's Do. Those aliases resolve and pin
- * correctly; reading their files reports `archive-not-extracted` rather than pretending the file is
- * absent, so the difference between "no such template" and "we cannot open this snapshot yet" stays
- * visible. E09-S02-T04 closes it.
+ * An **archive** snapshot — the Items `$format=zip` fallback, or GitHub's tarball — is unpacked at
+ * fetch time into `<entry>/tree/` (E09-S02-T04), so it reads through the same working-copy path as
+ * everything else. `unreadable` therefore stays empty in practice; it is kept as the honest answer
+ * for a repository that arrives with neither a tree nor a mirror, because reporting such an entry
+ * as "no such file" would send someone chasing a missing template that is really an unopened
+ * snapshot.
  */
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
@@ -35,8 +36,9 @@ export interface RepositoryFetcherResult {
   readonly unreadable: readonly string[];
 }
 
-function isWorkingCopy(repository: ResolvedRepository): boolean {
-  return repository.origin === 'self' || repository.origin === 'local-override';
+/** Anything whose files sit in a plain directory: a working copy, or an extracted archive. */
+function treeOf(repository: ResolvedRepository): string | undefined {
+  return repository.treeDir;
 }
 
 function isBareMirror(repository: ResolvedRepository): boolean {
@@ -73,7 +75,7 @@ export function repositoryFetcher(resolution: AliasResolutionResult): Repository
   const specs: LocalRepositorySpec[] = resolution.repositories.map((repository) => ({
     alias: repository.alias,
     // Working copies read from their own root; mirrors and archives never reach `localFetcher.read`.
-    root: isWorkingCopy(repository) ? repository.dir : path.join(repository.dir, '__unreadable__'),
+    root: treeOf(repository) ?? path.join(repository.dir, '__unreadable__'),
     url: repository.url,
     ref: repository.ref,
     commit: repository.commit,
@@ -84,7 +86,7 @@ export function repositoryFetcher(resolution: AliasResolutionResult): Repository
     resolution.repositories.map((repository) => [repository.alias.toLowerCase(), repository]),
   );
   const unreadable = resolution.repositories
-    .filter((repository) => !isWorkingCopy(repository) && !isBareMirror(repository))
+    .filter((repository) => treeOf(repository) === undefined && !isBareMirror(repository))
     .map((repository) => repository.alias);
 
   return {
@@ -93,7 +95,7 @@ export function repositoryFetcher(resolution: AliasResolutionResult): Repository
       read: (location) => {
         const resolved = byFoldedAlias.get(location.repository.alias.toLowerCase());
         if (resolved === undefined) return undefined;
-        if (isWorkingCopy(resolved)) return base.read(location);
+        if (treeOf(resolved) !== undefined) return base.read(location);
         if (isBareMirror(resolved)) {
           return readFromMirror(
             path.join(resolved.dir, 'mirror.git'),
