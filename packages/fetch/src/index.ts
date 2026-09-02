@@ -242,3 +242,12 @@ export {
   type BuildDefinitionSummary,
   type DownloadBuildArtifactOptions,
 } from './rest/build.js';
+
+export {
+  envExampleBlock,
+  getVariableGroup,
+  getVariableGroups,
+  parseVariableGroup,
+  type GroupVariable,
+  type VariableGroupNames,
+} from './rest/variable-groups.js';
