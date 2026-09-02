@@ -3205,3 +3205,85 @@ task: Failing@1
 EOF
   '
 }
+
+# --- E07-S02-T02: user handler drop-in ---------------------------------------------------------
+
+write_handler() {
+  # $1 path  $2 body
+  mkdir -p "$(dirname "$1")"
+  printf '#!/usr/bin/env bash\n%s\n' "$2" >"$1"
+  chmod +x "$1"
+}
+
+@test "a user handler substitutes for a task and receives the same INPUT_* (docs/03 §4, C-E07-001)" {
+  AZDO_EMU_OUT="$BATS_TEST_TMPDIR/out"
+  AZDO_EMU_CACHE="$BATS_TEST_TMPDIR/cache"
+  export AZDO_EMU_OUT AZDO_EMU_CACHE
+  write_handler "$AZDO_EMU_OUT/handlers/Unknown@3" 'printf "%s|%s\n" "$INPUT_SONAR_PROJECTKEY" "$INPUT_PLAIN"'
+
+  CORE_SH="$(azdo_emu_repo_root)/packages/runtime/lib/core.sh" run -0 bash -c '
+    source "$CORE_SH"
+    azdo_run_task <<EOF
+task: Unknown@3
+  sonar.projectKey: from-handler
+  plain: also-here
+EOF
+  '
+  # The dotted name reaches the handler under the task-lib transform, exactly as a real task sees it.
+  [ "$output" = 'from-handler|also-here' ]
+}
+
+@test "a user handler wins over a cached package — it is an override, not a fallback" {
+  AZDO_EMU_OUT="$BATS_TEST_TMPDIR/out"
+  AZDO_EMU_CACHE="$BATS_TEST_TMPDIR/cache"
+  export AZDO_EMU_OUT AZDO_EMU_CACHE
+  seed_task_package 'Both' '1.0.0' '{"Node24":{"target":"main.js"}}' 'process.stdout.write("package")'
+  write_handler "$AZDO_EMU_OUT/handlers/Both@1" 'printf handler'
+
+  CORE_SH="$(azdo_emu_repo_root)/packages/runtime/lib/core.sh" run -0 bash -c '
+    source "$CORE_SH"
+    azdo_run_task <<EOF
+task: Both@1
+EOF
+  '
+  [ "$output" = 'handler' ]
+}
+
+@test "a handler is found under any of the three documented spellings" {
+  AZDO_EMU_OUT="$BATS_TEST_TMPDIR/out"
+  export AZDO_EMU_OUT
+  local found
+  for suffix in '' '.sh' '.js'; do
+    rm -rf "$AZDO_EMU_OUT/handlers"
+    write_handler "$AZDO_EMU_OUT/handlers/Named@2$suffix" 'true'
+    azdo__user_handler 'Named' '2' found
+    [[ "$found" == *"Named@2$suffix" ]]
+  done
+}
+
+@test "a non-executable handler file is ignored, not run" {
+  AZDO_EMU_OUT="$BATS_TEST_TMPDIR/out"
+  export AZDO_EMU_OUT
+  mkdir -p "$AZDO_EMU_OUT/handlers"
+  printf 'true\n' >"$AZDO_EMU_OUT/handlers/NotExec@1"
+  local found=''
+  run -1 azdo__user_handler 'NotExec' '1' found
+}
+
+@test "a missing handler and a missing package give one hint naming both fixes" {
+  AZDO_EMU_OUT="$BATS_TEST_TMPDIR/out"
+  AZDO_EMU_CACHE="$BATS_TEST_TMPDIR/cache"
+  export AZDO_EMU_OUT AZDO_EMU_CACHE
+  mkdir -p "$AZDO_EMU_CACHE/tasks"
+
+  CORE_SH="$(azdo_emu_repo_root)/packages/runtime/lib/core.sh" run -1 bash -c '
+    source "$CORE_SH"
+    azdo_run_task <<EOF
+task: Nowhere@9
+EOF
+  '
+  [[ "$output" == *'no cached package for Nowhere@9'* ]]
+  # Naming only the download would send the reader down the longer road.
+  [[ "$output" == *'run convert without --frozen once'* ]]
+  [[ "$output" == *'handlers/Nowhere@9'* ]]
+}

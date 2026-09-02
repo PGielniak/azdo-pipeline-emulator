@@ -4348,6 +4348,13 @@ azdo_run_task() {
   name="${reference%@*}"
   major="${reference##*@}"
 
+  # docs/03 §4: the drop-in escape hatch is checked *before* stubbing, and before the package —
+  # a handler the user wrote is a deliberate override, not a fallback for a failed download.
+  local handler_path=''
+  if azdo__user_handler "$name" "$major" handler_path; then
+    exec "$handler_path"
+  fi
+
   entry="$(azdo__task_entry "$name" "$major")" || return
   task_json="$entry/task.json"
   [[ -f "$task_json" ]] || {
@@ -4392,6 +4399,11 @@ azdo__task_entry() {
   done
   [[ -n "$best" ]] || {
     printf 'azdo_run_task: no cached package for %s@%s under %s\n' "$1" "$2" "$root" >&2
+    # Name both escape hatches: fetching the package is one fix, writing a handler is the other,
+    # and a message that mentions only the first sends the reader down the longer road.
+    printf '  fetch it: run convert without --frozen once\n' >&2
+    printf '  or write a handler: %s/handlers/%s@%s (or ~/.azdo-emu/handlers/%s@%s)\n' \
+      "${AZDO_EMU_OUT:-.}" "$1" "$2" "$1" "$2" >&2
     return 1
   }
   printf '%s\n' "$best"
@@ -4448,4 +4460,34 @@ azdo__task_execution_target() {
     const target = block.target ?? block.script;
     if (typeof target === "string") process.stdout.write(target);
   ' "$1" "$2"
+}
+
+# azdo__user_handler <name> <major> <destination-variable> — find a user-written drop-in handler.
+#
+# docs/03 §4: `<out>/handlers/<TaskName>@<major>`, then `~/.azdo-emu/handlers/<TaskName>@<major>`.
+# The doc names a bare executable; the backlog's Do field writes `.sh` (or `.js`), so all three
+# spellings are accepted — a user who names the file the way either document describes gets a
+# working handler, and refusing one of them would be a papercut with no upside.
+#
+# The handler receives the environment `azdo_run_task` has already built: `INPUT_*` under the
+# task-lib transform (C-E07-001), plus whatever `ENDPOINT_*` the run carries. That is the point of
+# the escape hatch — a handler written for us is shaped like a real task, so the knowledge
+# transfers in both directions.
+#
+# Returns 0 and sets the destination when one is found, 1 when none is.
+azdo__user_handler() {
+  (($# == 3)) || {
+    printf '%s\n' 'usage: azdo__user_handler <name> <major> <destination-variable>' >&2
+    return 2
+  }
+  local __handler_root __handler_candidate
+  for __handler_root in "${AZDO_EMU_OUT:-.}/handlers" "$HOME/.azdo-emu/handlers"; do
+    for __handler_candidate in \
+      "$__handler_root/$1@$2" "$__handler_root/$1@$2.sh" "$__handler_root/$1@$2.js"; do
+      [[ -f "$__handler_candidate" && -x "$__handler_candidate" ]] || continue
+      printf -v "$3" '%s' "$__handler_candidate"
+      return 0
+    done
+  done
+  return 1
 }

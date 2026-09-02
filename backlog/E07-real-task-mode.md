@@ -40,7 +40,7 @@ Acceptance: stub policy + user handler drop-in.
   **Do:** unknown task → emit a stub that dumps its resolved inputs + `task.json` metadata and exits per config (`skip` | `fail` | `prompt`); the fidelity label is `stub`.
   **Ground:** docs/03 §4 stub policy; PLAN D4.
   **Done:** stub output snapshot; the three config modes tested.
-- [ ] **E07-S02-T02 — User handler drop-in**
+- [x] **E07-S02-T02 — User handler drop-in**
   **Do:** `handlers/<Name>@<major>.sh` (or `.js`) discovered at run time, receives the same `INPUT_*` env as a real task; documented contract in the generated README.
   **Ground:** docs/03 §4 (user handlers); the `INPUT_*` convention from E07-S01-T02 (cite its claim).
   **Done:** a user handler substitutes for an unknown task in a fixture; missing handler → clear hint.

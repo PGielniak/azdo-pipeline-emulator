@@ -127,6 +127,33 @@ knowing when a run behaves differently from the service.
 | \`stub\` | does not run the real task — the script records the resolved inputs and exits. |
 | \`unsupported\` | has no local equivalent; the step cannot be reproduced here. |
 
+## Writing your own task handler
+
+Any step can be taken over by dropping an **executable** at one of:
+
+\`\`\`
+handlers/<TaskName>@<major>          # beside this README — commit it with the project
+~/.azdo-emu/handlers/<TaskName>@<major>   # yours, across every converted project
+\`\`\`
+
+A \`.sh\` or \`.js\` suffix is accepted too. The first match wins, and a handler **overrides** a
+downloaded task package rather than standing in for a failed download — so you can substitute
+a step that would otherwise have run perfectly well.
+
+Your handler is invoked with the same environment a real task gets:
+
+- **Inputs** as \`INPUT_<NAME>\`, where the name has its dots *and* spaces replaced by
+  underscores and is then upper-cased — \`sonar.projectKey\` arrives as \`INPUT_SONAR_PROJECTKEY\`.
+  That is \`azure-pipelines-task-lib\`'s own transform, so a handler you write here reads its
+  inputs exactly the way the real task does.
+- **Service-connection data** as \`ENDPOINT_*\`, from \`.env\`.
+- **\`##vso[…]\` output honored**: \`task.setvariable\`, \`task.setsecret\`, \`task.logissue\` and the
+  rest work from your handler exactly as they do from a real task.
+- **Exit code is the step result**: non-zero fails the step.
+
+A handler written for this project is therefore shaped like a real Azure Pipelines task, and
+what you learn writing one transfers in both directions.
+
 ## Environment
 
 This pipeline needs no \`.env\` entries beyond the optional ones in [.env.example](.env.example).
@@ -238,6 +265,33 @@ knowing when a run behaves differently from the service.
 | \`degraded\` | runs, but some behavior is approximated on this host. |
 | \`stub\` | does not run the real task — the script records the resolved inputs and exits. |
 | \`unsupported\` | has no local equivalent; the step cannot be reproduced here. |
+
+## Writing your own task handler
+
+Any step can be taken over by dropping an **executable** at one of:
+
+\`\`\`
+handlers/<TaskName>@<major>          # beside this README — commit it with the project
+~/.azdo-emu/handlers/<TaskName>@<major>   # yours, across every converted project
+\`\`\`
+
+A \`.sh\` or \`.js\` suffix is accepted too. The first match wins, and a handler **overrides** a
+downloaded task package rather than standing in for a failed download — so you can substitute
+a step that would otherwise have run perfectly well.
+
+Your handler is invoked with the same environment a real task gets:
+
+- **Inputs** as \`INPUT_<NAME>\`, where the name has its dots *and* spaces replaced by
+  underscores and is then upper-cased — \`sonar.projectKey\` arrives as \`INPUT_SONAR_PROJECTKEY\`.
+  That is \`azure-pipelines-task-lib\`'s own transform, so a handler you write here reads its
+  inputs exactly the way the real task does.
+- **Service-connection data** as \`ENDPOINT_*\`, from \`.env\`.
+- **\`##vso[…]\` output honored**: \`task.setvariable\`, \`task.setsecret\`, \`task.logissue\` and the
+  rest work from your handler exactly as they do from a real task.
+- **Exit code is the step result**: non-zero fails the step.
+
+A handler written for this project is therefore shaped like a real Azure Pipelines task, and
+what you learn writing one transfers in both directions.
 
 ## Environment
 
@@ -398,6 +452,33 @@ knowing when a run behaves differently from the service.
 | \`stub\` | does not run the real task — the script records the resolved inputs and exits. |
 | \`unsupported\` | has no local equivalent; the step cannot be reproduced here. |
 
+## Writing your own task handler
+
+Any step can be taken over by dropping an **executable** at one of:
+
+\`\`\`
+handlers/<TaskName>@<major>          # beside this README — commit it with the project
+~/.azdo-emu/handlers/<TaskName>@<major>   # yours, across every converted project
+\`\`\`
+
+A \`.sh\` or \`.js\` suffix is accepted too. The first match wins, and a handler **overrides** a
+downloaded task package rather than standing in for a failed download — so you can substitute
+a step that would otherwise have run perfectly well.
+
+Your handler is invoked with the same environment a real task gets:
+
+- **Inputs** as \`INPUT_<NAME>\`, where the name has its dots *and* spaces replaced by
+  underscores and is then upper-cased — \`sonar.projectKey\` arrives as \`INPUT_SONAR_PROJECTKEY\`.
+  That is \`azure-pipelines-task-lib\`'s own transform, so a handler you write here reads its
+  inputs exactly the way the real task does.
+- **Service-connection data** as \`ENDPOINT_*\`, from \`.env\`.
+- **\`##vso[…]\` output honored**: \`task.setvariable\`, \`task.setsecret\`, \`task.logissue\` and the
+  rest work from your handler exactly as they do from a real task.
+- **Exit code is the step result**: non-zero fails the step.
+
+A handler written for this project is therefore shaped like a real Azure Pipelines task, and
+what you learn writing one transfers in both directions.
+
 ## Environment
 
 This pipeline needs no \`.env\` entries beyond the optional ones in [.env.example](.env.example).
@@ -501,6 +582,33 @@ knowing when a run behaves differently from the service.
 | \`stub\` | does not run the real task — the script records the resolved inputs and exits. |
 | \`unsupported\` | has no local equivalent; the step cannot be reproduced here. |
 
+## Writing your own task handler
+
+Any step can be taken over by dropping an **executable** at one of:
+
+\`\`\`
+handlers/<TaskName>@<major>          # beside this README — commit it with the project
+~/.azdo-emu/handlers/<TaskName>@<major>   # yours, across every converted project
+\`\`\`
+
+A \`.sh\` or \`.js\` suffix is accepted too. The first match wins, and a handler **overrides** a
+downloaded task package rather than standing in for a failed download — so you can substitute
+a step that would otherwise have run perfectly well.
+
+Your handler is invoked with the same environment a real task gets:
+
+- **Inputs** as \`INPUT_<NAME>\`, where the name has its dots *and* spaces replaced by
+  underscores and is then upper-cased — \`sonar.projectKey\` arrives as \`INPUT_SONAR_PROJECTKEY\`.
+  That is \`azure-pipelines-task-lib\`'s own transform, so a handler you write here reads its
+  inputs exactly the way the real task does.
+- **Service-connection data** as \`ENDPOINT_*\`, from \`.env\`.
+- **\`##vso[…]\` output honored**: \`task.setvariable\`, \`task.setsecret\`, \`task.logissue\` and the
+  rest work from your handler exactly as they do from a real task.
+- **Exit code is the step result**: non-zero fails the step.
+
+A handler written for this project is therefore shaped like a real Azure Pipelines task, and
+what you learn writing one transfers in both directions.
+
 ## Environment
 
 This pipeline needs no \`.env\` entries beyond the optional ones in [.env.example](.env.example).
@@ -601,6 +709,33 @@ knowing when a run behaves differently from the service.
 | \`degraded\` | runs, but some behavior is approximated on this host. |
 | \`stub\` | does not run the real task — the script records the resolved inputs and exits. |
 | \`unsupported\` | has no local equivalent; the step cannot be reproduced here. |
+
+## Writing your own task handler
+
+Any step can be taken over by dropping an **executable** at one of:
+
+\`\`\`
+handlers/<TaskName>@<major>          # beside this README — commit it with the project
+~/.azdo-emu/handlers/<TaskName>@<major>   # yours, across every converted project
+\`\`\`
+
+A \`.sh\` or \`.js\` suffix is accepted too. The first match wins, and a handler **overrides** a
+downloaded task package rather than standing in for a failed download — so you can substitute
+a step that would otherwise have run perfectly well.
+
+Your handler is invoked with the same environment a real task gets:
+
+- **Inputs** as \`INPUT_<NAME>\`, where the name has its dots *and* spaces replaced by
+  underscores and is then upper-cased — \`sonar.projectKey\` arrives as \`INPUT_SONAR_PROJECTKEY\`.
+  That is \`azure-pipelines-task-lib\`'s own transform, so a handler you write here reads its
+  inputs exactly the way the real task does.
+- **Service-connection data** as \`ENDPOINT_*\`, from \`.env\`.
+- **\`##vso[…]\` output honored**: \`task.setvariable\`, \`task.setsecret\`, \`task.logissue\` and the
+  rest work from your handler exactly as they do from a real task.
+- **Exit code is the step result**: non-zero fails the step.
+
+A handler written for this project is therefore shaped like a real Azure Pipelines task, and
+what you learn writing one transfers in both directions.
 
 ## Environment
 
@@ -733,6 +868,33 @@ knowing when a run behaves differently from the service.
 | \`stub\` | does not run the real task — the script records the resolved inputs and exits. |
 | \`unsupported\` | has no local equivalent; the step cannot be reproduced here. |
 
+## Writing your own task handler
+
+Any step can be taken over by dropping an **executable** at one of:
+
+\`\`\`
+handlers/<TaskName>@<major>          # beside this README — commit it with the project
+~/.azdo-emu/handlers/<TaskName>@<major>   # yours, across every converted project
+\`\`\`
+
+A \`.sh\` or \`.js\` suffix is accepted too. The first match wins, and a handler **overrides** a
+downloaded task package rather than standing in for a failed download — so you can substitute
+a step that would otherwise have run perfectly well.
+
+Your handler is invoked with the same environment a real task gets:
+
+- **Inputs** as \`INPUT_<NAME>\`, where the name has its dots *and* spaces replaced by
+  underscores and is then upper-cased — \`sonar.projectKey\` arrives as \`INPUT_SONAR_PROJECTKEY\`.
+  That is \`azure-pipelines-task-lib\`'s own transform, so a handler you write here reads its
+  inputs exactly the way the real task does.
+- **Service-connection data** as \`ENDPOINT_*\`, from \`.env\`.
+- **\`##vso[…]\` output honored**: \`task.setvariable\`, \`task.setsecret\`, \`task.logissue\` and the
+  rest work from your handler exactly as they do from a real task.
+- **Exit code is the step result**: non-zero fails the step.
+
+A handler written for this project is therefore shaped like a real Azure Pipelines task, and
+what you learn writing one transfers in both directions.
+
 ## Environment
 
 This pipeline needs no \`.env\` entries beyond the optional ones in [.env.example](.env.example).
@@ -845,6 +1007,33 @@ knowing when a run behaves differently from the service.
 | \`degraded\` | runs, but some behavior is approximated on this host. |
 | \`stub\` | does not run the real task — the script records the resolved inputs and exits. |
 | \`unsupported\` | has no local equivalent; the step cannot be reproduced here. |
+
+## Writing your own task handler
+
+Any step can be taken over by dropping an **executable** at one of:
+
+\`\`\`
+handlers/<TaskName>@<major>          # beside this README — commit it with the project
+~/.azdo-emu/handlers/<TaskName>@<major>   # yours, across every converted project
+\`\`\`
+
+A \`.sh\` or \`.js\` suffix is accepted too. The first match wins, and a handler **overrides** a
+downloaded task package rather than standing in for a failed download — so you can substitute
+a step that would otherwise have run perfectly well.
+
+Your handler is invoked with the same environment a real task gets:
+
+- **Inputs** as \`INPUT_<NAME>\`, where the name has its dots *and* spaces replaced by
+  underscores and is then upper-cased — \`sonar.projectKey\` arrives as \`INPUT_SONAR_PROJECTKEY\`.
+  That is \`azure-pipelines-task-lib\`'s own transform, so a handler you write here reads its
+  inputs exactly the way the real task does.
+- **Service-connection data** as \`ENDPOINT_*\`, from \`.env\`.
+- **\`##vso[…]\` output honored**: \`task.setvariable\`, \`task.setsecret\`, \`task.logissue\` and the
+  rest work from your handler exactly as they do from a real task.
+- **Exit code is the step result**: non-zero fails the step.
+
+A handler written for this project is therefore shaped like a real Azure Pipelines task, and
+what you learn writing one transfers in both directions.
 
 ## Environment
 
@@ -974,6 +1163,33 @@ knowing when a run behaves differently from the service.
 | \`stub\` | does not run the real task — the script records the resolved inputs and exits. |
 | \`unsupported\` | has no local equivalent; the step cannot be reproduced here. |
 
+## Writing your own task handler
+
+Any step can be taken over by dropping an **executable** at one of:
+
+\`\`\`
+handlers/<TaskName>@<major>          # beside this README — commit it with the project
+~/.azdo-emu/handlers/<TaskName>@<major>   # yours, across every converted project
+\`\`\`
+
+A \`.sh\` or \`.js\` suffix is accepted too. The first match wins, and a handler **overrides** a
+downloaded task package rather than standing in for a failed download — so you can substitute
+a step that would otherwise have run perfectly well.
+
+Your handler is invoked with the same environment a real task gets:
+
+- **Inputs** as \`INPUT_<NAME>\`, where the name has its dots *and* spaces replaced by
+  underscores and is then upper-cased — \`sonar.projectKey\` arrives as \`INPUT_SONAR_PROJECTKEY\`.
+  That is \`azure-pipelines-task-lib\`'s own transform, so a handler you write here reads its
+  inputs exactly the way the real task does.
+- **Service-connection data** as \`ENDPOINT_*\`, from \`.env\`.
+- **\`##vso[…]\` output honored**: \`task.setvariable\`, \`task.setsecret\`, \`task.logissue\` and the
+  rest work from your handler exactly as they do from a real task.
+- **Exit code is the step result**: non-zero fails the step.
+
+A handler written for this project is therefore shaped like a real Azure Pipelines task, and
+what you learn writing one transfers in both directions.
+
 ## Environment
 
 This pipeline needs no \`.env\` entries beyond the optional ones in [.env.example](.env.example).
@@ -1085,6 +1301,33 @@ knowing when a run behaves differently from the service.
 | \`stub\` | does not run the real task — the script records the resolved inputs and exits. |
 | \`unsupported\` | has no local equivalent; the step cannot be reproduced here. |
 
+## Writing your own task handler
+
+Any step can be taken over by dropping an **executable** at one of:
+
+\`\`\`
+handlers/<TaskName>@<major>          # beside this README — commit it with the project
+~/.azdo-emu/handlers/<TaskName>@<major>   # yours, across every converted project
+\`\`\`
+
+A \`.sh\` or \`.js\` suffix is accepted too. The first match wins, and a handler **overrides** a
+downloaded task package rather than standing in for a failed download — so you can substitute
+a step that would otherwise have run perfectly well.
+
+Your handler is invoked with the same environment a real task gets:
+
+- **Inputs** as \`INPUT_<NAME>\`, where the name has its dots *and* spaces replaced by
+  underscores and is then upper-cased — \`sonar.projectKey\` arrives as \`INPUT_SONAR_PROJECTKEY\`.
+  That is \`azure-pipelines-task-lib\`'s own transform, so a handler you write here reads its
+  inputs exactly the way the real task does.
+- **Service-connection data** as \`ENDPOINT_*\`, from \`.env\`.
+- **\`##vso[…]\` output honored**: \`task.setvariable\`, \`task.setsecret\`, \`task.logissue\` and the
+  rest work from your handler exactly as they do from a real task.
+- **Exit code is the step result**: non-zero fails the step.
+
+A handler written for this project is therefore shaped like a real Azure Pipelines task, and
+what you learn writing one transfers in both directions.
+
 ## Environment
 
 This pipeline needs no \`.env\` entries beyond the optional ones in [.env.example](.env.example).
@@ -1187,6 +1430,33 @@ knowing when a run behaves differently from the service.
 | \`degraded\` | runs, but some behavior is approximated on this host. |
 | \`stub\` | does not run the real task — the script records the resolved inputs and exits. |
 | \`unsupported\` | has no local equivalent; the step cannot be reproduced here. |
+
+## Writing your own task handler
+
+Any step can be taken over by dropping an **executable** at one of:
+
+\`\`\`
+handlers/<TaskName>@<major>          # beside this README — commit it with the project
+~/.azdo-emu/handlers/<TaskName>@<major>   # yours, across every converted project
+\`\`\`
+
+A \`.sh\` or \`.js\` suffix is accepted too. The first match wins, and a handler **overrides** a
+downloaded task package rather than standing in for a failed download — so you can substitute
+a step that would otherwise have run perfectly well.
+
+Your handler is invoked with the same environment a real task gets:
+
+- **Inputs** as \`INPUT_<NAME>\`, where the name has its dots *and* spaces replaced by
+  underscores and is then upper-cased — \`sonar.projectKey\` arrives as \`INPUT_SONAR_PROJECTKEY\`.
+  That is \`azure-pipelines-task-lib\`'s own transform, so a handler you write here reads its
+  inputs exactly the way the real task does.
+- **Service-connection data** as \`ENDPOINT_*\`, from \`.env\`.
+- **\`##vso[…]\` output honored**: \`task.setvariable\`, \`task.setsecret\`, \`task.logissue\` and the
+  rest work from your handler exactly as they do from a real task.
+- **Exit code is the step result**: non-zero fails the step.
+
+A handler written for this project is therefore shaped like a real Azure Pipelines task, and
+what you learn writing one transfers in both directions.
 
 ## Environment
 
