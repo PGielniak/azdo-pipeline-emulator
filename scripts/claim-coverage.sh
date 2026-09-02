@@ -30,14 +30,23 @@ floor_file='.claim-coverage-floor'
 # in prose inside another claim's body is not a second definition.
 defined="$(grep -rhoE '^\[C-E[0-9]{2}-[0-9]{3}\]' research/ | tr -d '[]' | sort -u)"
 
-# Tests reference claims in a name, a comment, or an assertion message. Bats and vitest both count.
-referenced="$(grep -rhoE 'C-E[0-9]{2}-[0-9]{3}' \
-  packages/*/test packages/runtime/test 2>/dev/null | sort -u || true)"
+# Tests reference claims in a name, a comment, or an assertion message. Bats and vitest both count,
+# and so do the repo-level meta-tests under `test/` — E11-S03-T02's runbook tests cite claims that
+# have no package to live in (they are about documentation pages, not about a package's code).
+#
+# `test/claim-coverage.test.ts` is excluded **by name and on purpose**: it is the meta-test over
+# *this script*, so it names claims as data — asserting that C-E09-084/087 and the blocked
+# device-code claims are in the gap list. Counting those as covered would make the report certify
+# itself, which is the one way a coverage number can be actively misleading rather than merely
+# imprecise.
+COVERAGE_META_TEST='test/claim-coverage.test.ts'
+referenced="$(grep -rhoE --exclude="$(basename "$COVERAGE_META_TEST")" 'C-E[0-9]{2}-[0-9]{3}' \
+  packages/*/test packages/runtime/test test 2>/dev/null | sort -u || true)"
 
 # Ranges like `C-E09-085..089` in a test cover every id between the endpoints; expand them so a
 # test that cites a range is not reported as covering only its first claim.
-ranges="$(grep -rhoE 'C-E[0-9]{2}-[0-9]{3}\.\.[0-9]{3}' \
-  packages/*/test packages/runtime/test 2>/dev/null | sort -u || true)"
+ranges="$(grep -rhoE --exclude="$(basename "$COVERAGE_META_TEST")" 'C-E[0-9]{2}-[0-9]{3}\.\.[0-9]{3}' \
+  packages/*/test packages/runtime/test test 2>/dev/null | sort -u || true)"
 expanded=''
 if [[ -n "$ranges" ]]; then
   while IFS= read -r range; do

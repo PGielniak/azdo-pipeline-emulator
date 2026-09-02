@@ -2844,3 +2844,60 @@ echo "cwd=$PWD"
   "warnings": [],
 }
 `;
+
+exports[`golden corpus manifests > 11-implicit-wrapping serializes stably 1`] = `
+{
+  "env": [],
+  "expansion": {
+    "apiVersion": "7.1",
+    "degraded": false,
+    "finalYamlHash": "5958c5eda73f1c3368b991a33e6d90c8daef5db9051e68ea372061b4135c6ba8",
+    "fromCache": false,
+    "mode": "service",
+    "pipelineId": 0,
+    "requestHash": "9a2d758a423aa29bee1770333e897405fa2ffa61eb0c1377d8e6439e32a2183a",
+  },
+  "pipeline": {
+    "parameters": {},
+  },
+  "schemaVersion": 1,
+  "stages": [
+    {
+      "dependsOn": [],
+      "id": "__default",
+      "jobs": [
+        {
+          "dependsOn": [],
+          "id": "Job",
+          "kind": "agent",
+          "steps": [
+            {
+              "continueOnError": false,
+              "displayName": "A step with no stage and no job around it",
+              "enabled": true,
+              "env": {},
+              "failOnStderr": false,
+              "id": 1,
+              "inputs": {
+                "script": "echo implicit-wrapping",
+              },
+              "retryCountOnTaskFailure": 0,
+              "source": {
+                "file": "11-implicit-wrapping.final.yml",
+                "line": 10,
+              },
+              "task": "CmdLine@2",
+              "warnings": [],
+            },
+          ],
+          "variables": [],
+        },
+      ],
+      "variables": [],
+    },
+  ],
+  "tools": [],
+  "unsupported": [],
+  "warnings": [],
+}
+`;

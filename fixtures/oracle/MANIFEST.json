@@ -49,6 +49,11 @@
       "inputSha256": "693f51801171f1bf9d92d80544f7098a1d40520cb54604effd0d52f37c8363a0",
       "finalYamlSha256": "c8ef9cc100abe8e7591406c6db5934b00364e88bbce769741e82fa8282ea0e17",
       "fetchedAt": "2026-08-11"
+    },
+    "11-implicit-wrapping": {
+      "inputSha256": "b1f1103ff58d0117f795f162feacb334341fe9ec4414870f70a213f02c8a6bc6",
+      "finalYamlSha256": "5958c5eda73f1c3368b991a33e6d90c8daef5db9051e68ea372061b4135c6ba8",
+      "fetchedAt": "2026-09-02"
     }
   }
 }

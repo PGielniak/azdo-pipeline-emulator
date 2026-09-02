@@ -49,6 +49,11 @@
       "finalYamlSha256": "c8ef9cc100abe8e7591406c6db5934b00364e88bbce769741e82fa8282ea0e17",
       "stepCount": 7,
       "treeDigest": "c828e056eb71c8b43c69876702d9f2287c105d5bf480c811db8fb71e0335923a"
+    },
+    "11-implicit-wrapping": {
+      "finalYamlSha256": "5958c5eda73f1c3368b991a33e6d90c8daef5db9051e68ea372061b4135c6ba8",
+      "stepCount": 1,
+      "treeDigest": "371f38a85648799c90bd9e69c656c0f9cd4e16a226410fd8588fbbc30a5776e1"
     }
   }
 }

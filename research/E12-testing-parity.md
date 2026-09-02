@@ -276,3 +276,44 @@ is the first data point for E03-S03's `compileTimeVariableScope()` policy, and i
 intuition that compile-time evaluation happens "before" job scoping.
   — fixtures/oracle/04-variable-layers.final.yml:55 vs fixtures/corpus/04-variable-layers/pipeline.yml
     (live preview, checked 2026-08-11)
+
+## E11-S03-T02 — Drift triage runbook
+
+The epic is E11 in the current backlog; this file and its claim IDs keep the pre-renumber `E12`
+spelling, per the epic-ID note in `research/README.md` — IDs are never reused or rewritten.
+
+The Ground field requires that a *service-change* verdict link the Azure DevOps release notes page
+checked for the change. Pinning that page turned out to be the substance of the grounding, because
+the obvious URL is the wrong page and the right one usually says nothing.
+
+[C-E12-025] **`learn.microsoft.com/azure/devops/release-notes/` is the product *roadmap*, not a
+changelog.** The URL canonicalizes to `release-notes/features-timeline`, whose title is "Azure
+DevOps Roadmap" and whose own text describes it as "a peek into our roadmap … features and dates
+are the current plans and are subject to change", with Timeframe columns reading `2026 Q3`, `2026
+Q4`, `Future`. It is forward-looking: an entry there is a plan, not a shipped change, so it can
+neither confirm nor date a drift.
+  — https://learn.microsoft.com/en-us/azure/devops/release-notes/features-timeline
+    (`git_commit_id` `467f8d6362cdfc5348b4a2e2846fbfeb4ba66f48`, `ms.date` 2026-08-05,
+    `updated_at` 2026-08-13, verified 2026-09-03)
+
+[C-E12-026] **The record of what shipped is the per-sprint series
+`release-notes/<year>/sprint-<N>-update`, and it has an `Azure Pipelines` section.** Reachable from
+the "What's New" link (`aka.ms/azuredevops/releasenotes`) at the top of the roadmap page. Sprint 275
+covers `ms.date` 2026-06-17 and carries per-area sections — GitHub Advanced Security, Azure Boards,
+**Azure Pipelines**, Azure Repos — each a list of the sprint's changes with anchors.
+  — https://learn.microsoft.com/en-us/azure/devops/release-notes/2026/sprint-275-update
+    (`git_commit_id` `598e4fec55f6de2a552fe94d6743888a6fdb16fd`, `ms.date` 2026-06-17,
+    `updated_at` 2026-07-10, verified 2026-09-03)
+
+[C-E12-027] **The Pipelines section announces features, not expansion semantics — so its silence
+does not refute a service-change verdict.** Sprint 275's three Pipelines items are: a finer-grained
+comment requirement for PR validation runs from GitHub repositories; a new Azure DevOps service
+connection using Microsoft Entra workload identity, together with `connectionType: 'azureDevOps'`
+on a new `AzureCLI@3`; and Apple Silicon (`macos-26-arm64`) agents in a pay-as-you-go preview.
+Every one is a user-visible capability. **Nothing on the page describes how the preview endpoint
+expands templates, orders keys, or normalizes a document** — the behaviours the corpus pins and the
+nightly watches. The operational consequence, which `research/drift-runbook.md` §3 states as a
+rule: a reproducing drift with no matching release note is an *unannounced* service change, and
+"nothing relevant" is the expected result of the check rather than grounds for closing it. The
+link's value is recording that the check was performed.
+  — same page as C-E12-026, read in full 2026-09-03.

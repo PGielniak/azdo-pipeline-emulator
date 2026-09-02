@@ -238,3 +238,12 @@ stages/010-default/jobs/020-self-hosted-pool-with-demands/steps/020-powershell-o
 stages/010-default/jobs/020-self-hosted-pool-with-demands/steps/030-powershell-task.sh
 stages/010-default/jobs/030-sidecar-service-container/steps/010-cmdline.sh"
 `;
+
+exports[`golden tree over the corpus > scaffolds 11-implicit-wrapping 1`] = `
+"stages/
+stages/010-default/
+stages/010-default/jobs/010-job/
+stages/010-default/jobs/010-job/steps/
+.gitignore
+stages/010-default/jobs/010-job/steps/010-a-step-with-no-stage-and-no-job-around-it.sh"
+`;

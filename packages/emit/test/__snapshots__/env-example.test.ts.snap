@@ -357,3 +357,31 @@ ID__U=
 # 6. Service connections and secure files are populated once E08 lands.
 "
 `;
+
+exports[`synthesizeEnvExample > synthesizes every corpus pipeline deterministically 11`] = `
+"# Generated .env.example — copy to .env and fill in values.
+#
+# This is a trusted Bash assignment file: \`NAME=value\`, one per line; names are
+# letters/digits/underscores and cannot begin with a digit (C-E06-014).
+
+# ─────────────────────────────────────────────────────────────────
+# 1. Run identity overrides (optional — simulate a trigger)
+# BUILD_SOURCEBRANCH — e.g. refs/heads/main
+BUILD_SOURCEBRANCH=
+# BUILD_REASON — e.g. refs/heads/main
+BUILD_REASON=
+# SYSTEM_PULLREQUEST_SOURCEBRANCH — e.g. refs/heads/main
+SYSTEM_PULLREQUEST_SOURCEBRANCH=
+# SYSTEM_PULLREQUEST_TARGETBRANCH — e.g. refs/heads/main
+SYSTEM_PULLREQUEST_TARGETBRANCH=
+
+# ─────────────────────────────────────────────────────────────────
+# 2. SYSTEM_ACCESSTOKEN — needed by steps that call the ADO REST API or package feeds
+# Mint an org-scoped PAT, or use device-code OAuth against the Entra resource
+# 499b84ac-1321-427f-aa17-267ca6975798 (C-E00-011).
+SYSTEM_ACCESSTOKEN=
+
+# ─────────────────────────────────────────────────────────────────
+# 6. Service connections and secure files are populated once E08 lands.
+"
+`;

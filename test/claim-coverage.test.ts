@@ -82,6 +82,29 @@ describe('what the count must not get wrong', () => {
   });
 });
 
+describe('what the scan includes (E11-S03-T02)', () => {
+  it('counts the repo-level meta-tests, which cite claims no package owns', () => {
+    // The runbook tests cite C-E12-025..027 — claims about documentation pages, with no package
+    // to live in. Before this they were invisible to the report and read as permanent gaps.
+    const gaps = new Set(run('--list').stdout.trim().split('\n').filter(Boolean));
+    for (const id of ['C-E12-025', 'C-E12-026', 'C-E12-027']) {
+      expect(gaps.has(id), `${id} is cited by test/drift-runbook.test.ts`).toBe(false);
+    }
+  });
+
+  it('excludes this file, so the report cannot certify itself', () => {
+    // This test names uncovered claim ids as *data*. If the scan counted them, every id mentioned
+    // here would become "covered" by being used as an example of not being covered.
+    const script = readFileSync('scripts/claim-coverage.sh', 'utf8');
+    expect(script).toContain('claim-coverage.test.ts');
+    // The four ids asserted as gaps above are named in this file and must still be reported.
+    const gaps = new Set(run('--list').stdout.trim().split('\n').filter(Boolean));
+    for (const id of ['C-E09-001', 'C-E09-006', 'C-E09-084', 'C-E09-087']) {
+      expect(gaps.has(id), `${id} must stay a gap despite being named here`).toBe(true);
+    }
+  });
+});
+
 describe('the ratchet', () => {
   it('passes at the recorded floor', () => {
     const { status, stdout } = run('--check');

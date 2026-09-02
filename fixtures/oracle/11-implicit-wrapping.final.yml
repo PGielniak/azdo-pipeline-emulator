@@ -1,0 +1,14 @@
+trigger:
+  enabled: false
+pr:
+  enabled: false
+stages:
+- stage: __default
+  jobs:
+  - job: Job
+    steps:
+    - task: CmdLine@2
+      displayName: A step with no stage and no job around it
+      inputs:
+        script: echo implicit-wrapping
+
