@@ -8,3 +8,6 @@ reports/
 !.env.example
 .cache/
 .DS_Store
+
+# E11-S03-T01 — nightly drift report (uploaded as a CI artifact, never committed).
+.drift-report/
