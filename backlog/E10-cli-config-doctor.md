@@ -34,7 +34,7 @@ Primary grounding set: docs/06 (internal spec) · consuming epics' manifests · 
   **Done:** manual walkthrough recorded; non-tty behavior defined & tested.
 
 ## E10-S04 — As a user, `doctor` tells me exactly what my machine is missing for a given generated project. (P3)
-- [ ] **E10-S04-T01 — Doctor engine**
+- [!] **E10-S04-T01 — Doctor engine** *(**The probe table, version comparison, remediation and report are done 2026-09-02 in `packages/cli/src/doctor/probe.ts`, with both Done items met — probe table tests over canned outputs, and a live run of the shipped engine. What is left is the `--json` flag and the CLI wiring that reads `manifest.json` `tools[]`, which belongs with `program.ts` and E10-S04-T02's `ToolRequirement` contract.** `runDoctor` already takes exactly that array, so the wiring is a call site, not a design. **Scope note (C-E10-006):** `az` and `docker` probes are confirmed against live installations; `kubectl`/`helm`/`pwsh` are doc-grounded only, because they are not installed here.)*
   **Do:** read `manifest.json` `tools[]`; probe PATH + versions (per-tool version-command table), compare semver ranges; remediation strings (install hints per OS); `--json`.
   **Ground:** each probe command cited from the tool's official docs (`az version`, `docker version --format`, `helm version --template`, `kubectl version --client -o json`, `pwsh -v` — pin each vendor page).
   **Done:** probe table tests with canned outputs; fixture manifest → doctor snapshot.
