@@ -387,6 +387,57 @@ describe('request', () => {
     expect(rest.owedDelayMs).toBe(0);
   });
 
+  it('requestBinary shares the auth, throttle and error path (E09-S03-T05)', async () => {
+    const zip = Buffer.from([80, 75, 3, 4, 5, 6]);
+    const ok = recorder([new Response(zip, { status: 200, headers: { 'retry-after': '3' } })]);
+    const rest = client({ fetchImpl: ok.fetchImpl, sleep: ok.sleep });
+    const result = await rest.requestBinary({
+      path: 'distributedtask/tasks/x/1.0.0',
+      area: 'distributedtask',
+    });
+
+    expect(result.status).toBe(200);
+    expect([...result.bytes]).toEqual([...zip]);
+    expect(
+      ((ok.calls[0]?.init.headers as Record<string, string>).Authorization ?? '').startsWith(
+        'Basic ',
+      ),
+    ).toBe(true);
+    // A redirect must be followed here: the bytes may live behind one.
+    expect(ok.calls[0]?.init.redirect).toBe('follow');
+    // Same Retry-After debt as the JSON path (C-E09-064).
+    expect(rest.owedDelayMs).toBe(3000);
+
+    const missing = recorder([
+      json(404, {
+        message: 'No task definition found',
+        typeKey: 'TaskDefinitionNotFoundException',
+      }),
+    ]);
+    const failure = (await client({ fetchImpl: missing.fetchImpl, sleep: missing.sleep })
+      .requestBinary({ path: 'distributedtask/tasks/x/9.9.9', area: 'distributedtask' })
+      .catch((caught: unknown) => caught)) as RestError;
+    // The failure body is JSON even though the success body is not.
+    expect(failure.typeKey).toBe('TaskDefinitionNotFoundException');
+    expect(failure.message).not.toContain(PAT.token);
+
+    const broken = recorder([new Error('ECONNRESET')]);
+    await expect(
+      client({ fetchImpl: broken.fetchImpl, sleep: broken.sleep }).requestBinary({
+        path: 'distributedtask/tasks/x/1.0.0',
+        area: 'distributedtask',
+      }),
+    ).rejects.toThrow(/request to .* failed/);
+
+    const html = recorder([new Response('<html>', { status: 500 })]);
+    await expect(
+      client({ fetchImpl: html.fetchImpl, sleep: html.sleep }).requestBinary({
+        path: 'distributedtask/tasks/x/1.0.0',
+        area: 'distributedtask',
+      }),
+    ).rejects.toThrow('returned HTTP 500');
+  });
+
   it('does not follow redirects automatically', async () => {
     const { calls, fetchImpl, sleep } = recorder([json(200, {})]);
     await client({ fetchImpl, sleep }).request({ path: 'git/refs', area: 'git' });

@@ -673,3 +673,54 @@ rather than carried and filtered later, which is what makes "never persisted" ch
 that asserts the plaintext value appears in no output, including `JSON.stringify` of the whole
 result.
   — project policy (CLAUDE.md rule 4; docs/05 §1 decision 2026-07-30); no source claims otherwise
+
+---
+
+## E09-S03-T05 — installed task metadata (`C-E09-085..089`)
+
+Recorded 2026-09-02. This endpoint's reference page is thin, so — as the task's **Ground** field
+directs — the route, api-version and payload shape are **experiment-backed**, with the agent as the
+code reference for how a task is addressed and cached. Transcript:
+`research/experiments/E09-rest/task-metadata/real-run.md`.
+
+[C-E09-085] **`GET {org}/_apis/distributedtask/tasks?api-version=7.1` is organization-scoped and
+returns the *full* task definition for every installed version — 269 entries over 172 distinct names
+in the test organization.** Each entry carries what a `task.json` carries: `id, name, version,
+inputs, execution, instanceNameFormat, runsOn, demands, groups, outputVariables, …`. **Consequence:**
+metadata needs **no** second download; only real-task *execution* needs the zip.
+  — `research/experiments/E09-rest/task-metadata/real-run.md` (experiment-backed, 2026-09-02)
+
+[C-E09-086] **`version` is an object, not a string: `{major, minor, patch, isTest}`.** So a YAML
+`replacetokens@6` is matched on `version.major`, and a naive string comparison against `"6"` never
+matches anything. Measured on `CmdLine`: `{major: 1, minor: 1, patch: 3, isTest: false}` and
+`{major: 2, minor: 279, patch: 0, isTest: false}`.
+  — same transcript
+
+[C-E09-087] **One task `id` spans every major, and no two entries share a major.** `CmdLine`'s two
+entries and `replacetokens`' five all carry a single GUID each (`d9bafed4-…` and `a8515ec8-…`), and
+across all 269 entries **zero** names have two entries with the same major. So `name@major` selects
+exactly one definition, and the GUID is *not* a version discriminator. The list is **not ordered** —
+`replacetokens` came back as majors `[3, 4, 6, 7, 5]` — so "latest" must be computed, never taken as
+the last element.
+  — same transcript
+
+[C-E09-088] **The task zip is `GET {org}/_apis/distributedtask/tasks/{id}/{major.minor.patch}` and
+needs the *exact* three-part version.** Measured: `.../a8515ec8-…/6.3.1` returned **200**,
+`application/zip; api-version=7.1`, 700,058 bytes with PK magic; `.../6.4.0` — a version that does
+not exist — returned **404** with `typeKey` `TaskDefinitionNotFoundException` and the misleading
+message *"No task definition found matching ID … and version 6.4.0. You must register the task
+definition before uploading the package."* **Consequence:** a download cannot be issued from
+`name@major` alone; the list call must supply the exact version first. This matches the agent, which
+calls `GetTaskContentZipAsync(task.Id, version)` with a resolved `TaskVersion`.
+  — same transcript, and
+    https://github.com/microsoft/azure-pipelines-agent/blob/018456432195aff4c59112f93426620891703dd5/src/Agent.Worker/TaskManager.cs
+    (commit-pinned official source; `DownloadAsync` L209-245, `GetDirectory` L469-478; checked 2026-09-02)
+
+[C-E09-089] **A marketplace task is distinguished by `contributionIdentifier`; an in-box task has
+`serverOwned: true` instead.** The test organization has exactly one marketplace extension installed
+— `replacetokens`, `contributionIdentifier` `qetza.replacetokens.replacetokens-task`, five majors
+3–7 — and it is the fixture this task's Done criterion uses. In-box tasks such as `CmdLine` report
+`serverOwned: true` and a null `contributionIdentifier`. The agent lays its own cache out as
+`<tasks>/<name>_<id>/<version>` (`GetDirectory`), which is the layout docs/05 §4's
+`tasks/<TaskName>@<version>/` mirrors.
+  — same transcript and pinned source as C-E09-088
