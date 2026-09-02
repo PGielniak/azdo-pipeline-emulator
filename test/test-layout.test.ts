@@ -101,6 +101,21 @@ describe('vitest projects', () => {
   });
 });
 
+describe('package sources stay free of `.ts` import paths', () => {
+  // `packages/emit/tsconfig.json` enables `allowImportingTsExtensions` so its *tests* can consume
+  // the corpus catalogue from `scripts/` (E11-S02-T02). That flag cannot be scoped to a directory,
+  // so this is what keeps it out of the shipped surface: a `.ts` specifier in `src` would survive
+  // typecheck and then fail at run time, because the published bundle has no `.ts` beside it.
+  it('imports no `.ts` specifier from any packages/*/src file', () => {
+    const sources = packageFiles.filter((file) => /^packages\/[^/]+\/src\/.*\.ts$/.test(file));
+    expect(sources.length).toBeGreaterThan(0);
+    for (const file of sources) {
+      const text = readFileSync(join(repoRoot, file), 'utf8');
+      expect(text, file).not.toMatch(/from '[^']*\.ts'/);
+    }
+  });
+});
+
 describe('coverage thresholds', () => {
   it('has one glob per TypeScript package', () => {
     expect(thresholdGlobs.sort()).toEqual(
