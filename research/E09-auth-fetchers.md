@@ -507,3 +507,65 @@ an error, so the rule is local policy: the client never places an `Authorization
 bearer token into a message, and it strips credential-bearing query parameters from any URL it
 echoes. Recorded here so it is not mistaken for parity.
   — project policy (CLAUDE.md rule 4); no source claims otherwise
+
+---
+
+## E09-S03-T02 — pipeline runs and artifact download (`C-E09-067..073`)
+
+Recorded 2026-09-02. Live transcript: `research/experiments/E09-rest/runs-artifacts/real-run.md`.
+Both REST pages carry `git_commit_id` `cb0d0b30ca71a83e03cc7a7bbd9361e1a432b377`.
+
+[C-E09-067] **The Runs-List endpoint has *no* filter parameters at all.** "Gets top 10000 runs for a
+particular pipeline", and its only URI parameters are `organization`, `project`, `pipelineId` and
+`api-version`. **This contradicts the task's premise of a "runs list w/ branch/tag filter":** there is
+nothing to pass, so branch and tag selection is necessarily **client-side**, over a list capped at
+10,000.
+  — https://learn.microsoft.com/en-us/rest/api/azure/devops/pipelines/runs/list
+    (deep-verified 2026-09-02)
+
+[C-E09-068] **The list response omits the very field a branch filter needs.** The `Run` definition
+documents `resources` (a `RunResources` carrying `repositories.<alias>.refName`), but a live list
+item's keys are exactly `_links, createdDate, finishedDate, id, name, pipeline, result, state,
+templateParameters, url` — **no `resources`**. Runs-**Get** for the same run returns
+`resources.repositories.self.refName = "refs/heads/main"` plus `version` and
+`repository.type = "azureReposGit"`. **Consequence:** filtering by branch costs one extra request per
+candidate run, so the client filters newest-first and stops at the first match rather than expanding
+the whole list.
+  — `research/experiments/E09-rest/runs-artifacts/real-run.md` (live measurement, 2026-09-02)
+
+[C-E09-069] **Runs-Get also returns `tags` and `yamlDetails`, neither of which the `Run` definition
+lists.** Observed on a real run alongside the documented fields. `tags` is what a `resources.pipelines`
+`tags:` filter needs, so the tag arm reads a field the reference page does not mention — recorded
+because a future reader will otherwise look for it in the docs and not find it.
+  — same transcript as C-E09-068
+
+[C-E09-070] **`$expand=signedContent` is the only expansion, and what it returns is a *limited-time
+anonymous* URL.** `GetArtifactExpandOptions` is exactly `none | signedContent` ("Default is None"),
+and `SignedUrl` is documented as "A signed url allowing **limited-time anonymous access** to private
+resources", with fields `url` and `signatureExpires` ("Timestamp when access expires").
+  — https://learn.microsoft.com/en-us/rest/api/azure/devops/pipelines/artifacts/get
+    (deep-verified 2026-09-02)
+
+[C-E09-071] **Two consequences of "limited-time anonymous" that shape the code.** First, the download
+must **not** carry our `Authorization` header: the URL grants access on its own, exactly as GitHub's
+tarball storage URL does (C-E09-015/017), and forwarding a credential to a storage origin is
+gratuitous. Second, `signatureExpires` means **the signed URL is not lockfile material** — pinning it
+would pin something that expires. The lockfile pins `runId` and the artifact *name*, and the URL is
+re-fetched on every download, which is what docs/05 §4's `pipelines.<alias>.{runId, artifacts}` shape
+already assumes.
+  — page as C-E09-070; storage-origin rule shared with C-E09-015/017
+
+[C-E09-072] **A missing artifact is a clean 404, not an empty success.** Requesting
+`artifactName=drop` on a real run without one returned HTTP 404 with `typeKey`
+`ArtifactNotFoundException` and message `An Artifact with name "drop" was not found.` So "no such
+artifact" is distinguishable from "the run has no artifacts yet" without guesswork.
+  — same transcript as C-E09-068
+
+[C-E09-073] **Scope note — the download half is not live-verified, and cannot be here.** The test
+organization has **13 pipelines and 29 completed runs, and not one of them published an artifact**:
+every oracle experiment to date used `previewRun: true`, which never produces one. Producing a fixture
+means queueing a real build in a personal organization — an outward-facing write that was not taken
+unilaterally. Everything up to and including the artifact *metadata* call is measured; the signed-URL
+download and the `.cache/artifacts/` write are covered by unit tests only. **To close it:** run a
+pipeline containing a `PublishBuildArtifacts`/`PublishPipelineArtifact` step once, then re-run the
+transcript's §4.

@@ -139,9 +139,16 @@ export function readZipEntries(zip: Buffer): ArchiveEntry[] {
 }
 
 /**
- * C-E09-050/051: the tarball prefixes everything with `<owner>-<repo>-<short sha>/` and the zip
- * prefixes nothing. Deriving the prefix — rather than computing it from the pinned sha, which is
- * abbreviated in the archive and would never match — handles both with one rule.
+ * The wrapper directory a GitHub tarball puts around everything (C-E09-050).
+ *
+ * Derived rather than computed: the archive abbreviates the sha the resolver pinned, so
+ * `<owner>-<repo>-<pinned sha>/` would never match.
+ *
+ * **Only ever applied to a tarball.** Applying it to a zip is wrong, and that was a real bug caught
+ * by E09-S03-T02: a zip whose entries all live under one directory — an artifact laid out as
+ * `app/build.txt`, say — shares a first component *by content*, not because anything wrapped it, so
+ * stripping it silently loses a directory level. C-E09-051 measured the ADO zip as having no
+ * wrapper at all, so `extractArchive` decides per format instead of guessing from the names.
  */
 export function commonPrefix(paths: readonly string[]): string {
   if (paths.length === 0) return '';
@@ -174,12 +181,18 @@ export interface ExtractionResult {
   readonly rejected: readonly string[];
 }
 
-/** Unpack already-parsed entries into `targetDir`, stripping a shared leading component. */
+/**
+ * Unpack already-parsed entries into `targetDir`.
+ *
+ * `stripWrapper` decides whether a shared leading component is a wrapper to remove (a tarball) or
+ * part of the tree (a zip) — see `commonPrefix`.
+ */
 export async function writeEntries(
   targetDir: string,
   entries: readonly ArchiveEntry[],
+  stripWrapper = true,
 ): Promise<ExtractionResult> {
-  const prefix = commonPrefix(entries.map((entry) => entry.path));
+  const prefix = stripWrapper ? commonPrefix(entries.map((entry) => entry.path)) : '';
   const rejected: string[] = [];
   let files = 0;
 
@@ -207,5 +220,6 @@ export async function extractArchive(
   entryDir: string,
 ): Promise<ExtractionResult> {
   const entries = format === 'zip' ? readZipEntries(archive) : readTarEntries(gunzipSync(archive));
-  return writeEntries(join(entryDir, EXTRACTED_TREE_DIR), entries);
+  // C-E09-050/051: only the tarball carries a wrapper directory.
+  return writeEntries(join(entryDir, EXTRACTED_TREE_DIR), entries, format === 'tar.gz');
 }

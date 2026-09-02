@@ -237,6 +237,24 @@ describe('extractArchive', () => {
     );
   });
 
+  it('never strips a shared directory out of a zip, even when every entry has one', async () => {
+    // Regression from E09-S03-T02: an artifact laid out as `app/build.txt` shares a first
+    // component by *content*, not because anything wrapped it. C-E09-051 measured the ADO zip as
+    // having no wrapper, so the zip path must never strip — losing a directory level here would
+    // silently relocate every file in the artifact.
+    const entry = await scratch();
+    const result = await extractArchive(
+      zipOf([{ name: 'app/build.txt', body: 'one file, one directory\n' }]),
+      'zip',
+      entry,
+    );
+
+    expect(result.strippedPrefix).toBe('');
+    await expect(readFile(join(result.dir, 'app', 'build.txt'), 'utf8')).resolves.toBe(
+      'one file, one directory\n',
+    );
+  });
+
   it('rejects a traversing entry instead of writing it (C-E09-054)', async () => {
     const entry = await scratch();
     const result = await extractArchive(
