@@ -724,3 +724,41 @@ calls `GetTaskContentZipAsync(task.Id, version)` with a resolved `TaskVersion`.
 `<tasks>/<name>_<id>/<version>` (`GetDirectory`), which is the layout docs/05 §4's
 `tasks/<TaskName>@<version>/` mirrors.
   — same transcript and pinned source as C-E09-088
+
+---
+
+## E09-S03-T07 — org schema caching and refresh (`C-E09-090..092`)
+
+Recorded 2026-09-02. The endpoint's *behavior* was grounded by E01-S02-T03 (C-E01-029/033..036) and
+is not re-derived; this task owns the caching and refresh policy, and re-took a live sample as the
+Ground field requires. Transcript: `research/experiments/E09-rest/yamlschema/real-run.md`.
+
+[C-E09-090] **The body's instability is *intermittent*, which makes a hash no more usable than if it
+were constant.** C-E01-034 recorded three fetches inside ten minutes differing (the
+`definitions.task.anyOf` alternatives reorder). Re-measured 2026-09-02: two consecutive fetches were
+**byte-identical**, sha256 `2c3f6556…` both times, 611,234 bytes each. That does not retract
+C-E01-034 — it sharpens it. A body that *sometimes* reorders is exactly as unusable for
+change-detection as one that always does, because a differing hash cannot be told from a reorder and
+a matching hash proves only that this pair of calls happened to agree. The cache therefore expires
+**by age**, never by digest.
+  — `research/experiments/E09-rest/yamlschema/real-run.md` (live measurement, 2026-09-02)
+
+[C-E09-091] **The document changed without changing length or `$comment` — the cleanest possible
+demonstration that neither is a freshness signal.** The live document and the snapshot committed at
+`research/experiments/E01-orgschema/yamlschema.json` are **both exactly 611,234 bytes** and both
+report `$comment: "v1.183.0"`, yet their sha256 digests differ: `2c3f6556…` today against
+`ffd81760…` for the stored copy. Identical size, identical version marker, different bytes — which
+is the `definitions.task.anyOf` reordering of C-E01-034 seen across weeks rather than minutes.
+**Consequence:** neither `$comment` (C-E01-035) nor a length check nor a digest can decide whether a
+cached schema is current, which is why age is the only workable expiry.
+  — same transcript; the committed E01 snapshot is the second data point
+
+[C-E09-092] **The cache policy is ours, and it is age plus an explicit override.** No source
+prescribes one — the service exposes no version to bust on (C-E01-035) — so: a cached
+`schema/yamlschema-<org>.json` is used while it is younger than a TTL, `--refresh` forces a re-fetch
+regardless of age, and a fetch failure over a cache entry that is merely *stale* falls back to that
+entry with a warning rather than failing the convert. The last part is the deliberate one: a
+validation schema that is a few days old is far better than a conversion that will not run, and the
+consumer (`resolvePipelineSchema`) already degrades to the vendored schema when the document is
+unusable.
+  — project policy, following docs/05 §4's "Expire by age and let `--refresh` force a re-fetch"
