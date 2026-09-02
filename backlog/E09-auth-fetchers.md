@@ -55,7 +55,7 @@ Acceptance: alias resolution + repo snapshot fetch with SHA pinning, per docs/05
 ## E09-S03 — As a pipeline developer, artifacts, variable-group names and task metadata are fetched and pinned, so re-conversion is reproducible offline.
 Acceptance: endpoints wrapped + lockfile discipline per docs/05 §4.
 
-- [ ] **E09-S03-T01 — Typed ADO REST client core**
+- [x] **E09-S03-T01 — Typed ADO REST client core**
   **Do:** fetch wrapper: base URLs, api-version pinning module (single table), retry/backoff, error surfacing, **redaction middleware** (no tokens in errors/logs).
   **Ground:** REST versioning doc (…/rest/api/azure/devops/ versioning section — quote api-version negotiation rules).
   **Done:** unit tests incl. redaction proof; version table cites pages.

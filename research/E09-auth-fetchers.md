@@ -441,3 +441,69 @@ target directory — absolute paths, `..` traversal, and anything reached throug
 local hardening (classic zip-slip), recorded here so it is not mistaken for parity with a service
 behavior.
   — project policy; no source claims otherwise
+
+---
+
+## E09-S03-T01 — the typed ADO REST client core (`C-E09-060..066`)
+
+Recorded 2026-09-02. Live transcript: `research/experiments/E09-rest/client-core/real-run.md`.
+
+[C-E09-060] **"API version **must** be specified with every request", and versions are formatted
+`{major}.{minor}[-{stage}[.{resource-version}]]`.** The page also fixes the preview lifecycle: "After
+an API is released (`1.0`, for example), its preview version (`1.0-preview`) is deprecated and can be
+deactivated after 12 weeks… Once a preview API is deactivated, requests that specify a `-preview`
+version get rejected." A version may be given as a query parameter *or* in the header
+`Accept: application/json;api-version=1.0`.
+  — https://learn.microsoft.com/en-us/azure/devops/integrate/concepts/rest-api-versioning
+    (deep-verified 2026-09-02; `git_commit_id` `b7e60d58ebef4428b3048b7c164bf22cdd02fbbd`,
+    `ms.date` 2025-04-10)
+
+[C-E09-061] **The "must" is a contract, not an enforcement: omitting `api-version` silently
+succeeds against a server-chosen version.** Measured — `GET …/_apis/git/repositories` with **no**
+`api-version` returned **200**, and the response announced the version the server picked in its own
+`Content-Type`: `application/json; charset=utf-8; api-version=7.1`. **Consequence:** an omission is
+not a loud failure but a silent floating dependency that moves when the server does, so the client
+pins a version on every request and never relies on the default.
+  — `research/experiments/E09-rest/client-core/real-run.md` (live measurement, 2026-09-02)
+
+[C-E09-062] **The negotiated version is echoed in the response `Content-Type`, which makes the pin
+verifiable rather than merely asserted.** The same request with an explicit pin returns the pinned
+version in that parameter. The client parses it and surfaces it on every response, so a server that
+quietly serves something other than what was asked for is observable instead of invisible.
+  — same transcript as C-E09-061
+
+[C-E09-063] **An out-of-range version is a 400 that names the server's ceiling.** `api-version=99.0`
+returned HTTP 400 with
+`"The requested REST API version of 99.0 is out of range for this server. The latest REST API version
+this server supports is 7.2."` and `typeName` `Microsoft.VisualStudio.Services.WebApi.VssVersionOutOfRangeException`.
+Two things follow: the failure is diagnosable without guesswork, and the test organization's ceiling
+today is **7.2** — above the 7.1 this project pins, so the pin is conservative rather than stale.
+  — same transcript as C-E09-061
+
+[C-E09-064] **`Retry-After` arrives on a *successful* response, not only on an error.** Verbatim:
+"Honor the Retry-After header: If you receive it in a response, wait the specified time before
+sending another request. **The response still returns HTTP 200, so retry logic isn't required.**"
+This inverts the usual assumption: a client that inspects `Retry-After` only on 429/503 misses the
+throttling signal entirely and keeps hammering a service that just asked it to slow down. The client
+therefore reads `Retry-After` on **every** response and delays the *next* request accordingly.
+  — https://learn.microsoft.com/en-us/azure/devops/integrate/concepts/rate-limits
+    (deep-verified 2026-09-02; `git_commit_id` `3e3ebeebf68fa2c6bfce11f79680994c5a25690c`,
+    `ms.date` 2025-09-15)
+
+[C-E09-065] **Blocking — as opposed to delaying — is HTTP 429 with a `TF400733` message, and the
+rate-limit headers are advisory.** "When an individual user's requests are blocked, the user receives
+responses with HTTP code 429 (too many requests) and a message similar to the following:
+`TF400733: The request has been canceled: Request was blocked due to exceeding usage of resource
+<resource name> in namespace <namespace ID>.`" The documented headers are `Retry-After`,
+`X-RateLimit-Resource`, `X-RateLimit-Delay`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`,
+`X-RateLimit-Reset` and `X-RateLimit-Cost`; the page qualifies them with "If available" and warns
+that `X-RateLimit-Resource` is for display, "not relying on it for computation". **Measured: none of
+them are present on an ordinary 200** from the test organization, so every one is optional and the
+client must behave correctly when all are absent.
+  — page as C-E09-064; absence measured in the transcript for C-E09-061
+
+[C-E09-066] **Redaction is ours, not a documented behavior.** No source says what a client may put in
+an error, so the rule is local policy: the client never places an `Authorization` value, a PAT, or a
+bearer token into a message, and it strips credential-bearing query parameters from any URL it
+echoes. Recorded here so it is not mistaken for parity.
+  — project policy (CLAUDE.md rule 4); no source claims otherwise

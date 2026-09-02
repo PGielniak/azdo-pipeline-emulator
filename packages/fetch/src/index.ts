@@ -191,3 +191,20 @@ export {
   type ArchiveFormat,
   type ExtractionResult,
 } from './repo/extract.js';
+
+export {
+  API_VERSIONS,
+  OBSERVED_SERVER_MAX_API_VERSION,
+  AzureDevOpsClient,
+  RestError,
+  negotiatedApiVersion,
+  rateLimitOf,
+  redactUrl,
+  type ApiArea,
+  type RateLimitSignals,
+  type RestFetch,
+  type RestRequest,
+  type RestResponse,
+  type RestClientOptions,
+  type Sleeper,
+} from './rest/client.js';
