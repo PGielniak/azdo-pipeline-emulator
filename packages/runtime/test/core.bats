@@ -3287,3 +3287,130 @@ EOF
   [[ "$output" == *'run convert without --frozen once'* ]]
   [[ "$output" == *'handlers/Nowhere@9'* ]]
 }
+
+# --- E08-S01-T02: azdo_sc_login ----------------------------------------------------------------
+
+mock_az() {
+  # $1 dir  $2 body — a stub `az` on PATH that records its argv.
+  mkdir -p "$1"
+  {
+    printf '#!/usr/bin/env bash\n'
+    printf 'printf "%%s\\\\n" "$*" >>"%s/az.log"\n' "$1"
+    printf '%s\n' "$2"
+  } >"$1/az"
+  chmod +x "$1/az"
+  PATH="$1:$PATH"
+  export PATH
+}
+
+@test "ambient mode probes the existing session and does not log in (C-E08-005)" {
+  local dir="$BATS_TEST_TMPDIR/bin"
+  mock_az "$dir" 'exit 0'
+  ENDPOINT_DATA_azure_SUBSCRIPTIONID='sub-1'
+  export ENDPOINT_DATA_azure_SUBSCRIPTIONID
+
+  run -0 azdo_sc_login 'azure'
+  # A probe plus a subscription selection — never a login.
+  grep -q '^account show$' "$dir/az.log"
+  grep -q '^account set --subscription sub-1$' "$dir/az.log"
+  ! grep -q 'login' "$dir/az.log"
+}
+
+@test "ambient mode says what to do when there is no session" {
+  local dir="$BATS_TEST_TMPDIR/bin"
+  mock_az "$dir" '[[ "$1" == account && "$2" == show ]] && exit 1; exit 0'
+
+  run -1 azdo_sc_login 'azure'
+  [[ "$output" == *"ambient mode but 'az account show' failed"* ]]
+  # Both escape hatches, not just one.
+  [[ "$output" == *"Run 'az login'"* ]]
+  [[ "$output" == *'sp mode'* ]]
+}
+
+@test "sp mode passes the secret with the = form (C-E08-008)" {
+  local dir="$BATS_TEST_TMPDIR/bin"
+  mock_az "$dir" 'exit 0'
+  AZDO_SC_AZURE_MODE=sp
+  ENDPOINT_AUTH_PARAMETER_azure_SERVICEPRINCIPALID='app-id'
+  ENDPOINT_AUTH_PARAMETER_azure_TENANTID='tenant-id'
+  # A secret starting with `-` is the case the = form exists for.
+  ENDPOINT_AUTH_PARAMETER_azure_SERVICEPRINCIPALKEY='-leading-dash'
+  ENDPOINT_DATA_azure_SUBSCRIPTIONID='sub-1'
+  export AZDO_SC_AZURE_MODE ENDPOINT_AUTH_PARAMETER_azure_SERVICEPRINCIPALID \
+    ENDPOINT_AUTH_PARAMETER_azure_TENANTID ENDPOINT_AUTH_PARAMETER_azure_SERVICEPRINCIPALKEY \
+    ENDPOINT_DATA_azure_SUBSCRIPTIONID
+
+  run -0 azdo_sc_login 'azure'
+  grep -q -- '--password=-leading-dash' "$dir/az.log"
+  grep -q -- '--service-principal --username app-id --tenant tenant-id' "$dir/az.log"
+  # C-E08-010: login first, subscription after.
+  [[ "$(head -1 "$dir/az.log")" == login* ]]
+  [[ "$(tail -1 "$dir/az.log")" == 'account set --subscription sub-1' ]]
+}
+
+@test "sp mode with a certificate uses --certificate, not --password (C-E08-007)" {
+  local dir="$BATS_TEST_TMPDIR/bin"
+  mock_az "$dir" 'exit 0'
+  AZDO_SC_AZURE_MODE=sp
+  ENDPOINT_AUTH_PARAMETER_azure_SERVICEPRINCIPALID='app-id'
+  ENDPOINT_AUTH_PARAMETER_azure_TENANTID='tenant-id'
+  ENDPOINT_AUTH_PARAMETER_azure_AUTHENTICATIONTYPE='spnCertificate'
+  ENDPOINT_AUTH_PARAMETER_azure_SERVICEPRINCIPALCERTIFICATE='-----BEGIN PRIVATE KEY-----'
+  export AZDO_SC_AZURE_MODE ENDPOINT_AUTH_PARAMETER_azure_SERVICEPRINCIPALID \
+    ENDPOINT_AUTH_PARAMETER_azure_TENANTID ENDPOINT_AUTH_PARAMETER_azure_AUTHENTICATIONTYPE \
+    ENDPOINT_AUTH_PARAMETER_azure_SERVICEPRINCIPALCERTIFICATE
+
+  run -0 azdo_sc_login 'azure'
+  grep -q -- '--certificate' "$dir/az.log"
+  ! grep -q -- '--password' "$dir/az.log"
+  # The PEM is written to a temp file and removed again — it must not survive the login.
+  ! grep -q 'BEGIN PRIVATE KEY' "$dir/az.log"
+}
+
+@test "a tenant with no subscription gets --allow-no-subscriptions (C-E08-009)" {
+  local dir="$BATS_TEST_TMPDIR/bin"
+  mock_az "$dir" 'exit 0'
+  AZDO_SC_AZURE_MODE=sp
+  ENDPOINT_AUTH_PARAMETER_azure_SERVICEPRINCIPALID='app-id'
+  ENDPOINT_AUTH_PARAMETER_azure_TENANTID='tenant-id'
+  ENDPOINT_AUTH_PARAMETER_azure_SERVICEPRINCIPALKEY='s'
+  export AZDO_SC_AZURE_MODE ENDPOINT_AUTH_PARAMETER_azure_SERVICEPRINCIPALID \
+    ENDPOINT_AUTH_PARAMETER_azure_TENANTID ENDPOINT_AUTH_PARAMETER_azure_SERVICEPRINCIPALKEY
+
+  run -0 azdo_sc_login 'azure'
+  # An empty subscription is a legitimate configuration, not a missing field.
+  grep -q -- '--allow-no-subscriptions' "$dir/az.log"
+  ! grep -q 'account set' "$dir/az.log"
+}
+
+@test "sp mode names the exact .env keys when the credential is incomplete" {
+  local dir="$BATS_TEST_TMPDIR/bin"
+  mock_az "$dir" 'exit 0'
+  AZDO_SC_AZURE_MODE=sp
+  export AZDO_SC_AZURE_MODE
+
+  run -1 azdo_sc_login 'azure'
+  [[ "$output" == *'ENDPOINT_AUTH_PARAMETER_azure_SERVICEPRINCIPALID'* ]]
+  [[ "$output" == *'_TENANTID'* ]]
+}
+
+@test "azdo_sc_login rejects an unknown mode and an unknown kind" {
+  AZDO_SC_AZURE_MODE=weird
+  export AZDO_SC_AZURE_MODE
+  run -2 azdo_sc_login 'azure'
+  [[ "$output" == *"unknown mode 'weird'"* ]]
+
+  unset AZDO_SC_AZURE_MODE
+  run -1 azdo_sc_login 'azure' 'kubernetes'
+  [[ "$output" == *'no login implemented for connection kind kubernetes'* ]]
+}
+
+@test "the mode variable folds the connection name the way variables do (C-E06-008)" {
+  local dir="$BATS_TEST_TMPDIR/bin"
+  mock_az "$dir" 'exit 0'
+  # `my.prod sub` -> AZDO_SC_MY_PROD_SUB_MODE, the same transform every other name uses.
+  AZDO_SC_MY_PROD_SUB_MODE=sp
+  export AZDO_SC_MY_PROD_SUB_MODE
+  run -1 azdo_sc_login 'my.prod sub'
+  [[ "$output" == *'has no client id or tenant'* ]]
+}

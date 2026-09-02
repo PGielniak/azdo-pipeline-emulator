@@ -4491,3 +4491,128 @@ azdo__user_handler() {
   done
   return 1
 }
+
+# azdo_sc_login <connection-name> [kind] — sign in for a service connection (E08-S01-T02).
+#
+# `kind` defaults to `azure`; it exists so the same entry point can grow docker/kubernetes arms
+# without every handler learning a new function name (docs/03 §5).
+#
+# Mode comes from `AZDO_SC_<NAME>_MODE` and defaults to `ambient` — a developer converting their own
+# pipeline is usually already signed in, and asking for a service principal they do not have is the
+# emulator inventing work (C-E08-005). Credentials, when the mode is `sp`, are read under the
+# **task-lib endpoint names** (C-E08-001), so the same `.env` serves this helper and any real task
+# that reads the connection itself.
+#
+# Order mirrors `AzureCLIV2` (C-E08-010): authenticate, *then* select the subscription. Selecting
+# first fails with a message about the subscription rather than about the login, which sends the
+# reader after the wrong problem.
+azdo_sc_login() {
+  (($# >= 1 && $# <= 2)) || {
+    printf '%s\n' 'usage: azdo_sc_login <connection-name> [kind]' >&2
+    return 2
+  }
+  local name="$1" kind="${2:-azure}" mode_var mode
+  azdo__env_name "$name" mode_var || return
+  mode_var="AZDO_SC_${mode_var}_MODE"
+  mode="${!mode_var:-ambient}"
+
+  case "$kind" in
+    azure) azdo__sc_login_azure "$name" "$mode" ;;
+    *)
+      printf 'azdo_sc_login: no login implemented for connection kind %s\n' "$kind" >&2
+      printf '%s\n' '  Write a handler for the step, or sign in yourself before running.' >&2
+      return 1
+      ;;
+  esac
+}
+
+azdo__sc_login_azure() {
+  local name="$1" mode="$2"
+  local subscription client tenant secret certificate auth_type
+
+  subscription="$(azdo__sc_endpoint_data "$name" SUBSCRIPTIONID)"
+
+  if [[ "$mode" == ambient ]]; then
+    # A no-op probe, not a login: the point of ambient mode is to use the session that already
+    # exists, so the only useful thing to do is check there is one and say so if not.
+    if ! az account show >/dev/null 2>&1; then
+      printf "azdo_sc_login: connection '%s' is in ambient mode but 'az account show' failed\\n" "$name" >&2
+      printf '%s\n' "  Run 'az login', or set the connection to sp mode and fill in its .env keys." >&2
+      return 1
+    fi
+    azdo__sc_select_subscription "$name" "$subscription" || return
+    return 0
+  fi
+
+  [[ "$mode" == sp ]] || {
+    printf "azdo_sc_login: connection '%s' has unknown mode '%s' (expected ambient or sp)\\n" \
+      "$name" "$mode" >&2
+    return 2
+  }
+
+  client="$(azdo__sc_endpoint_auth "$name" SERVICEPRINCIPALID)"
+  tenant="$(azdo__sc_endpoint_auth "$name" TENANTID)"
+  auth_type="$(azdo__sc_endpoint_auth "$name" AUTHENTICATIONTYPE)"
+  [[ -n "$client" && -n "$tenant" ]] || {
+    printf "azdo_sc_login: connection '%s' is in sp mode but has no client id or tenant\\n" "$name" >&2
+    printf '  Fill in ENDPOINT_AUTH_PARAMETER_%s_SERVICEPRINCIPALID and _TENANTID in .env.\n' \
+      "$name" >&2
+    return 1
+  }
+
+  local -a args=(login --service-principal --username "$client" --tenant "$tenant")
+  [[ -n "$subscription" ]] || args+=(--allow-no-subscriptions)
+
+  if [[ "$auth_type" == spnCertificate ]]; then
+    # C-E08-007: `--password` no longer accepts a certificate, so the PEM goes to a file.
+    certificate="$(azdo__sc_endpoint_auth "$name" SERVICEPRINCIPALCERTIFICATE)"
+    [[ -n "$certificate" ]] || {
+      printf "azdo_sc_login: connection '%s' uses spnCertificate but supplied no PEM\\n" "$name" >&2
+      return 1
+    }
+    local pem
+    pem="$(mktemp)" || return
+    chmod 600 "$pem"
+    printf '%s\n' "$certificate" >"$pem"
+    args+=(--certificate "$pem")
+    az "${args[@]}" >/dev/null
+    local status=$?
+    rm -f -- "$pem"
+    ((status == 0)) || return "$status"
+  else
+    secret="$(azdo__sc_endpoint_auth "$name" SERVICEPRINCIPALKEY)"
+    [[ -n "$secret" ]] || {
+      printf "azdo_sc_login: connection '%s' uses spnKey but supplied no secret\\n" "$name" >&2
+      return 1
+    }
+    # C-E08-008: always the `=` form. A secret beginning with `-` is otherwise parsed as a flag,
+    # and `az` reports an authentication error rather than an argument one.
+    args+=("--password=$secret")
+    az "${args[@]}" >/dev/null || return
+  fi
+
+  azdo__sc_select_subscription "$name" "$subscription"
+}
+
+# azdo__sc_select_subscription <name> <subscription> — C-E08-010: after the login, never before.
+azdo__sc_select_subscription() {
+  [[ -n "$2" ]] || return 0
+  az account set --subscription "$2" >/dev/null || {
+    printf "azdo_sc_login: signed in, but could not select subscription '%s' for '%s'\\n" "$2" "$1" >&2
+    return 1
+  }
+}
+
+# azdo__sc_endpoint_auth / _data <name> <KEY> — read a connection field under the task-lib names.
+#
+# C-E08-001: the key is upper-cased and the connection name is used verbatim, so these two helpers
+# are the single place that spelling lives.
+azdo__sc_endpoint_auth() {
+  local __sc_var="ENDPOINT_AUTH_PARAMETER_${1}_${2}"
+  printf '%s' "${!__sc_var-}"
+}
+
+azdo__sc_endpoint_data() {
+  local __sc_var="ENDPOINT_DATA_${1}_${2}"
+  printf '%s' "${!__sc_var-}"
+}

@@ -69,3 +69,45 @@ to `az`/`docker`/`kubectl`, so the default connection mode reuses that ambient s
 credential fields at all. `sp` is the explicit-credential fallback. Recorded so the mode switch is
 not mistaken for a service behavior.
   — project design (docs/03 D, docs/05 §1); no source claims otherwise
+
+---
+
+## E08-S01-T02 — the `azdo_sc_login` runtime helper (`C-E08-006..010`)
+
+Recorded 2026-09-02, before implementation.
+
+[C-E08-006] **`az login --service-principal` takes the app id as `--username`, the secret as
+`--password`, and the tenant as `--tenant`.** Verbatim example:
+`az login --service-principal --username APP_ID --password CLIENT_SECRET --tenant TENANT_ID`.
+  — https://learn.microsoft.com/en-us/cli/azure/reference-index?view=azure-cli-latest#az-login
+    (deep-verified 2026-09-02; `git_commit_id` `8b680860f395c637c57e0feeee26c7d4735b2776`,
+    `ms.date` 2026-08-04)
+
+[C-E08-007] **A certificate is *no longer* passed through `--password`.** The page carries an
+explicit warning: "`--password` no longer accepts a service principal certificate. Use
+`--certificate` to pass a service principal certificate", with the example
+`az login --service-principal --username APP_ID --certificate /path/to/cert.pem --tenant TENANT_ID`.
+**Consequence:** the `spnCertificate` arm of C-E08-004 must write the PEM to a file and pass
+`--certificate`; reusing the secret arm would fail against any current `az`.
+  — same page
+
+[C-E08-008] **A client secret beginning with `-` must be passed as `--password=secret`.** Verbatim:
+"Use --password=secret if the first character of the password is '-'." Without the `=` form the CLI
+parses the value as another flag. **This is the kind of failure that looks like a wrong credential**
+— `az` reports an authentication error, not an argument error — so the helper always uses the `=`
+form rather than only when the value happens to start with a dash.
+  — same page
+
+[C-E08-009] **`--allow-no-subscriptions` exists for tenants without a subscription:** "Support
+accessing tenants without subscriptions. It's useful to run tenant-level commands, such as 'az ad'."
+Recorded because a connection whose `SubscriptionID` is empty is a legitimate configuration, not a
+missing field, and the helper should not demand one.
+  — same page
+
+[C-E08-010] **`AzureCLIV2` logs in and then selects the subscription, in that order**, and exports
+`AZURESUBSCRIPTION_SERVICE_CONNECTION_ID` / `_CLIENT_ID` / `_TENANT_ID` on the federation arm for
+downstream tooling to pick up. Our helper mirrors that order: authenticate, then `az account set`,
+because selecting a subscription before there is a session fails with a message about the
+subscription rather than about the login.
+  — https://github.com/microsoft/azure-pipelines-tasks/blob/093f47b9598eb48af6a972dbc2b223c244b344b9/Tasks/AzureCLIV2/azureclitask.ts
+    (`loginAzureRM` L308-360; checked 2026-09-02)
