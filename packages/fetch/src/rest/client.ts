@@ -318,6 +318,68 @@ export class AzureDevOpsClient {
     );
   }
 
+  /**
+   * Fetch a non-JSON body (a task zip, an artifact) through the same auth, retry and throttling
+   * path as `request`. Added by E09-S03-T05: `request` parses JSON, and a zip is not JSON.
+   */
+  async requestBinary(request: RestRequest): Promise<{ status: number; bytes: Buffer }> {
+    const url = this.url(request);
+    const sleep = this.options.sleep ?? defaultSleep;
+    const fetchImpl = this.options.fetchImpl ?? globalThis.fetch;
+
+    if (this.pendingDelayMs > 0) {
+      const owed = this.pendingDelayMs;
+      this.pendingDelayMs = 0;
+      await sleep(owed);
+    }
+
+    let response: Response;
+    try {
+      response = await fetchImpl(url, {
+        method: request.method ?? 'GET',
+        redirect: 'follow',
+        headers: {
+          Accept: request.accept ?? 'application/octet-stream',
+          Authorization: this.authorization(),
+        },
+      });
+    } catch (error) {
+      throw new RestError(`request to ${redactUrl(url)} failed`, {
+        url: redactUrl(url),
+        cause: error,
+      });
+    }
+
+    const rateLimit = rateLimitOf(response);
+    if (rateLimit.retryAfterSeconds !== undefined) {
+      this.pendingDelayMs = this.cap(rateLimit.retryAfterSeconds * 1000);
+    }
+
+    if (!response.ok) {
+      // The failure body is JSON even when the success body is not, so the service's own message
+      // still reaches the caller.
+      const text = await response.text();
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text) as unknown;
+      } catch {
+        parsed = undefined;
+      }
+      const { message, typeKey } = serviceError(parsed);
+      throw new RestError(
+        `GET ${redactUrl(url)} returned HTTP ${response.status}` +
+          (message === undefined ? '' : `: ${message}`),
+        {
+          status: response.status,
+          url: redactUrl(url),
+          ...(message === undefined ? {} : { serviceMessage: message }),
+          ...(typeKey === undefined ? {} : { typeKey }),
+        },
+      );
+    }
+    return { status: response.status, bytes: Buffer.from(await response.arrayBuffer()) };
+  }
+
   /** PAT is Basic with an empty username; Entra/`az` tokens are Bearer (C-E09-010). */
   private authorization(): string {
     return this.options.credential.mode === 'pat'

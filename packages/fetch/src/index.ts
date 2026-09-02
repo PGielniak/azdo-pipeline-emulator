@@ -251,3 +251,21 @@ export {
   type GroupVariable,
   type VariableGroupNames,
 } from './rest/variable-groups.js';
+
+export {
+  TASK_NOT_FOUND_TYPE_KEY,
+  cacheTaskMetadata,
+  downloadTaskZip,
+  listInstalledTasks,
+  parseInstalledTask,
+  parseTaskReference,
+  readCachedTask,
+  selectTask,
+  taskCacheDir,
+  versionString,
+  type CacheTaskOptions,
+  type CachedTask,
+  type InstalledTask,
+  type TaskVersion,
+  type TaskZipDownload,
+} from './rest/tasks.js';

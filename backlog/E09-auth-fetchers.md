@@ -70,7 +70,7 @@ Acceptance: endpoints wrapped + lockfile discipline per docs/05 §4.
   **Do:** fetch by name; extract variable **names** + secret flags; never persist values even if returned for non-secrets (decision 2026-07-30).
   **Ground:** Variablegroups REST page (pin) + live sample; the discard-values rule is internal policy — enforce with a test asserting values absent from all outputs.
   **Done:** `.env.example` group blocks show names; value-absence test green.
-- [ ] **E09-S03-T05 — Task metadata fetch (marketplace)**
+- [!] **E09-S03-T05 — Task metadata fetch (marketplace)** *(**Implemented, grounded and live-measured 2026-09-02 against the real marketplace fixture; the last clause of Done waits on E07.** Built in `packages/fetch/src/rest/tasks.ts`. Done reads "marketplace fixture task's `task.json` cached **and consumed by E07 real-task mode**" — the caching half is done and the fixture is real (`replacetokens`, `contributionIdentifier` `qetza.replacetokens.replacetokens-task`, five majors 3–7, live in the test org), but **E07 does not exist yet**, so nothing consumes it. Flip to `[x]` when E07-S01 lands and reads `.cache/tasks/<name>@<version>/task.json`; no further fetch work is needed. **Route and api-version are experiment-backed as the Ground field directs** — the reference page is thin — with the agent pinned as the code reference (C-E09-085..089).)*
   **Do:** list installed tasks, match name@major, cache `task.json`.
   **Ground:** the DistributedTask tasks endpoint has thin docs — ground via live samples from the test org and, as code reference, how the agent downloads tasks (pin). Mark route/api-version claims as experiment-backed.
   **Done:** marketplace fixture task's `task.json` cached and consumed by E07 real-task mode.
