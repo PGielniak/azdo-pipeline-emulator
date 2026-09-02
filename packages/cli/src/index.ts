@@ -21,3 +21,15 @@ export {
   type Runner,
   type ToolRequirement,
 } from './doctor/probe.js';
+
+// E10-S04-T02 — the doctor↔task contract.
+export {
+  TASK_TOOLS,
+  aggregateTools,
+  checkToolContract,
+  requirementsFor,
+  toolKey,
+  type ContractViolation,
+  type StepToolContext,
+  type TaskToolRequirement,
+} from './doctor/requirements.js';

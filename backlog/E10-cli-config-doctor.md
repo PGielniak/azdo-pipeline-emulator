@@ -38,7 +38,7 @@ Primary grounding set: docs/06 (internal spec) · consuming epics' manifests · 
   **Do:** read `manifest.json` `tools[]`; probe PATH + versions (per-tool version-command table), compare semver ranges; remediation strings (install hints per OS); `--json`.
   **Ground:** each probe command cited from the tool's official docs (`az version`, `docker version --format`, `helm version --template`, `kubectl version --client -o json`, `pwsh -v` — pin each vendor page).
   **Done:** probe table tests with canned outputs; fixture manifest → doctor snapshot.
-- [ ] **E10-S04-T02 — Doctor↔task contract**
+- [x] **E10-S04-T02 — Doctor↔task contract**
   **Do:** `ToolRequirement` schema finalized (cmd, min, neededBy, remediation); aggregation in manifest; CI check: every task declaring CLI calls declares requirements.
   **Ground:** requirement values cite the task research notes (E07/E08) — doctor never invents versions.
   **Done:** contract test over all registered tasks.
