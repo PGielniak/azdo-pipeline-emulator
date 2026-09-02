@@ -10,7 +10,7 @@
 // The macro-preservation requirement (C-E06-018/024) is asserted directly: `$( )` in an input
 // survives verbatim in the emitted body, because it is the runtime (`azdo_expand_macros`), not the
 // emitter, that expands it just before the step runs.
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -26,7 +26,7 @@ import {
   isNativeScript,
   nativeScriptKind,
 } from '../src/step.js';
-import type { DispositionOptions } from '../src/disposition.js';
+import type { StepEmitOptions } from '../src/step.js';
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
 // CI installs a system shellcheck and exports it as `$SHELLCHECK` (see the workflow); locally it
@@ -41,8 +41,32 @@ const SHELLCHECK_MACRO_EXCLUDES = ['SC2005', 'SC2046'];
 const build = (yaml: string, file = 'pipeline.expanded.yml') =>
   buildPipeline(parsePipelineYaml(yaml, file));
 
+/**
+ * Run the emitted body's `printf`/`cat` lines and return what the step would print.
+ *
+ * The header and the `source runtime.sh` preamble are dropped — this is about the stub's own
+ * output, and running it is the only way to see past the shell quoting.
+ */
+function runStubBody(script: string): string {
+  const body = script
+    .split('\n')
+    .filter((line) => line.startsWith('printf ') || line.startsWith('cat <<') || true)
+    .join('\n');
+  const runnable = body
+    .split('\n')
+    .filter(
+      (line) =>
+        !line.startsWith('#') &&
+        !line.startsWith('source ') &&
+        !line.startsWith('set -euo') &&
+        line.trim() !== 'exit 1',
+    )
+    .join('\n');
+  return execFileSync('bash', ['-c', runnable], { encoding: 'utf8' });
+}
+
 /** Build a one-stage, one-job, one-step model and return the step plus its emitted script. */
-function emitOne(yaml: string, options: DispositionOptions = {}): { step: Step; output: string } {
+function emitOne(yaml: string, options: StepEmitOptions = {}): { step: Step; output: string } {
   const { pipeline, diagnostics } = build(yaml);
   expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
   expect(pipeline).toBeDefined();
@@ -219,7 +243,12 @@ describe('emitStepScript', () => {
     expect(output).toContain('# fidelity: stub —');
     // The reason rides in the header, so a reader who opens one script sees why this step degraded.
     expect(output).toContain('# warning: `PublishTestResults@2` runs as a stub: HTTP 404');
-    expect(output).toContain('azdo-emu: stub — PublishTestResults@2');
+    // The wording is docs/03 §4's, quoted rather than paraphrased (E07-S02-T01). The assertion
+    // runs the emitted line, because shell-quoting splits the apostrophes in the source text —
+    // what matters is what the step prints, not how the script spells it.
+    expect(runStubBody(output)).toContain(
+      "##[warning] Task 'PublishTestResults@2' was stubbed — no runnable implementation locally",
+    );
   });
 
   it('emits a native checkout for a desugared checkout step (E07-S03-T01)', () => {
@@ -357,4 +386,73 @@ describe('emitted corpus scripts pass shellcheck', () => {
       rmSync(tmp, { recursive: true, force: true });
     }
   }, 120_000);
+});
+
+describe('the stub emitter (E07-S02-T01)', () => {
+  const unavailable = {
+    packages: { 'PublishTestResults@2': { available: false, unavailableReason: 'offline' } },
+  };
+  const STUB_YAML = `stages:
+- stage: A
+  jobs:
+  - job: build
+    steps:
+    - task: PublishTestResults@2
+      inputs:
+        testResultsFiles: '**/*.xml'
+        failTaskOnFailedTests: true
+`;
+
+  it('uses the wording docs/03 §4 fixes, not a paraphrase', () => {
+    // Reworded by E12-S02-T03: "no local handler" was transpiler-era vocabulary — under real-task
+    // mode the reason is a missing *package*. Asserted by running the line, which also proves the
+    // apostrophes survive shell quoting.
+    const { output } = emitOne(STUB_YAML, unavailable);
+    expect(runStubBody(output)).toContain(
+      "##[warning] Task 'PublishTestResults@2' was stubbed — no runnable implementation locally",
+    );
+  });
+
+  it('dumps the fully resolved inputs as JSON, key-sorted so the dump is diffable', () => {
+    const { output } = emitOne(STUB_YAML, unavailable);
+    expect(output).toContain('"failTaskOnFailedTests": "true"');
+    expect(output).toContain('"testResultsFiles": "**/*.xml"');
+    expect(output.indexOf('failTaskOnFailedTests')).toBeLessThan(
+      output.indexOf('testResultsFiles'),
+    );
+  });
+
+  it('defaults to the skip result — the step succeeds without doing the work', () => {
+    const { output } = emitOne(STUB_YAML, unavailable);
+    expect(output).toContain('tasks.unknown = stub (default)');
+    expect(output).not.toContain('exit 1');
+  });
+
+  it('fails the step under tasks.unknown = fail', () => {
+    // A pipeline that depends on this task should stop here rather than continue on a result the
+    // task never produced.
+    const { output } = emitOne(STUB_YAML, { ...unavailable, stubPolicy: 'fail' });
+    expect(output).toContain('##vso[task.complete result=Failed;]');
+    expect(output).toContain('exit 1');
+  });
+
+  it('prompts only when a terminal is attached, under tasks.unknown = prompt', () => {
+    // A pipeline run with no terminal must not block forever, so the non-interactive arm skips.
+    const { output } = emitOne(STUB_YAML, { ...unavailable, stubPolicy: 'prompt' });
+    expect(output).toContain('if [[ -t 0 ]]; then');
+    expect(output).toContain('read -r -p "Run PublishTestResults@2 manually');
+    expect(output).toContain('no terminal to prompt on');
+  });
+
+  it('is still labelled stub in the header, whichever policy applies', () => {
+    for (const stubPolicy of ['stub', 'fail', 'prompt'] as const) {
+      expect(emitOne(STUB_YAML, { ...unavailable, stubPolicy }).output).toContain(
+        '# fidelity: stub —',
+      );
+    }
+  });
+
+  it('matches its snapshot', () => {
+    expect(emitOne(STUB_YAML, unavailable).output).toMatchSnapshot();
+  });
 });

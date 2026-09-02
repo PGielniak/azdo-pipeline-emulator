@@ -30,6 +30,20 @@ export type NativeScriptKind = 'script' | 'bash' | 'pwsh' | 'powershell';
 /** The fidelity label the header shows until E05-S02-T02/E07-S03-T01 assign the real one. */
 export type DefaultFidelity = 'exact' | 'degraded' | 'stub';
 
+/**
+ * What a stubbed step does, from `tasks.unknown` in `azdo-emu.yaml`.
+ *
+ * The config spells these `stub | fail | prompt` while docs/03 §4 describes the *results* as
+ * "skip default / fail / prompt" — the same three behaviours under two vocabularies. `stub` is the
+ * skip-result default.
+ */
+export type StubPolicy = 'stub' | 'fail' | 'prompt';
+
+export interface StepEmitOptions extends DispositionOptions {
+  /** Defaults to `stub`, the documented default (docs/03 §4). */
+  readonly stubPolicy?: StubPolicy;
+}
+
 /** The full `Name@version` spelling of a step's task reference (for the header and stub dump). */
 export function taskRef(step: Step): string {
   return `${step.task.name}@${step.task.version}`;
@@ -208,26 +222,49 @@ function pwshBody(step: Step): string {
  * resolved inputs (macros intact — the runtime expands them). The `run_task.sh` dispatch and the
  * real-task `INPUT_*` contract are E07-S01/S03; this is the honest fallback in the meantime.
  */
-function stubBody(step: Step): string {
+function stubBody(step: Step, policy: StubPolicy): string {
+  // docs/03 §4 fixes the wording. It was reworded by E12-S02-T03 — "no local handler" was
+  // transpiler-era vocabulary, and under real-task mode the reason is a missing *package* — so the
+  // text is quoted rather than paraphrased.
+  const warning = `##[warning] Task '${taskRef(step)}' was stubbed — no runnable implementation locally`;
+  const inputsJson = JSON.stringify(step.inputs, Object.keys(step.inputs).sort(), 2);
+
   const lines = [
-    `printf '%s\\n' 'azdo-emu: stub — ${taskRef(step)} (inputs only; the step does not run)'`,
+    `printf '%s\\n' ${shellSingleQuote(warning)}`,
+    '# The fully resolved inputs, as JSON, so a reader can see exactly what the real task would',
+    '# have received (docs/03 §4).',
     "cat <<'AZDO_EMU_STUB_INPUTS'",
-    `task: ${taskRef(step)}`,
-    ...Object.entries(step.inputs).map(([key, value]) => `  ${key}: ${value}`),
+    inputsJson,
     'AZDO_EMU_STUB_INPUTS',
-    '',
   ];
+
+  switch (policy) {
+    case 'fail':
+      lines.push(
+        '# tasks.unknown = fail: the step fails, so a pipeline that depends on this task stops here',
+        '# rather than continuing on a result the task never produced.',
+        `printf '%s\\n' ${shellSingleQuote(`##vso[task.complete result=Failed;]stubbed task ${taskRef(step)}`)}`,
+        'exit 1',
+      );
+      break;
+    case 'prompt':
+      lines.push(
+        '# tasks.unknown = prompt: ask, but only when someone is there to answer. A pipeline run',
+        '# without a terminal must not block forever, so a non-interactive run takes the skip path.',
+        'if [[ -t 0 ]]; then',
+        `  read -r -p "Run ${taskRef(step)} manually, then press Enter to continue (or Ctrl-C to abort): " _`,
+        'else',
+        `  printf '%s\\n' 'azdo-emu: no terminal to prompt on; treating the stub as skipped'`,
+        'fi',
+        '',
+      );
+      break;
+    default:
+      lines.push('# tasks.unknown = stub (default): the step succeeds without doing the work.', '');
+  }
   return lines.join('\n');
 }
 
-/**
- * A real-task step: hand off to the runner E07-S01-T02 emits.
- *
- * The `INPUT_*` construction lives in `task-host.ts` and needs the task's own `task.json`, which
- * this module does not have — the emitter writes the dispatch, `run_task.sh` reads the cached
- * definition and builds the environment. Keeping the split means the `INPUT_*` contract has exactly
- * one implementation (C-E07-001..004) rather than one here and one there.
- */
 /**
  * A `checkout:` step: call the runtime's own implementation (E06-S05-T02).
  *
@@ -297,11 +334,7 @@ function realTaskBody(step: Step): string {
  * `number` is the zero-padded `NNN-` prefix the scaffolder assigned (e.g. `"030"`), used in the
  * header's `Step 030` rule line so the file name and the header agree.
  */
-export function emitStepScript(
-  step: Step,
-  number: string,
-  options: DispositionOptions = {},
-): string {
+export function emitStepScript(step: Step, number: string, options: StepEmitOptions = {}): string {
   // One decision, taken once, driving both the label and the body (E07-S03-T01). Before the
   // registry these were computed separately and could disagree.
   const disposition = disposeStep(step, options);
@@ -317,7 +350,7 @@ export function emitStepScript(
   } else if (disposition.disposition === 'real-task') {
     body = realTaskBody(step);
   } else {
-    body = stubBody(step);
+    body = stubBody(step, options.stubPolicy ?? 'stub');
   }
   return `${header(step, number, disposition)}\n${PREAMBLE}\n${body}`;
 }

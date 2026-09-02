@@ -35,3 +35,6 @@ export {
   type PackageAvailability,
   type StepDisposition,
 } from './disposition.js';
+
+// E07-S02-T01 — the stub emitter's policy surface.
+export type { StepEmitOptions, StubPolicy } from './step.js';
