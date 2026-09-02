@@ -176,3 +176,34 @@ Do says so), so a `maxParallel: 5` pipeline runs its single local iteration seri
 better-behaved case: `increments` is authored data, so the iteration *count* is reproducible even
 though the percentages mean nothing without a cluster.
   — page as above for the VM-only constraint; the collapse is our documented limitation
+
+---
+
+## E08-S03-T02 — doctor rules for the priority set (`C-E08-018..020`)
+
+Recorded 2026-09-02. The task's **Do** says minimums should be "sourced from each task's own
+requirements", and its **Ground** offers a fallback: "or vendor support matrices". Both were
+checked, and neither yields a usable floor — for two different reasons.
+
+[C-E08-018] **The task-side source yields nothing, as C-E10-009 already established.** No task in
+the priority set declares a minimum for the CLI it invokes: `demands` is `[]` on every one that
+carries the field, and `minimumAgentVersion` is an *agent* version (C-E10-008), not a tool version.
+  — the five `task.json` files at `azure-pipelines-tasks @ 093f47b9598eb48af6a972dbc2b223c244b344b9`
+
+[C-E08-019] **Vendor support matrices exist, but they state *supported-ness*, not *functionality* —
+and using one as a doctor floor would fail working installations.** Kubernetes: "`kubectl` is
+supported within one minor version (older or newer) of `kube-apiserver`", and "The Kubernetes
+project maintains release branches for the most recent three minor releases". Helm: "Helm is assumed
+to be compatible with `n-3` versions of Kubernetes it was compiled against", with 4.0.x the oldest
+listed as supported. **Neither says the older version stops working** — a kubectl a few minors behind
+still drives most clusters, and a doctor that refused it would report a perfectly functional setup
+as outdated. That is the same failure C-E10-008 describes, reached from the other direction.
+  — https://kubernetes.io/releases/version-skew-policy/ and https://helm.sh/docs/topics/version_skew/
+    (both checked 2026-09-02)
+
+[C-E08-020] **So the priority set's doctor rules declare tools and no floors, and the bar for adding
+one is stated rather than left to judgement.** A `min` is justified only by evidence that the tool
+*fails* below it — a task-side version check, or a vendor statement that a feature the task uses was
+introduced in a given release. A support-lifecycle date is not that evidence. `checkToolContract`
+(E10-S04-T02) enforces the citation, so this cannot be quietly reversed.
+  — project policy, following the Ground field's "doctor never invents versions"

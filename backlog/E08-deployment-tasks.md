@@ -54,7 +54,7 @@ Acceptance: `runOnce`/`rolling`/`canary` hook sequencing with service-matching `
   **Do:** hook sequencing per iteration, `strategy.*` variables (`name`, `cycle`, `increment`) populated; batching collapsed to sequential with a documented delta.
   **Ground:** deployment-jobs doc strategy sections — quote hook order and each `strategy.*` variable; verify variable presence/values via a real canary run in the test org.
   **Done:** bats: hook order + variables per claims; delta in the warnings list.
-- [ ] **E08-S03-T02 — Doctor rules for the priority set**
+- [x] **E08-S03-T02 — Doctor rules for the priority set**
   **Do:** tool checks (az, docker, helm, kubectl, azcopy, pwsh+Az) with min versions sourced from each task's own requirements.
   **Ground:** min versions cited from the pinned task sources' checks or vendor support matrices (pin per tool).
   **Done:** doctor output snapshot for a fixture using all; missing-tool remediation strings reviewed.

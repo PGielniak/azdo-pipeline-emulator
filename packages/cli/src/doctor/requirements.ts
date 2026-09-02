@@ -13,6 +13,13 @@
  *
  * So the doctor reports **presence**, not a floor, until a task research note supplies a real
  * minimum — at which point it goes in `min` here with its claim id.
+ *
+ * **The vendor matrices do not rescue this either** (C-E08-019). Kubernetes and Helm both publish
+ * skew policies, but they state *supported-ness*, not *functionality*: neither says the older
+ * version stops working, and a doctor that refused a kubectl a few minors behind would report a
+ * perfectly functional setup as outdated. The bar for a `min` is evidence the tool **fails** below
+ * it — a task-side version check, or a vendor statement that a feature the task uses arrived in a
+ * given release. A support-lifecycle date is not that evidence (C-E08-020).
  */
 
 import type { ToolRequirement } from './probe.js';
@@ -60,6 +67,10 @@ export const TASK_TOOLS: Readonly<Record<string, readonly TaskToolRequirement[]>
   'Kubernetes@1': [{ cmd: 'kubectl', because: 'the task drives the kubectl CLI' }],
   'KubernetesManifest@1': [{ cmd: 'kubectl', because: 'manifests are applied through kubectl' }],
   'AzureCLI@1': [{ cmd: 'az', because: 'the V1 task invokes the same CLI as V2' }],
+  'AzureFileCopy@6': [
+    { cmd: 'azcopy', because: 'the task copies to blob/file storage through the AzCopy CLI' },
+    { cmd: 'az', because: 'it authenticates the copy through the Azure CLI session' },
+  ],
 };
 
 /** A step, reduced to what this module needs. */

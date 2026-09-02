@@ -232,3 +232,60 @@ describe('formatDoctor', () => {
     }
   });
 });
+
+describe('the priority-set fixture (E08-S03-T02 Done criterion)', () => {
+  it('reports every tool the deployment set needs, worst-first', () => {
+    const tools = [
+      need('az'),
+      need('azcopy'),
+      need('docker'),
+      need('helm'),
+      need('kubectl'),
+      need('pwsh'),
+    ];
+    const report = runDoctor(tools, {
+      // az and docker present; the other four absent — the shape of a typical developer machine.
+      run: canned({ az: LIVE_AZ, docker: LIVE_DOCKER }),
+      platform: 'linux',
+    });
+
+    expect(formatDoctor(report)).toMatchSnapshot();
+    expect(report.ok).toBe(false);
+  });
+
+  it('reports the same fixture as clean when every tool is present', () => {
+    const report = runDoctor(
+      [need('az'), need('azcopy'), need('docker'), need('helm'), need('kubectl'), need('pwsh')],
+      {
+        run: canned({
+          az: LIVE_AZ,
+          azcopy: 'azcopy version 10.29.1\n',
+          docker: LIVE_DOCKER,
+          helm: 'v3.14.0\n',
+          kubectl: JSON.stringify({ clientVersion: { gitVersion: 'v1.31.2' } }),
+          pwsh: 'PowerShell 7.4.1\n',
+        }),
+      },
+    );
+    expect(report.ok).toBe(true);
+    expect(formatDoctor(report)).toContain('All required tools are present.');
+  });
+
+  it('parses azcopy’s version from the last field of its banner', () => {
+    expect(
+      probeTool(need('azcopy'), { run: canned({ azcopy: 'azcopy version 10.29.1\n' }) }),
+    ).toMatchObject({ status: 'ok', found: '10.29.1' });
+  });
+
+  it('every remediation string names a real install route, per OS', () => {
+    // "missing-tool remediation strings reviewed" — the Done criterion. A hint that just says
+    // "install it" is the same as no hint.
+    for (const cmd of ['az', 'azcopy', 'docker', 'helm', 'kubectl', 'pwsh']) {
+      for (const platform of ['linux', 'darwin', 'win32']) {
+        const hint = remediationFor(cmd, platform);
+        expect(hint.length, `${cmd}/${platform}`).toBeGreaterThan(15);
+        expect(hint, `${cmd}/${platform}`).toMatch(/https?:\/\/|brew |winget |curl /);
+      }
+    }
+  });
+});
