@@ -86,3 +86,28 @@ source "$AZDO_EMU_LIB/runtime.sh"
 echo "config=$(buildConfiguration)"
 "
 `;
+
+exports[`the stub emitter (E07-S02-T01) > matches its snapshot 1`] = `
+"#!/usr/bin/env bash
+# ── Step 030 · "PublishTestResults" · PublishTestResults@2 ────────────────────
+# from: pipeline.expanded.yml:6
+# condition: succeeded()      continueOnError: false      timeout: job default
+# fidelity: stub — inputs logged only; the step does not do the task’s work
+# warning: \`PublishTestResults@2\` runs as a stub: offline. Its inputs are logged and the step succeeds without doing the task’s work.
+
+set -euo pipefail
+# shellcheck disable=SC1091  # runtime.sh is generated into the project lib/ at convert time
+source "$AZDO_EMU_LIB/runtime.sh"
+
+printf '%s\\n' '##[warning] Task '\\''PublishTestResults@2'\\'' was stubbed — no runnable implementation locally'
+# The fully resolved inputs, as JSON, so a reader can see exactly what the real task would
+# have received (docs/03 §4).
+cat <<'AZDO_EMU_STUB_INPUTS'
+{
+  "failTaskOnFailedTests": "true",
+  "testResultsFiles": "**/*.xml"
+}
+AZDO_EMU_STUB_INPUTS
+# tasks.unknown = stub (default): the step succeeds without doing the work.
+"
+`;

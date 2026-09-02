@@ -36,7 +36,7 @@ Acceptance: a marketplace/in-box Node task executes via the `INPUT_*` host and i
 ## E07-S02 — As a pipeline developer, unknown tasks fail or skip *honestly*, never silently.
 Acceptance: stub policy + user handler drop-in.
 
-- [ ] **E07-S02-T01 — Stub emitter**
+- [x] **E07-S02-T01 — Stub emitter**
   **Do:** unknown task → emit a stub that dumps its resolved inputs + `task.json` metadata and exits per config (`skip` | `fail` | `prompt`); the fidelity label is `stub`.
   **Ground:** docs/03 §4 stub policy; PLAN D4.
   **Done:** stub output snapshot; the three config modes tested.
