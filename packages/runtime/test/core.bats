@@ -3014,3 +3014,120 @@ setup_rev() {
   run -0 dispatch_line '##vso[build.updatebuildnumber]custom-1.0'
   [ "$(azdo_var 'Build.BuildNumber')" = 'custom-1.0' ]
 }
+
+# --- E07-S01-T02/S03-T01: real-task mode ------------------------------------------------------
+
+seed_task_package() {
+  # $1 name  $2 version  $3 execution JSON  $4 handler body
+  local entry="$AZDO_EMU_CACHE/tasks/$1@$2"
+  mkdir -p "$entry/tree"
+  printf '{"id":"g","name":"%s","execution":%s}\n' "$1" "$3" >"$entry/task.json"
+  printf '%s\n' "$4" >"$entry/tree/main.js"
+}
+
+@test "azdo_run_task exports INPUT_* using the same transform as variables (C-E07-001)" {
+  AZDO_EMU_CACHE="$BATS_TEST_TMPDIR/cache"
+  export AZDO_EMU_CACHE
+  seed_task_package 'Probe' '1.0.0' '{"Node24":{"target":"main.js"}}' \
+    'process.stdout.write([process.env.INPUT_SONAR_PROJECTKEY, process.env.INPUT_EXTRA_PROPERTIES].join("|"))'
+
+  CORE_SH="$(azdo_emu_repo_root)/packages/runtime/lib/core.sh" run -0 bash -c '
+    source "$CORE_SH"
+    azdo_run_task <<EOF
+task: Probe@1
+  sonar.projectKey: my-key
+  extra properties: k=v
+EOF
+  '
+  # Dots and spaces both become underscores; a spaces-only transform would leave the first unset.
+  [ "$output" = 'my-key|k=v' ]
+}
+
+@test "azdo_run_task exports an empty input anyway (C-E07-002)" {
+  AZDO_EMU_CACHE="$BATS_TEST_TMPDIR/cache"
+  export AZDO_EMU_CACHE
+  seed_task_package 'Probe' '1.0.0' '{"Node24":{"target":"main.js"}}' \
+    'process.stdout.write(("INPUT_EMPTY" in process.env) + ":" + JSON.stringify(process.env.INPUT_EMPTY))'
+
+  CORE_SH="$(azdo_emu_repo_root)/packages/runtime/lib/core.sh" run -0 bash -c '
+    source "$CORE_SH"
+    azdo_run_task <<EOF
+task: Probe@1
+  empty: 
+EOF
+  '
+  # task-lib will not vault it, so getInput() returns unset — but the variable IS in the
+  # environment, which is what a task reading process.env directly observes.
+  [ "$output" = 'true:""' ]
+}
+
+@test "azdo_run_task passes a value containing = and spaces verbatim" {
+  AZDO_EMU_CACHE="$BATS_TEST_TMPDIR/cache"
+  export AZDO_EMU_CACHE
+  seed_task_package 'Probe' '1.0.0' '{"Node24":{"target":"main.js"}}' \
+    'process.stdout.write(process.env.INPUT_ARGS)'
+
+  CORE_SH="$(azdo_emu_repo_root)/packages/runtime/lib/core.sh" run -0 bash -c '
+    source "$CORE_SH"
+    azdo_run_task <<EOF
+task: Probe@1
+  args: --flag=a b  c
+EOF
+  '
+  [ "$output" = '--flag=a b  c' ]
+}
+
+@test "azdo__task_entry picks the highest version, not the lexically last (C-E09-088)" {
+  AZDO_EMU_CACHE="$BATS_TEST_TMPDIR/cache"
+  export AZDO_EMU_CACHE
+  mkdir -p "$AZDO_EMU_CACHE/tasks/Probe@6.9.0" "$AZDO_EMU_CACHE/tasks/Probe@6.10.0"
+  run -0 azdo__task_entry 'Probe' '6'
+  # A lexical sort would choose 6.9.0 and run the wrong package.
+  [[ "$output" == *'Probe@6.10.0' ]]
+}
+
+@test "azdo_run_task reports a missing package instead of failing obscurely" {
+  AZDO_EMU_CACHE="$BATS_TEST_TMPDIR/cache"
+  export AZDO_EMU_CACHE
+  mkdir -p "$AZDO_EMU_CACHE/tasks"
+  CORE_SH="$(azdo_emu_repo_root)/packages/runtime/lib/core.sh" run -1 bash -c '
+    source "$CORE_SH"
+    azdo_run_task <<EOF
+task: Missing@1
+EOF
+  '
+  [[ "$output" == *'no cached package for Missing@1'* ]]
+}
+
+@test "azdo_run_task rejects stdin with no task line" {
+  CORE_SH="$(azdo_emu_repo_root)/packages/runtime/lib/core.sh" run -2 bash -c '
+    source "$CORE_SH"
+    printf "" | azdo_run_task
+  '
+  [[ "$output" == *'no "task:" line'* ]]
+}
+
+@test "azdo__task_handler prefers the newest Node runtime the task declares" {
+  local json="$BATS_TEST_TMPDIR/task.json"
+  printf '%s\n' '{"execution":{"Node16":{"target":"old.js"},"Node24":{"target":"new.js"}}}' >"$json"
+  local handler target
+  azdo__task_handler "$json" handler target
+  [ "$handler" = 'node' ]
+  [ "$target" = 'new.js' ]
+
+  printf '%s\n' '{"execution":{"PowerShell3":{"target":"run.ps1"}}}' >"$json"
+  azdo__task_handler "$json" handler target
+  [ "$handler" = 'powershell' ]
+  [ "$target" = 'run.ps1' ]
+}
+
+@test "azdo__task_execution_target returns empty for a malformed task.json" {
+  local json="$BATS_TEST_TMPDIR/task.json"
+  printf '%s\n' 'not json' >"$json"
+  run -0 azdo__task_execution_target "$json" Node24
+  [ -z "$output" ]
+
+  printf '%s\n' '{"execution":{"Node24":"not-an-object"}}' >"$json"
+  run -0 azdo__task_execution_target "$json" Node24
+  [ -z "$output" ]
+}

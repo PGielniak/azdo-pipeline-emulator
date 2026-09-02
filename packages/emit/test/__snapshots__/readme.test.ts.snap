@@ -153,7 +153,7 @@ Every stage, job and step below is a script you can read, edit, and run on its o
 
 - **Structure:** 2 stages, 3 jobs, 10 step scripts.
 - **Expansion:** **service** — expanded by Azure DevOps (pipeline \`42\`, api-version \`7.1-preview.1\`, fresh).
-- **Gaps:** 7 entries in [Warnings](#warnings); 0 unsupported constructs.
+- **Gaps:** 5 entries in [Warnings](#warnings); 0 unsupported constructs.
 
 ## Quick start
 
@@ -189,10 +189,10 @@ See [.env.example](.env.example) for the values this pipeline needs.
 
 | # | Step | Task | Fidelity | Script |
 | --- | --- | --- | --- | --- |
-| 010 | 6d15af64-176c-496d-b583-fd2ae21d4df4 | \`checkout-self\` | \`stub\` | [\`010-checkout-self.sh\`](stages/010-build-and-publish/jobs/010-compile/steps/010-checkout-self.sh) |
+| 010 | 6d15af64-176c-496d-b583-fd2ae21d4df4 | \`checkout-self\` | \`exact\` | [\`010-checkout-self.sh\`](stages/010-build-and-publish/jobs/010-compile/steps/010-checkout-self.sh) |
 | 020 | Stage build output | \`CmdLine@2\` | \`exact\` | [\`020-stage-build-output.sh\`](stages/010-build-and-publish/jobs/010-compile/steps/020-stage-build-output.sh) |
-| 030 | Copy config next to the binary | \`CopyFiles@2\` | \`stub\` | [\`030-copy-config-next-to-the-binary.sh\`](stages/010-build-and-publish/jobs/010-compile/steps/030-copy-config-next-to-the-binary.sh) |
-| 040 | Publish app artifact | \`PublishPipelineArtifact@1\` | \`stub\` | [\`040-publish-app-artifact.sh\`](stages/010-build-and-publish/jobs/010-compile/steps/040-publish-app-artifact.sh) |
+| 030 | Copy config next to the binary | \`CopyFiles@2\` | \`degraded\` | [\`030-copy-config-next-to-the-binary.sh\`](stages/010-build-and-publish/jobs/010-compile/steps/030-copy-config-next-to-the-binary.sh) |
+| 040 | Publish app artifact | \`PublishPipelineArtifact@1\` | \`degraded\` | [\`040-publish-app-artifact.sh\`](stages/010-build-and-publish/jobs/010-compile/steps/040-publish-app-artifact.sh) |
 
 #### Job \`docs\` (agent)
 
@@ -203,7 +203,7 @@ See [.env.example](.env.example) for the values this pipeline needs.
 | # | Step | Task | Fidelity | Script |
 | --- | --- | --- | --- | --- |
 | 010 | Generate docs | \`CmdLine@2\` | \`exact\` | [\`010-generate-docs.sh\`](stages/010-build-and-publish/jobs/020-docs/steps/010-generate-docs.sh) |
-| 020 | ecdc45f6-832d-4ad9-b52b-ee49e94659be | \`publish-docs\` | \`stub\` | [\`020-publish-docs.sh\`](stages/010-build-and-publish/jobs/020-docs/steps/020-publish-docs.sh) |
+| 020 | ecdc45f6-832d-4ad9-b52b-ee49e94659be | \`publish-docs\` | \`degraded\` | [\`020-publish-docs.sh\`](stages/010-build-and-publish/jobs/020-docs/steps/020-publish-docs.sh) |
 
 ### Stage \`deploy\`
 
@@ -219,9 +219,9 @@ See [.env.example](.env.example) for the values this pipeline needs.
 
 | # | Step | Task | Fidelity | Script |
 | --- | --- | --- | --- | --- |
-| 010 | 6d15af64-176c-496d-b583-fd2ae21d4df4 | \`checkout-none\` | \`stub\` | [\`010-checkout-none.sh\`](stages/020-consume-artifacts/jobs/010-consume/steps/010-checkout-none.sh) |
-| 020 | Download only the binary | \`30f35852-3f7e-4c0c-9a88-e127b4f97211@1\` | \`stub\` | [\`020-download-only-the-binary.sh\`](stages/020-consume-artifacts/jobs/010-consume/steps/020-download-only-the-binary.sh) |
-| 030 | Download docs to an explicit path | \`DownloadPipelineArtifact@2\` | \`stub\` | [\`030-download-docs-to-an-explicit-path.sh\`](stages/020-consume-artifacts/jobs/010-consume/steps/030-download-docs-to-an-explicit-path.sh) |
+| 010 | 6d15af64-176c-496d-b583-fd2ae21d4df4 | \`checkout-none\` | \`exact\` | [\`010-checkout-none.sh\`](stages/020-consume-artifacts/jobs/010-consume/steps/010-checkout-none.sh) |
+| 020 | Download only the binary | \`30f35852-3f7e-4c0c-9a88-e127b4f97211@1\` | \`degraded\` | [\`020-download-only-the-binary.sh\`](stages/020-consume-artifacts/jobs/010-consume/steps/020-download-only-the-binary.sh) |
+| 030 | Download docs to an explicit path | \`DownloadPipelineArtifact@2\` | \`degraded\` | [\`030-download-docs-to-an-explicit-path.sh\`](stages/020-consume-artifacts/jobs/010-consume/steps/030-download-docs-to-an-explicit-path.sh) |
 | 040 | Assert both artifacts landed | \`CmdLine@2\` | \`exact\` | [\`040-assert-both-artifacts-landed.sh\`](stages/020-consume-artifacts/jobs/010-consume/steps/040-assert-both-artifacts-landed.sh) |
 
 
@@ -252,27 +252,21 @@ None recorded. Run \`azdo-emu doctor\` against this project to re-check the host
 Ranked worst-first. Each entry says where the gap is, what the step is, how faithful it is,
 and what to do about it.
 
-1. **stages/010-build-and-publish/jobs/010-compile/steps/010-checkout-self.sh** — \`checkout-self\` · \`stub\`
-   does not run the real task — the script records the resolved inputs and exits.
-   → Supply a handler for this task or run the step by hand; \`azdo-emu doctor\` lists the gaps.
-2. **stages/010-build-and-publish/jobs/010-compile/steps/030-copy-config-next-to-the-binary.sh** — \`CopyFiles@2\` · \`stub\`
-   does not run the real task — the script records the resolved inputs and exits.
-   → Supply a handler for this task or run the step by hand; \`azdo-emu doctor\` lists the gaps.
-3. **stages/010-build-and-publish/jobs/010-compile/steps/040-publish-app-artifact.sh** — \`PublishPipelineArtifact@1\` · \`stub\`
-   does not run the real task — the script records the resolved inputs and exits.
-   → Supply a handler for this task or run the step by hand; \`azdo-emu doctor\` lists the gaps.
-4. **stages/010-build-and-publish/jobs/020-docs/steps/020-publish-docs.sh** — \`publish-docs\` · \`stub\`
-   does not run the real task — the script records the resolved inputs and exits.
-   → Supply a handler for this task or run the step by hand; \`azdo-emu doctor\` lists the gaps.
-5. **stages/020-consume-artifacts/jobs/010-consume/steps/010-checkout-none.sh** — \`checkout-none\` · \`stub\`
-   does not run the real task — the script records the resolved inputs and exits.
-   → Supply a handler for this task or run the step by hand; \`azdo-emu doctor\` lists the gaps.
-6. **stages/020-consume-artifacts/jobs/010-consume/steps/020-download-only-the-binary.sh** — \`30f35852-3f7e-4c0c-9a88-e127b4f97211@1\` · \`stub\`
-   does not run the real task — the script records the resolved inputs and exits.
-   → Supply a handler for this task or run the step by hand; \`azdo-emu doctor\` lists the gaps.
-7. **stages/020-consume-artifacts/jobs/010-consume/steps/030-download-docs-to-an-explicit-path.sh** — \`DownloadPipelineArtifact@2\` · \`stub\`
-   does not run the real task — the script records the resolved inputs and exits.
-   → Supply a handler for this task or run the step by hand; \`azdo-emu doctor\` lists the gaps.
+1. **stages/010-build-and-publish/jobs/010-compile/steps/030-copy-config-next-to-the-binary.sh** — \`CopyFiles@2\` · \`degraded\`
+   runs, but some behavior is approximated on this host.
+   → Install the tool the step needs and re-run; \`azdo-emu doctor\` reports what is missing.
+2. **stages/010-build-and-publish/jobs/010-compile/steps/040-publish-app-artifact.sh** — \`PublishPipelineArtifact@1\` · \`degraded\`
+   runs, but some behavior is approximated on this host.
+   → Install the tool the step needs and re-run; \`azdo-emu doctor\` reports what is missing.
+3. **stages/010-build-and-publish/jobs/020-docs/steps/020-publish-docs.sh** — \`publish-docs\` · \`degraded\`
+   runs, but some behavior is approximated on this host.
+   → Install the tool the step needs and re-run; \`azdo-emu doctor\` reports what is missing.
+4. **stages/020-consume-artifacts/jobs/010-consume/steps/020-download-only-the-binary.sh** — \`30f35852-3f7e-4c0c-9a88-e127b4f97211@1\` · \`degraded\`
+   runs, but some behavior is approximated on this host.
+   → Install the tool the step needs and re-run; \`azdo-emu doctor\` reports what is missing.
+5. **stages/020-consume-artifacts/jobs/010-consume/steps/030-download-docs-to-an-explicit-path.sh** — \`DownloadPipelineArtifact@2\` · \`degraded\`
+   runs, but some behavior is approximated on this host.
+   → Install the tool the step needs and re-run; \`azdo-emu doctor\` reports what is missing.
 
 ## Unsupported
 
@@ -579,7 +573,7 @@ See [.env.example](.env.example) for the values this pipeline needs.
 | 020 | Build src/app | \`CmdLine@2\` | \`exact\` | [\`020-build-src-app.sh\`](stages/010-default/jobs/010-build/steps/020-build-src-app.sh) |
 | 030 | Build src/lib | \`CmdLine@2\` | \`exact\` | [\`030-build-src-lib.sh\`](stages/010-default/jobs/010-build/steps/030-build-src-lib.sh) |
 | 040 | Test Release | \`CmdLine@2\` | \`exact\` | [\`040-test-release.sh\`](stages/010-default/jobs/010-build/steps/040-test-release.sh) |
-| 050 | Publish test results | \`PublishTestResults@2\` | \`stub\` | [\`050-publish-test-results.sh\`](stages/010-default/jobs/010-build/steps/050-publish-test-results.sh) |
+| 050 | Publish test results | \`PublishTestResults@2\` | \`degraded\` | [\`050-publish-test-results.sh\`](stages/010-default/jobs/010-build/steps/050-publish-test-results.sh) |
 | 060 | After the templates | \`CmdLine@2\` | \`exact\` | [\`060-after-the-templates.sh\`](stages/010-default/jobs/010-build/steps/060-after-the-templates.sh) |
 
 #### Job \`reuse\` (agent)
@@ -621,9 +615,9 @@ None recorded. Run \`azdo-emu doctor\` against this project to re-check the host
 Ranked worst-first. Each entry says where the gap is, what the step is, how faithful it is,
 and what to do about it.
 
-1. **stages/010-default/jobs/010-build/steps/050-publish-test-results.sh** — \`PublishTestResults@2\` · \`stub\`
-   does not run the real task — the script records the resolved inputs and exits.
-   → Supply a handler for this task or run the step by hand; \`azdo-emu doctor\` lists the gaps.
+1. **stages/010-default/jobs/010-build/steps/050-publish-test-results.sh** — \`PublishTestResults@2\` · \`degraded\`
+   runs, but some behavior is approximated on this host.
+   → Install the tool the step needs and re-run; \`azdo-emu doctor\` reports what is missing.
 
 ## Unsupported
 
@@ -915,7 +909,7 @@ See [.env.example](.env.example) for the values this pipeline needs.
 | # | Step | Task | Fidelity | Script |
 | --- | --- | --- | --- | --- |
 | 010 | Package | \`CmdLine@2\` | \`exact\` | [\`010-package.sh\`](stages/010-build/jobs/010-package/steps/010-package.sh) |
-| 020 | ecdc45f6-832d-4ad9-b52b-ee49e94659be | \`publish-drop\` | \`stub\` | [\`020-publish-drop.sh\`](stages/010-build/jobs/010-package/steps/020-publish-drop.sh) |
+| 020 | ecdc45f6-832d-4ad9-b52b-ee49e94659be | \`publish-drop\` | \`degraded\` | [\`020-publish-drop.sh\`](stages/010-build/jobs/010-package/steps/020-publish-drop.sh) |
 
 ### Stage \`deploy_staging\`
 
@@ -931,7 +925,7 @@ See [.env.example](.env.example) for the values this pipeline needs.
 
 | # | Step | Task | Fidelity | Script |
 | --- | --- | --- | --- | --- |
-| 010 | 30f35852-3f7e-4c0c-9a88-e127b4f97211 _(preDeploy)_ | \`download-current\` | \`stub\` | [\`010-download-current.sh\`](stages/020-deploy-to-staging/jobs/010-staging-runonce/steps/010-download-current.sh) |
+| 010 | 30f35852-3f7e-4c0c-9a88-e127b4f97211 _(preDeploy)_ | \`download-current\` | \`degraded\` | [\`010-download-current.sh\`](stages/020-deploy-to-staging/jobs/010-staging-runonce/steps/010-download-current.sh) |
 | 020 | CmdLine _(preDeploy)_ | \`CmdLine@2\` | \`exact\` | [\`020-cmdline.sh\`](stages/020-deploy-to-staging/jobs/010-staging-runonce/steps/020-cmdline.sh) |
 | 030 | Deploy to staging _(deploy)_ | \`CmdLine@2\` | \`exact\` | [\`030-deploy-to-staging.sh\`](stages/020-deploy-to-staging/jobs/010-staging-runonce/steps/030-deploy-to-staging.sh) |
 | 040 | CmdLine _(deploy)_ | \`CmdLine@2\` | \`exact\` | [\`040-cmdline.sh\`](stages/020-deploy-to-staging/jobs/010-staging-runonce/steps/040-cmdline.sh) |
@@ -993,12 +987,12 @@ None recorded. Run \`azdo-emu doctor\` against this project to re-check the host
 Ranked worst-first. Each entry says where the gap is, what the step is, how faithful it is,
 and what to do about it.
 
-1. **stages/010-build/jobs/010-package/steps/020-publish-drop.sh** — \`publish-drop\` · \`stub\`
-   does not run the real task — the script records the resolved inputs and exits.
-   → Supply a handler for this task or run the step by hand; \`azdo-emu doctor\` lists the gaps.
-2. **stages/020-deploy-to-staging/jobs/010-staging-runonce/steps/010-download-current.sh** — \`download-current\` · \`stub\`
-   does not run the real task — the script records the resolved inputs and exits.
-   → Supply a handler for this task or run the step by hand; \`azdo-emu doctor\` lists the gaps.
+1. **stages/010-build/jobs/010-package/steps/020-publish-drop.sh** — \`publish-drop\` · \`degraded\`
+   runs, but some behavior is approximated on this host.
+   → Install the tool the step needs and re-run; \`azdo-emu doctor\` reports what is missing.
+2. **stages/020-deploy-to-staging/jobs/010-staging-runonce/steps/010-download-current.sh** — \`download-current\` · \`degraded\`
+   runs, but some behavior is approximated on this host.
+   → Install the tool the step needs and re-run; \`azdo-emu doctor\` reports what is missing.
 
 ## Unsupported
 
@@ -1014,7 +1008,7 @@ Every stage, job and step below is a script you can read, edit, and run on its o
 
 - **Structure:** 1 stage, 3 jobs, 7 step scripts.
 - **Expansion:** **service** — expanded by Azure DevOps (pipeline \`42\`, api-version \`7.1-preview.1\`, fresh).
-- **Gaps:** 3 entries in [Warnings](#warnings); 0 unsupported constructs.
+- **Gaps:** 0 entries in [Warnings](#warnings); 0 unsupported constructs.
 
 ## Quick start
 
@@ -1050,8 +1044,8 @@ See [.env.example](.env.example) for the values this pipeline needs.
 
 | # | Step | Task | Fidelity | Script |
 | --- | --- | --- | --- | --- |
-| 010 | 6d15af64-176c-496d-b583-fd2ae21d4df4 | \`checkout-self\` | \`stub\` | [\`010-checkout-self.sh\`](stages/010-default/jobs/010-two-repositories-in-one-workspace/steps/010-checkout-self.sh) |
-| 020 | 6d15af64-176c-496d-b583-fd2ae21d4df4 | \`checkout-tools\` | \`stub\` | [\`020-checkout-tools.sh\`](stages/010-default/jobs/010-two-repositories-in-one-workspace/steps/020-checkout-tools.sh) |
+| 010 | 6d15af64-176c-496d-b583-fd2ae21d4df4 | \`checkout-self\` | \`exact\` | [\`010-checkout-self.sh\`](stages/010-default/jobs/010-two-repositories-in-one-workspace/steps/010-checkout-self.sh) |
+| 020 | 6d15af64-176c-496d-b583-fd2ae21d4df4 | \`checkout-tools\` | \`exact\` | [\`020-checkout-tools.sh\`](stages/010-default/jobs/010-two-repositories-in-one-workspace/steps/020-checkout-tools.sh) |
 | 030 | Both repositories are present | \`CmdLine@2\` | \`exact\` | [\`030-both-repositories-are-present.sh\`](stages/010-default/jobs/010-two-repositories-in-one-workspace/steps/030-both-repositories-are-present.sh) |
 | 040 | Cross-repo template step | \`CmdLine@2\` | \`exact\` | [\`040-cross-repo-template-step.sh\`](stages/010-default/jobs/010-two-repositories-in-one-workspace/steps/040-cross-repo-template-step.sh) |
 
@@ -1063,7 +1057,7 @@ See [.env.example](.env.example) for the values this pipeline needs.
 
 | # | Step | Task | Fidelity | Script |
 | --- | --- | --- | --- | --- |
-| 010 | 6d15af64-176c-496d-b583-fd2ae21d4df4 | \`checkout-none\` | \`stub\` | [\`010-checkout-none.sh\`](stages/010-default/jobs/020-no-sources-at-all/steps/010-checkout-none.sh) |
+| 010 | 6d15af64-176c-496d-b583-fd2ae21d4df4 | \`checkout-none\` | \`exact\` | [\`010-checkout-none.sh\`](stages/010-default/jobs/020-no-sources-at-all/steps/010-checkout-none.sh) |
 | 020 | CmdLine | \`CmdLine@2\` | \`exact\` | [\`020-cmdline.sh\`](stages/010-default/jobs/020-no-sources-at-all/steps/020-cmdline.sh) |
 
 #### Job \`self_only\` (agent)
@@ -1101,18 +1095,7 @@ None recorded. Run \`azdo-emu doctor\` against this project to re-check the host
 
 ## Warnings
 
-Ranked worst-first. Each entry says where the gap is, what the step is, how faithful it is,
-and what to do about it.
-
-1. **stages/010-default/jobs/010-two-repositories-in-one-workspace/steps/010-checkout-self.sh** — \`checkout-self\` · \`stub\`
-   does not run the real task — the script records the resolved inputs and exits.
-   → Supply a handler for this task or run the step by hand; \`azdo-emu doctor\` lists the gaps.
-2. **stages/010-default/jobs/010-two-repositories-in-one-workspace/steps/020-checkout-tools.sh** — \`checkout-tools\` · \`stub\`
-   does not run the real task — the script records the resolved inputs and exits.
-   → Supply a handler for this task or run the step by hand; \`azdo-emu doctor\` lists the gaps.
-3. **stages/010-default/jobs/020-no-sources-at-all/steps/010-checkout-none.sh** — \`checkout-none\` · \`stub\`
-   does not run the real task — the script records the resolved inputs and exits.
-   → Supply a handler for this task or run the step by hand; \`azdo-emu doctor\` lists the gaps.
+No warnings: every step converted to a faithful local equivalent.
 
 ## Unsupported
 

@@ -4302,3 +4302,150 @@ azdo_run_identity_seed() {
   azdo_var_set 'Build.BuildNumber' "$1" false false true || return
   azdo_var_set 'Build.BuildId' "$2" false false true
 }
+
+# azdo_run_task — real-task mode: run a task's own implementation (E07-S01-T02/S03-T01).
+#
+# Reads a heredoc on stdin of the shape the emitter writes:
+#
+#     task: <Name>@<major>
+#       <input>: <value>
+#
+# and executes the task's cached package with `INPUT_*` set the way task-lib reads them.
+#
+# The name transform is `azdo__env_name` prefixed with `INPUT_` — deliberately the *same* helper the
+# variable path uses, because the agent runs one `ConvertToEnvVariableFormat` for inputs and
+# variables alike (C-E07-001, C-E06-008). A second implementation here would be a divergence nobody
+# would notice until a task read an input under a name the runtime had spelled differently.
+#
+# An input's value may contain anything, including `=` and leading spaces; only the first `: `
+# separates the name, and the value is used verbatim (C-E07-004: task-lib does its own splitting,
+# so trimming here would change what `getInput` returns).
+azdo_run_task() {
+  local reference='' name='' major='' entry='' task_json='' handler='' target=''
+  local line input_name input_value env_name
+
+  while IFS= read -r line; do
+    case "$line" in
+      'task: '*)
+        reference="${line#task: }"
+        ;;
+      '  '*': '*)
+        input_name="${line#  }"
+        input_name="${input_name%%: *}"
+        input_value="${line#*: }"
+        azdo__env_name "$input_name" env_name || return
+        # C-E07-002: an empty value is exported anyway — task-lib will not vault it, so `getInput`
+        # returns unset, but a task reading the environment directly still sees it.
+        export "INPUT_${env_name}=${input_value}"
+        ;;
+    esac
+  done
+
+  [[ -n "$reference" ]] || {
+    printf '%s\n' 'azdo_run_task: stdin carried no "task:" line' >&2
+    return 2
+  }
+  name="${reference%@*}"
+  major="${reference##*@}"
+
+  entry="$(azdo__task_entry "$name" "$major")" || return
+  task_json="$entry/task.json"
+  [[ -f "$task_json" ]] || {
+    printf 'azdo_run_task: no cached task.json for %s (looked in %s)\n' "$reference" "$entry" >&2
+    printf '%s\n' 'Run convert without --frozen once to fetch the task package.' >&2
+    return 1
+  }
+
+  azdo__task_handler "$task_json" handler target || return
+  [[ -n "$target" ]] || {
+    printf 'azdo_run_task: %s declares no handler this host can run\n' "$reference" >&2
+    return 1
+  }
+
+  case "$handler" in
+    node) exec node "$entry/tree/$target" ;;
+    powershell) exec pwsh -NoLogo -NonInteractive -File "$entry/tree/$target" ;;
+    *) exec "$entry/tree/$target" ;;
+  esac
+}
+
+# azdo__task_entry <name> <major> — the newest cached entry for `name@major`, or a failure.
+#
+# The cache is keyed by the exact `major.minor.patch` (C-E09-088) while the pipeline names only the
+# major, so the entry is found by globbing and taking the highest version. Sorted with `sort -V` so
+# `6.10.0` beats `6.9.0` — a lexical sort would pick the wrong package and the failure would look
+# like a task bug rather than a cache one.
+azdo__task_entry() {
+  (($# == 2)) || {
+    printf '%s\n' 'usage: azdo__task_entry <name> <major>' >&2
+    return 2
+  }
+  local root candidate best=''
+  root="${AZDO_EMU_CACHE:-.cache}/tasks"
+  for candidate in "$root/$1@$2."*; do
+    [[ -d "$candidate" ]] || continue
+    if [[ -z "$best" ]]; then
+      best="$candidate"
+    elif [[ "$(printf '%s\n%s\n' "${best##*@}" "${candidate##*@}" | sort -V | tail -1)" == "${candidate##*@}" ]]; then
+      best="$candidate"
+    fi
+  done
+  [[ -n "$best" ]] || {
+    printf 'azdo_run_task: no cached package for %s@%s under %s\n' "$1" "$2" "$root" >&2
+    return 1
+  }
+  printf '%s\n' "$best"
+}
+
+# azdo__task_handler <task.json> <handler-var> <target-var> — pick the handler to run.
+#
+# Newest Node first, then PowerShell, then a process handler — the same preference order the
+# emitter's `resolveHandler` uses, because a disagreement would run a different entry point than the
+# one the generated script's header names.
+azdo__task_handler() {
+  (($# == 3)) || {
+    printf '%s\n' 'usage: azdo__task_handler <task.json> <handler-var> <target-var>' >&2
+    return 2
+  }
+  # Internal names are deliberately unlikely: `printf -v "$3"` writes the *caller's* variable, and a
+  # local called `target` would shadow it — the value would be set and then thrown away at return.
+  local __handler_key __handler_target
+  for __handler_key in Node24 Node20_1 Node16 Node10 Node; do
+    __handler_target="$(azdo__task_execution_target "$1" "$__handler_key")" || return
+    if [[ -n "$__handler_target" ]]; then
+      printf -v "$2" '%s' node
+      printf -v "$3" '%s' "$__handler_target"
+      return 0
+    fi
+  done
+  for __handler_key in PowerShell3 PowerShell; do
+    __handler_target="$(azdo__task_execution_target "$1" "$__handler_key")" || return
+    if [[ -n "$__handler_target" ]]; then
+      printf -v "$2" '%s' powershell
+      printf -v "$3" '%s' "$__handler_target"
+      return 0
+    fi
+  done
+  __handler_target="$(azdo__task_execution_target "$1" Process)" || return
+  printf -v "$2" '%s' process
+  printf -v "$3" '%s' "$__handler_target"
+}
+
+# azdo__task_execution_target <task.json> <execution-key> — the handler target, or empty.
+azdo__task_execution_target() {
+  (($# == 2)) || {
+    printf '%s\n' 'usage: azdo__task_execution_target <task.json> <execution-key>' >&2
+    return 2
+  }
+  node -e '
+    const fs = require("node:fs");
+    const key = process.argv[2];
+    let definition;
+    try { definition = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); }
+    catch { process.exit(0); }
+    const block = (definition.execution ?? {})[key];
+    if (block === null || typeof block !== "object") process.exit(0);
+    const target = block.target ?? block.script;
+    if (typeof target === "string") process.stdout.write(target);
+  ' "$1" "$2"
+}
