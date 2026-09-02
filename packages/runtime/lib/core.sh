@@ -4616,3 +4616,142 @@ azdo__sc_endpoint_data() {
   local __sc_var="ENDPOINT_DATA_${1}_${2}"
   printf '%s' "${!__sc_var-}"
 }
+
+# --- E08-S03-T01: deployment strategies -------------------------------------------------------
+
+# azdo_strategy_hooks <strategy> — the hook order, one per line (C-E08-011).
+#
+# One order serves all three strategies: preDeploy, deploy, routeTraffic, postRouteTraffic, then
+# exactly one of the `on:` hooks. The `on:` pair is not listed here because which one runs is a
+# result, not a position.
+azdo_strategy_hooks() {
+  (($# == 1)) || {
+    printf '%s\n' 'usage: azdo_strategy_hooks <strategy>' >&2
+    return 2
+  }
+  case "$1" in
+    runOnce | rolling | canary) printf '%s\n' preDeploy deploy routeTraffic postRouteTraffic ;;
+    *)
+      printf 'azdo_strategy_hooks: unknown strategy %s\n' "$1" >&2
+      return 2
+      ;;
+  esac
+}
+
+# azdo_strategy_iterating_hooks <strategy> — the hooks that repeat per iteration (C-E08-012).
+#
+# This is where canary and rolling part company, and treating them alike is the mistake the docs
+# warn against by wording them differently: rolling runs **all four** hooks per batch, while canary
+# runs `preDeploy` **once** and iterates only the remaining three. A canary job whose preDeploy
+# re-ran per increment would re-initialize between increments.
+azdo_strategy_iterating_hooks() {
+  (($# == 1)) || {
+    printf '%s\n' 'usage: azdo_strategy_iterating_hooks <strategy>' >&2
+    return 2
+  }
+  case "$1" in
+    runOnce) ;;
+    rolling) printf '%s\n' preDeploy deploy routeTraffic postRouteTraffic ;;
+    canary) printf '%s\n' deploy routeTraffic postRouteTraffic ;;
+    *)
+      printf 'azdo_strategy_iterating_hooks: unknown strategy %s\n' "$1" >&2
+      return 2
+      ;;
+  esac
+}
+
+# azdo_strategy_vars <strategy> <hook> [increment] — export the `strategy.*` variables for one hook.
+#
+# C-E08-013: the three variables are `name`, `action` and `increment`. There is no `strategy.cycle`,
+# despite the backlog's Do field naming one — implementing it would have created a variable no
+# pipeline can read while omitting `action`, which the docs' own canary example passes to
+# KubernetesManifest as `action: $(strategy.action)`.
+#
+# C-E08-014: `strategy.increment` is available **only** in deploy/routeTraffic/postRouteTraffic. It
+# is deliberately absent elsewhere rather than set to an empty string, so a pipeline reading it in
+# `preDeploy` sees the same nothing it would see on the service.
+azdo_strategy_vars() {
+  (($# >= 2 && $# <= 3)) || {
+    printf '%s\n' 'usage: azdo_strategy_vars <strategy> <hook> [increment]' >&2
+    return 2
+  }
+  local strategy="$1" hook="$2" increment="${3-}"
+  azdo_var_set 'strategy.name' "$strategy" || return
+  # `action` is Kubernetes-shaped; `deploy` is the only action a local run performs.
+  azdo_var_set 'strategy.action' 'deploy' || return
+
+  case "$hook" in
+    deploy | routeTraffic | postRouteTraffic)
+      [[ -z "$increment" ]] || azdo_var_set 'strategy.increment' "$increment" || return
+      ;;
+  esac
+}
+
+# azdo_strategy_output_key <strategy> <hook> <step-name> <variable> [scope] — the output-variable
+# key another job reads (C-E08-016).
+#
+# The shape is strategy-dependent, which is exactly the naming C-E04-154 reserved for this epic:
+#   runOnce                 <job>.<step>.<var>
+#   runOnce + resourceType  Deploy_<resource>.<step>.<var>
+#   canary                  <hook>_<increment>.<step>.<var>     (hook name lower-cased)
+#   rolling                 <hook>_<resource>.<step>.<var>
+azdo_strategy_output_key() {
+  (($# >= 4 && $# <= 5)) || {
+    printf '%s\n' 'usage: azdo_strategy_output_key <strategy> <hook> <step-name> <variable> [scope]' >&2
+    return 2
+  }
+  local strategy="$1" hook="$2" step="$3" variable="$4" scope="${5-}"
+  local prefix
+  case "$strategy" in
+    runOnce)
+      # `scope` is the job name, or the resource name when the environment named a resourceType.
+      [[ -n "$scope" ]] || {
+        printf '%s\n' 'azdo_strategy_output_key: runOnce needs the job or resource name' >&2
+        return 2
+      }
+      prefix="$scope"
+      ;;
+    canary | rolling)
+      [[ -n "$scope" ]] || {
+        printf 'azdo_strategy_output_key: %s needs the increment or resource name\n' "$strategy" >&2
+        return 2
+      }
+      # The doc's example reads `deploy_10`, so the hook name is lower-cased.
+      prefix="$(LC_ALL=C printf '%s' "$hook" | LC_ALL=C tr '[:upper:]' '[:lower:]')_$scope"
+      ;;
+    *)
+      printf 'azdo_strategy_output_key: unknown strategy %s\n' "$strategy" >&2
+      return 2
+      ;;
+  esac
+  printf '%s.%s.%s\n' "$prefix" "$step" "$variable"
+}
+
+# azdo_strategy_deltas <strategy> [maxParallel] — the warnings this strategy earns locally.
+#
+# C-E08-017, PLAN D10: a converted project has no VM set and no deployment group, so rolling
+# collapses to a single iteration and `maxParallel` is not honoured. Saying so is the whole point —
+# a strategy that silently ran once would look like it worked.
+azdo_strategy_deltas() {
+  (($# >= 1 && $# <= 2)) || {
+    printf '%s\n' 'usage: azdo_strategy_deltas <strategy> [maxParallel]' >&2
+    return 2
+  }
+  case "$1" in
+    runOnce) ;;
+    rolling)
+      printf '%s\n' \
+        'rolling: the service iterates once per batch of VMs; this run has no VM set, so the hooks execute exactly once'
+      [[ -z "${2-}" ]] ||
+        printf 'rolling: maxParallel=%s is not honoured — batching is collapsed to sequential execution\n' "$2"
+      ;;
+    canary)
+      printf '%s\n' \
+        'canary: increments are honoured as an iteration count, but the percentages have no meaning without a cluster'
+      ;;
+    *)
+      printf 'azdo_strategy_deltas: unknown strategy %s\n' "$1" >&2
+      return 2
+      ;;
+  esac
+}

@@ -50,7 +50,7 @@ Acceptance: each task verified under real-task mode; deltas documented, not tran
 ## E08-S03 — As a pipeline developer, deployment strategies execute their hooks locally, so strategy logic is debuggable.
 Acceptance: `runOnce`/`rolling`/`canary` hook sequencing with service-matching `strategy.*` variables.
 
-- [ ] **E08-S03-T01 — Strategy runtime (`runOnce`, `rolling`, `canary`)**
+- [!] **E08-S03-T01 — Strategy runtime (`runOnce`, `rolling`, `canary`)** *(**Both Done items are met 2026-09-02 — bats for hook order and variables, and the deltas in the warnings list — but the Ground field also asks to "verify variable presence/values via a real canary run in the test org", which needs a queued deployment run (the same blocker as E09-S03-T02/T03).** Everything is grounded from the deployment-jobs page instead (`git_commit_id` `1eeaa8de…`), and one **Do-field correction** is recorded: the third variable is `strategy.action`, **not `strategy.cycle`** — no `cycle` exists anywhere on the page, and `action` is the one the page's own canary example passes to `KubernetesManifest@1` (C-E08-013).)*
   **Do:** hook sequencing per iteration, `strategy.*` variables (`name`, `cycle`, `increment`) populated; batching collapsed to sequential with a documented delta.
   **Ground:** deployment-jobs doc strategy sections — quote hook order and each `strategy.*` variable; verify variable presence/values via a real canary run in the test org.
   **Done:** bats: hook order + variables per claims; delta in the warnings list.

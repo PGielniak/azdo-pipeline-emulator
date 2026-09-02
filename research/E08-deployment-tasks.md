@@ -111,3 +111,68 @@ because selecting a subscription before there is a session fails with a message 
 subscription rather than about the login.
   — https://github.com/microsoft/azure-pipelines-tasks/blob/093f47b9598eb48af6a972dbc2b223c244b344b9/Tasks/AzureCLIV2/azureclitask.ts
     (`loginAzureRM` L308-360; checked 2026-09-02)
+
+---
+
+## E08-S03-T01 — deployment strategies (`C-E08-011..017`)
+
+Recorded 2026-09-02, before implementation. Page deep-verified: `git_commit_id`
+`1eeaa8de39f8b7130d8eb45ec907d9e47d6f5a32`, `ms.date` 2025-07-17.
+
+[C-E08-011] **One hook order serves all three strategies:** `preDeploy` → `deploy` → `routeTraffic`
+→ `postRouteTraffic`, then `on: failure` **or** `on: success` — never both. The page describes the
+hooks once, for every strategy, and each strategy section repeats "Then, either `on: success` or
+`on: failure` is executed."
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/deployment-jobs
+    (deep-verified 2026-09-02)
+
+[C-E08-012] **What iterates differs per strategy, and canary is not "rolling with numbers".**
+runOnce: "all the lifecycle hooks … are executed once". rolling: "`preDeploy`, `deploy`,
+`routeTraffic`, and `postRouteTraffic` are executed **once per batch size defined by
+`maxParallel`**" — all four iterate. canary: "supports the `preDeploy` lifecycle hook (**executed
+once**) and iterates with the `deploy`, `routeTraffic`, and `postRouteTraffic` lifecycle hooks" —
+`preDeploy` runs **once**, outside the loop. Treating the two the same would run canary's
+initialization once per increment.
+  — same page
+
+[C-E08-013] **The task's Do field names the wrong third variable: it is `strategy.action`, not
+`strategy.cycle`.** The page lists exactly three under canary — `strategy.name` ("Name of the
+strategy. For example, canary"), `strategy.action` ("The action to be performed on the Kubernetes
+cluster. For example, deploy, promote, or reject") and `strategy.increment` ("The increment value
+used in the current interaction") — and under rolling only "The `strategy.name` variable is
+available in this strategy block". **No `strategy.cycle` appears anywhere on the page.** Implementing
+`cycle` would have created a variable no pipeline can meaningfully read, and omitted `action`, which
+the page's own canary example passes to `KubernetesManifest@1` as `action: $(strategy.action)`.
+  — same page
+
+[C-E08-014] **`strategy.increment` is scoped to three hooks, not to the whole job.** Verbatim: "This
+variable is available only in `deploy`, `routeTraffic`, and `postRouteTraffic` lifecycle hooks." So
+it is absent in `preDeploy` — consistent with C-E08-012's "executed once" — and absent in the `on:`
+hooks.
+  — same page
+
+[C-E08-015] **`increments` is a *list*, `maxParallel` is a number or a percentage.** canary:
+`increments: [ number ]`, and the worked example is `increments: [10, 20]` — "first deploy the
+changes with 10-percent pods, followed by 20 percent". rolling: `maxParallel: [ number or percentage
+as x% ]`, "for percentages, mention as x%". So a canary iteration count is the list length, while a
+rolling iteration count depends on how many VMs exist — which is why the local delta differs between
+them (C-E08-017).
+  — same page
+
+[C-E08-016] **Output-variable keys are strategy-shaped, which is the naming C-E04-154 reserved for
+this epic.** Verbatim: runOnce is `dependencies.<job-name>.outputs['<job-name>.<step-name>.<variable-name>']`;
+runOnce with a `resourceType` is `'Deploy_<resource-name>.<step-name>.<variable-name>'`; canary is
+`'<lifecycle-hookname>_<increment-value>.<step-name>.<variable-name>'` (the example reads
+`deploy_10.setvarStep.myOutputVar`, lower-case hook name); rolling is
+`'<lifecycle-hookname>_<resource-name>.<step-name>.<variable-name>'`.
+  — same page
+
+[C-E08-017] **The local deltas, stated rather than hidden (PLAN D10).** Two things this runtime
+cannot reproduce and must therefore report: (a) **rolling has no VM set locally** — the page says
+"We currently only support the rolling strategy to VM resources", and a converted project has no
+deployment group, so a rolling strategy collapses to **one** iteration rather than one per batch;
+(b) **`maxParallel` is not honoured** — batching is collapsed to sequential execution (the task's own
+Do says so), so a `maxParallel: 5` pipeline runs its single local iteration serially. Canary is the
+better-behaved case: `increments` is authored data, so the iteration *count* is reproducible even
+though the percentages mean nothing without a cluster.
+  — page as above for the VM-only constraint; the collapse is our documented limitation

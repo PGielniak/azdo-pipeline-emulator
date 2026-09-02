@@ -3414,3 +3414,108 @@ mock_az() {
   run -1 azdo_sc_login 'my.prod sub'
   [[ "$output" == *'has no client id or tenant'* ]]
 }
+
+# --- E08-S03-T01: deployment strategies --------------------------------------------------------
+
+@test "one hook order serves all three strategies (C-E08-011)" {
+  local expected=$'preDeploy\ndeploy\nrouteTraffic\npostRouteTraffic'
+  for strategy in runOnce rolling canary; do
+    run -0 azdo_strategy_hooks "$strategy"
+    [ "$output" = "$expected" ]
+  done
+  run -2 azdo_strategy_hooks 'blueGreen'
+}
+
+@test "canary runs preDeploy once; rolling iterates all four (C-E08-012)" {
+  # The docs word these differently on purpose. A canary job whose preDeploy re-ran per increment
+  # would re-initialize between increments.
+  run -0 azdo_strategy_iterating_hooks canary
+  [ "$output" = $'deploy\nrouteTraffic\npostRouteTraffic' ]
+
+  run -0 azdo_strategy_iterating_hooks rolling
+  [ "$output" = $'preDeploy\ndeploy\nrouteTraffic\npostRouteTraffic' ]
+
+  # runOnce iterates nothing.
+  run -0 azdo_strategy_iterating_hooks runOnce
+  [ -z "$output" ]
+}
+
+@test "the three strategy variables are name, action and increment — never cycle (C-E08-013)" {
+  prepare_artifact_dirs
+  run -0 azdo_strategy_vars canary deploy 10
+  [ "$(azdo_var 'strategy.name')" = 'canary' ]
+  # The docs' own canary example passes this to KubernetesManifest as action: $(strategy.action).
+  [ "$(azdo_var 'strategy.action')" = 'deploy' ]
+  [ "$(azdo_var 'strategy.increment')" = '10' ]
+  # The backlog's Do field named `cycle`; the docs do not, and implementing it would have created a
+  # variable no pipeline can read.
+  [ -z "$(azdo_var 'strategy.cycle')" ]
+}
+
+@test "strategy.increment is absent outside deploy/routeTraffic/postRouteTraffic (C-E08-014)" {
+  prepare_artifact_dirs
+  azdo_strategy_vars canary preDeploy 10
+  # Absent, not empty-string: a pipeline reading it in preDeploy sees the same nothing it would on
+  # the service.
+  [ -z "$(azdo_var 'strategy.increment')" ]
+
+  for hook in deploy routeTraffic postRouteTraffic; do
+    prepare_artifact_dirs
+    azdo_strategy_vars canary "$hook" 20
+    [ "$(azdo_var 'strategy.increment')" = '20' ]
+  done
+}
+
+@test "rolling sets name and action but carries no increment" {
+  prepare_artifact_dirs
+  run -0 azdo_strategy_vars rolling deploy
+  [ "$(azdo_var 'strategy.name')" = 'rolling' ]
+  [ -z "$(azdo_var 'strategy.increment')" ]
+}
+
+@test "output-variable keys are strategy-shaped (C-E08-016)" {
+  run -0 azdo_strategy_output_key runOnce deploy setvarStep myOutputVar JobA
+  [ "$output" = 'JobA.setvarStep.myOutputVar' ]
+
+  # runOnce with a resourceType uses the resource prefix the docs spell `Deploy_<resource>`.
+  run -0 azdo_strategy_output_key runOnce deploy setvarStep myOutputVar Deploy_VM1
+  [ "$output" = 'Deploy_VM1.setvarStep.myOutputVar' ]
+
+  # The docs' example reads `deploy_10`, so the hook name is lower-cased.
+  run -0 azdo_strategy_output_key canary deploy setvarStep myOutputVar 10
+  [ "$output" = 'deploy_10.setvarStep.myOutputVar' ]
+  run -0 azdo_strategy_output_key canary postRouteTraffic s v 20
+  [ "$output" = 'postroutetraffic_20.s.v' ]
+
+  run -0 azdo_strategy_output_key rolling deploy setvarStep myOutputVar VM1
+  [ "$output" = 'deploy_VM1.setvarStep.myOutputVar' ]
+}
+
+@test "azdo_strategy_output_key refuses a call it cannot name" {
+  run -2 azdo_strategy_output_key runOnce deploy s v
+  [[ "$output" == *'needs the job or resource name'* ]]
+  run -2 azdo_strategy_output_key canary deploy s v
+  [[ "$output" == *'needs the increment or resource name'* ]]
+  run -2 azdo_strategy_output_key blueGreen deploy s v x
+  [[ "$output" == *'unknown strategy'* ]]
+}
+
+@test "the local deltas are stated, not hidden (C-E08-017, PLAN D10)" {
+  # A strategy that silently ran once would look like it worked.
+  run -0 azdo_strategy_deltas runOnce
+  [ -z "$output" ]
+
+  run -0 azdo_strategy_deltas rolling 5
+  [[ "$output" == *'no VM set, so the hooks execute exactly once'* ]]
+  [[ "$output" == *'maxParallel=5 is not honoured'* ]]
+
+  # Without a maxParallel there is nothing to say about batching.
+  run -0 azdo_strategy_deltas rolling
+  [[ "$output" != *'maxParallel'* ]]
+
+  run -0 azdo_strategy_deltas canary
+  [[ "$output" == *'increments are honoured as an iteration count'* ]]
+  [[ "$output" == *'percentages have no meaning without a cluster'* ]]
+
+  run -2 azdo_strategy_deltas blueGreen
+}
