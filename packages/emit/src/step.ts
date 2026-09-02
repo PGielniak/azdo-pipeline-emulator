@@ -21,6 +21,7 @@
 //   - every other task → `stub` (real-task mode is E07; the disposition registry is E07-S03-T01).
 import type { Step } from '@azdo-emu/engine';
 
+import { disposeStep, type DispositionOptions, type StepDisposition } from './disposition.js';
 import { originStepLabel } from './scaffold.js';
 
 /** The native script kinds the emitter produces readable bash for (PLAN D4, decision 49). */
@@ -61,12 +62,15 @@ export function isNativeScript(step: Step): boolean {
   return nativeScriptKind(step) !== undefined;
 }
 
-/** The per-kind fidelity default shown in the header (E05-S02-T02 refines it). */
-export function defaultFidelity(step: Step): DefaultFidelity {
-  const kind = nativeScriptKind(step);
-  if (kind === 'script' || kind === 'bash') return 'exact';
-  if (kind === 'pwsh' || kind === 'powershell') return 'degraded';
-  return 'stub';
+/**
+ * The fidelity label shown in the header.
+ *
+ * **Now the registry's answer, not a guess** (E07-S03-T01). This used to hard-code "everything
+ * non-script is `stub`", which was true only while real-task mode did not exist; leaving it that
+ * way once the registry landed would have put a `stub` label on steps that really run their task.
+ */
+export function defaultFidelity(step: Step, options: DispositionOptions = {}): DefaultFidelity {
+  return disposeStep(step, options).fidelity;
 }
 
 /** The short label for the header's `· <kind>` slot. */
@@ -77,15 +81,23 @@ function kindLabel(step: Step): string {
   return step.origin ?? taskRef(step);
 }
 
-/** The one-line explanation beside the fidelity label (docs/04 §12's `— …`). */
-function fidelityNote(step: Step): string {
-  switch (defaultFidelity(step)) {
-    case 'exact':
-      return 'script steps run verbatim; see README §fidelity';
-    case 'degraded':
-      return 'runs via pwsh on this host; see README §fidelity';
+/**
+ * The one-line explanation beside the fidelity label (docs/04 §12's `— …`).
+ *
+ * Keyed on the **disposition**, not the fidelity, because `degraded` now covers two different
+ * things — a PowerShell step running through `pwsh`, and a task running its real implementation —
+ * and telling a reader "degraded" without saying which would be worse than saying nothing.
+ */
+function fidelityNote(disposition: StepDisposition): string {
+  switch (disposition.disposition) {
+    case 'native':
+      return disposition.fidelity === 'exact'
+        ? 'script steps run verbatim; see README §fidelity'
+        : 'runs via pwsh on this host; see README §fidelity';
+    case 'real-task':
+      return 'runs the real task against the emulated task-lib; see README §fidelity';
     case 'stub':
-      return 'no native emission yet (real-task mode is E07); inputs logged only';
+      return 'inputs logged only; the step does not do the task’s work';
   }
 }
 
@@ -133,16 +145,21 @@ function provenanceLine(step: Step): string {
 }
 
 /** The header block common to every emitted step (docs/04 §12). */
-function header(step: Step, number: string): string {
+function header(step: Step, number: string, disposition: StepDisposition): string {
   const lines = [
     '#!/usr/bin/env bash',
     ruleLine(step, number),
     provenanceLine(step),
     conditionLine(step),
-    `# fidelity: ${defaultFidelity(step)} — ${fidelityNote(step)}`,
+    `# fidelity: ${disposition.fidelity} — ${fidelityNote(disposition)}`,
   ];
   if (stepHasMacro(step)) {
     lines.push('# NOTE: $(…) below is an ADO macro — run_step expands it just-in-time.');
+  }
+  // The registry's own warning rides in the header beside the step's, so a reader who opens one
+  // script sees why *this* step degraded without going back to the README (PLAN D10).
+  if (disposition.warning !== undefined) {
+    lines.push(`# warning: ${disposition.warning}`);
   }
   for (const warning of step.warnings) {
     lines.push(`# warning: ${warning}`);
@@ -204,20 +221,103 @@ function stubBody(step: Step): string {
 }
 
 /**
+ * A real-task step: hand off to the runner E07-S01-T02 emits.
+ *
+ * The `INPUT_*` construction lives in `task-host.ts` and needs the task's own `task.json`, which
+ * this module does not have — the emitter writes the dispatch, `run_task.sh` reads the cached
+ * definition and builds the environment. Keeping the split means the `INPUT_*` contract has exactly
+ * one implementation (C-E07-001..004) rather than one here and one there.
+ */
+/**
+ * A `checkout:` step: call the runtime's own implementation (E06-S05-T02).
+ *
+ * Emitted natively because the runtime performs the checkout itself — there is no task package to
+ * run. The input names are the `checkout` shorthand's, and each maps to one `azdo_checkout` flag;
+ * an input the runtime has no flag for is passed through as a header note rather than dropped, so
+ * an unhandled option is visible in the script instead of silently ignored.
+ */
+const CHECKOUT_FLAGS: Readonly<Record<string, string>> = {
+  repository: '--repository',
+  clean: '--clean',
+  fetchDepth: '--fetch-depth',
+  fetchTags: '--fetch-tags',
+  lfs: '--lfs',
+  submodules: '--submodules',
+  path: '--path',
+  persistCredentials: '--persist-credentials',
+  fetchFilter: '--fetch-filter',
+  sparseCheckoutDirectories: '--sparse-checkout-directories',
+  sparseCheckoutPatterns: '--sparse-checkout-patterns',
+};
+
+function checkoutBody(step: Step): string {
+  const args: string[] = [];
+  const unmapped: string[] = [];
+  for (const [key, value] of Object.entries(step.inputs)) {
+    const flag = CHECKOUT_FLAGS[key];
+    if (flag === undefined) {
+      unmapped.push(key);
+      continue;
+    }
+    args.push(`${flag} ${shellSingleQuote(value)}`);
+  }
+  return [
+    ...unmapped.map(
+      (key) => `# note: checkout input '${key}' has no runtime flag and is not applied`,
+    ),
+    `azdo_checkout ${args.join(' ')}`.trimEnd(),
+    '',
+  ].join('\n');
+}
+
+/** Single-quote a value so it reaches the runtime verbatim — an input is data, never shell. */
+function shellSingleQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function realTaskBody(step: Step): string {
+  const inputs = Object.entries(step.inputs)
+    .map(([key, value]) => `  ${key}: ${value}`)
+    .join('\n');
+  return [
+    `# Real-task mode: run ${taskRef(step)} against the emulated task-lib.`,
+    '# run_task.sh resolves the cached task.json, builds INPUT_* from these inputs, and execs the',
+    "# task's own handler. The INPUT_* name transform is task-lib's (C-E07-001).",
+    "azdo_run_task <<'AZDO_EMU_TASK_INPUTS'",
+    `task: ${taskRef(step)}`,
+    ...(inputs.length > 0 ? [inputs] : []),
+    'AZDO_EMU_TASK_INPUTS',
+    '',
+  ].join('\n');
+}
+
+/**
  * Emit one step as the full `.sh` file content (docs/04 §12).
  *
  * `number` is the zero-padded `NNN-` prefix the scaffolder assigned (e.g. `"030"`), used in the
  * header's `Step 030` rule line so the file name and the header agree.
  */
-export function emitStepScript(step: Step, number: string): string {
+export function emitStepScript(
+  step: Step,
+  number: string,
+  options: DispositionOptions = {},
+): string {
+  // One decision, taken once, driving both the label and the body (E07-S03-T01). Before the
+  // registry these were computed separately and could disagree.
+  const disposition = disposeStep(step, options);
   const kind = nativeScriptKind(step);
+
   let body: string;
   if (kind === 'script' || kind === 'bash') {
     body = nativeScriptBody(step);
   } else if (kind === 'pwsh' || kind === 'powershell') {
     body = pwshBody(step);
+  } else if (step.origin === 'checkout') {
+    body = checkoutBody(step);
+  } else if (disposition.disposition === 'real-task') {
+    body = realTaskBody(step);
   } else {
     body = stubBody(step);
   }
-  return `${header(step, number)}\n${PREAMBLE}\n${body}`;
+  return `${header(step, number, disposition)}\n${PREAMBLE}\n${body}`;
 }

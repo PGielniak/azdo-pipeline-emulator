@@ -26,6 +26,7 @@ import {
   isNativeScript,
   nativeScriptKind,
 } from '../src/step.js';
+import type { DispositionOptions } from '../src/disposition.js';
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
 // CI installs a system shellcheck and exports it as `$SHELLCHECK` (see the workflow); locally it
@@ -41,13 +42,13 @@ const build = (yaml: string, file = 'pipeline.expanded.yml') =>
   buildPipeline(parsePipelineYaml(yaml, file));
 
 /** Build a one-stage, one-job, one-step model and return the step plus its emitted script. */
-function emitOne(yaml: string): { step: Step; output: string } {
+function emitOne(yaml: string, options: DispositionOptions = {}): { step: Step; output: string } {
   const { pipeline, diagnostics } = build(yaml);
   expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
   expect(pipeline).toBeDefined();
   const job = pipeline!.stages[0]!.jobs[0]!;
   const step = job.steps[0]!;
-  return { step, output: emitStepScript(step, '030') };
+  return { step, output: emitStepScript(step, '030', options) };
 }
 
 /** Build a single step from a step-mapping body (one `task:`/`checkout:` entry). */
@@ -74,11 +75,22 @@ describe('nativeScriptKind', () => {
 });
 
 describe('defaultFidelity', () => {
-  it('labels script/bash exact, pwsh/powershell degraded, everything else stub', () => {
+  it('takes the registry answer: script/bash exact, powershell and real-task degraded', () => {
+    // Updated by E07-S03-T01. This used to assert "everything else is stub", which was true only
+    // while real-task mode did not exist — a non-script task now runs its real implementation, and
+    // labelling it `stub` would have told the reader the step does nothing.
     expect(defaultFidelity(stepOf('task: CmdLine@2'))).toBe('exact');
     expect(defaultFidelity(stepOf('task: Bash@3'))).toBe('exact');
     expect(defaultFidelity(stepOf('task: PowerShell@2'))).toBe('degraded');
-    expect(defaultFidelity(stepOf('task: PublishTestResults@2'))).toBe('stub');
+    expect(defaultFidelity(stepOf('task: PublishTestResults@2'))).toBe('degraded');
+  });
+
+  it('is stub only when the package is known to be unavailable', () => {
+    expect(
+      defaultFidelity(stepOf('task: PublishTestResults@2'), {
+        packages: { 'PublishTestResults@2': { available: false, unavailableReason: 'offline' } },
+      }),
+    ).toBe('stub');
   });
 });
 
@@ -169,7 +181,7 @@ describe('emitStepScript', () => {
     expect(output).toMatchSnapshot();
   });
 
-  it('emits a stub for a non-script task, dumping its resolved inputs', () => {
+  it('dispatches a non-script task to real-task mode, carrying its resolved inputs', () => {
     const { output } = emitOne(`stages:
 - stage: A
   jobs:
@@ -183,17 +195,34 @@ describe('emitStepScript', () => {
 `);
     expect(output).toContain('# ── Step 030 · "Publish tests" · PublishTestResults@2 ');
     expect(output).toContain(
-      '# fidelity: stub — no native emission yet (real-task mode is E07); inputs logged only',
+      '# fidelity: degraded — runs the real task against the emulated task-lib; see README §fidelity',
     );
-    expect(output).toContain(
-      "printf '%s\\n' 'azdo-emu: stub — PublishTestResults@2 (inputs only; the step does not run)'",
-    );
+    expect(output).toContain('azdo_run_task');
     expect(output).toContain('task: PublishTestResults@2');
     expect(output).toContain('  testResultsFiles: **/*.xml');
     expect(output).toMatchSnapshot();
   });
 
-  it('emits a stub for a desugared checkout step (native dispatch is E07-S03-T01)', () => {
+  it('still emits a stub when the package is unavailable, saying why', () => {
+    const { output } = emitOne(
+      `stages:
+- stage: A
+  jobs:
+  - job: build
+    steps:
+    - task: PublishTestResults@2
+      inputs:
+        testResultsFiles: '**/*.xml'
+`,
+      { packages: { 'PublishTestResults@2': { available: false, unavailableReason: 'HTTP 404' } } },
+    );
+    expect(output).toContain('# fidelity: stub —');
+    // The reason rides in the header, so a reader who opens one script sees why this step degraded.
+    expect(output).toContain('# warning: `PublishTestResults@2` runs as a stub: HTTP 404');
+    expect(output).toContain('azdo-emu: stub — PublishTestResults@2');
+  });
+
+  it('emits a native checkout for a desugared checkout step (E07-S03-T01)', () => {
     const { output } = emitOne(`stages:
 - stage: A
   jobs:
@@ -204,9 +233,9 @@ describe('emitStepScript', () => {
         repository: self
 `);
     expect(output).toContain('· checkout ');
-    expect(output).toContain(
-      '# fidelity: stub — no native emission yet (real-task mode is E07); inputs logged only',
-    );
+    // The runtime performs the checkout itself, so there is no package to run and nothing to stub.
+    expect(output).toContain('# fidelity: exact — script steps run verbatim; see README §fidelity');
+    expect(output).toContain("azdo_checkout --repository 'self'");
     expect(output).toMatchSnapshot();
   });
 

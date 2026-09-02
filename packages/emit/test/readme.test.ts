@@ -275,11 +275,29 @@ describe('rankWarnings', () => {
 `;
 
   it('ranks worst-first and leaves faithful steps out of the list', () => {
+    // Updated by E07-S03-T01: `DotNetCoreCLI@2` used to rank `stub` and lead the list. It now runs
+    // its real implementation, so it is `degraded` like the PowerShell step, and the tie falls to
+    // step order. The `exact` script step is still absent — that is the half this test guards.
     const { plan, manifest } = conversion(MIXED);
+    const entries = rankWarnings(manifest, plan);
+    expect(entries.map((e) => e.tier)).toEqual(['degraded', 'degraded']);
+    expect(entries.map((e) => e.task)).toEqual(['PowerShell@2', 'DotNetCoreCLI@2']);
+    expect(entries[0]!.where).toMatch(/020-.*\.sh$/);
+    expect(entries[1]!.where).toMatch(/030-.*\.sh$/);
+  });
+
+  it('still ranks a stub above a degraded step when one is stubbed', () => {
+    // The severity ordering is what the ranking is for, so it keeps a test of its own now that the
+    // MIXED fixture no longer produces a stub on its own.
+    const { plan, manifest } = conversion(MIXED);
+    for (const row of [...plan.stages].flatMap((stage) => stage.jobs.flatMap((job) => job.steps))) {
+      if (row.step.task.name === 'DotNetCoreCLI') {
+        (row.step as { fidelity?: string }).fidelity = 'stub';
+      }
+    }
     const entries = rankWarnings(manifest, plan);
     expect(entries.map((e) => e.tier)).toEqual(['stub', 'degraded']);
     expect(entries[0]!.task).toBe('DotNetCoreCLI@2');
-    expect(entries[0]!.where).toMatch(/030-.*\.sh$/);
     expect(entries[0]!.remediation).toContain('azdo-emu doctor');
   });
 
@@ -293,8 +311,8 @@ describe('rankWarnings', () => {
     const { plan, manifest } = conversion(MIXED);
     const readme = generateReadme(manifest, plan);
     expect(readme).toContain('## Warnings');
-    expect(readme).toMatch(/1\. \*\*stages\/.*030-.*\.sh\*\* — `DotNetCoreCLI@2` · `stub`/);
-    expect(readme).toContain('   → Supply a handler for this task');
+    expect(readme).toMatch(/1\. \*\*stages\/.*020-.*\.sh\*\* — `PowerShell@2` · `degraded`/);
+    expect(readme).toMatch(/2\. \*\*stages\/.*030-.*\.sh\*\* — `DotNetCoreCLI@2` · `degraded`/);
   });
 
   it('reports a clean conversion as such', () => {

@@ -20,7 +20,7 @@ Acceptance: a marketplace/in-box Node task executes via the `INPUT_*` host and i
   **Do:** resolve a step's `task: Name@major` to a concrete version; download the task package (from the org via DistributedTask, or the vendored `task.json` + a fetched bundle) into `.cache/tasks/`; pin in the lockfile.
   **Ground:** how the agent locates/downloads a task (pin the agent repo's task-download path); DistributedTask REST live sample from the test org (E09-S03-T05 supplies `task.json`).
   **Done:** a fixture task package lands in `.cache/tasks/` offline-reproducibly; lockfile pins the version.
-- [!] **E07-S01-T02 — task-lib emulation host (`INPUT_*`)** *(**The `INPUT_*` contract — the graded half — is done and grounded 2026-09-02 in `packages/emit/src/task-host.ts`; the `AGENT_*`/`BUILD_*` half of Do is already the runtime's and is not duplicated, and `ENDPOINT_*` is E07-S02/E08.** Done is met: a `CmdLine@2`-backed task and a marketplace-shaped Node task are driven through the same host and both observe exactly the `INPUT_*` their `task.json` declares, asserted by executing the emitted bash. **Ground-field correction (C-E07-001): the transform replaces dots *and* spaces**, not just spaces as the field says — an input named `sonar.projectKey` would otherwise reach the task under a name it never reads. **What is left before this is `[x]`:** wiring the runner into `packages/emit/src/step.ts`, which needs E07-S03-T01's disposition registry to decide *which* steps dispatch to it — the registry is the next task in the epic.)*
+- [x] **E07-S01-T02 — task-lib emulation host (`INPUT_*`)**
   **Do:** emit a runner that materializes `INPUT_<name>` env vars from resolved inputs using the task's own `task.json` name/type/transform rules, sets the `AGENT_*`/`ENDPOINT_*`/`BUILD_*` env the task reads, and invokes the task's handler (node/ps/script).
   **Ground:** `azure-pipelines-task-lib` `getInput` name/type conventions and the agent's `HandlerFactory` env contract — pin the exact transform (spaces→`_`, uppercase, prefix `INPUT_`).
   **Done:** a `CmdLine@2`-backed script task and one real Node task both observe the same `INPUT_*` values their `task.json` declares.
@@ -48,7 +48,7 @@ Acceptance: stub policy + user handler drop-in.
 ## E07-S03 — As a converter developer, every task has a declared disposition and fidelity label, so the README is truthful.
 Acceptance: disposition registry consumed by the emitter and warnings list.
 
-- [!] **E07-S03-T01 — Task disposition registry** *(**The table is done and complete 2026-09-02 in `packages/emit/src/disposition.ts`; the "surfaced in the emitter (E05)" half of Do is the same one-line wiring E07-S01-T02 waits on, and both land together.** Classification, fidelity labels, the de-duplicated warnings list and the summary counts are all built and table-driven. `step.ts` still shows its own `defaultFidelity` guess until the wiring replaces it — deliberately not done piecemeal, because a half-wired emitter would label some steps from the registry and some from the old guess.)*
+- [x] **E07-S03-T01 — Task disposition registry**
   **Do:** `name@major → native | real-task | stub` resolution (built-ins natively mapped; the rest default to real-task, falling back to stub when the package is unavailable); per-step fidelity label computed and surfaced in the emitter (E05) and warnings list.
   **Ground:** PLAN D4 + §6 fidelity labels; docs/03 §6.
   **Done:** disposition table-driven; every corpus step carries a correct label; a task that can't download degrades to `stub` with a warning.
