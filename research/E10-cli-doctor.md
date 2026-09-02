@@ -78,3 +78,39 @@ The two versions match the canned fixtures the unit tests use byte for byte (`2.
 which is the point of running it: the tests would still pass if the probe *commands* were wrong, and
 this shows they are not. `terraform` is deliberately in the fixture to exercise the `unprobed`
 path — the doctor says it does not know rather than assuming the tool is fine.
+
+---
+
+## E10-S04-T02 — the doctor↔task contract (`C-E10-007..010`)
+
+Recorded 2026-09-02.
+
+[C-E10-007] **`AzureCLIV2` resolves `az` on PATH itself**, which is direct evidence of the
+requirement rather than an inference from the task's name: `const azPath = tl.which('az', false);`.
+Its login arguments in the same file also re-confirm C-E08-006/009 —
+`login --service-principal -u "…" …="…" --tenant "…" --allow-no-subscriptions`.
+  — https://github.com/microsoft/azure-pipelines-tasks/blob/093f47b9598eb48af6a972dbc2b223c244b344b9/Tasks/AzureCLIV2/azureclitask.ts
+    (L367; checked 2026-09-02)
+
+[C-E10-008] **`minimumAgentVersion` is an *agent* version and must never become a tool minimum.**
+Measured across the priority set's `task.json` files: `AzureCLIV2` declares `2.0.0`, `DockerV2`
+`2.172.0`, `AzurePowerShellV5` `2.115.0`, while `HelmDeployV0` and `KubernetesManifestV1` declare
+none. These are versions of the *Azure Pipelines agent*, not of `az`, `docker` or `pwsh` — reading
+`2.172.0` as "Docker ≥ 2.172.0" would demand a version of Docker that has never existed and report
+every installation as outdated. **This is precisely the invention the task's Ground field forbids
+("doctor never invents versions").**
+  — the five `task.json` files at the pin above; checked 2026-09-02
+
+[C-E10-009] **No task in the priority set declares a minimum version for the CLI it shells out to.**
+`demands` is empty (`[]`) on all four that carry the field, and none of the five states a CLI
+version anywhere in its manifest. **Consequence:** every requirement this contract registers carries
+**no `min`** — the doctor reports presence, not a version floor, until a task research note supplies
+a real one. That is the honest reading of "requirement values cite the task research notes"; the
+alternative is a fabricated floor that fails working setups.
+  — same five `task.json` files
+
+[C-E10-010] **The contract is ours: a task that shells out must declare the tool.** No source
+requires this — it is the check the Do field asks for ("CI check: every task declaring CLI calls
+declares requirements"), and it exists so a task added later cannot silently become a step that
+fails at run time with `command not found` instead of failing the doctor before the run.
+  — project policy; no source claims otherwise
