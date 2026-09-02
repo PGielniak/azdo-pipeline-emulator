@@ -23,3 +23,15 @@ export {
   type TaskInputDeclaration,
   type TaskRunnerOptions,
 } from './task-host.js';
+
+// E07-S03-T01 — the task disposition registry.
+export {
+  disposeStep,
+  dispositionSummary,
+  dispositionWarnings,
+  type Disposition,
+  type DispositionOptions,
+  type Fidelity,
+  type PackageAvailability,
+  type StepDisposition,
+} from './disposition.js';
