@@ -10,6 +10,7 @@ import {
   frozenFailureMessage,
   lockfileFingerprint,
   parseLockfile,
+  pinTask,
   readLockfile,
   serializeLockfile,
   verifyLockfile,
@@ -422,5 +423,66 @@ describe('the offline guarantee, proved rather than asserted', () => {
     } finally {
       globalThis.fetch = realFetch;
     }
+  });
+});
+
+describe('pinTask (E07-S01-T01)', () => {
+  it('adds a task pin without disturbing the other sections', async () => {
+    const dir = await scratch();
+    const path = join(dir, LOCKFILE_NAME);
+    await writeLockfile(path, full());
+
+    const updated = await pinTask(
+      path,
+      'CmdLine@2',
+      { id: 'd9bafed4-0b18-4f58-968d-86655b4d2ce9', version: '2.279.0' },
+      '2026-09-03T09:00:00Z',
+    );
+
+    expect(Object.keys(updated.tasks ?? {}).sort()).toEqual(['CmdLine@2', 'replacetokens@6']);
+    // A convert resolves tasks one at a time, so the repository and pipeline pins it wrote
+    // earlier in the same run must survive.
+    expect(updated.repositories).toEqual(full().repositories);
+    expect(updated.pipelines).toEqual(full().pipelines);
+    expect(updated.expansion).toEqual(full().expansion);
+
+    const reread = (await readLockfile(path))!;
+    expect(reread.tasks?.['CmdLine@2']).toEqual({
+      id: 'd9bafed4-0b18-4f58-968d-86655b4d2ce9',
+      version: '2.279.0',
+    });
+  });
+
+  it('replaces an existing pin for the same reference rather than duplicating it', async () => {
+    const dir = await scratch();
+    const path = join(dir, LOCKFILE_NAME);
+    await writeLockfile(path, full());
+    const updated = await pinTask(path, 'replacetokens@6', { id: 'g', version: '6.9.9' }, 'now');
+    expect(Object.keys(updated.tasks ?? {})).toEqual(['replacetokens@6']);
+    expect(updated.tasks?.['replacetokens@6']?.version).toBe('6.9.9');
+  });
+
+  it('creates the lockfile when there is none yet', async () => {
+    const dir = await scratch();
+    const path = join(dir, LOCKFILE_NAME);
+    const updated = await pinTask(path, 'CmdLine@2', { id: 'g', version: '2.279.0' }, 'now');
+    expect(updated.version).toBe(LOCKFILE_VERSION);
+    await expect(readLockfile(path)).resolves.toMatchObject({
+      tasks: { 'CmdLine@2': { id: 'g' } },
+    });
+  });
+
+  it('leaves a pinned task verifiable by --frozen once its task.json is cached', async () => {
+    const cacheDir = await scratch();
+    const path = join(cacheDir, LOCKFILE_NAME);
+    await pinTask(path, 'replacetokens@6', { id: 'g', version: '6.3.1' }, 'now');
+    const lock = (await readLockfile(path))!;
+
+    // The pin is the whole point: --frozen can now tell whether the cache satisfies it.
+    await expect(verifyLockfile(lock, { cacheDir })).resolves.toHaveLength(1);
+    const dir = taskCacheDir(cacheDir, 'replacetokens', { major: 6, minor: 3, patch: 1 });
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'task.json'), '{}', 'utf8');
+    await expect(verifyLockfile(lock, { cacheDir })).resolves.toEqual([]);
   });
 });

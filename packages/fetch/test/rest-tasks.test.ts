@@ -11,6 +11,7 @@ import {
   readCachedTask,
   selectTask,
   taskCacheDir,
+  taskPin,
   versionString,
   type InstalledTask,
 } from '../src/rest/tasks.js';
@@ -331,5 +332,76 @@ describe('downloadTaskZip (C-E09-088)', () => {
     expect(error.status).toBe(404);
     // The message talks about *uploading* when we only read — so the typeKey is the useful signal.
     expect(error.typeKey).toBe('TaskDefinitionNotFoundException');
+  });
+});
+
+describe('E07-S01-T01 — the three gaps E09-S03-T05 left open', () => {
+  const task: InstalledTask = parseInstalledTask(
+    entry('replacetokens', REPLACETOKENS_ID, 6, 3, 1, {
+      contributionIdentifier: 'qetza.replacetokens.replacetokens-task',
+    }),
+  )!;
+
+  it('reuses an unpacked package with no request at all (offline-reproducible)', async () => {
+    const cacheDir = await scratch();
+    const zip = adoZip([{ name: 'exec-child.js', body: 'module.exports = {};\n' }]);
+    let requests = 0;
+    const fetchImpl: RestFetch = () => {
+      requests += 1;
+      return Promise.resolve(new Response(zip, { status: 200 }));
+    };
+    const client = new AzureDevOpsClient({
+      orgUrl: ORG,
+      credential: PAT,
+      fetchImpl,
+      sleep: () => Promise.resolve(),
+    });
+
+    const first = await downloadTaskZip(client, task, cacheDir);
+    expect(first.fetched).toBe(true);
+    expect(requests).toBe(1);
+
+    // A fetch impl that throws: this passes only if nothing was requested.
+    const offline = new AzureDevOpsClient({
+      orgUrl: ORG,
+      credential: PAT,
+      sleep: () => Promise.resolve(),
+      fetchImpl: () => {
+        throw new Error('cache hit made a network request');
+      },
+    });
+    const second = await downloadTaskZip(offline, task, cacheDir);
+    expect(second).toMatchObject({ dir: first.dir, files: first.files, fetched: false });
+    expect(requests).toBe(1);
+  });
+
+  it('re-downloads when the zip is there but the tree is not', async () => {
+    // A zip without a tree means an extraction that did not finish; reusing it would hand
+    // real-task mode an entry with no files in it.
+    const cacheDir = await scratch();
+    const dir = taskCacheDir(cacheDir, task.name, task.version);
+    const { mkdir: makeDir, writeFile: write } = await import('node:fs/promises');
+    await makeDir(dir, { recursive: true });
+    await write(join(dir, 'task.zip'), 'truncated');
+
+    const zip = adoZip([{ name: 'exec-child.js', body: 'ok\n' }]);
+    const client = new AzureDevOpsClient({
+      orgUrl: ORG,
+      credential: PAT,
+      sleep: () => Promise.resolve(),
+      fetchImpl: () => Promise.resolve(new Response(zip, { status: 200 })),
+    });
+    await expect(downloadTaskZip(client, task, cacheDir)).resolves.toMatchObject({ fetched: true });
+  });
+
+  it('keys the lockfile pin by the authored reference and the exact three-part version', () => {
+    // C-E09-088: pinning only the major would leave the download route unaddressable.
+    expect(taskPin(task, 'replacetokens@6')).toEqual({
+      key: 'replacetokens@6',
+      id: REPLACETOKENS_ID,
+      version: '6.3.1',
+    });
+    // With no authored reference, the key is reconstructed from name and major.
+    expect(taskPin(task).key).toBe('replacetokens@6');
   });
 });

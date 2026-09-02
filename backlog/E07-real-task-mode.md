@@ -16,7 +16,7 @@ Primary grounding set: `microsoft/azure-pipelines-task-lib` (`node/` — the `IN
 ## E07-S01 — As a pipeline developer, non-script tasks run their *real* implementation locally, so complex tasks behave faithfully without a transpiler.
 Acceptance: a marketplace/in-box Node task executes via the `INPUT_*` host and its `##vso` output feeds the runtime.
 
-- [ ] **E07-S01-T01 — Task package downloader**
+- [x] **E07-S01-T01 — Task package downloader**
   **Do:** resolve a step's `task: Name@major` to a concrete version; download the task package (from the org via DistributedTask, or the vendored `task.json` + a fetched bundle) into `.cache/tasks/`; pin in the lockfile.
   **Ground:** how the agent locates/downloads a task (pin the agent repo's task-download path); DistributedTask REST live sample from the test org (E09-S03-T05 supplies `task.json`).
   **Done:** a fixture task package lands in `.cache/tasks/` offline-reproducibly; lockfile pins the version.
