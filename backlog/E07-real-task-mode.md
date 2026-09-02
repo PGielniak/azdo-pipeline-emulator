@@ -28,7 +28,7 @@ Acceptance: a marketplace/in-box Node task executes via the `INPUT_*` host and i
   **Do:** tasks whose handler is a plain script already map to the native script path (E05); ensure the disposition registry classifies them as `native`, not `real-task`, with no double-exec.
   **Ground:** the task `task.json` `execution` shapes (Node/Node16/PowerShell3/script) — pin the field.
   **Done:** `Bash@3`/`PowerShell@2`/`CmdLine@2` are classified `native`; classification tests cover each execution kind.
-- [ ] **E07-S01-T04 — Result & `##vso` capture**
+- [x] **E07-S01-T04 — Result & `##vso` capture**
   **Do:** the real task's stdout/stderr is streamed through the E06 `##vso[]` parser and masker, so `setvariable`/`setOutput`/`logissue` from a real task land in the runtime store like any other step; exit code → result machine.
   **Ground:** task-lib `node/taskcommand.ts` emission side (pin) so the parser inverts it exactly; E06-S04 parser claims reused.
   **Done:** a Node task that sets an output variable is readable by a later step; secret from a real task is masked.
