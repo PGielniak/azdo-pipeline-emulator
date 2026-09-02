@@ -150,18 +150,38 @@ Drop-in escape hatch: before stubbing, the runtime looks for an executable at `<
 
 ## 5. Service connections (`connectedService:*` inputs) — **live** (E08)
 
-Never resolvable via API by design → structured `.env` contract per connection, generated from usage:
+Never resolvable via API by design → structured `.env` contract per connection, generated from usage.
+
+**Corrected 2026-09-02 (E08-S01-T01/T02).** The `SC_<NAME>_*` keys this section used to show were
+transpiler-era: under the old design *our own* generated bash read them. Under real-task mode
+(PLAN D4) the **real task** reads the connection, through `azure-pipelines-task-lib`, under names we
+do not get to choose (C-E08-001) — so an `SC_*` key would be read by nobody. The credential keys are
+therefore task-lib's own:
 
 ```dotenv
-# -- Service connection 'my-azure-sub' (AzureRM) — used by: AzureCLI@2 "Deploy" (Deploy/DeployJob/030)
-SC_MY_AZURE_SUB_MODE=ambient            # ambient = reuse your `az login` | sp = service principal below
-SC_MY_AZURE_SUB_SUBSCRIPTION_ID=
-SC_MY_AZURE_SUB_TENANT_ID=
-SC_MY_AZURE_SUB_CLIENT_ID=
-SC_MY_AZURE_SUB_CLIENT_SECRET=
+# ── Service connection 'my-azure-sub' · mode: ambient ────────
+# used by: 030-deploy.sh
+# Ambient mode reuses the session you already have — `az login`, `docker login`, your kubeconfig.
+ENDPOINT_DATA_my-azure-sub_SUBSCRIPTIONID=
+ENDPOINT_DATA_my-azure-sub_ENVIRONMENT=
+# …and under `mode: sp`, additionally:
+ENDPOINT_AUTH_SCHEME_my-azure-sub=
+ENDPOINT_AUTH_PARAMETER_my-azure-sub_SERVICEPRINCIPALID=
+ENDPOINT_AUTH_PARAMETER_my-azure-sub_TENANTID=
+ENDPOINT_AUTH_PARAMETER_my-azure-sub_SERVICEPRINCIPALKEY=      # secret
 ```
 
-Runtime helper `azdo_sc_login <name> <kind>` implements the mode switch once; handlers call it.
+Two details are not free choices: the **key** is upper-cased while the **connection name is used
+verbatim**, case and all (C-E08-001); and `ENDPOINT_AUTH_*` is vaulted and deleted from
+`process.env` by task-lib while `ENDPOINT_DATA_*` is not (C-E08-002), which is what decides the
+secret markers.
+
+The one key that stays ours is the mode, because a mode is not an endpoint field:
+`AZDO_SC_<NAME>_MODE`, defaulting to `ambient`, with the name folded the way every other variable
+name is (dots and spaces to underscores, upper-cased — C-E06-008).
+
+Runtime helper `azdo_sc_login <name> <kind>` implements the mode switch once; handlers call it. It
+authenticates and *then* selects the subscription, mirroring `AzureCLIV2` (C-E08-010).
 
 ## 6. Real-task execution mode — **the default path for non-script tasks (E07-S01)**
 
