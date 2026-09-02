@@ -38,3 +38,19 @@ export {
 
 // E07-S02-T01 — the stub emitter's policy surface.
 export type { StepEmitOptions, StubPolicy } from './step.js';
+
+// E08-S01-T01 — the service-connection `.env` contract.
+export {
+  authKey,
+  connectionBlock,
+  connectionKeys,
+  connectionManifestEntry,
+  connectionsSection,
+  dataKey,
+  schemeKey,
+  type ConnectionManifestEntry,
+  type ConnectionMode,
+  type ConnectionScheme,
+  type EnvKey,
+  type ServiceConnection,
+} from './service-connection.js';

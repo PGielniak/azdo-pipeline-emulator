@@ -18,7 +18,7 @@ provisions one should re-run that probe and close `SLOT_AVAILABILITY` for it (C-
 ## E08-S01 — As a pipeline developer, Azure service connections have a faithful local substitute, so every Azure task can authenticate.
 Acceptance: `.env` contract + `azdo_sc_login` per docs/03 §5, grounded in real endpoint schemas.
 
-- [ ] **E08-S01-T01 — Service-connection `.env` contract generator**
+- [!] **E08-S01-T01 — Service-connection `.env` contract generator** *(**The contract, the generator and the mapping table are done 2026-09-02 in `packages/emit/src/service-connection.ts`; "manifest wiring" waits on the model carrying `connectedService:*` inputs, which is E08-S02 work.** `connectionManifestEntry` produces the entry — nothing yet collects the connections a pipeline references, because no step model exposes them. Both other Done items are met: generator tests, and the endpoint-field → env-key → consuming-code table is C-E08-001..004.)*
   **Do:** per-connection block synthesis (mode `ambient`|`sp`, subscription/tenant/client fields), provenance comments, manifest wiring.
   **Ground:** service-endpoints doc + the AzureRM endpoint's field names as consumed by task common code — pin the task `Common` Azure auth module showing which endpoint fields tasks read (`servicePrincipalId`, `tenantId`, …); our `.env` keys map 1:1.
   **Done:** generator tests; mapping table in research note (endpoint field → env key → consuming code permalink).
