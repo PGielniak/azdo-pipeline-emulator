@@ -342,3 +342,60 @@ cache.
 anonymous-404 reading are inherited unchanged from `packages/fetch/src/auth/github.ts`
 (C-E09-013/014/015/017) rather than re-grounded here; this task adds only ref resolution and the
 cache write.
+
+---
+
+## E09-S02-T03 — alias resolution & config overrides (`C-E09-044..049`)
+
+Recorded 2026-09-02. The schema page was **re-fetched rather than carried over from C-E03-198**,
+because the Ground field names it directly; it had in fact been updated the day before
+(`ms.date` 2026-09-01, `git_commit_id` `dfe4b567894f928e93425629bf5e85fe7e0a2f7f`).
+
+[C-E09-044] **`ref` defaults to the literal `refs/heads/main`, not to the repository's default
+branch.** Verbatim: "**`ref`** string. ref name to checkout; **defaults to 'refs/heads/main'**. The
+branch checked out by default whenever the resource trigger fires." The default is a constant, so a
+repository whose default branch is `master` still gets `refs/heads/main` when the resource omits
+`ref:` — and the resolution then legitimately fails rather than silently using `master`.
+**This corrects `docs/05` §3 item 4**, which said "Ref default: repo default branch" (fixed in this
+task; decisions record entry dated 2026-09-02). C-E03-198 already quoted the same sentence; this is
+an independent re-confirmation against a newer revision of the page.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/yaml-schema/resources-repositories-repository
+    (**deep-verified 2026-09-02**; `git_commit_id` `dfe4b567894f928e93425629bf5e85fe7e0a2f7f`,
+    `ms.date` 2026-09-01)
+
+[C-E09-045] **There are four repository types, not three: `git | github | githubenterprise |
+bitbucket`.** Verbatim: "**`type`** string. Type of repository: git, github, githubenterprise, and
+bitbucket." The page states **no default** for `type`. `docs/05` §3 lists only the first three, so
+`bitbucket` is a fourth arm with no fetcher; both it and `githubenterprise` route to the
+warnings/unsupported list (PLAN D10) rather than to an exception.
+  — same page as C-E09-044
+
+[C-E09-046] **`name` is spelled differently per type, and the `git` form is project-qualified only
+when it crosses projects.** Verbatim: "If your pipeline is in the same Azure DevOps project as the
+repository, for example a repository named `tools`, you reference it using `name: tools`. If your
+pipeline is in the same Azure DevOps organization as the repository, but in a different Azure DevOps
+project, for example a project named `ToolsProject`, you must qualify the repository name with the
+project name: `name: ToolsProject/tools`." For `github` and `bitbucket`, "the `name` value is the
+full name of the … repo and includes the user or organization", e.g. `Microsoft/vscode`. So one
+slash means *project/repo* under `git` and *owner/repo* under `github` — the same text parses two
+ways, and the type is what disambiguates it.
+  — same page as C-E09-044
+
+[C-E09-047] **A ref may be written without its `refs/heads/` prefix.** The page's own Variables
+example declares `ref: main` on a `type: git` resource. The resolver therefore accepts a bare name
+and promotes it, rather than treating it as an invalid ref.
+  — same page as C-E09-044
+
+[C-E09-048] **`endpoint` is a service-connection id, and locally it has no meaning.** Verbatim:
+"**`endpoint`** string. ID of the service endpoint connecting to this repository", and "GitHub repos
+require a GitHub service connection for authorization." Locally our own credential chain
+(C-E09-012..017 for GitHub, the stored Azure credential for `git`) substitutes for whatever the
+service connection would have supplied, so an `endpoint:` on a resource is **ignored** — and,
+because ignoring something the author wrote silently is exactly what a fidelity report exists to
+prevent (PLAN D10), every ignored endpoint emits a manifest note naming the alias and the endpoint.
+  — same page as C-E09-044; substitution policy is `docs/05` §3 item 3
+
+[C-E09-049] **Scope note.** Alias case folding (`C-E03-213`), the `self` alias (`C-E03-197`), and
+the once-per-pipeline pinning that lets a resolved repository carry a commit rather than a ref
+(`C-E03-196`) are inherited from E03's reference resolution and are not re-grounded here. The
+local-path override is project policy from `docs/05` §3 item 1, not a service behavior.

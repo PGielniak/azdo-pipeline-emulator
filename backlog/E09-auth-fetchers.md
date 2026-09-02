@@ -43,10 +43,14 @@ Acceptance: alias resolution + repo snapshot fetch with SHA pinning, per docs/05
   **Do:** ref→SHA via commits API; tarball download; same cache layout.
   **Ground:** GitHub REST "download tarball" + commits pages (pin) + live samples.
   **Done:** as T01 for a GitHub fixture repo.
-- [ ] **E09-S02-T03 — Alias resolution & config overrides**
+- [x] **E09-S02-T03 — Alias resolution & config overrides**
   **Do:** `resources.repositories` → fetcher dispatch per docs/05 §3 incl. local-path override (redirect alias to a working copy) and `@self`; endpoint substitution note into manifest.
   **Ground:** resources-repositories yaml-schema page (quote `type`/`name`/`ref` semantics + default-branch rule).
   **Done:** E03 bundler cross-repo resolution works through this layer; local-override integration test.
+- [ ] **E09-S02-T04 — Extract archive snapshots so their files are readable**
+  **Do:** unpack an Items `$format=zip` (ADO) or tarball (GitHub) cache entry into a readable tree beside the archive, and point the CLI's `repositoryFetcher` read path at it. Added 2026-09-02 by E09-S02-T03, which resolves and pins these repositories correctly but can only *read* files from a working copy or a bare mirror (`git show <commit>:<path>`); an archive-backed alias is currently reported as `unreadable` rather than silently answering "no such file". This is the whole GitHub arm, since tarball is its only route.
+  **Ground:** the archive shapes are already pinned (C-E09-033/037 for the ADO zip, C-E09-014/015/042 for the tarball) and both are measured in `research/experiments/E09-rest/{ado-git,github-fetcher}/real-run.md`; ground only the extraction mechanics — note the GitHub tarball's `<owner>-<repo>-<sha>/` top-level prefix, which a live sample can confirm.
+  **Done:** a cross-repo `template:` reference resolves out of both an ADO zip and a GitHub tarball entry through `repositoryFetcher`; `unreadable` is empty for both.
 
 ## E09-S03 — As a pipeline developer, artifacts, variable-group names and task metadata are fetched and pinned, so re-conversion is reproducible offline.
 Acceptance: endpoints wrapped + lockfile discipline per docs/05 §4.

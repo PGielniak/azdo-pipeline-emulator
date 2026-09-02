@@ -62,7 +62,15 @@ Anonymous fallback for public repos (tarball download without auth).
 1. Config override (`repositories:` in `azdo-emu.yaml`) — lets users redirect an alias to a local path (killer feature: point `templates` at a local working copy of the template repo while debugging templates themselves).
 2. `type: git` (ADO): same-org project/repo via ADO auth.
 3. `type: github`: via GitHub auth. `endpoint:` (service connection) is irrelevant locally — our own auth substitutes; a manifest note records the substitution.
-4. Ref default: repo default branch; explicit `ref:` honored; always pinned to a commit SHA in the lockfile.
+4. Ref default: the **literal `refs/heads/main`** — *not* the repository's own default branch
+   (**corrected 2026-09-02, E09-S02-T03**; the schema page says "ref name to checkout; defaults to
+   'refs/heads/main'", C-E09-044, re-confirming C-E03-198 against a newer revision). A repository
+   whose default branch is `master` therefore fails to resolve when the resource omits `ref:`,
+   which is the same thing the service does. Explicit `ref:` is honored and may be written bare
+   (`ref: main`, C-E09-047); every resolution is pinned to a commit SHA in the lockfile.
+5. Types are **four**, not three: `git | github | githubenterprise | bitbucket` (C-E09-045).
+   `githubenterprise` and `bitbucket` have no fetcher and land on the warnings/unsupported list
+   (D10) with a pointer at the `repositories:` local override, which converts them anyway.
 
 `@self` = the source repo of the root YAML (local working copy / its origin).
 

@@ -153,3 +153,27 @@ export {
   type ResolveGitHubRefOptions,
   type ResolvedGitHubRef,
 } from './repo/github.js';
+
+export {
+  ALIAS_ENDPOINT_SUBSTITUTED,
+  ALIAS_FETCH_FAILED,
+  ALIAS_LOCAL_OVERRIDE,
+  ALIAS_UNKNOWN_TYPE,
+  ALIAS_UNSUPPORTED_TYPE,
+  DEFAULT_REPOSITORY_REF,
+  REPOSITORY_TYPES,
+  UNSUPPORTED_REPOSITORY_TYPES,
+  adoCoordinatesFor,
+  githubCoordinatesFor,
+  normalizeRef,
+  resolveRepositoryAliases,
+  type AliasResolutionOptions,
+  type AliasResolutionResult,
+  type LocalRepositoryOverride,
+  type RepositoryNote,
+  type RepositoryOrigin,
+  type RepositoryResourceSpec,
+  type RepositoryType,
+  type ResolvedRepository,
+  type SelfRepository,
+} from './repo/alias.js';
