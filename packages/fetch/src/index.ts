@@ -83,3 +83,28 @@ export {
   type AzureAuthStatus,
   type StatusFetch,
 } from './auth/status.js';
+
+export {
+  GITHUB_ACCEPT,
+  GITHUB_API_ORIGIN,
+  GITHUB_API_VERSION,
+  GITHUB_HOSTNAME,
+  GitHubFetchError,
+  contentsUrl,
+  createGhCliTokenReader,
+  fetchGitHubContents,
+  fetchGitHubTarball,
+  githubHeaders,
+  readGhCliToken,
+  resolveGitHubCredential,
+  tarballUrl,
+  type GhExec,
+  type GhTokenReader,
+  type GitHubAuthOptions,
+  type GitHubContentsResult,
+  type GitHubCredential,
+  type GitHubCredentialSource,
+  type GitHubFetch,
+  type GitHubRequestOptions,
+  type GitHubTarballResult,
+} from './auth/github.js';

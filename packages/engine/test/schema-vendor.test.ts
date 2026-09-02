@@ -42,5 +42,8 @@ describe('vendored service-schema.json (E00-S02-T01)', () => {
     // smoke: a minimal steps-pipeline is accepted, and clearly-wrong shapes are not
     expect(validate({ steps: [{ script: 'echo hi' }] })).toBe(true);
     expect(validate({ steps: 'not-a-list' })).toBe(false);
-  });
+    // Compiling the full vendored service schema is seconds of CPU on its own and exceeds the
+    // 5s default once the other projects run alongside it, so the budget is explicit rather
+    // than load-dependent. Observed flaky at 2,222 tests before this task added any.
+  }, 30_000);
 });
