@@ -1,4 +1,7 @@
 #!/usr/bin/env bats
+# bats file_tags=conformance
+# Runtime expression helpers (E11-S04-T02 conformance): the `$[ ]`/condition surface the emitted
+# scripts call into.
 # E02-S05-T02 — direct assertions on lib/expr.sh, beside the generated conformance suite.
 #
 # The generated suite exercises these helpers only *through* a comparison, and C-E02-147 showed why

@@ -2,7 +2,7 @@
 //
 // Runner 1 (here): the convert-time `ExprNode` backend through `evaluateExpression`.
 // Runner 2: `packages/runtime/test/expr-conformance.bats`, generated at the bottom of this file
-//   and executed by `pnpm test:bats`. It is committed, and the snapshot assertion below is the
+//   and executed by `pnpm test:runtime`. It is committed, and the snapshot assertion below is the
 //   freshness guard — editing the compiler without regenerating turns this file red rather than
 //   leaving a stale suite passing against code that no longer exists.
 import { describe, expect, it } from 'vitest';
@@ -125,6 +125,9 @@ function generateBats(): string {
   const unsupported = CONFORMANCE_ROWS.filter((row) => row.shell.kind === 'unsupported');
   return [
     '#!/usr/bin/env bats',
+    // E11-S04-T02: the tag is emitted here rather than hand-added, because this file is generated
+    // and a hand-edit would be overwritten on the next regeneration.
+    '# bats file_tags=conformance',
     '# GENERATED FILE — do not edit.',
     '#',
     '# Source of truth: packages/engine/test/expr/conformance.table.ts (E02-S05-T02).',

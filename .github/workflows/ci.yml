@@ -66,10 +66,15 @@ jobs:
             echo "::error::bash $major is below the runtime floor of 4 (PLAN D2, C-E00-005). On macOS the ShellCheck+bash step above installs one; check that it ran and that Homebrew's bin directory precedes /bin in PATH." >&2
             exit 1
           fi
+      # E11-S04-T02: CI runs the *shipped* entry point, not its own copy of the invocation. A
+      # `pnpm test:runtime` that only contributors ever ran would be unverified — the same shape of
+      # gap as decision 75, where a green suite sat over a `convert` binary that could not run.
+      # The output path must be absolute: bats resolves a relative `--output` inside
+      # `packages/runtime`, where `reports/` does not exist.
       - name: Runtime tests (bats, junit report) # C-E00-003/004: dir invocation + --report-formatter
         run: |
           mkdir -p reports
-          pnpm --filter @azdo-emu/runtime exec bats test --report-formatter junit --output "$GITHUB_WORKSPACE/reports"
+          pnpm test:runtime --report-formatter junit --output "$GITHUB_WORKSPACE/reports"
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v7

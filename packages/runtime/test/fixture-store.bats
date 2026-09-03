@@ -1,4 +1,8 @@
 #!/usr/bin/env bats
+# bats file_tags=harness
+# **Tagged `harness`, not `conformance`** (E11-S04-T02): these tests exercise the bats fixture
+# helpers themselves, not Azure DevOps behavior, so they carry no claim ids by design — there is
+# no service behavior to cite. `pnpm test:runtime` runs them; the conformance filter excludes them.
 # E12-S01-T01 — the fixture store is itself under test: every helper the L4 suite will lean on
 # gets one case here, so a broken harness fails loudly instead of quietly weakening E06's tests.
 

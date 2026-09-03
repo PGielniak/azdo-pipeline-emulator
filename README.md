@@ -1,5 +1,10 @@
 # azdo-pipeline-emulator
 
+[![CI](https://github.com/PGielniak/azdo-pipeline-emulator/actions/workflows/ci.yml/badge.svg)](https://github.com/PGielniak/azdo-pipeline-emulator/actions/workflows/ci.yml)
+
+CI runs lint, typecheck, the claim↔test grounding report, the vitest unit suite with coverage
+thresholds, and the **bash runtime conformance suite** (bats) on ubuntu and macOS × Node 22/24.
+
 Convert any Azure DevOps YAML pipeline into a **self-contained project of local scripts** — same structure, same variable/condition/artifact semantics — so pipelines can be debugged on your machine instead of by push-and-pray.
 
 ```
@@ -45,6 +50,25 @@ pnpm test        # vitest unit tests + bats runtime tests
 pnpm lint        # eslint + prettier --check + shellcheck (runtime bash)
 pnpm typecheck   # tsc --noEmit per package
 ```
+
+### The runtime conformance suite
+
+The bash runtime has its own suite, runnable standalone — it needs no build and no TypeScript:
+
+```
+pnpm test:runtime       # the whole bats suite (292 tests, ~2 min)
+pnpm test:conformance   # only the `conformance` tag — excludes the harness self-tests
+```
+
+Files are tagged with bats `file_tags`: `conformance` for tests that assert grounded Azure DevOps
+runtime behavior (each cites its claim id, per BACKLOG.md §3), and `harness` for tests that exercise
+the bats fixture helpers themselves and therefore have no service behavior to cite. Any bats flag
+passes through, e.g. `pnpm test:runtime --filter 'azdo_var'`.
+
+Grounding is enforced by `scripts/claim-coverage.sh`, which grades the two directions differently:
+a claim with no test is a **ratchet** (`.claim-coverage-floor` — many claims are legitimately
+untestable in-repo), while a test citing a claim `research/` does not define is an **orphan** and a
+hard failure. Run `bash scripts/claim-coverage.sh` for the report, `--orphans` to list orphans.
 
 Work is picked up per [BACKLOG.md](BACKLOG.md) §1; every task follows the Grounding Protocol
 (§3) — evidence lands in `research/` before implementation.

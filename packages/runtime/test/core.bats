@@ -1,4 +1,8 @@
 #!/usr/bin/env bats
+# bats file_tags=conformance
+# The L4 runtime conformance suite (E11-S04-T02): variable store, env materialization, steps,
+# artifacts, checkout, logging commands, real-task mode, service connections and strategies.
+# Every test here asserts grounded Azure DevOps runtime behavior and cites its claim id.
 
 bats_require_minimum_version 1.5.0
 

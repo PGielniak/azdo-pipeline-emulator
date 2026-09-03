@@ -151,7 +151,7 @@ describe('checkToolContract catches the mistakes it exists for', () => {
   it('accepts a floor that does cite a claim', () => {
     expect(
       checkToolContract({
-        'Cited@1': [{ cmd: 'docker', min: '20.10.0', because: 'measured in C-E08-042' }],
+        'Cited@1': [{ cmd: 'docker', min: '20.10.0', because: 'measured in C-E10-002' }],
       }),
     ).toEqual([]);
   });
@@ -160,8 +160,8 @@ describe('checkToolContract catches the mistakes it exists for', () => {
 describe('aggregateTools keeps the stricter floor when two tasks disagree', () => {
   it('takes the higher minimum', () => {
     const registry = {
-      'Low@1': [{ cmd: 'docker', min: '20.10.0', because: 'C-E08-042' }],
-      'High@1': [{ cmd: 'docker', min: '24.0.0', because: 'C-E08-043' }],
+      'Low@1': [{ cmd: 'docker', min: '20.10.0', because: 'C-E10-002' }],
+      'High@1': [{ cmd: 'docker', min: '24.0.0', because: 'C-E10-009' }],
     };
     const tools = aggregateTools(
       [
@@ -175,7 +175,7 @@ describe('aggregateTools keeps the stricter floor when two tasks disagree', () =
 
   it('keeps the existing floor when the later task declares none', () => {
     const registry = {
-      'WithMin@1': [{ cmd: 'docker', min: '24.0.0', because: 'C-E08-043' }],
+      'WithMin@1': [{ cmd: 'docker', min: '24.0.0', because: 'C-E10-009' }],
       'NoMin@1': [{ cmd: 'docker', because: 'no floor stated anywhere' }],
     };
     const tools = aggregateTools(
@@ -191,7 +191,7 @@ describe('aggregateTools keeps the stricter floor when two tasks disagree', () =
   it('adopts a floor a later task introduces', () => {
     const registry = {
       'NoMin@1': [{ cmd: 'docker', because: 'no floor stated anywhere' }],
-      'WithMin@1': [{ cmd: 'docker', min: '24.0.0', because: 'C-E08-043' }],
+      'WithMin@1': [{ cmd: 'docker', min: '24.0.0', because: 'C-E10-009' }],
     };
     const tools = aggregateTools(
       [
