@@ -109,6 +109,17 @@ a real one. That is the honest reading of "requirement values cite the task rese
 alternative is a fabricated floor that fails working setups.
   — same five `task.json` files
 
+**Addendum 2026-09-03 (E11-S04-T02) — enforcement of C-E10-008/009 is split across two places,
+deliberately.** `checkToolContract` rejects a `min` whose `because` does not match
+`/C-E\d{2}-\d{3}/`. That is a **shape** check, not an existence check: it proves the floor cites
+*something claim-shaped*, and it cannot prove the claim exists, because the contract has no business
+reading `research/` at runtime. The gap was not theoretical — the contract's own tests cited
+`C-E08-042` and `C-E08-043`, invented ids inside an *unallocated* block, and passed. The existence
+half now lives in `scripts/claim-coverage.sh`, where a test citing an undefined claim is an
+**orphan** and fails `--check` outright (docs/06 §5 decision 77). Anyone tightening "doctor never
+invents versions" should change the repo-level gate, not teach the contract to read the research
+notes.
+
 [C-E10-010] **The contract is ours: a task that shells out must declare the tool.** No source
 requires this — it is the check the Do field asks for ("CI check: every task declaring CLI calls
 declares requirements"), and it exists so a task added later cannot silently become a step that

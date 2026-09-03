@@ -14,7 +14,6 @@
     "test:unit": "vitest run --coverage",
     "test:runtime": "pnpm --filter @azdo-emu/runtime exec bats test",
     "test:conformance": "pnpm --filter @azdo-emu/runtime exec bats --filter-tags conformance test",
-    "test:bats": "pnpm run test:runtime",
     "typecheck": "tsc --noEmit -p tsconfig.meta.json && tsc --noEmit -p scripts && pnpm -r run typecheck",
     "refresh-schema": "node scripts/refresh-schema.ts",
     "oracle-probe": "node scripts/oracle-probe.ts",
