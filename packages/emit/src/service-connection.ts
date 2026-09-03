@@ -33,6 +33,15 @@ export interface ServiceConnection {
   readonly name: string;
   readonly mode?: ConnectionMode;
   readonly scheme?: ConnectionScheme;
+  /**
+   * Whether a consuming task accepts `spnCertificate` at all. Defaults to true.
+   *
+   * C-E08-040: `AzurePowerShell@5` on a non-Windows host throws "Only SPNKey auth type is supported
+   * for ServicePrincipal auth scheme using non windows agent." Offering the PEM field anyway would
+   * ask the user to fill in a credential the task refuses — the `.env.example` would be asking for
+   * work that cannot pay off.
+   */
+  readonly certificateAuth?: boolean;
   /** Where in the pipeline this connection was referenced, for the provenance comment. */
   readonly usedBy?: readonly string[];
 }
@@ -104,7 +113,19 @@ export function connectionKeys(connection: ServiceConnection): readonly EnvKey[]
     secret: true,
     comment: `the endpoint scheme — '${scheme}'`,
   });
+  const certificateAuth = connection.certificateAuth ?? true;
   for (const [field, comment] of SCHEME_AUTH_FIELDS[scheme]) {
+    // C-E08-040: drop both certificate-only lines when no consumer accepts a certificate, and say
+    // so on the `authenticationType` line rather than leaving a silently narrowed choice.
+    if (!certificateAuth && field === 'servicePrincipalCertificate') continue;
+    if (!certificateAuth && field === 'authenticationType') {
+      keys.push({
+        key: authKey(connection.name, field),
+        secret: true,
+        comment: "'spnKey' — a consuming task rejects spnCertificate on this host (C-E08-040)",
+      });
+      continue;
+    }
     keys.push({ key: authKey(connection.name, field), secret: true, comment });
   }
   return keys;

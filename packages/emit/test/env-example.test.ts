@@ -10,7 +10,9 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { buildPipeline, parsePipelineYaml } from '@azdo-emu/engine';
+import { collectConnections } from '../src/connections.js';
 import { synthesizeEnvExample } from '../src/env-example.js';
+import { loadVendoredTaskDefinitions } from '../src/vendor.js';
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
 
@@ -171,5 +173,52 @@ stages:
       expect(first.content).toBe(second.content);
       expect(first.content, name).toMatchSnapshot();
     }
+  });
+});
+
+describe('section 6 — service connections (E08-S02-T01)', () => {
+  const { pipeline } = build(`stages:
+- stage: Deploy
+  jobs:
+  - job: deploy
+    steps:
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: my-prod-sub
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: az account show
+`);
+
+  it('emits a block per connection under the names the real task reads (C-E08-001)', () => {
+    const collected = collectConnections(
+      pipeline!.stages.flatMap((stage) =>
+        stage.jobs.flatMap((job) =>
+          job.steps.map((step) => ({ step, path: `${stage.id}/${job.id}/step ${step.id}` })),
+        ),
+      ),
+      loadVendoredTaskDefinitions(),
+    );
+    const { content, manifestEnv } = synthesizeEnvExample(pipeline!, {
+      connections: collected.connections,
+    });
+
+    expect(content).toContain("# ── Service connection 'my-prod-sub' · mode: sp");
+    expect(content).toContain('ENDPOINT_AUTH_PARAMETER_my-prod-sub_SERVICEPRINCIPALID=');
+    expect(content).toContain('used by: Deploy/deploy/step 1');
+
+    // The ENDPOINT_ keys must reach the manifest under the task's spelling — not through the
+    // Bash-safe alias transform, which would rename them to something no task reads.
+    const scheme = manifestEnv.find((e) => e.name === 'ENDPOINT_AUTH_SCHEME_my-prod-sub');
+    expect(scheme).toMatchObject({ secret: true, origin: "service connection 'my-prod-sub'" });
+    expect(
+      manifestEnv.find((e) => e.name === 'ENDPOINT_DATA_my-prod-sub_SUBSCRIPTIONID'),
+    ).toMatchObject({ secret: false });
+  });
+
+  it('says the pipeline references none rather than leaving the section blank', () => {
+    const { content } = synthesizeEnvExample(pipeline!);
+    expect(content).toContain('# (this pipeline references none)');
+    expect(content).toContain('# Secure files are not implemented yet');
   });
 });

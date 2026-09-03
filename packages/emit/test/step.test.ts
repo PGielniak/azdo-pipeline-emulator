@@ -27,6 +27,7 @@ import {
   nativeScriptKind,
 } from '../src/step.js';
 import type { StepEmitOptions } from '../src/step.js';
+import { loadVendoredTaskDefinitions } from '../src/vendor.js';
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
 // CI installs a system shellcheck and exports it as `$SHELLCHECK` (see the workflow); locally it
@@ -454,5 +455,56 @@ describe('the stub emitter (E07-S02-T01)', () => {
 
   it('matches its snapshot', () => {
     expect(emitOne(STUB_YAML, unavailable).output).toMatchSnapshot();
+  });
+});
+
+describe('real-task steps preflight their service connection (E08-S02-T01)', () => {
+  /** One step, built through the real model so it carries provenance like any other. */
+  const azureStep = (inputs: Record<string, string>, task = 'AzureCLI@2'): Step => {
+    const rendered = Object.entries(inputs)
+      .map(([key, value]) => `        ${key}: ${value}`)
+      .join('\n');
+    const { pipeline } = buildPipeline(
+      parsePipelineYaml(
+        `stages:\n- stage: Deploy\n  jobs:\n  - job: deploy\n    steps:\n` +
+          `    - task: ${task}\n      inputs:\n${rendered}\n`,
+        'pipeline.expanded.yml',
+      ),
+    );
+    return pipeline!.stages[0]!.jobs[0]!.steps[0]!;
+  };
+
+  const definitions = loadVendoredTaskDefinitions();
+
+  it('emits the preflight before azdo_run_task, naming the connection', () => {
+    // Ordering matters: the point is to fail with the .env lines named *before* the task throws
+    // LIB_EndpointAuthNotExist, which names no variable at all.
+    const script = emitStepScript(azureStep({ azureSubscription: 'my-prod-sub' }), '010', {
+      taskDefinitions: definitions,
+    });
+    expect(script).toContain("azdo_sc_preflight 'my-prod-sub' 'AzureCLI@2'");
+    expect(script.indexOf('azdo_sc_preflight')).toBeLessThan(script.indexOf('azdo_run_task'));
+  });
+
+  it('emits nothing extra when the connection is a macro (C-E08-031)', () => {
+    const script = emitStepScript(azureStep({ azureSubscription: '$(sub)' }), '010', {
+      taskDefinitions: definitions,
+    });
+    expect(script).not.toContain('azdo_sc_preflight');
+  });
+
+  it('emits nothing for a task whose auth behaviour has not been read', () => {
+    // Only tasks in REAL_TASK_ENDPOINT_USE get a preflight; guessing would demand credentials for
+    // a task that may not want any.
+    const step = azureStep({ SourceFolder: 'src', Contents: '**' }, 'CopyFiles@2');
+    expect(emitStepScript(step, '010', { taskDefinitions: definitions })).not.toContain(
+      'azdo_sc_preflight',
+    );
+  });
+
+  it('emits nothing when no definitions are supplied', () => {
+    expect(emitStepScript(azureStep({ azureSubscription: 'prod' }), '010')).not.toContain(
+      'azdo_sc_preflight',
+    );
   });
 });

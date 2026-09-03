@@ -5,8 +5,18 @@ import { describe, expect, it } from 'vitest';
 
 const vendorDir = path.join(import.meta.dirname, '..', 'vendor', 'tasks-meta');
 
-// E00-S02-T03 Done set; refresh-tasks-meta.ts may add more without breaking this test.
-const REQUIRED_SNAPSHOTS = ['CmdLine@2', 'Bash@3', 'PowerShell@2', 'CopyFiles@2'];
+// E00-S02-T03 Done set, plus the two E08-S02-T01 depends on: the connection collector reads their
+// `connectedService:AzureRM` input declarations at convert time (C-E08-035), so a missing snapshot
+// is a pipeline whose connections silently go uncollected rather than a stale vendor directory.
+// refresh-tasks-meta.ts may add more without breaking this test.
+const REQUIRED_SNAPSHOTS = [
+  'CmdLine@2',
+  'Bash@3',
+  'PowerShell@2',
+  'CopyFiles@2',
+  'AzureCLI@2',
+  'AzurePowerShell@5',
+];
 
 interface TaskJson {
   name: string;

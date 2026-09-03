@@ -44,6 +44,15 @@ export interface ProbeResult {
 
 /** How to ask a tool its version, and how to read the answer. */
 export interface ProbeSpec {
+  /**
+   * The executable that answers, when it is not the requirement's own `cmd`.
+   *
+   * Exists for one real case: `Az.Accounts` is a PowerShell *module*, not a binary on PATH
+   * (C-E08-041), and `AzurePowerShell@5` fails without it however healthy `pwsh` is. It is a
+   * separate requirement rather than a `min` on `pwsh`, because they are two different things to
+   * install and two different remediations.
+   */
+  readonly via?: string;
   readonly args: readonly string[];
   /** Pull the version out of the command's stdout; `undefined` when it cannot be found. */
   readonly parse: (stdout: string) => string | undefined;
@@ -111,6 +120,22 @@ export const PROBES: Readonly<Record<string, ProbeSpec>> = {
     parse: (stdout) => firstLine(stdout)?.split(/\s+/)[1],
     claim: 'C-E10-005',
   },
+  // C-E08-041: `InitializeAz.ps1` resolves the module with `Get-Module -Name Az.Accounts
+  // -ListAvailable` and throws when nothing comes back, so the probe asks the same question the
+  // task does. `-ListAvailable` (not the loaded-module list) because that is what the task uses;
+  // `-NoProfile` so a user profile cannot change the answer.
+  'Az.Accounts': {
+    via: 'pwsh',
+    args: [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      '(Get-Module -Name Az.Accounts -ListAvailable | ' +
+        'Sort-Object Version -Descending | Select-Object -First 1).Version.ToString()',
+    ],
+    parse: firstLine,
+    claim: 'C-E08-041',
+  },
 };
 
 /** Install hints, per tool and per OS. */
@@ -146,6 +171,12 @@ const REMEDIATION: Readonly<Record<string, Readonly<Record<string, string>>>> = 
       'https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-linux',
     darwin: 'brew install --cask powershell',
     win32: 'winget install -e --id Microsoft.PowerShell',
+  },
+  // One remediation for every platform: it is a PowerShell command, and `pwsh` is the prerequisite
+  // the doctor reports separately.
+  'Az.Accounts': {
+    linux:
+      "pwsh -Command 'Install-Module -Name Az -Scope CurrentUser -Repository PSGallery -Force'",
   },
 };
 
@@ -211,7 +242,7 @@ export function probeTool(requirement: ToolRequirement, options: DoctorOptions =
   }
 
   const run = options.run ?? defaultRunner;
-  const outcome = run(requirement.cmd, spec.args);
+  const outcome = run(spec.via ?? requirement.cmd, spec.args);
   if (outcome === undefined || outcome.code !== 0) {
     return {
       ...base,
@@ -226,8 +257,9 @@ export function probeTool(requirement: ToolRequirement, options: DoctorOptions =
       ...base,
       status: 'unknown-version',
       remediation:
-        `\`${requirement.cmd} ${spec.args.join(' ')}\` ran but its output could not be parsed; ` +
-        'the tool is present, so this is a version check azdo-emu skipped rather than a failure.',
+        `\`${spec.via ?? requirement.cmd} ${spec.args.join(' ')}\` ran but its output could not be ` +
+        'parsed; the tool is present, so this is a version check azdo-emu skipped rather than a ' +
+        'failure.',
     };
   }
 

@@ -326,3 +326,65 @@ describe('the Done criterion — a script-backed task and a real Node task agree
     }
   });
 });
+
+describe('input aliases (E08-S02-T01)', () => {
+  /** `AzureCLI@2`'s connection input, exactly as the vendored task.json declares it. */
+  const AZURE_CLI: TaskDefinition = {
+    name: 'AzureCLI',
+    inputs: [
+      {
+        name: 'connectedServiceNameARM',
+        type: 'connectedService:AzureRM',
+        aliases: ['azureSubscription'],
+        required: true,
+      },
+      { name: 'cwd', type: 'filePath', aliases: ['workingDirectory'] },
+    ],
+    execution: { Node20_1: { target: 'azureclitask.js' } },
+  };
+
+  it('binds an aliased step input to the declared name (C-E08-030/031)', () => {
+    // The expansion passes `azureSubscription:` through verbatim, so matching by name alone leaves
+    // it undeclared and the task is handed INPUT_AZURESUBSCRIPTION — a name it never reads.
+    const resolution = resolveTaskInputs(AZURE_CLI, { azureSubscription: 'my-prod-sub' });
+    const connection = resolution.inputs.find((i) => i.name === 'connectedServiceNameARM');
+    expect(connection?.envName).toBe('INPUT_CONNECTEDSERVICENAMEARM');
+    expect(connection?.value).toBe('my-prod-sub');
+    expect(connection?.viaAlias).toBe('azureSubscription');
+    expect(resolution.undeclared).toEqual([]);
+    expect(resolution.missingRequired).toEqual([]);
+  });
+
+  it('never emits the alias as an INPUT_ of its own', () => {
+    const resolution = resolveTaskInputs(AZURE_CLI, { azureSubscription: 'prod' });
+    expect(resolution.inputs.map((i) => i.envName)).not.toContain('INPUT_AZURESUBSCRIPTION');
+  });
+
+  it('prefers the declared name when the author wrote both spellings', () => {
+    const resolution = resolveTaskInputs(AZURE_CLI, {
+      connectedServiceNameARM: 'declared',
+      azureSubscription: 'aliased',
+    });
+    const connection = resolution.inputs.find((i) => i.name === 'connectedServiceNameARM');
+    expect(connection?.value).toBe('declared');
+    expect(connection?.viaAlias).toBeUndefined();
+    // The unused spelling is still passed through — a task may read the environment directly.
+    expect(resolution.undeclared).toEqual(['azureSubscription']);
+  });
+
+  it('folds case on an alias too (C-E08-032)', () => {
+    const resolution = resolveTaskInputs(AZURE_CLI, { AZURESUBSCRIPTION: 'prod' });
+    expect(resolution.inputs.find((i) => i.name === 'connectedServiceNameARM')?.value).toBe('prod');
+  });
+
+  it('names the authored spelling in the emitted runner, so the line is findable', () => {
+    const script = renderTaskRunner({
+      definition: AZURE_CLI,
+      resolution: resolveTaskInputs(AZURE_CLI, { azureSubscription: 'prod' }),
+      handler: resolveHandler(AZURE_CLI),
+      packageDir: '.cache/tasks/AzureCLI@2',
+    });
+    expect(script).toContain("export INPUT_CONNECTEDSERVICENAMEARM='prod'");
+    expect(script).toContain("written as 'azureSubscription'");
+  });
+});

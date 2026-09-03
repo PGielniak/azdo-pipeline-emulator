@@ -21,8 +21,12 @@
 //   - every other task → `stub` (real-task mode is E07; the disposition registry is E07-S03-T01).
 import type { Step } from '@azdo-emu/engine';
 
+import { collectConnections, REAL_TASK_ENDPOINT_USE, type TaskDefinitions } from './connections.js';
 import { disposeStep, type DispositionOptions, type StepDisposition } from './disposition.js';
 import { originStepLabel } from './scaffold.js';
+import { hasMacro, taskRef } from './task-ref.js';
+
+export { hasMacro, taskRef } from './task-ref.js';
 
 /** The native script kinds the emitter produces readable bash for (PLAN D4, decision 49). */
 export type NativeScriptKind = 'script' | 'bash' | 'pwsh' | 'powershell';
@@ -42,11 +46,14 @@ export type StubPolicy = 'stub' | 'fail' | 'prompt';
 export interface StepEmitOptions extends DispositionOptions {
   /** Defaults to `stub`, the documented default (docs/03 §4). */
   readonly stubPolicy?: StubPolicy;
-}
-
-/** The full `Name@version` spelling of a step's task reference (for the header and stub dump). */
-export function taskRef(step: Step): string {
-  return `${step.task.name}@${step.task.version}`;
+  /**
+   * Vendored `task.json` declarations, keyed `Name@major` (E08-S02-T01).
+   *
+   * Used only to find the step's service connection, so the emitted script can preflight it before
+   * handing control to a task that will otherwise fail with `LIB_EndpointAuthNotExist` — a message
+   * that names no variable.
+   */
+  readonly taskDefinitions?: TaskDefinitions;
 }
 
 /**
@@ -113,11 +120,6 @@ function fidelityNote(disposition: StepDisposition): string {
     case 'stub':
       return 'inputs logged only; the step does not do the task’s work';
   }
-}
-
-/** True when the text contains an ADO macro opener `$(`. */
-export function hasMacro(text: string): boolean {
-  return text.includes('$(');
 }
 
 /** Whether any input value carries a `$(` macro (for the header NOTE). */
@@ -312,11 +314,52 @@ function shellSingleQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
-function realTaskBody(step: Step): string {
+/**
+ * The `azdo_sc_preflight` line for a step whose task authenticates through a service connection.
+ *
+ * Emitted only for the tasks whose source has been read (`REAL_TASK_ENDPOINT_USE`), and only when
+ * the connection resolves to a literal name: preflighting a macro would check the spelling of the
+ * macro rather than of the connection it becomes (C-E08-031).
+ *
+ * It runs *before* `azdo_run_task` for a reason the Do field did not anticipate. There is no
+ * ambient glue to write — `AzureCLI@2` reads its endpoint with `required = true` and logs in
+ * unconditionally (C-E08-036) — so the only useful thing to do first is fail with the `.env` lines
+ * named, and warn about the local session the task is about to clear (C-E08-038/039).
+ */
+function preflightLines(step: Step, options: StepEmitOptions): readonly string[] {
+  const definitions = options.taskDefinitions;
+  if (definitions === undefined) return [];
+  const { sites } = collectConnections([{ step, path: '' }], definitions);
+  const site = sites.find(
+    (candidate) =>
+      candidate.value.length > 0 &&
+      !hasMacro(candidate.value) &&
+      REAL_TASK_ENDPOINT_USE[connectionTaskKey(candidate.taskRef)] !== undefined,
+  );
+  if (site === undefined) return [];
+  return [
+    `# ${site.taskRef} authenticates through service connection '${site.value}'; it has no ambient`,
+    '# path (C-E08-036) and clears a local session on the way out (C-E08-038/039).',
+    `azdo_sc_preflight ${shellSingleQuote(site.value)} ${shellSingleQuote(connectionTaskKey(site.taskRef))}`,
+    '',
+  ];
+}
+
+/** `Name@major`, the spelling `REAL_TASK_ENDPOINT_USE` is keyed by. */
+function connectionTaskKey(reference: string): string {
+  const at = reference.lastIndexOf('@');
+  /* istanbul ignore next -- `taskRef` always produces `Name@version`. */
+  if (at <= 0) return reference;
+  /* istanbul ignore next -- `split` on a non-empty string always yields a first element. */
+  return `${reference.slice(0, at)}@${reference.slice(at + 1).split('.')[0] ?? ''}`;
+}
+
+function realTaskBody(step: Step, options: StepEmitOptions): string {
   const inputs = Object.entries(step.inputs)
     .map(([key, value]) => `  ${key}: ${value}`)
     .join('\n');
   return [
+    ...preflightLines(step, options),
     `# Real-task mode: run ${taskRef(step)} against the emulated task-lib.`,
     '# run_task.sh resolves the cached task.json, builds INPUT_* from these inputs, and execs the',
     "# task's own handler. The INPUT_* name transform is task-lib's (C-E07-001).",
@@ -348,7 +391,7 @@ export function emitStepScript(step: Step, number: string, options: StepEmitOpti
   } else if (step.origin === 'checkout') {
     body = checkoutBody(step);
   } else if (disposition.disposition === 'real-task') {
-    body = realTaskBody(step);
+    body = realTaskBody(step, options);
   } else {
     body = stubBody(step, options.stubPolicy ?? 'stub');
   }

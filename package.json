@@ -51,6 +51,7 @@
     "dependency-survey": "node scripts/dependency-survey.ts",
     "predefined-vars": "node scripts/predefined-vars.ts",
     "duplicate-key-survey": "node scripts/duplicate-key-survey.ts",
+    "azure-auth-survey": "node scripts/azure-auth-survey.ts",
     "expr-shell-survey": "bash scripts/expr-shell-survey.sh",
     "expr-conformance-bats": "vitest run --project engine packages/engine/test/expr/conformance.test.ts -u",
     "lint": "pnpm run lint:es && pnpm run lint:format && pnpm run lint:shell",

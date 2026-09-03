@@ -9,7 +9,8 @@ off a service connection) and `microsoft/azure-pipelines-task-lib` (how those re
 | Block | Task | Notes |
 | --- | --- | --- |
 | `C-E08-001` … `C-E08-029` | E08-S01 the connection contract | |
-| `C-E08-030` … `C-E08-059` | E08-S02 per-task verification | *unallocated* |
+| `C-E08-030` … `C-E08-042` | E08-S02-T01 `AzureCLI@2` + `AzurePowerShell@5` | |
+| `C-E08-043` … `C-E08-059` | E08-S02-T02…T04 per-task verification | *unallocated* |
 
 ---
 
@@ -207,3 +208,137 @@ one is stated rather than left to judgement.** A `min` is justified only by evid
 introduced in a given release. A support-lifecycle date is not that evidence. `checkToolContract`
 (E10-S04-T02) enforces the citation, so this cannot be quietly reversed.
   — project policy, following the Ground field's "doctor never invents versions"
+
+---
+
+## E08-S02-T01 — `AzureCLI@2` + `AzurePowerShell@5` under real-task mode (`C-E08-030..042`)
+
+Recorded 2026-09-03, before implementation. Two sources: the two tasks' own `task.json` and
+implementation, vendored/pinned at `v277` = `8ba25cfb5c7736ba98a37488c0323f7320cb5b3e`; and five
+oracle transcripts under `research/experiments/E08-azure-auth/`, which answer what the **expansion**
+does with these steps — the only half of the question the service can settle, because the emitter
+builds its model from `finalYaml`.
+
+The Ground field asks to "pin the login sequence and env injection each performs, so our glue
+matches rather than guesses". The measurement is that **there is no glue to write**: neither task
+has a path that reuses an ambient session, and both actively destroy one. That inverts the Do's
+"wire `azdo_sc_login`/`Connect-AzAccount` ambient glue" into a *preflight and a warning*, and it is
+the substance of this task.
+
+### What the expansion does — and does not — do (`C-E08-030..034`)
+
+[C-E08-030] **A task input's `aliases` are interchangeable with its name in YAML.** Verbatim: "you
+can add an `aliases` array to the `input` definition. It's an array of strings which will be
+considered equivalent to the input's real name." Both tasks here declare the connection input with
+the alias `azureSubscription`, which is the spelling nearly every real pipeline writes.
+  — https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/docs/authoring/yaml-tasks.md
+    (L65-70; checked 2026-09-03)
+
+[C-E08-031] **The expansion does *not* resolve an alias to the declared name — inputs are passed
+through verbatim.** `azureSubscription: my-azure-sub` comes back as `azureSubscription:`;
+`connectedServiceNameARM: my-azure-sub` comes back as `connectedServiceNameARM:`. **Consequence:**
+alias resolution is entirely ours. A host that matches step inputs to declarations by name only
+hands an aliased input to the task under a name it never reads — `INPUT_AZURESUBSCRIPTION` instead
+of `INPUT_CONNECTEDSERVICENAMEARM` — and the task fails as if the connection were missing.
+  — `research/experiments/E08-azure-auth/azurecli-alias.md` +
+    `research/experiments/E08-azure-auth/azurecli-declared-name.md` (checked 2026-09-03)
+
+[C-E08-032] **The expansion does not normalize input-name case either.** `ScriptType:` and `Inline:`
+survive as authored against `AzurePowerShell@5`, whose `task.json` declares them in exactly that
+case; a `scripttype:` would have survived too. So the case-folded lookup `resolveTaskInputs` already
+performs is load-bearing rather than defensive.
+  — `research/experiments/E08-azure-auth/azurepowershell-alias.md` (checked 2026-09-03)
+
+[C-E08-033] **An input the task does not declare is not rejected at expansion time.** `noSuchInput:
+whatever` expands successfully. So `InputResolution.undeclared` is a shape the emitter really does
+see, and dropping it would be a silent behavior change.
+  — `research/experiments/E08-azure-auth/azurecli-unknown-input.md` (checked 2026-09-03)
+
+[C-E08-034] **A missing `required: true` input is not an expansion-time error either.** A step with
+no connection input at all expands. Requiredness is enforced by the task, at
+`getInput(name, true)` — so the converter must report it itself or the user meets it as a task-lib
+throw at run time.
+  — `research/experiments/E08-azure-auth/azurecli-missing-connection.md` (checked 2026-09-03)
+
+### The connection input, as each task declares it (`C-E08-035`)
+
+[C-E08-035] **Both tasks declare their connection input with type `connectedService:AzureRM`,
+`required: true`, and the alias `azureSubscription` — but under different *names* and different
+*case*.** `AzureCLI@2`: `connectedServiceNameARM`. `AzurePowerShell@5`: `ConnectedServiceNameARM`.
+**Consequence:** a collector that looks for a hard-coded input name is wrong for at least one of
+them and for every other Azure task; keying on the declared `type` prefix `connectedService:` is
+what generalizes.
+  — `packages/emit/vendor/tasks-meta/AzureCLI@2/task.json` and
+    `packages/emit/vendor/tasks-meta/AzurePowerShell@5/task.json`, both pinned at `v277` =
+    `8ba25cfb5c7736ba98a37488c0323f7320cb5b3e` with `PROVENANCE.json` beside them (checked 2026-09-03)
+
+### `AzureCLI@2`: no ambient path, and it clears the session it did not create (`C-E08-036..038`)
+
+[C-E08-036] **`AzureCLI@2` requires the endpoint and always logs in — there is no arm that reuses an
+existing `az` session.** The task reads
+`tl.getEndpointAuthorizationScheme(connectedService, true)` — `required = true`, so an absent
+`ENDPOINT_AUTH_SCHEME_<name>` throws before anything else happens — and `loginAzureRM` branches
+`workloadidentityfederation` → `az login --service-principal … --federated-token`,
+`serviceprincipal` → `az login --service-principal … --password=/--certificate=`,
+`managedserviceidentity` → `az login --identity`, `else` → `throw tl.loc('AuthSchemeNotSupported')`.
+**Consequence:** connection `mode: ambient` (C-E08-005) cannot work for a task run in real-task
+mode. Ambient remains correct only for a *native* script step that calls `az` itself and signs in
+through `azdo_sc_login`.
+  — https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/AzureCLIV2/azureclitask.ts
+    (`run` L79-83, `loginAzureRM` L305-417; checked 2026-09-03)
+
+[C-E08-037] **Even a successful ambient `az login` would be invisible to the task: it repoints
+`AZURE_CONFIG_DIR` at a fresh per-invocation directory** unless the step sets
+`useGlobalConfig: true`. Verbatim from `setConfigDirectory`: "use a freshly-created, unpredictable
+per-invocation directory so that an earlier step cannot pre-seed `$(Agent.TempDirectory)/.azclitask/config`
+with a poisoned `extension.index_url`". So the "just log in first" workaround does not work either —
+the second, independent reason C-E08-036's conclusion holds.
+  — same file (`setConfigDirectory` L419-437; checked 2026-09-03)
+
+[C-E08-038] **`AzureCLI@2` ends with `az account clear`.** `logoutAzure()` runs unconditionally when
+the task logged in. With the default per-invocation config dir it clears only that throwaway
+profile; with `useGlobalConfig: true` it clears **the developer's own `az` profile**.
+**Consequence:** a converted step carrying `useGlobalConfig: true` will sign the developer out of
+`az` on their own machine. That is a data-loss hazard in the emitted project's path, not a fidelity
+note, and it is warned about at convert time and again at run time.
+  — same file (`run` L216-218, `logoutAzure` L447-455; checked 2026-09-03)
+
+### `AzurePowerShell@5`: it clears the developer's saved Az context, unconditionally (`C-E08-039..041`)
+
+[C-E08-039] **`InitializeAz.ps1` runs `Clear-AzContext -Scope CurrentUser -Force` before connecting,
+and nothing gates it.** The Node handler builds the endpoint object
+(`new AzureRMEndpoint(serviceName).getEndpoint()` — so the endpoint is required here too) and
+unconditionally appends `InitializeAz.ps1 -endpoint '<json>'` to the generated script; the script
+then runs `Clear-AzContext -Scope Process` **and** `Clear-AzContext -Scope CurrentUser -Force
+-ErrorAction SilentlyContinue`. `CurrentUser` scope is the **on-disk** context store.
+**Consequence:** running this task locally in real-task mode deletes the developer's saved
+`Connect-AzAccount` session. There is no `useGlobalConfig` equivalent to opt out, so the honest
+output is a warning, not a mitigation.
+  — https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/AzurePowerShellV5/azurepowershell.ts
+    (L47-48, L96-107) and
+    https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/AzurePowerShellV5/InitializeAz.ps1
+    (L50-53; both checked 2026-09-03)
+
+[C-E08-040] **On a non-Windows host `AzurePowerShell@5` accepts only `SPNKey`, and only two
+schemes.** `InitializeAz.ps1`: the `ServicePrincipal` arm throws "Only SPNKey auth type is supported
+for ServicePrincipal auth scheme using non windows agent." for any other `authenticationType`, and
+the outer `else` throws "Only SPN credential and WorkloadIdentityFederation auth schemes are
+supported for non windows agent." **Consequence for the `.env` generator:** a connection consumed
+only by this task must **not** be offered a `servicePrincipalCertificate` line — that would ask the
+user to fill in a credential the task rejects. (Windows host is out of scope, CLAUDE.md.)
+  — same `InitializeAz.ps1` (L76-95, L128-131; checked 2026-09-03)
+
+[C-E08-041] **`AzurePowerShell@5` requires the `Az.Accounts` PowerShell module, by name.**
+`InitializeAz.ps1` does `Get-Module -Name Az.Accounts -ListAvailable` and, when nothing is found,
+throws "Could not find the module Az.Accounts with given version." **Consequence:** the doctor rule
+for this task is `pwsh` *plus* `Az.Accounts` — a `pwsh` that is present but has no Az module fails
+the task, and a doctor that reported only `pwsh` would call that machine ready.
+  — same `InitializeAz.ps1` (L21-45; checked 2026-09-03)
+
+[C-E08-042] **Both tasks need `Agent.TempDirectory`, and the runtime already provides it.**
+`AzurePowerShell@5` calls `tl.checkPath(tempDirectory, …)` on `agent.tempDirectory` and throws when
+it is unset; `AzureCLI@2` warns and falls back to the global config dir. `emitEntrypoints` seeds
+`Agent.TempDirectory` as `"$AZDO_WORKSPACE_DIR/tmp"` before any step runs, so this is a checked
+prerequisite rather than a gap — recorded so a later reader does not re-derive it.
+  — `azurepowershell.ts` L18-19 and `azureclitask.ts` L425-429 (same commit) ·
+    `packages/emit/src/entrypoints.ts` L167 (checked 2026-09-03)

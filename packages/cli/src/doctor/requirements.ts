@@ -14,6 +14,11 @@
  * So the doctor reports **presence**, not a floor, until a task research note supplies a real
  * minimum — at which point it goes in `min` here with its claim id.
  *
+ * **A requirement is not always a binary on PATH** (C-E08-041). `AzurePowerShell@5` needs the
+ * `Az.Accounts` PowerShell module as well as `pwsh`, and the two are separate entries because they
+ * are separate things to install with separate remediations — folding the module into `pwsh` would
+ * let a machine with PowerShell and no Az module pass the doctor and fail the run.
+ *
  * **The vendor matrices do not rescue this either** (C-E08-019). Kubernetes and Helm both publish
  * skew policies, but they state *supported-ness*, not *functionality*: neither says the older
  * version stops working, and a doctor that refused a kubectl a few minors behind would report a
@@ -52,6 +57,12 @@ export const TASK_TOOLS: Readonly<Record<string, readonly TaskToolRequirement[]>
     {
       cmd: 'pwsh',
       because: 'its handler is PowerShell3 and it runs Az cmdlets in a PowerShell session',
+    },
+    {
+      cmd: 'Az.Accounts',
+      because:
+        'C-E08-041: `InitializeAz.ps1` resolves `Get-Module -Name Az.Accounts -ListAvailable` and ' +
+        'throws when nothing is found — a `pwsh` with no Az module fails this task',
     },
   ],
   'Docker@2': [

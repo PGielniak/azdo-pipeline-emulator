@@ -25,7 +25,8 @@
 
 import type { Step } from '@azdo-emu/engine';
 
-import { nativeScriptKind, taskRef, type NativeScriptKind } from './step.js';
+import { nativeScriptKind, type NativeScriptKind } from './step.js';
+import { taskRef } from './task-ref.js';
 
 /** How a step runs locally. */
 export type Disposition = 'native' | 'real-task' | 'stub';

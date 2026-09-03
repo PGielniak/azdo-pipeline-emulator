@@ -224,7 +224,29 @@ describe('the priority set has a rule for every tool it needs (E08-S03-T02)', ()
     const tools = new Set(
       PRIORITY_TASKS.flatMap((taskRef) => requirementsFor(taskRef).map((r) => r.cmd)),
     );
-    expect([...tools].sort()).toEqual(['az', 'azcopy', 'docker', 'helm', 'kubectl', 'pwsh']);
+    for (const cli of ['az', 'azcopy', 'docker', 'helm', 'kubectl', 'pwsh']) {
+      expect([...tools], cli).toContain(cli);
+    }
+  });
+
+  it('also requires what is not a CLI at all: the Az.Accounts module (C-E08-041)', () => {
+    // E08-S03-T02 asserted the tool set was exactly the six CLIs. E08-S02-T01 read
+    // `InitializeAz.ps1` and found `Get-Module -Name Az.Accounts -ListAvailable`, which throws when
+    // nothing is found — so a `pwsh` with no Az module fails AzurePowerShell@5 while the doctor
+    // reports the machine ready. A requirement is not always a binary on PATH.
+    const tools = new Set(
+      PRIORITY_TASKS.flatMap((taskRef) => requirementsFor(taskRef).map((r) => r.cmd)),
+    );
+    expect([...tools].sort()).toEqual([
+      'Az.Accounts',
+      'az',
+      'azcopy',
+      'docker',
+      'helm',
+      'kubectl',
+      'pwsh',
+    ]);
+    expect(requirementsFor('AzurePowerShell@5').map((r) => r.cmd)).toEqual(['pwsh', 'Az.Accounts']);
   });
 
   it('still declares no floors — vendor matrices state support, not function (C-E08-019)', () => {

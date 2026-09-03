@@ -1,0 +1,17 @@
+{
+  "source": {
+    "repo": "microsoft/azure-pipelines-tasks",
+    "path": "Tasks/AzurePowerShellV5/task.json",
+    "tag": "v277",
+    "commit": "8ba25cfb5c7736ba98a37488c0323f7320cb5b3e",
+    "rawUrl": "https://raw.githubusercontent.com/microsoft/azure-pipelines-tasks/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/AzurePowerShellV5/task.json",
+    "permalink": "https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/AzurePowerShellV5/task.json"
+  },
+  "task": {
+    "name": "AzurePowerShell",
+    "version": "5.277.2"
+  },
+  "fetchedAt": "2026-09-03T21:33:28.129Z",
+  "sha256": "218e5f622265a6a85d59a5b21f21bd6dff61437fe2239d5873a326f4db06a9e3",
+  "bytes": 7412
+}
