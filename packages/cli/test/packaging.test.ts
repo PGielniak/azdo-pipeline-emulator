@@ -21,6 +21,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 
+import { loadVendoredTaskDefinitions, vendoredTasksDir } from '@azdo-emu/emit';
+
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const manifest = JSON.parse(readFileSync(join(repoRoot, 'packages/cli/package.json'), 'utf8')) as {
   dependencies?: Record<string, string>;
@@ -43,6 +45,35 @@ describe('the runtime library is reachable from the shipped package', () => {
     const resolved = require.resolve('@azdo-emu/runtime/lib/core.sh');
     expect(existsSync(resolved)).toBe(true);
     expect(readFileSync(resolved, 'utf8')).toContain('azdo_');
+  });
+});
+
+describe('the vendored task.json snapshots are reachable from the shipped emit package', () => {
+  // The same bug class, with a worse symptom (E08-S02-T01). `loadVendoredTaskDefinitions` returns
+  // `{}` when it cannot read the directory, so a bundle that ships without `vendor/` would emit a
+  // project with no connection blocks, no manifest ENDPOINT_ keys and no session-clobber warning —
+  // and exit green. The runtime-lib version of this bug at least threw.
+  it('ships `vendor` in the emit package’s files list', () => {
+    const emit = JSON.parse(readFileSync(join(repoRoot, 'packages/emit/package.json'), 'utf8')) as {
+      files?: string[];
+    };
+    expect(emit.files).toContain('vendor');
+  });
+
+  it('resolves from the bundle’s depth, not only from src/', () => {
+    // The loader walks one level up from its own module. `src/` and `dist/` are both one level
+    // under the package root, which is exactly the assumption `runtimeLibDir()` got wrong.
+    for (const from of ['packages/emit/src', 'packages/emit/dist']) {
+      const dir = join(repoRoot, from, '..', 'vendor', 'tasks-meta');
+      expect(existsSync(join(dir, 'AzureCLI@2', 'task.json')), from).toBe(true);
+    }
+  });
+
+  it('the built bundle finds the snapshots it needs', () => {
+    // Through the built `dist/index.js`, not the source module — the seam the other two tests
+    // reason about, actually exercised.
+    expect(loadVendoredTaskDefinitions()).toHaveProperty(['AzureCLI@2']);
+    expect(vendoredTasksDir()).toContain(join('emit', 'vendor', 'tasks-meta'));
   });
 });
 

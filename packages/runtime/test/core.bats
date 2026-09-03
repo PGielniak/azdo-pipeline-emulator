@@ -3523,14 +3523,26 @@ mock_az() {
   [[ "$output" == *'No input opts out'* ]]
 }
 
-@test "the hazard is announced once per run, not once per step" {
-  # A pipeline that deploys to twelve resource groups should say this once; a warnings list nobody
-  # reads to the end is the same as no warnings list (PLAN D10).
+@test "the hazard is announced once per run, across separate step processes" {
+  # A pipeline that deploys to twelve resource groups should say this once (PLAN D10). The guard
+  # has to be a file: `run_step` runs every step as `exec env -- <clean env> bash <script>`, so an
+  # exported marker would be gone by the next step and the warning would repeat per step.
   ENDPOINT_AUTH_SCHEME_prod=ManagedServiceIdentity
   export ENDPOINT_AUTH_SCHEME_prod
-  run -0 bash -c 'source "$1/lib/core.sh"; azdo_sc_preflight prod "AzureCLI@2"; azdo_sc_preflight prod "AzureCLI@2"' \
-    _ "$(azdo_emu_runtime_dir)"
+  local lib
+  lib="$(azdo_emu_runtime_dir)/lib/core.sh"
+  local step='source "$1"; azdo_sc_preflight prod "AzureCLI@2"'
+  run -0 bash -c "bash -c '$step' _ \"\$1\"; bash -c '$step' _ \"\$1\"" _ "$lib"
   [[ "$(grep -c 'az account clear' <<<"$output")" -eq 1 ]]
+}
+
+@test "the hazard still warns when there is no state dir to record it in" {
+  # Warning twice is noise; not warning at all loses a session. The fallback picks noise.
+  ENDPOINT_AUTH_SCHEME_prod=ManagedServiceIdentity
+  export ENDPOINT_AUTH_SCHEME_prod
+  unset AZDO_STATE_DIR
+  run -0 azdo_sc_preflight 'prod' 'AzureCLI@2'
+  [[ "$output" == *'az account clear'* ]]
 }
 
 @test "preflight rejects a wrong argument count" {

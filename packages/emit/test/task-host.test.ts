@@ -355,6 +355,18 @@ describe('input aliases (E08-S02-T01)', () => {
     expect(resolution.missingRequired).toEqual([]);
   });
 
+  it('passes through an input the task does not declare (C-E08-033)', () => {
+    // The expansion accepts `noSuchInput:` without complaint, so this shape really does reach the
+    // emitter; dropping it would be a silent behavior change against a task that reads the
+    // environment directly.
+    const resolution = resolveTaskInputs(AZURE_CLI, {
+      azureSubscription: 'prod',
+      noSuchInput: 'whatever',
+    });
+    expect(resolution.undeclared).toEqual(['noSuchInput']);
+    expect(resolution.inputs.map((i) => i.envName)).toContain('INPUT_NOSUCHINPUT');
+  });
+
   it('never emits the alias as an INPUT_ of its own', () => {
     const resolution = resolveTaskInputs(AZURE_CLI, { azureSubscription: 'prod' });
     expect(resolution.inputs.map((i) => i.envName)).not.toContain('INPUT_AZURESUBSCRIPTION');

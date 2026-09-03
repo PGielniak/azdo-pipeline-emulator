@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { Step } from '@azdo-emu/engine';
+import { buildPipeline, parsePipelineYaml, type Step } from '@azdo-emu/engine';
 
 import {
   collectConnections,
@@ -12,6 +12,8 @@ import {
   type TaskDefinitions,
 } from '../src/connections.js';
 import { connectionKeys } from '../src/service-connection.js';
+import { emitEntrypoints } from '../src/entrypoints.js';
+import { scaffold } from '../src/scaffold.js';
 import { loadVendoredTaskDefinitions, vendoredTasksDir } from '../src/vendor.js';
 
 /** The real snapshots — the point of these tests is that the declarations are not hand-written. */
@@ -69,9 +71,11 @@ describe('collecting connections (E08-S02-T01)', () => {
     expect(folded.connections.map((c) => c.name)).toEqual(['my-prod-sub']);
   });
 
-  it('forces `sp` mode for a real-task consumer, because ambient cannot work (C-E08-036/037)', () => {
-    // `loginAzureRM` reads the scheme with required=true and has no reuse arm; and the task
-    // repoints AZURE_CONFIG_DIR, so a prior `az login` would be invisible even if it did.
+  it('forces `sp` mode for a real-task consumer, because ambient cannot work (C-E08-036)', () => {
+    // Two independent reasons, either one sufficient: `loginAzureRM` reads the scheme with
+    // required=true and has no reuse arm (C-E08-036); and the task repoints AZURE_CONFIG_DIR at a
+    // per-invocation directory (C-E08-037), so a prior `az login` would be invisible even if the
+    // scheme read had passed.
     const { connections } = collectConnections(
       [site(step('AzureCLI', '2', { azureSubscription: 'prod' }))],
       VENDORED,
@@ -254,5 +258,26 @@ describe('the vendored snapshot loader (E08-S02-T01)', () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('the prerequisites both tasks need from the runtime (C-E08-042)', () => {
+  it('`Agent.TempDirectory` is seeded before any step, so neither task trips on it', () => {
+    // `AzurePowerShell@5` calls `tl.checkPath` on `agent.tempDirectory` and *throws* when it is
+    // unset; `AzureCLI@2` warns and falls back to the global az config dir — which is the very
+    // profile C-E08-038 clears. Asserted here rather than left as prose, so a change to the
+    // entry-point seeding shows up as a failure against the tasks that depend on it.
+    const { pipeline } = buildPipeline(
+      parsePipelineYaml(
+        'stages:\n- stage: Deploy\n  jobs:\n  - job: deploy\n    steps:\n' +
+          '    - task: AzureCLI@2\n      inputs:\n        azureSubscription: prod\n',
+        'pipeline.expanded.yml',
+      ),
+    );
+    const plan = scaffold(pipeline!);
+    const emitted = [...emitEntrypoints(pipeline!, plan, 'pipeline.expanded.yml', [], [])]
+      .map(([, content]) => content)
+      .join('\n');
+    expect(emitted).toContain("azdo_var_set 'Agent.TempDirectory'");
   });
 });

@@ -4692,11 +4692,21 @@ azdo_sc_preflight() {
 }
 
 # azdo__sc_hazard <task-ref> — announce what running this task locally destroys, once per run.
+#
+# The marker is a **file**, not an exported variable. Every step is `exec env -- <clean env> bash
+# <script>` in its own process, so an export cannot reach the next step and a variable-based guard
+# would print the warning once per step instead — a warnings list nobody reads to the end is the
+# same as no warnings list (PLAN D10). `AZDO_STATE_DIR` is the store every other piece of
+# cross-step state already lives in, and it is per run.
 azdo__sc_hazard() {
-  local __hazard_seen="AZDO_SC_HAZARD_SEEN_${1//[^a-zA-Z0-9]/_}"
-  [[ -n "${!__hazard_seen-}" ]] && return 0
-  printf -v "$__hazard_seen" '%s' 1
-  export "${__hazard_seen?}"
+  local __hazard_dir __hazard_marker
+  # Without a state dir there is nowhere to record the marker; warn every time rather than not at
+  # all — a repeated warning is noise, a missing one is a lost session.
+  if __hazard_dir="$(azdo__state_dir 2>/dev/null)"; then
+    __hazard_marker="$__hazard_dir/sc-hazard/${1//[^a-zA-Z0-9]/_}"
+    [[ -e "$__hazard_marker" ]] && return 0
+    mkdir -p -- "$(dirname -- "$__hazard_marker")" && : >"$__hazard_marker"
+  fi
   case "$1" in
     AzureCLI@2*)
       printf '%s\n' "##[warning]AzureCLI@2 ends with 'az account clear' (C-E08-038); a step with useGlobalConfig: true signs you out of az on this machine." >&2
