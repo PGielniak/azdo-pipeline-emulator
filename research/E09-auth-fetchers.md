@@ -81,6 +81,89 @@ is issued **only if** the original `scope` included `offline_access`.
 
 ---
 
+## E09-S01-T02 — `az` token reuse and PAT mode (`C-E09-018..024`)
+
+Recorded 2026-09-03 before implementation. The redacted live measurement — both modes probed against
+the test organization in the same minute — is at
+`research/experiments/E09-rest/az-token-pat/real-run.md`.
+
+[C-E09-018] **`az account get-access-token` acquires a token for an arbitrary Azure resource, and
+`--resource` and `--scope` are different Microsoft Entra generations rather than aliases.**
+`--resource` takes "Azure resource endpoints in Microsoft Entra v1.0"; `--scope` takes
+"Space-separated scopes in Microsoft Entra v2.0. Default to Azure Resource Manager." The Azure
+DevOps resource identifier (C-E09-001) is a v1.0 endpoint identifier, so `--resource` is the
+matching flag and docs/05 §1 prescribes it. The page also bounds the lifetime: "The token will be
+valid for at least 5 minutes with the maximum at 60 minutes."
+  — https://learn.microsoft.com/en-us/cli/azure/account?view=azure-cli-latest#az-account-get-access-token
+    (`git_commit_id` `6eda315c56043d2331b33b5d5b77bca41b526645`; checked 2026-09-03)
+  — Measured against `azure-cli` 2.89.1; the returned `tokenType` is `Bearer`.
+
+[C-E09-019] **⚠ The output carries two expiry fields and only one is unambiguous.** The reference
+page states: "In the output, `expires_on` represents a POSIX timestamp and `expiresOn` represents a
+local datetime. It is recommended for downstream applications to use `expires_on` because it is in
+UTC." The measured `expiresOn` was `"2026-09-03 09:04:33.000000"` — **no offset and no `Z`** — so
+parsing it as UTC silently misdates the credential by the host's offset. The implementation reads
+`expires_on` and falls back to `expiresOn` only when the POSIX sibling is absent.
+  — as C-E09-018 (checked 2026-09-03)
+
+[C-E09-020] **A PAT is sent as HTTP Basic with an *empty* username and the PAT in the password
+position.** "To provide the PAT through an HTTP header, first convert it to a `Base64` string. Then,
+provide it as an HTTP header in the following format: `Authorization: Basic
+BASE64_USERNAME_PAT_STRING`", and the Linux/macOS sample is `curl -u :{PAT}
+https://dev.azure.com/{organization}/_apis/build-release/builds` — the colon with nothing before it
+is the empty username. This is exactly the construction `authorizationHeader()` in
+`packages/fetch/src/oracle.ts` already performs, so the PAT arm reuses it rather than restating it.
+  — https://learn.microsoft.com/en-us/azure/devops/organizations/accounts/use-personal-access-tokens-to-authenticate?view=azure-devops
+    (`git_commit_id` `9c456ac04db629b53b1b8195a48bdaad19ed5611`; checked 2026-09-03)
+
+[C-E09-021] **⚠ The PAT page says the profiles APIs accept only Microsoft Entra tokens; the live
+organization accepts a PAT there anyway.** The page's FAQ reads: "You can use PATs with most Azure
+DevOps REST APIs, but organizations and profiles ... support only Microsoft Entra tokens." The
+measured behaviour is the opposite: `GET
+https://vssps.dev.azure.com/{org}/_apis/profile/profiles/me?api-version=7.1` returned **200** with a
+PAT on 2026-09-03, reproducing C-E09-010's 2026-08-28 result. Both sides are recorded because
+`authStatus()` is built on that probe (C-E09-009/010): if the documented restriction is ever
+enforced, `auth status` breaks for the **only** mode that works on a Microsoft-account organization
+(C-E09-022), and this claim is where that diagnosis starts.
+  — as C-E09-020 (checked 2026-09-03)
+  — `research/experiments/E09-rest/az-token-pat/real-run.md` §3 (redacted live measurement)
+
+[C-E09-022] **⚠ On a Microsoft-account-backed organization the `az` arm cannot authenticate at all,
+and this is a permanent property of the organization rather than a lapsed sign-in.** With a valid
+`az` session, every organization endpoint rejected the bearer token with **302** (the sign-in
+redirect, the same unauthenticated signature as C-E00-025) while a PAT returned **200** on the same
+URLs in the same minute. The cause is measured twice over: the unauthenticated probe returns
+`x-vss-resourcetenant: 00000000-0000-0000-0000-000000000000` — the all-zeros tenant that marks an
+MSA-backed organization — and the `oid` claim of the acquired token does **not** equal the `id` the
+PAT-authenticated Profile call returns, so the two credentials name different principals. Every
+tenant `az account list --all` offered, plus the Microsoft-account consumers tenant
+`9188040d-6c67-4c5b-b112-36a304b66dad`, was tried; only the account's home tenant minted a token and
+that token still got 302. This is C-E09-002 measured rather than predicted.
+  — `research/experiments/E09-rest/az-token-pat/real-run.md` §3–§5 (redacted live measurement,
+    2026-09-03)
+  — supersedes the E09-S01-T02 blocker note dated 2026-08-26, which asserted that running `az login`
+    would unblock the task; the sign-in was completed and the arm still cannot authenticate.
+
+[C-E09-023] **Consequence for docs/05 §1: the three-mode auto-selection must survive *two* of its
+three arms being unavailable.** On an MSA-backed organization `interactive` is unavailable by
+C-E09-002 and `az` is unavailable by C-E09-022, leaving `pat` as the only working mode — and
+C-E09-002 already notes that a personal-account organization "is exactly the shape a solo developer
+converting their own pipelines has", so this is the default configuration, not an edge case. The
+selection chain therefore reports each arm as *unavailable with a reason* instead of throwing, and
+distinguishes "no token could be acquired" (remediation: sign in) from "a token was acquired but the
+organization rejected it" (remediation: use a PAT) — E10-S03-T01's failure hints consume that
+distinction.
+  — derived from C-E09-002 + C-E09-022; recorded in docs/05 §1 and docs/06 §5 decision 76.
+
+[C-E09-024] **`AZURE_DEVOPS_EXT_PAT` is honored as a second PAT source by project policy, not by an
+Azure DevOps API behavior.** It is the variable the `az devops` CLI extension reads, and the task's
+**Do** field names it alongside `AZDO_PAT`; no page consulted for this task documents it as a
+general Azure DevOps PAT input. `AZDO_PAT` is checked first because it is this project's own
+variable (`ORACLE_ENV_VARS`). Presented here as policy so a later reader does not mistake it for a
+grounded service behavior — the same convention C-E09-012's note uses for the GitHub chain order.
+
+---
+
 ## E09-S01-T03 — token storage and authenticated status (`C-E09-007..011`)
 
 Recorded 2026-08-28 before implementation. The live probe transcript is redacted at

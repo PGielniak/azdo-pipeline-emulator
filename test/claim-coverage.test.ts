@@ -65,10 +65,14 @@ describe('what the count must not get wrong', () => {
   });
 
   it('reports the blocked device-code claims, which have no implementation yet', () => {
-    // E09-S01-T01 is `[!]`, so C-E09-001..006 legitimately have no tests. This is the case the
+    // E09-S01-T01 is `[!]`, so C-E09-002..006 legitimately have no tests. This is the case the
     // ratchet exists to tolerate — a hard 100% gate would demand assertions that prove nothing.
-    expect(defined.has('C-E09-001')).toBe(true);
+    // C-E09-001 used to be in this list and no longer is: E09-S01-T02 (2026-09-03) pins the same
+    // Azure DevOps resource GUID for the `az` arm and asserts it, so the claim gained a real test
+    // while the device-code flow it was written for is still unbuilt.
+    expect(defined.has('C-E09-003')).toBe(true);
     expect(defined.has('C-E09-006')).toBe(true);
+    expect(defined.has('C-E09-001')).toBe(false);
   });
 
   it('counts a claim id mentioned inside another claim’s prose only once', () => {
@@ -99,7 +103,7 @@ describe('what the scan includes (E11-S03-T02)', () => {
     expect(script).toContain('claim-coverage.test.ts');
     // The four ids asserted as gaps above are named in this file and must still be reported.
     const gaps = new Set(run('--list').stdout.trim().split('\n').filter(Boolean));
-    for (const id of ['C-E09-001', 'C-E09-006', 'C-E09-084', 'C-E09-087']) {
+    for (const id of ['C-E09-003', 'C-E09-006', 'C-E09-084', 'C-E09-087']) {
       expect(gaps.has(id), `${id} must stay a gap despite being named here`).toBe(true);
     }
   });

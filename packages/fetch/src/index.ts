@@ -85,6 +85,38 @@ export {
 } from './auth/status.js';
 
 export {
+  AZDO_ENTRA_RESOURCE,
+  AZ_TOKEN_ARGS,
+  AzCliError,
+  azCredential,
+  expiryFrom,
+  parseAzToken,
+  readAzAccessToken,
+  type AzExec,
+  type AzTokenOptions,
+  type AzTokenResult,
+} from './auth/azdo-cli.js';
+
+export {
+  PAT_ENV_VARS,
+  patAuthorizationHeader,
+  patCredential,
+  readPatFromEnv,
+  type PatCredentialSource,
+  type PatEnvVar,
+} from './auth/pat.js';
+
+export {
+  AUTH_MODE_ORDER,
+  remediationFor,
+  selectAzureCredential,
+  type AuthArmUnavailable,
+  type AuthSelection,
+  type SelectAuthOptions,
+  type UnavailableReason,
+} from './auth/select.js';
+
+export {
   GITHUB_ACCEPT,
   GITHUB_API_ORIGIN,
   GITHUB_API_VERSION,
