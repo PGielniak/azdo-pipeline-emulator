@@ -44,6 +44,16 @@ Corpus: `__default` appears as a stage name in 78 transcripts and `Job` as a job
 C-E00-017/018's measurement, which the task's **Ground** field names, and confirms it holds across
 every later probe rather than only the original spike.
 
+**Addendum 2026-09-03 (E11-S03-T02, drift-triage exercise).** Re-verified live and now **pinned by
+a corpus entry**: `fixtures/corpus/11-implicit-wrapping/` submits bare `steps:` and its committed
+pair `fixtures/oracle/11-implicit-wrapping.final.yml` (fetched 2026-09-02 UTC) is exactly
+`stages: - stage: __default / jobs: - job: Job / steps: - task: CmdLine@2` — all three facts
+unchanged five weeks after the measurement behind C-E00-017/018 (2026-07-30). Until this entry existed the claim was
+measured but *watched by nothing*: all ten original corpus entries declare their stages and jobs
+explicitly, so no committed pair asserted the implicit case, while every scaffold path the emitter
+writes depends on those two names. The nightly (E11-S03-T01) now re-expands it every run, so a
+future change to the wrapping surfaces as a one-line diff rather than inside a large one.
+
 [C-E04-003] **A root-level `jobs:` is wrapped in `__default` too, and keeps its own job name.**
 `research/experiments/E04-model/root-jobs/` — input `jobs:\n- job: Build\n  steps: …`, HTTP 200,
 expanded to `stages:\n- stage: __default\n  jobs:\n  - job: Build\n    steps:\n    - task: CmdLine@2`

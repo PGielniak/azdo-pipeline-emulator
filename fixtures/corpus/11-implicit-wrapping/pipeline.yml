@@ -1,0 +1,11 @@
+# The narrowest pipeline the service accepts: no stages, no jobs, no pool — bare `steps:`.
+#
+# Filed by E11-S03-T02's drift exercise to pin C-E04-002. Everything else in the corpus declares
+# its stages and jobs explicitly, so nothing was watching the wrapping the service applies here,
+# even though every scaffold path the emitter produces depends on it.
+trigger: none
+pr: none
+
+steps:
+  - script: echo implicit-wrapping
+    displayName: A step with no stage and no job around it
