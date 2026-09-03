@@ -4617,6 +4617,106 @@ azdo__sc_endpoint_data() {
   printf '%s' "${!__sc_var-}"
 }
 
+# azdo_sc_preflight <connection-name> <task-ref> — check a real task can authenticate, and say
+# what running it here will cost (E08-S02-T01).
+#
+# This exists because the Do field's "wire ambient glue" turned out to be unwriteable. `AzureCLI@2`
+# reads the endpoint scheme with required=true and then logs in unconditionally — there is no arm
+# that reuses an existing session (C-E08-036) — and it repoints AZURE_CONFIG_DIR at a throwaway
+# directory, so an `az login` done beforehand is invisible to it anyway (C-E08-037).
+# `AzurePowerShell@5` is the same story through `AzureRMEndpoint` (C-E08-039). A pre-login helper
+# would therefore do nothing except hide the real failure behind a second one.
+#
+# What *is* useful is failing before the task does, naming the exact `.env` lines to fill: task-lib
+# throws `LIB_EndpointAuthNotExist`, which says nothing about which variable is missing.
+#
+# The hazard notice is not decoration. Both tasks destroy a local session — `az account clear`
+# (C-E08-038) and `Clear-AzContext -Scope CurrentUser -Force` (C-E08-039) — and they are run here
+# for fidelity (PLAN D4), so the behavior cannot be patched out, only announced.
+azdo_sc_preflight() {
+  (($# == 2)) || {
+    printf '%s\n' 'usage: azdo_sc_preflight <connection-name> <task-ref>' >&2
+    return 2
+  }
+  local name="$1" task="$2" scheme missing=()
+
+  # C-E08-001: the key is upper-cased, the connection name verbatim — same spelling as the task's.
+  local __scheme_var="ENDPOINT_AUTH_SCHEME_${name}"
+  scheme="${!__scheme_var-}"
+
+  if [[ -z "$scheme" ]]; then
+    missing+=("ENDPOINT_AUTH_SCHEME_${name}")
+  fi
+  case "${scheme,,}" in
+    workloadidentityfederation)
+      # C-E08-036: the federation arm reads the id token, not a secret.
+      [[ -n "$(azdo__sc_endpoint_auth "$name" SERVICEPRINCIPALID)" ]] ||
+        missing+=("ENDPOINT_AUTH_PARAMETER_${name}_SERVICEPRINCIPALID")
+      [[ -n "$(azdo__sc_endpoint_auth "$name" TENANTID)" ]] ||
+        missing+=("ENDPOINT_AUTH_PARAMETER_${name}_TENANTID")
+      [[ -n "$(azdo__sc_endpoint_auth "$name" IDTOKEN)" ]] ||
+        missing+=("ENDPOINT_AUTH_PARAMETER_${name}_IDTOKEN")
+      ;;
+    managedserviceidentity) ;;
+    ''|serviceprincipal)
+      [[ -n "$(azdo__sc_endpoint_auth "$name" SERVICEPRINCIPALID)" ]] ||
+        missing+=("ENDPOINT_AUTH_PARAMETER_${name}_SERVICEPRINCIPALID")
+      [[ -n "$(azdo__sc_endpoint_auth "$name" TENANTID)" ]] ||
+        missing+=("ENDPOINT_AUTH_PARAMETER_${name}_TENANTID")
+      if [[ "$(azdo__sc_endpoint_auth "$name" AUTHENTICATIONTYPE)" == spnCertificate ]]; then
+        [[ -n "$(azdo__sc_endpoint_auth "$name" SERVICEPRINCIPALCERTIFICATE)" ]] ||
+          missing+=("ENDPOINT_AUTH_PARAMETER_${name}_SERVICEPRINCIPALCERTIFICATE")
+      else
+        [[ -n "$(azdo__sc_endpoint_auth "$name" SERVICEPRINCIPALKEY)" ]] ||
+          missing+=("ENDPOINT_AUTH_PARAMETER_${name}_SERVICEPRINCIPALKEY")
+      fi
+      ;;
+    *)
+      # C-E08-036: anything else is `throw AuthSchemeNotSupported` inside the task.
+      printf "azdo_sc_preflight: connection '%s' declares scheme '%s', which %s rejects\n" \
+        "$name" "$scheme" "$task" >&2
+      return 1
+      ;;
+  esac
+
+  azdo__sc_hazard "$task"
+
+  ((${#missing[@]} == 0)) && return 0
+  printf "azdo_sc_preflight: %s needs service connection '%s', and .env is missing:\n" \
+    "$task" "$name" >&2
+  local key
+  for key in "${missing[@]}"; do printf '  %s=\n' "$key" >&2; done
+  printf '%s\n' '  These are the names the real task reads (C-E08-001); see .env.example.' >&2
+  printf '%s\n' "  'mode: ambient' cannot serve a task run in real-task mode (C-E08-036)." >&2
+  return 1
+}
+
+# azdo__sc_hazard <task-ref> — announce what running this task locally destroys, once per run.
+#
+# The marker is a **file**, not an exported variable. Every step is `exec env -- <clean env> bash
+# <script>` in its own process, so an export cannot reach the next step and a variable-based guard
+# would print the warning once per step instead — a warnings list nobody reads to the end is the
+# same as no warnings list (PLAN D10). `AZDO_STATE_DIR` is the store every other piece of
+# cross-step state already lives in, and it is per run.
+azdo__sc_hazard() {
+  local __hazard_dir __hazard_marker
+  # Without a state dir there is nowhere to record the marker; warn every time rather than not at
+  # all — a repeated warning is noise, a missing one is a lost session.
+  if __hazard_dir="$(azdo__state_dir 2>/dev/null)"; then
+    __hazard_marker="$__hazard_dir/sc-hazard/${1//[^a-zA-Z0-9]/_}"
+    [[ -e "$__hazard_marker" ]] && return 0
+    mkdir -p -- "$(dirname -- "$__hazard_marker")" && : >"$__hazard_marker"
+  fi
+  case "$1" in
+    AzureCLI@2*)
+      printf '%s\n' "##[warning]AzureCLI@2 ends with 'az account clear' (C-E08-038); a step with useGlobalConfig: true signs you out of az on this machine." >&2
+      ;;
+    AzurePowerShell@5*)
+      printf '%s\n' "##[warning]AzurePowerShell@5 runs 'Clear-AzContext -Scope CurrentUser -Force' (C-E08-039), deleting your saved Connect-AzAccount session. No input opts out." >&2
+      ;;
+  esac
+}
+
 # --- E08-S03-T01: deployment strategies -------------------------------------------------------
 
 # azdo_strategy_hooks <strategy> — the hook order, one per line (C-E08-011).

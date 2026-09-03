@@ -531,3 +531,68 @@ describe('E01-S02-T02 — strict validation of the expanded pipeline', () => {
       expect(validateExpandedPipeline(readFileSync(join(dir, name), 'utf8')), name).toEqual([]);
   });
 });
+
+describe('E08-S02-T01 — service connections reach the generated project', () => {
+  /** An expansion naming a connection under its alias, which is what real pipelines write. */
+  const AZURE_FINAL = `stages:
+- stage: Deploy
+  jobs:
+  - job: deploy
+    steps:
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: my-prod-sub
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: az account show
+`;
+
+  const stubWith = (yaml: string): ConvertDeps => ({
+    fetchImpl: (async () =>
+      new Response(JSON.stringify({ finalYaml: yaml }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as NonNullable<ConvertDeps['fetchImpl']>,
+    oracle: ORACLE,
+  });
+
+  it('writes the connection block, the manifest env keys, and the hazard warning', async () => {
+    const { file, out } = workspace(AZURE_FINAL);
+    const result = await convert(file, { out, bundle: false }, stubWith(AZURE_FINAL));
+
+    // The `.env.example` asks for the connection under the names the real task reads (C-E08-001),
+    // in `sp` mode — because ambient cannot serve a task run in real-task mode (C-E08-036).
+    const env = read(out, '.env.example');
+    expect(env).toContain("# ── Service connection 'my-prod-sub' · mode: sp");
+    expect(env).toContain('ENDPOINT_AUTH_PARAMETER_my-prod-sub_SERVICEPRINCIPALID=');
+    expect(env).toContain('used by: Deploy/deploy/step 1');
+
+    const manifest = JSON.parse(read(out, 'manifest.json')) as {
+      env: { name: string; secret: boolean; origin?: string }[];
+      warnings: { code: string; message: string }[];
+    };
+    expect(manifest.env.map((e) => e.name)).toContain('ENDPOINT_AUTH_SCHEME_my-prod-sub');
+    expect(
+      manifest.env.find((e) => e.name === 'ENDPOINT_DATA_my-prod-sub_SUBSCRIPTIONID')?.secret,
+    ).toBe(false);
+
+    // The hazard is a convert-time warning, so it is in the README's warnings list before the
+    // first run rather than discovered by losing an `az` session (C-E08-038).
+    const clobber = manifest.warnings.find((w) => w.code === 'local-session-clobber');
+    expect(clobber?.message).toContain('az account clear');
+    expect(result.summary.warnings).toBeGreaterThan(0);
+    expect(read(out, 'README.md')).toContain('az account clear');
+  });
+
+  it('warns instead of inventing a block when the connection is a macro', async () => {
+    const macroFinal = AZURE_FINAL.replace('my-prod-sub', '$(azureSub)');
+    const { file, out } = workspace(macroFinal);
+    await convert(file, { out, bundle: false }, stubWith(macroFinal));
+
+    const manifest = JSON.parse(read(out, 'manifest.json')) as {
+      warnings: { code: string }[];
+    };
+    expect(manifest.warnings.map((w) => w.code)).toContain('connection-macro-name');
+    expect(read(out, '.env.example')).toContain('# (this pipeline references none)');
+  });
+});

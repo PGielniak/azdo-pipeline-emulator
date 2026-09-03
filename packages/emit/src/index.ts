@@ -54,3 +54,18 @@ export {
   type EnvKey,
   type ServiceConnection,
 } from './service-connection.js';
+
+// E08-S02-T01 — collecting the connections a pipeline references, and the local hazards of the
+// tasks that consume them.
+export {
+  collectConnections,
+  localSessionWarnings,
+  CONNECTED_SERVICE_TYPE_PREFIX,
+  REAL_TASK_ENDPOINT_USE,
+  type CollectedConnections,
+  type ConnectionSite,
+  type RealTaskEndpointUse,
+  type StepSite,
+  type TaskDefinitions,
+} from './connections.js';
+export { loadVendoredTaskDefinitions, vendoredTasksDir } from './vendor.js';

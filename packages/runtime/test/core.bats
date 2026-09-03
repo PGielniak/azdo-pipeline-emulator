@@ -1,4 +1,8 @@
 #!/usr/bin/env bats
+# bats file_tags=conformance
+# The L4 runtime conformance suite (E11-S04-T02): variable store, env materialization, steps,
+# artifacts, checkout, logging commands, real-task mode, service connections and strategies.
+# Every test here asserts grounded Azure DevOps runtime behavior and cites its claim id.
 
 bats_require_minimum_version 1.5.0
 
@@ -3413,6 +3417,137 @@ mock_az() {
   export AZDO_SC_MY_PROD_SUB_MODE
   run -1 azdo_sc_login 'my.prod sub'
   [[ "$output" == *'has no client id or tenant'* ]]
+}
+
+# --- E08-S02-T01: azdo_sc_preflight -------------------------------------------------------------
+#
+# The Do field asked for "ambient glue" for AzureCLI@2 / AzurePowerShell@5. Reading both tasks
+# showed there is none to write: each requires the endpoint in the environment and logs in itself
+# (C-E08-036/039). What is left is failing before the task does, and saying what the run destroys.
+
+@test "preflight passes when the sp keys the task reads are present (C-E08-001)" {
+  ENDPOINT_AUTH_SCHEME_prod=ServicePrincipal
+  ENDPOINT_AUTH_PARAMETER_prod_SERVICEPRINCIPALID=client-1
+  ENDPOINT_AUTH_PARAMETER_prod_TENANTID=tenant-1
+  ENDPOINT_AUTH_PARAMETER_prod_SERVICEPRINCIPALKEY=secret-1
+  export ENDPOINT_AUTH_SCHEME_prod ENDPOINT_AUTH_PARAMETER_prod_SERVICEPRINCIPALID \
+    ENDPOINT_AUTH_PARAMETER_prod_TENANTID ENDPOINT_AUTH_PARAMETER_prod_SERVICEPRINCIPALKEY
+
+  run -0 azdo_sc_preflight 'prod' 'AzureCLI@2'
+}
+
+@test "preflight names the exact .env lines that are missing, not LIB_EndpointAuthNotExist" {
+  # task-lib throws a message that says nothing about which variable is absent; this is the whole
+  # reason the helper exists.
+  run -1 azdo_sc_preflight 'prod' 'AzureCLI@2'
+  [[ "$output" == *'ENDPOINT_AUTH_SCHEME_prod='* ]]
+  [[ "$output" == *'ENDPOINT_AUTH_PARAMETER_prod_SERVICEPRINCIPALID='* ]]
+  [[ "$output" == *'ENDPOINT_AUTH_PARAMETER_prod_TENANTID='* ]]
+  [[ "$output" == *'ENDPOINT_AUTH_PARAMETER_prod_SERVICEPRINCIPALKEY='* ]]
+}
+
+@test "preflight says ambient cannot serve a real task (C-E08-036)" {
+  # The default connection mode is ambient, and a reader who set it needs to know why the step
+  # still fails: the task reads the scheme with required=true and then logs in regardless.
+  run -1 azdo_sc_preflight 'prod' 'AzureCLI@2'
+  [[ "$output" == *"'mode: ambient' cannot serve a task run in real-task mode"* ]]
+}
+
+@test "preflight asks for the certificate only when authenticationType selects it (C-E08-007)" {
+  ENDPOINT_AUTH_SCHEME_prod=ServicePrincipal
+  ENDPOINT_AUTH_PARAMETER_prod_SERVICEPRINCIPALID=client-1
+  ENDPOINT_AUTH_PARAMETER_prod_TENANTID=tenant-1
+  ENDPOINT_AUTH_PARAMETER_prod_AUTHENTICATIONTYPE=spnCertificate
+  export ENDPOINT_AUTH_SCHEME_prod ENDPOINT_AUTH_PARAMETER_prod_SERVICEPRINCIPALID \
+    ENDPOINT_AUTH_PARAMETER_prod_TENANTID ENDPOINT_AUTH_PARAMETER_prod_AUTHENTICATIONTYPE
+
+  run -1 azdo_sc_preflight 'prod' 'AzureCLI@2'
+  [[ "$output" == *'_SERVICEPRINCIPALCERTIFICATE='* ]]
+  [[ "$output" != *'_SERVICEPRINCIPALKEY='* ]]
+}
+
+@test "preflight checks the federation fields, not a secret (C-E08-036)" {
+  ENDPOINT_AUTH_SCHEME_prod=WorkloadIdentityFederation
+  ENDPOINT_AUTH_PARAMETER_prod_SERVICEPRINCIPALID=client-1
+  ENDPOINT_AUTH_PARAMETER_prod_TENANTID=tenant-1
+  export ENDPOINT_AUTH_SCHEME_prod ENDPOINT_AUTH_PARAMETER_prod_SERVICEPRINCIPALID \
+    ENDPOINT_AUTH_PARAMETER_prod_TENANTID
+
+  run -1 azdo_sc_preflight 'prod' 'AzureCLI@2'
+  [[ "$output" == *'_IDTOKEN='* ]]
+  [[ "$output" != *'_SERVICEPRINCIPALKEY='* ]]
+}
+
+@test "preflight rejects a scheme the task itself rejects (C-E08-036)" {
+  # `loginAzureRM`'s else arm is `throw AuthSchemeNotSupported`; reporting it here names the
+  # connection, which the task's own message does not.
+  ENDPOINT_AUTH_SCHEME_prod=UsernamePassword
+  export ENDPOINT_AUTH_SCHEME_prod
+  run -1 azdo_sc_preflight 'prod' 'AzureCLI@2'
+  [[ "$output" == *"declares scheme 'UsernamePassword'"* ]]
+  [[ "$output" == *'AzureCLI@2 rejects'* ]]
+}
+
+@test "managed identity needs no credential fields (C-E08-036)" {
+  ENDPOINT_AUTH_SCHEME_prod=ManagedServiceIdentity
+  export ENDPOINT_AUTH_SCHEME_prod
+  run -0 azdo_sc_preflight 'prod' 'AzureCLI@2'
+}
+
+@test "preflight warns that AzureCLI@2 clears an az session (C-E08-038)" {
+  ENDPOINT_AUTH_SCHEME_prod=ServicePrincipal
+  ENDPOINT_AUTH_PARAMETER_prod_SERVICEPRINCIPALID=client-1
+  ENDPOINT_AUTH_PARAMETER_prod_TENANTID=tenant-1
+  ENDPOINT_AUTH_PARAMETER_prod_SERVICEPRINCIPALKEY=secret-1
+  export ENDPOINT_AUTH_SCHEME_prod ENDPOINT_AUTH_PARAMETER_prod_SERVICEPRINCIPALID \
+    ENDPOINT_AUTH_PARAMETER_prod_TENANTID ENDPOINT_AUTH_PARAMETER_prod_SERVICEPRINCIPALKEY
+
+  run -0 azdo_sc_preflight 'prod' 'AzureCLI@2'
+  [[ "$output" == *'##[warning]'* ]]
+  [[ "$output" == *'az account clear'* ]]
+  [[ "$output" == *'useGlobalConfig'* ]]
+}
+
+@test "preflight warns that AzurePowerShell@5 deletes the saved Az context (C-E08-039)" {
+  # The sharper of the two: `Clear-AzContext -Scope CurrentUser` is the on-disk store, and nothing
+  # gates it — so the warning offers no mitigation, because there is none.
+  ENDPOINT_AUTH_SCHEME_prod=ServicePrincipal
+  ENDPOINT_AUTH_PARAMETER_prod_SERVICEPRINCIPALID=client-1
+  ENDPOINT_AUTH_PARAMETER_prod_TENANTID=tenant-1
+  ENDPOINT_AUTH_PARAMETER_prod_SERVICEPRINCIPALKEY=secret-1
+  export ENDPOINT_AUTH_SCHEME_prod ENDPOINT_AUTH_PARAMETER_prod_SERVICEPRINCIPALID \
+    ENDPOINT_AUTH_PARAMETER_prod_TENANTID ENDPOINT_AUTH_PARAMETER_prod_SERVICEPRINCIPALKEY
+
+  run -0 azdo_sc_preflight 'prod' 'AzurePowerShell@5'
+  [[ "$output" == *'Clear-AzContext -Scope CurrentUser -Force'* ]]
+  [[ "$output" == *'No input opts out'* ]]
+}
+
+@test "the hazard is announced once per run, across separate step processes" {
+  # A pipeline that deploys to twelve resource groups should say this once (PLAN D10). The guard
+  # has to be a file: `run_step` runs every step as `exec env -- <clean env> bash <script>`, so an
+  # exported marker would be gone by the next step and the warning would repeat per step.
+  ENDPOINT_AUTH_SCHEME_prod=ManagedServiceIdentity
+  export ENDPOINT_AUTH_SCHEME_prod
+  local lib
+  lib="$(azdo_emu_runtime_dir)/lib/core.sh"
+  local step='source "$1"; azdo_sc_preflight prod "AzureCLI@2"'
+  run -0 bash -c "bash -c '$step' _ \"\$1\"; bash -c '$step' _ \"\$1\"" _ "$lib"
+  [[ "$(grep -c 'az account clear' <<<"$output")" -eq 1 ]]
+}
+
+@test "the hazard still warns when there is no state dir to record it in" {
+  # Warning twice is noise; not warning at all loses a session. The fallback picks noise.
+  ENDPOINT_AUTH_SCHEME_prod=ManagedServiceIdentity
+  export ENDPOINT_AUTH_SCHEME_prod
+  unset AZDO_STATE_DIR
+  run -0 azdo_sc_preflight 'prod' 'AzureCLI@2'
+  [[ "$output" == *'az account clear'* ]]
+}
+
+@test "preflight rejects a wrong argument count" {
+  run -2 azdo_sc_preflight 'prod'
+  [[ "$output" == *'usage: azdo_sc_preflight'* ]]
 }
 
 # --- E08-S03-T01: deployment strategies --------------------------------------------------------

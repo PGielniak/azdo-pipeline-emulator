@@ -17,7 +17,16 @@ const REPO = 'microsoft/azure-pipelines-tasks';
 // Sprint-cadence release tag (C-E00-015): latest non-prerelease at pin time.
 const PIN_TAG = 'v277';
 // Repo directory names under Tasks/ (C-E00-014). One entry per snapshotted task.
-const TASKS = ['CmdLineV2', 'BashV3', 'PowerShellV2', 'CopyFilesV2'];
+const TASKS = [
+  'CmdLineV2',
+  'BashV3',
+  'PowerShellV2',
+  'CopyFilesV2',
+  // E08-S02-T01: the two Azure-auth tasks — their `connectedService:AzureRM` input declaration
+  // (name + aliases) is what the connection collector keys on.
+  'AzureCLIV2',
+  'AzurePowerShellV5',
+];
 const DEST_ROOT = path.join('packages', 'emit', 'vendor', 'tasks-meta');
 
 interface TaskJson {

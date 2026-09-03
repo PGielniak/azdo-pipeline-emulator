@@ -39,7 +39,10 @@ FROMGROUP=
 DEPLOYENV=dev
 
 # ─────────────────────────────────────────────────────────────────
-# 6. Service connections and secure files are populated once E08 lands.
+# 6. Service connections
+# (this pipeline references none)
+#
+# Secure files are not implemented yet (E09-S03).
 "
 `;
 
@@ -67,7 +70,10 @@ SYSTEM_PULLREQUEST_TARGETBRANCH=
 SYSTEM_ACCESSTOKEN=
 
 # ─────────────────────────────────────────────────────────────────
-# 6. Service connections and secure files are populated once E08 lands.
+# 6. Service connections
+# (this pipeline references none)
+#
+# Secure files are not implemented yet (E09-S03).
 "
 `;
 
@@ -95,7 +101,10 @@ SYSTEM_PULLREQUEST_TARGETBRANCH=
 SYSTEM_ACCESSTOKEN=
 
 # ─────────────────────────────────────────────────────────────────
-# 6. Service connections and secure files are populated once E08 lands.
+# 6. Service connections
+# (this pipeline references none)
+#
+# Secure files are not implemented yet (E09-S03).
 "
 `;
 
@@ -123,7 +132,10 @@ SYSTEM_PULLREQUEST_TARGETBRANCH=
 SYSTEM_ACCESSTOKEN=
 
 # ─────────────────────────────────────────────────────────────────
-# 6. Service connections and secure files are populated once E08 lands.
+# 6. Service connections
+# (this pipeline references none)
+#
+# Secure files are not implemented yet (E09-S03).
 "
 `;
 
@@ -161,7 +173,10 @@ NOT_A_VARIABLE=
 ENVIRONMENTNAME=staging
 
 # ─────────────────────────────────────────────────────────────────
-# 6. Service connections and secure files are populated once E08 lands.
+# 6. Service connections
+# (this pipeline references none)
+#
+# Secure files are not implemented yet (E09-S03).
 "
 `;
 
@@ -194,7 +209,10 @@ SYSTEM_ACCESSTOKEN=
 RUNTESTS=true
 
 # ─────────────────────────────────────────────────────────────────
-# 6. Service connections and secure files are populated once E08 lands.
+# 6. Service connections
+# (this pipeline references none)
+#
+# Secure files are not implemented yet (E09-S03).
 "
 `;
 
@@ -222,7 +240,10 @@ SYSTEM_PULLREQUEST_TARGETBRANCH=
 SYSTEM_ACCESSTOKEN=
 
 # ─────────────────────────────────────────────────────────────────
-# 6. Service connections and secure files are populated once E08 lands.
+# 6. Service connections
+# (this pipeline references none)
+#
+# Secure files are not implemented yet (E09-S03).
 "
 `;
 
@@ -265,7 +286,10 @@ CUSTOMSTEP=
 EXTRASTEPS=
 
 # ─────────────────────────────────────────────────────────────────
-# 6. Service connections and secure files are populated once E08 lands.
+# 6. Service connections
+# (this pipeline references none)
+#
+# Secure files are not implemented yet (E09-S03).
 "
 `;
 
@@ -293,7 +317,10 @@ SYSTEM_PULLREQUEST_TARGETBRANCH=
 SYSTEM_ACCESSTOKEN=
 
 # ─────────────────────────────────────────────────────────────────
-# 6. Service connections and secure files are populated once E08 lands.
+# 6. Service connections
+# (this pipeline references none)
+#
+# Secure files are not implemented yet (E09-S03).
 "
 `;
 
@@ -321,7 +348,10 @@ SYSTEM_PULLREQUEST_TARGETBRANCH=
 SYSTEM_ACCESSTOKEN=
 
 # ─────────────────────────────────────────────────────────────────
-# 6. Service connections and secure files are populated once E08 lands.
+# 6. Service connections
+# (this pipeline references none)
+#
+# Secure files are not implemented yet (E09-S03).
 "
 `;
 
@@ -354,7 +384,10 @@ SYSTEM_ACCESSTOKEN=
 ID__U=
 
 # ─────────────────────────────────────────────────────────────────
-# 6. Service connections and secure files are populated once E08 lands.
+# 6. Service connections
+# (this pipeline references none)
+#
+# Secure files are not implemented yet (E09-S03).
 "
 `;
 
@@ -382,6 +415,9 @@ SYSTEM_PULLREQUEST_TARGETBRANCH=
 SYSTEM_ACCESSTOKEN=
 
 # ─────────────────────────────────────────────────────────────────
-# 6. Service connections and secure files are populated once E08 lands.
+# 6. Service connections
+# (this pipeline references none)
+#
+# Secure files are not implemented yet (E09-S03).
 "
 `;

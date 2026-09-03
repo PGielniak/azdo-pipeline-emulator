@@ -17,6 +17,12 @@ import {
   type Pipeline,
 } from '@azdo-emu/engine';
 
+import {
+  connectionKeys,
+  connectionsSection,
+  type ServiceConnection,
+} from './service-connection.js';
+
 /** One exact `.env` spelling → variable-store name mapping emitted beside `run.sh`. */
 export interface EnvAlias {
   readonly name: string;
@@ -79,7 +85,21 @@ function entry(
   return [...comments, `${name}=${value}`];
 }
 
-export function synthesizeEnvExample(pipeline: Pipeline): EnvExampleResult {
+/** What the synthesizer needs that the pipeline model does not carry. */
+export interface EnvExampleOptions {
+  /**
+   * The connections E08-S02-T01's collector found, already carrying their resolved mode.
+   *
+   * Passed in rather than derived here: a connection is discovered from the consuming task's
+   * `task.json` (C-E08-035), and the `.env` synthesizer has no business loading task definitions.
+   */
+  readonly connections?: readonly ServiceConnection[];
+}
+
+export function synthesizeEnvExample(
+  pipeline: Pipeline,
+  options: EnvExampleOptions = {},
+): EnvExampleResult {
   const classification = classifyVariables(pipeline, { predefined: predefinedNames() });
   const sections: string[][] = [];
   const manifestEnv: ManifestEnvEntry[] = [];
@@ -153,11 +173,29 @@ export function synthesizeEnvExample(pipeline: Pipeline): EnvExampleResult {
     sections.push(section);
   }
 
-  // 6. Service connections & secure files are E08's; nothing to emit until then.
-  sections.push([
-    SECTION_RULE,
-    '# 6. Service connections and secure files are populated once E08 lands.',
-  ]);
+  // 6. Service connections (E08-S01-T01's contract, collected by E08-S02-T01). Secure files remain
+  //    unimplemented and say so, rather than letting an empty section imply there is nothing to do.
+  const connections = options.connections ?? [];
+  const connectionSection: string[] = [SECTION_RULE, '# 6. Service connections'];
+  if (connections.length === 0) {
+    connectionSection.push('# (this pipeline references none)');
+  } else {
+    connectionSection.push(...connectionsSection(connections));
+    for (const connection of connections) {
+      for (const key of connectionKeys(connection)) {
+        // Straight into `manifestEnv`, not through `entry()`: these keys are the *task's* spelling
+        // (C-E08-001) and must not be run through the Bash-safe alias transform — a renamed
+        // ENDPOINT_ key is one no task reads.
+        manifestEnv.push({
+          name: key.key,
+          secret: key.secret,
+          origin: `service connection '${connection.name}'`,
+        });
+      }
+    }
+  }
+  connectionSection.push('#', '# Secure files are not implemented yet (E09-S03).');
+  sections.push(connectionSection);
 
   const header = [
     '# Generated .env.example — copy to .env and fill in values.',

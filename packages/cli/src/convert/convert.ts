@@ -44,13 +44,16 @@ import {
   type SerializedManifest,
 } from '@azdo-emu/engine';
 import {
+  collectConnections,
   emitEntrypoints,
   emitStepScript,
   generateReadme,
+  loadVendoredTaskDefinitions,
   scaffold,
   synthesizeEnvExample,
   GITIGNORE,
   type Scaffold,
+  type StepSite,
 } from '@azdo-emu/emit';
 import {
   resolveExpansion,
@@ -262,6 +265,38 @@ function runtimeLibDir(): string {
   });
 }
 
+/**
+ * Every step with the `StageId/JobId/step N` path the warnings list and `neededBy` use.
+ *
+ * Deployment hooks are walked as well as `job.steps`: a `deploy:` hook's steps are the ones that
+ * actually touch Azure in a deployment job, so a collector that read only `job.steps` would miss
+ * exactly the connections this epic exists for.
+ */
+function stepSites(pipeline: Pipeline): readonly StepSite[] {
+  const sites: StepSite[] = [];
+  for (const stage of pipeline.stages) {
+    for (const job of stage.jobs) {
+      const at = (step: (typeof job.steps)[number]): string =>
+        `${stage.id}/${job.id}/step ${step.id}`;
+      for (const step of job.steps) sites.push({ step, path: at(step) });
+
+      const strategy = job.strategy;
+      if (strategy?.kind !== 'runOnce') continue;
+      for (const hook of [
+        strategy.preDeploy,
+        strategy.deploy,
+        strategy.routeTraffic,
+        strategy.postRouteTraffic,
+        strategy.onSuccess,
+        strategy.onFailure,
+      ]) {
+        for (const step of hook?.steps ?? []) sites.push({ step, path: at(step) });
+      }
+    }
+  }
+  return sites;
+}
+
 /** Count the steps a scaffold plans, which is what the summary line reports. */
 function countSteps(plan: Scaffold): number {
   return plan.stages.reduce(
@@ -431,7 +466,13 @@ function writeProject(
 ): { plan: Scaffold; files: number } {
   const out = path.resolve(options.out);
   const plan = scaffold(pipeline);
-  const env = synthesizeEnvExample(pipeline);
+
+  // E08-S02-T01: which service connections this pipeline references, and in which mode each one
+  // can actually work. Before the `.env.example` is synthesized, because it emits their blocks.
+  const definitions = loadVendoredTaskDefinitions();
+  const collected = collectConnections(stepSites(pipeline), definitions);
+  warnings.push(...collected.warnings);
+  const env = synthesizeEnvExample(pipeline, { connections: collected.connections });
   const entrypointWarnings: ManifestWarning[] = [];
   const entrypoints = emitEntrypoints(
     pipeline,
@@ -457,7 +498,8 @@ function writeProject(
     mkdirSync(path.join(out, directory), { recursive: true });
   for (const stage of plan.stages)
     for (const job of stage.jobs)
-      for (const step of job.steps) write(step.path, emitStepScript(step.step, step.number));
+      for (const step of job.steps)
+        write(step.path, emitStepScript(step.step, step.number, { taskDefinitions: definitions }));
   for (const [relative, content] of entrypoints) write(relative, content);
 
   write('.gitignore', plan.gitignore || GITIGNORE);

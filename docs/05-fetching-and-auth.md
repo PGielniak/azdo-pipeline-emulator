@@ -20,6 +20,39 @@ Everything that leaves the local machine happens **at convert time** through thi
 
 `azdo-emu auth login` runs interactive and verifies with a probe call; `auth status` shows org, identity, mode, expiry.
 
+**Corrected 2026-09-03 (E09-S01-T02, decision 76): on a Microsoft-account-backed organization two of
+these three arms are permanently unavailable, and that is the project's default case.** The table's
+order still holds, but its implication — that `interactive` and `az` are the good paths and `pat` is
+a CI convenience — is false for a solo developer converting their own pipelines:
+
+- `interactive` may be unavailable because "Microsoft Entra apps don't natively support Microsoft
+  account (MSA) users for the Azure DevOps resource" (C-E09-002).
+- `az` **is** unavailable, measured: with a valid `az login` session every organization endpoint
+  returns **302** (the sign-in redirect) while a PAT returns 200 on the same URL in the same minute.
+  The organization reports `x-vss-resourcetenant: 00000000-0000-0000-0000-000000000000` — the
+  all-zeros tenant marking an MSA-backed organization — and the token's `oid` is a different
+  principal from the organization identity. No tenant reachable from `az` mints an accepted token
+  (C-E09-022).
+- `pat` is therefore **load-bearing, not a fallback**, on this class of organization.
+
+Consequences for the implementation (`packages/fetch/src/auth/select.ts`):
+
+1. Auto-selection walks the order above but treats every arm as *reportable*: an arm that cannot
+   serve returns `{mode, reason, detail}` rather than throwing, so "no arm available" is a state the
+   caller renders, not an exception.
+2. The reasons distinguish **"no token could be acquired"** (remediation: sign in) from **"a token
+   was acquired but the organization rejected it"** (remediation: use a PAT). Offering `az login` to
+   an MSA-organization user is a measured dead end, so that outcome must never produce that hint.
+3. Selection performs **no network call**. Whether a credential is *accepted* is `auth status`'s
+   Profile probe (§1 credential-storage contract), paid once.
+
+The `az` arm invokes `az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798`
+and reads **`expires_on`** (POSIX, UTC) — *not* `expiresOn`, which the CLI renders as a local
+datetime with no offset and no `Z`; the reference page recommends `expires_on` for exactly this
+reason (C-E09-018/019). The PAT arm reads `AZDO_PAT`, then `AZURE_DEVOPS_EXT_PAT` (project policy,
+C-E09-024), and sends Basic with an **empty username** — `base64(":" + PAT)`, matching the
+documented `curl -u :{PAT}` (C-E09-020).
+
 **Credential storage contract (E09-S01-T03).** The secret-bearing versioned record is stored as one
 password in `@napi-rs/keyring`, service `azdo-emu`, username = the normalized organization URL. A
 missing or inaccessible native keyring falls back to `~/.azdo-emu/tokens.json`; the directory is

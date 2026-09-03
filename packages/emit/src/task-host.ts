@@ -22,6 +22,11 @@
  *    a YAML boolean to `1` would invert every boolean input a task reads.
  *  - **`getDelimitedInput` drops empty segments** (C-E07-004), so the host must *not* pre-trim
  *    multi-line inputs: doing so would change what a task using plain `getInput` sees.
+ *
+ * A fifth was added by E08-S02-T01: **input `aliases` are resolved here or nowhere** (C-E08-030/031).
+ * The expansion hands back whatever spelling the author wrote, so an `azureSubscription:` step input
+ * matched by name alone falls through to `undeclared` and reaches the task as `INPUT_AZURESUBSCRIPTION`
+ * — a variable it never reads, failing as if the connection had not been supplied at all.
  */
 
 /** One input as the task's `task.json` declares it. */
@@ -30,6 +35,14 @@ export interface TaskInputDeclaration {
   readonly type?: string;
   readonly defaultValue?: string | number | boolean;
   readonly required?: boolean;
+  /**
+   * Alternate spellings the author may write instead of `name` (C-E08-030).
+   *
+   * Load-bearing, not cosmetic: `AzureCLI@2` declares `connectedServiceNameARM` with the alias
+   * `azureSubscription`, and `azureSubscription:` is what nearly every real pipeline writes. The
+   * expansion passes the authored spelling through untouched (C-E08-031), so resolving it is ours.
+   */
+  readonly aliases?: readonly string[];
 }
 
 /** The subset of `task.json` this host reads. */
@@ -47,6 +60,14 @@ export interface ResolvedInput {
   readonly fromStep: boolean;
   /** C-E07-002: an empty value is emitted but `getInput` will not see it. */
   readonly emptyForGetInput: boolean;
+  /**
+   * The spelling the step actually wrote, when it was an alias rather than `name` (C-E08-030).
+   *
+   * The task is still handed `INPUT_<NAME>` — the alias exists so the *author* can be clearer, and
+   * the task reads only its declared name — but the emitted runner names the alias in a comment so
+   * a reader can find the line they wrote in the pipeline.
+   */
+  readonly viaAlias?: string;
 }
 
 export interface InputResolution {
@@ -93,8 +114,17 @@ export function resolveTaskInputs(
   const consumed = new Set<string>();
 
   for (const declaration of declared) {
-    // The service folds input-name case when binding a step, so the lookup does too.
-    const stepKey = stepKeys.get(declaration.name.toLowerCase());
+    // C-E08-032: the expansion preserves the authored case, so the case-folded lookup is what makes
+    // `scripttype:` reach a `scriptType` declaration — it is load-bearing, not defensive.
+    // C-E08-030/031: the declared name is tried first, then each alias in declaration order, because
+    // an author who wrote both spellings meant the declared one.
+    let stepKey = stepKeys.get(declaration.name.toLowerCase());
+    let viaAlias: string | undefined;
+    for (const alias of declaration.aliases ?? []) {
+      if (stepKey !== undefined) break;
+      stepKey = stepKeys.get(alias.toLowerCase());
+      if (stepKey !== undefined) viaAlias = alias;
+    }
     if (stepKey !== undefined) consumed.add(stepKey);
     const provided = stepKey === undefined ? undefined : stepInputs[stepKey];
     const value =
@@ -105,10 +135,12 @@ export function resolveTaskInputs(
     }
     inputs.push({
       name: declaration.name,
+      // The task reads its *declared* name; the alias never becomes an `INPUT_` of its own.
       envName: inputEnvName(declaration.name),
       value,
       fromStep: stepKey !== undefined,
       emptyForGetInput: value.length === 0,
+      ...(viaAlias === undefined ? {} : { viaAlias }),
     });
   }
 
@@ -210,7 +242,9 @@ export function renderTaskRunner(options: TaskRunnerOptions): string {
   for (const input of resolution.inputs) {
     const note = input.emptyForGetInput
       ? '   # empty: getInput() will not see this (C-E07-002)'
-      : '';
+      : input.viaAlias === undefined
+        ? ''
+        : `   # written as '${input.viaAlias}' (alias of ${input.name}, C-E08-030)`;
     lines.push(`export ${input.envName}=${shellQuote(input.value)}${note}`);
   }
   if (resolution.inputs.length > 0) lines.push('');

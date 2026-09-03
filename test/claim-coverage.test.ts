@@ -6,10 +6,28 @@
  * a range citation must expand, and the ratchet must actually fail when coverage drops.
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
+/**
+ * Each invocation greps all of `research/` and every test directory, so it is not cheap. The suite
+ * asks the same three questions repeatedly, so results are memoized per argument list — without
+ * this the file ran the scan ~a dozen times and the added CPU pushed a parallel end-to-end test in
+ * `packages/emit` past its 5s timeout.
+ */
+const cache = new Map<string, { status: number; stdout: string }>();
+
 const run = (...args: string[]): { status: number; stdout: string } => {
+  const key = args.join(' ');
+  const hit = cache.get(key);
+  if (hit !== undefined) return hit;
+  const result = runUncached(...args);
+  cache.set(key, result);
+  return result;
+};
+
+/** The mutation probe changes the tree between calls, so it must bypass the memo. */
+const runUncached = (...args: string[]): { status: number; stdout: string } => {
   try {
     return {
       status: 0,
@@ -65,10 +83,14 @@ describe('what the count must not get wrong', () => {
   });
 
   it('reports the blocked device-code claims, which have no implementation yet', () => {
-    // E09-S01-T01 is `[!]`, so C-E09-001..006 legitimately have no tests. This is the case the
+    // E09-S01-T01 is `[!]`, so C-E09-002..006 legitimately have no tests. This is the case the
     // ratchet exists to tolerate — a hard 100% gate would demand assertions that prove nothing.
-    expect(defined.has('C-E09-001')).toBe(true);
+    // C-E09-001 used to be in this list and no longer is: E09-S01-T02 (2026-09-03) pins the same
+    // Azure DevOps resource GUID for the `az` arm and asserts it, so the claim gained a real test
+    // while the device-code flow it was written for is still unbuilt.
+    expect(defined.has('C-E09-003')).toBe(true);
     expect(defined.has('C-E09-006')).toBe(true);
+    expect(defined.has('C-E09-001')).toBe(false);
   });
 
   it('counts a claim id mentioned inside another claim’s prose only once', () => {
@@ -99,7 +121,7 @@ describe('what the scan includes (E11-S03-T02)', () => {
     expect(script).toContain('claim-coverage.test.ts');
     // The four ids asserted as gaps above are named in this file and must still be reported.
     const gaps = new Set(run('--list').stdout.trim().split('\n').filter(Boolean));
-    for (const id of ['C-E09-001', 'C-E09-006', 'C-E09-084', 'C-E09-087']) {
+    for (const id of ['C-E09-003', 'C-E09-006', 'C-E09-084', 'C-E09-087']) {
       expect(gaps.has(id), `${id} must stay a gap despite being named here`).toBe(true);
     }
   });
@@ -121,5 +143,85 @@ describe('the ratchet', () => {
     const percent = Number(/\((\d+)%\)/.exec(run().stdout)?.[1] ?? '0');
     const floor = Number(readFileSync('.claim-coverage-floor', 'utf8').trim());
     expect(percent).toBeGreaterThanOrEqual(floor);
+  });
+});
+
+describe('orphaned claim references are a gate, not a ratchet (E11-S04-T02)', () => {
+  const PROBE = 'packages/runtime/test/__orphan_probe.bats';
+
+  it('reports zero orphans on the current tree', () => {
+    // The whole point: a test may cite a claim that does not exist, and until this direction was
+    // measured two invented ids (C-E08-042/043) sat in `doctor-requirements.test.ts` looking
+    // exactly like grounding. `C-E08-030…059` is an *unallocated* block, so they resolved to
+    // nothing while satisfying `checkToolContract`'s citation check.
+    expect(run('--orphans').stdout.trim()).toBe('');
+  });
+
+  it('--check fails on an orphan, with no floor to grandfather it', () => {
+    writeFileSync(PROBE, '# orphan probe C-E99-999\n');
+    try {
+      const { status, stdout } = runUncached('--check');
+      expect(status).toBe(1);
+      expect(stdout).toContain('orphaned claim reference');
+      expect(runUncached('--orphans').stdout).toContain('C-E99-999');
+    } finally {
+      rmSync(PROBE, { force: true });
+    }
+    // …and the tree is clean again once the probe is gone.
+    expect(runUncached('--check').status).toBe(0);
+  });
+
+  it('grades the two directions differently, and says so', () => {
+    // A gap is legitimate and numerous; an orphan never is. If these ever collapse into one rule,
+    // either the ratchet becomes an impossible gate or the gate becomes a suggestion.
+    const script = readFileSync('scripts/claim-coverage.sh', 'utf8');
+    expect(script).toContain('--orphans');
+    expect(run('--list').stdout.trim().length).toBeGreaterThan(0);
+    expect(run('--orphans').stdout.trim().length).toBe(0);
+  });
+
+  it('the doctor contract checks a citation’s shape, which is why the repo checks existence', () => {
+    // `checkToolContract` matches /C-E\d{2}-\d{3}/ — it cannot know whether the claim exists, and
+    // has no business reading `research/`. The orphan gate is where that half is enforced.
+    const requirements = readFileSync('packages/cli/src/doctor/requirements.ts', 'utf8');
+    expect(requirements).toMatch(/C-E\\d\{2\}-\\d\{3\}/);
+  });
+});
+
+describe('the runtime conformance suite is tagged and standalone (E11-S04-T02)', () => {
+  it('tags every bats file as either conformance or harness', () => {
+    const files = readdirSync('packages/runtime/test').filter((f) => f.endsWith('.bats'));
+    expect(files.length).toBeGreaterThan(0);
+    for (const file of files) {
+      const head = readFileSync(`packages/runtime/test/${file}`, 'utf8').slice(0, 600);
+      expect(head, `${file} carries no bats file_tags`).toMatch(
+        /# bats file_tags=(conformance|harness)/,
+      );
+    }
+  });
+
+  it('exposes standalone entry points that CI actually runs', () => {
+    // `pnpm test:runtime` did not exist until this task, which is how the gap was found. A script
+    // only contributors run is unverified; CI must invoke the shipped one (decision 75's lesson).
+    const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+    expect(pkg.scripts['test:runtime']).toContain('bats');
+    expect(pkg.scripts['test:conformance']).toContain('--filter-tags conformance');
+    expect(pkg.scripts.test).toContain('test:runtime');
+
+    const ci = readFileSync('.github/workflows/ci.yml', 'utf8');
+    expect(ci).toContain('pnpm test:runtime');
+  });
+
+  it('only the harness file is exempt from carrying claim ids', () => {
+    // The `harness` tag is a narrow, named exemption — it must not spread to files that assert
+    // real Azure DevOps behavior, or "every test carries its claim id" quietly stops meaning
+    // anything. Exactly one file may hold it.
+    const files = readdirSync('packages/runtime/test').filter((f) => f.endsWith('.bats'));
+    const harness = files.filter((f) =>
+      readFileSync(`packages/runtime/test/${f}`, 'utf8').includes('# bats file_tags=harness'),
+    );
+    expect(harness).toEqual(['fixture-store.bats']);
   });
 });

@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# bats file_tags=conformance
 # GENERATED FILE — do not edit.
 #
 # Source of truth: packages/engine/test/expr/conformance.table.ts (E02-S05-T02).

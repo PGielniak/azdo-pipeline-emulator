@@ -12,9 +12,20 @@
 # people to write assertions that prove nothing, which is worse than the gap. So the number must not
 # go *down*: the floor lives in `.claim-coverage-floor`, and raising it is a deliberate commit.
 #
+# **The two directions are graded differently, and that asymmetry is the point (E11-S04-T02).**
+# A *gap* is a claim no test references — a ratchet, per the paragraph above. An **orphan** is the
+# other direction: a test citing a claim id that `research/` does not define. An orphan is always a
+# defect — a typo, a renumbered claim, or an id invented to satisfy a validator — and it is
+# indistinguishable from real grounding when you read the test. So orphans are a hard gate at zero
+# while gaps stay a ratchet. `checkToolContract` (packages/cli/src/doctor/requirements.ts) is the
+# concrete reason: it enforces that a version floor *cites* a claim by matching `C-E\d{2}-\d{3}`,
+# which is a shape check, not an existence check — and two invented ids were living in its tests
+# until this gate found them.
+#
 #   (no args)   print the report
-#   --check     also fail when coverage drops below the recorded floor  (CI)
-#   --list      print the unreferenced claim IDs, one per line
+#   --check     fail on any orphan, and when coverage drops below the recorded floor  (CI)
+#   --list      print the unreferenced claim IDs (the gaps), one per line
+#   --orphans   print the orphaned claim references, one per line
 #
 # Works on bash 3.2 (macOS system bash): no associative arrays, no `mapfile`.
 set -euo pipefail
@@ -69,8 +80,17 @@ total="$(printf '%s\n' "$defined" | grep -c . || true)"
 covered="$(comm -12 <(printf '%s\n' "$defined") <(printf '%s\n' "$referenced") | grep -c . || true)"
 missing="$(comm -23 <(printf '%s\n' "$defined") <(printf '%s\n' "$referenced") || true)"
 
+# The orphan direction: referenced by a test, defined by nothing.
+orphans="$(comm -13 <(printf '%s\n' "$defined") <(printf '%s\n' "$referenced") || true)"
+orphan_count="$(printf '%s\n' "$orphans" | grep -c . || true)"
+
 if [[ "$mode" == '--list' ]]; then
   printf '%s\n' "$missing"
+  exit 0
+fi
+
+if [[ "$mode" == '--orphans' ]]; then
+  printf '%s\n' "$orphans"
   exit 0
 fi
 
@@ -88,6 +108,17 @@ for epic in $(printf '%s\n' "$defined" | cut -d- -f2 | sort -u); do
   printf '%-8s %8s %8s\n' "$epic" "$epic_total" "$epic_covered"
 done
 
+if ((orphan_count > 0)); then
+  printf '\nORPHANS: %s claim reference(s) point at a claim research/ does not define:\n' \
+    "$orphan_count"
+  while IFS= read -r orphan; do
+    [ -n "$orphan" ] || continue
+    printf '  %s\n' "$orphan"
+  done <<<"$orphans"
+  printf '%s\n' 'Each is a typo, a renumbered claim, or an id invented to satisfy a citation check.'
+  printf '%s\n' 'Unlike a gap, this is never legitimate — fix the reference or record the claim.'
+fi
+
 if ((percent < 100)); then
   printf '\n%s claims are not referenced by any test. Run with --list to see them.\n' \
     "$((total - covered))"
@@ -96,6 +127,14 @@ if ((percent < 100)); then
 fi
 
 if [[ "$mode" == '--check' ]]; then
+  # Orphans are a gate, not a ratchet: there is no legitimate reason to cite a claim that does not
+  # exist, so there is no floor to slip and nothing to grandfather.
+  if ((orphan_count > 0)); then
+    printf '\nFAIL: %s orphaned claim reference(s). Run with --orphans to list them.\n' \
+      "$orphan_count" >&2
+    exit 1
+  fi
+
   floor=0
   [[ ! -f "$floor_file" ]] || floor="$(tr -dc '0-9' <"$floor_file")"
   if ((percent < floor)); then

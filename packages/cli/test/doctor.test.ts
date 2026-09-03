@@ -289,3 +289,52 @@ describe('the priority-set fixture (E08-S03-T02 Done criterion)', () => {
     }
   });
 });
+
+describe('the Az.Accounts module probe (E08-S02-T01, C-E08-041)', () => {
+  it('asks pwsh, not a binary called Az.Accounts', () => {
+    // A PowerShell module is not a command on PATH, so the probe runs through `via`. Probing
+    // `Az.Accounts` directly would report "missing" on every machine, Az installed or not.
+    expect(PROBES['Az.Accounts']?.via).toBe('pwsh');
+    expect(PROBES['Az.Accounts']?.args.join(' ')).toContain(
+      'Get-Module -Name Az.Accounts -ListAvailable',
+    );
+  });
+
+  it('reports ok when pwsh prints the module version', () => {
+    // The runner is keyed by the command actually invoked — proving `via` is what gets spawned.
+    expect(probeTool(need('Az.Accounts'), { run: canned({ pwsh: '5.2.0\n' }) })).toMatchObject({
+      cmd: 'Az.Accounts',
+      status: 'ok',
+      found: '5.2.0',
+    });
+  });
+
+  it('reports missing — with a PowerShell remediation — when the module is absent', () => {
+    // `(...).Version.ToString()` on a null match makes pwsh exit non-zero, which is exactly the
+    // case that must not be reported as "present": the task throws on it (C-E08-041).
+    const result = probeTool(need('Az.Accounts'), { run: canned({ pwsh: 1 }) });
+    expect(result.status).toBe('missing');
+    expect(result.remediation).toContain('Install-Module -Name Az');
+  });
+
+  it('is a separate requirement from pwsh, so a pwsh-only machine still fails', () => {
+    // The failure this prevents: PowerShell present, Az module absent, doctor says ready, the
+    // AzurePowerShell@5 step dies inside InitializeAz.ps1. Both probes spawn `pwsh`, so this
+    // runner answers by *arguments* — `-v` succeeds, the Get-Module query does not.
+    const pwshWithoutAz: Runner = (cmd, args) =>
+      cmd !== 'pwsh'
+        ? undefined
+        : args.includes('-v')
+          ? { code: 0, stdout: 'PowerShell 7.4.1\n' }
+          : { code: 1, stdout: '' };
+    const report = runDoctor([need('pwsh'), need('Az.Accounts')], { run: pwshWithoutAz });
+    expect(report.ok).toBe(false);
+    expect(report.results.find((r) => r.cmd === 'pwsh')?.status).toBe('ok');
+    expect(report.results.find((r) => r.cmd === 'Az.Accounts')?.status).toBe('missing');
+  });
+
+  it('uses the same remediation on every platform', () => {
+    expect(remediationFor('Az.Accounts', 'darwin')).toBe(remediationFor('Az.Accounts', 'linux'));
+    expect(remediationFor('Az.Accounts', 'win32')).toContain('Install-Module');
+  });
+});

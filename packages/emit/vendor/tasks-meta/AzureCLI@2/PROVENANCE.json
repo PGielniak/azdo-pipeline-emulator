@@ -1,0 +1,17 @@
+{
+  "source": {
+    "repo": "microsoft/azure-pipelines-tasks",
+    "path": "Tasks/AzureCLIV2/task.json",
+    "tag": "v277",
+    "commit": "8ba25cfb5c7736ba98a37488c0323f7320cb5b3e",
+    "rawUrl": "https://raw.githubusercontent.com/microsoft/azure-pipelines-tasks/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/AzureCLIV2/task.json",
+    "permalink": "https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/AzureCLIV2/task.json"
+  },
+  "task": {
+    "name": "AzureCLI",
+    "version": "2.277.2"
+  },
+  "fetchedAt": "2026-09-03T21:33:27.755Z",
+  "sha256": "1169c1e47540fa5c3189503380b305284154781b9cb155d5227c146ac789d034",
+  "bytes": 11445
+}
