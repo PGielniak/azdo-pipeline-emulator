@@ -2661,8 +2661,9 @@ azdo__run_step_retry_wait() {
 # (C-E06-026/027).
 run_step() {
   local id='' file='' condition='azdo_status_succeeded' display='' working_directory=''
-  local continue_on_error='' fail_on_stderr='' retries='' timeout_seconds=''
+  local continue_on_error='' fail_on_stderr='' retries='' timeout_seconds='' step_name=''
   local seen_id=false seen_file=false seen_condition=false seen_display=false seen_wd=false
+  local seen_name=false
   local seen_continue=false seen_fail_on_stderr=false seen_retries=false seen_timeout=false
   local no_condition=false seen_no_condition=false condition_status=0 condition_error=''
   local expanded_file expanded_wd ignored_secret log_file status result attempt_result
@@ -2697,6 +2698,17 @@ run_step() {
         }
         seen_id=true
         id="$2"
+        ;;
+      # E11-S04-T01: the authored `name:`, which output variables reference (C-E12-032). Optional,
+      # because most steps have none — but without it `azdo_var_set … output=true` refuses, so
+      # *every* `##vso[task.setvariable isOutput=true]` in a generated project failed.
+      --name)
+        [[ "$seen_name" = false ]] || {
+          printf '%s\n' 'duplicate run_step option: --name' >&2
+          return 2
+        }
+        seen_name=true
+        step_name="$2"
         ;;
       --file)
         [[ "$seen_file" = false ]] || {
@@ -2889,6 +2901,18 @@ run_step() {
   elif [[ "$(declare -p AZDO_STEP_ENV)" != declare\ -*a*\ AZDO_STEP_ENV=* ]]; then
     printf '%s\n' 'AZDO_STEP_ENV must be an indexed array of NAME=value entries' >&2
     return 2
+  fi
+
+  # C-E12-032: `azdo_var_set … output=true` refuses without this, so a step that declares `name:`
+  # and writes `##vso[task.setvariable isOutput=true]` needs it exported for the whole attempt —
+  # including the logging-command subshell, which is where the write actually happens.
+  #
+  # Set **only when the flag was given**, never cleared otherwise: an unconditional assignment
+  # would overwrite a value the caller exported itself, which is how the runtime was driven before
+  # this flag existed and is still how `run_test_step` drives it. The flag is the source of truth
+  # when present; absence means "the caller decides", not "there is no name".
+  if [[ "$seen_name" = true ]]; then
+    export AZDO_STEP_NAME="$step_name"
   fi
 
   expanded_file="$(azdo_expand_macros "$file")" || return

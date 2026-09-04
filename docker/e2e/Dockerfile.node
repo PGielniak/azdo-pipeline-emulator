@@ -1,0 +1,18 @@
+# E11-S04-T01 — the L5 node image: base + the Node toolset a hosted ubuntu runner carries.
+#
+# Node 22 matches `Ubuntu2404-Readme.md`'s "Node.js 22.23.2" at the pinned commit (C-E12-037). Built
+# FROM the base so the two images cannot drift on the runtime's own requirements.
+ARG BASE=azdo-emu-e2e-base:latest
+FROM ${BASE}
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# NodeSource rather than the distro package: Ubuntu 24.04's `nodejs` is 18.x, and the hosted image
+# is on 22 — an E2E image a major version behind the thing it approximates would hide exactly the
+# failures this tier exists to catch.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends gnupg \
+  && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+  && apt-get install -y --no-install-recommends nodejs \
+  && rm -rf /var/lib/apt/lists/* \
+  && node --version && npm --version

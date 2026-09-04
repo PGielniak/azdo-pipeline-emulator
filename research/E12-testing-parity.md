@@ -317,3 +317,113 @@ rule: a reproducing drift with no matching release note is an *unannounced* serv
 "nothing relevant" is the expected result of the check rather than grounds for closing it. The
 link's value is recording that the check was performed.
   — same page as C-E12-026, read in full 2026-09-03.
+
+---
+
+## E11-S04-T01 — the L5 tier: images, samples and harness (`C-E12-028..037`)
+
+Recorded 2026-09-04. L5 is "convert & run sample apps in containers approximating hosted images"
+(docs/06 §3). Its external grounding is one source — what a hosted ubuntu runner actually contains —
+and everything else here is a **finding**: five defects the tier surfaced on its first three samples,
+three of them fixed in this task.
+
+[C-E12-037] **The reference for "hosted toolset" is `actions/runner-images`, and the path is
+`images/ubuntu/`, not `images/linux/`.** Probed before pinning: `images/ubuntu/Ubuntu2404-Readme.md`
+answers 200 and `images/linux/Ubuntu2404-Readme.md` 404. At commit
+`cbb8df97e1dd32af7cb23a90590f12734ec11d0b` that readme lists **125** tool entries, including
+`Bash 5.2.21(1)-release`, `Node.js 22.23.2`, `Kubectl 1.36.4`, `Helm 3.21.4`, `jq 1.7` and eight
+.NET SDKs. **The gap is the deliverable, not a shortfall:** the L5 base image carries seven packages
+(`bash git ca-certificates curl jq unzip tzdata`) and the node image adds Node 22 to match. L5 asks
+whether a *converted project* runs, and what it needs is what the runtime shells out to — not the
+other ~115 entries. Node 22 is matched deliberately: an image a major version behind the thing it
+approximates would hide the failures this tier exists to catch.
+  — https://github.com/actions/runner-images/blob/cbb8df97e1dd32af7cb23a90590f12734ec11d0b/images/ubuntu/Ubuntu2404-Readme.md
+    (checked 2026-09-04)
+
+### How the tier is shaped, and why
+
+[C-E12-028] **Every sample is template-free, so the suite needs no credentials.** No `${{ }}`, no
+`extends`, no template references, which makes the offline expander and the service agree on the
+document — so the harness converts with `--offline-expand` and never touches a PAT.
+**Consequence:** a lapsed token cannot turn the E2E job red for a reason unrelated to E2E, which
+matters because the PAT expires around 2026-09-10 (E11-S03-T01's operational note). A meta-test
+enforces it, stripping comments first so the sentence explaining the rule does not violate it.
+  — `test/e2e-harness.test.ts` (checked 2026-09-04)
+
+[C-E12-029] **Pinned exit codes are what L5 adds over `drift.ts` Phase B.** Phase B already converts
+every corpus entry and runs it, but **records** exit codes rather than pinning them, because "a
+pinned per-entry code would encode the runner's toolset" (decision 75). Inside a controlled image
+the toolset *is* controlled. **Consequence:** the exit code becomes a fact about the emitter and the
+runtime, and sample 03 pins a **non-zero** one — which is how C-E12-035 was found. A meta-test
+asserts at least one sample pins a failure, so that property cannot quietly disappear.
+
+[C-E12-030] **The harness converts on the *host* and runs in the container, and that is a stronger
+assertion than doing both inside.** The first run failed with `node: command not found`: the base
+image has no Node and the converter is a Node program. Putting Node in the base image would have
+defeated the image whose whole purpose is to be minimal. **Consequence:** the split proves the
+generated project is the dependency-free bash PLAN promises — the base image contains no Node, no
+pnpm and nothing this repository built, and `run.sh` runs there anyway.
+
+### What running them found (`C-E12-031..036`)
+
+[C-E12-031] **`Build.ArtifactStagingDirectory` was not seeded — nor `Build.StagingDirectory`,
+`Build.BinariesDirectory` or `Common.TestResultsDirectory`.** The macro survived unexpanded into the
+step body, where bash read `$(…)` as a command substitution and reported
+`Build.ArtifactStagingDirectory: command not found`. **Consequence:** the single most common idiom
+in real pipelines did not work, and nothing below L5 could see it. The layout was always intended —
+`run.sh` already created `TestResults` beside `s`. Now seeded from the **already-pinned**
+predefined-variables include: `a`, `b` and `TestResults` under `Agent.BuildDirectory`, with
+`Build.StagingDirectory` as an alias because the page says the two "are interchangeable". **Fixed.**
+  — https://github.com/MicrosoftDocs/azure-devops-docs/blob/1eeaa8de39f8b7130d8eb45ec907d9e47d6f5a32/docs/pipelines/build/includes/variables-hosted.md
+    — "For example: `c:\agent\_work\1\a`" / "`…\1\b`" / "`…\1\TestResults`" (checked 2026-09-04)
+
+[C-E12-032] **`AZDO_STEP_NAME` was never set, so every `##vso[task.setvariable isOutput=true]` in
+every generated project failed.** `azdo_var_set … output=true` refuses without it, and the emitter
+never passed the authored `name:` to `run_step` — which had no flag for it. **Consequence:** output
+variables, the mechanism `dependencies.<job>.outputs['<name>.<var>']` is built on (C-E06-002/005),
+were unusable end to end while the runtime implemented them correctly. `run_step` gains `--name`,
+the emitter passes it when the step declares one, and it is exported for the whole attempt because
+the write happens in the logging-command subshell. **Fixed.**
+  — measured 2026-09-04; `packages/runtime/lib/core.sh`, `packages/emit/src/entrypoints.ts`
+
+[C-E12-035] **On a failing pipeline the generated `run.sh` printed no summary and exited with the
+failing step's raw status instead of the runner's verdict.** `run.sh` and `run-stage.sh` both carry
+`set -euo pipefail`, so a non-zero stage aborted the parent *before* `azdo_run_summary` and
+`exit "$(azdo_run_exit_code)"` — the two lines docs/04 §2 makes the end of a run. Measured: a sample
+whose last step exits 4 produced exit **4** and no summary; after the fix, exit **1** (the verdict
+`azdo_run_exit_code` computes for `Failed`) and the table prints. **Consequence:** the summary is
+absent exactly when a user needs it most, and `azdo-emu run`'s exit-code contract (E10-S02-T02)
+reported a step's status rather than the pipeline's. Stopping dependent work is unaffected: that is
+decided by the next stage's compiled condition reading the result store. **Fixed** with `|| :` on
+the stage and job invocations. Nothing below L5 could see it, because no other tier asserts what a
+*failing* run prints.
+  — measured 2026-09-04; `research/experiments/E12-l5-e2e/first-run.md`
+
+[C-E12-033] **Pipeline, stage and job `variables:` blocks are not seeded into a generated project at
+all.** The expanded YAML retains them — `variables: [{name: buildConfig, value: Release}]` survives
+expansion — but the generated `run.sh` contains **zero** `azdo_var_set` calls for them, the manifest
+records no `pipeline.variables`, and `.env.example` asks for nothing. Confirmed against the corpus's
+own `04-variable-layers` entry, which also emits zero. **Consequence:** `$(anyVariable)` is
+unresolvable in every generated project, and a `$[ dependencies… ]` job variable evaluates to
+nothing — which is why sample 01 reads its cross-job output through a **job condition** instead.
+**Not fixed here:** seeding touches variable classification, precedence, secret marking and the
+`.env` interaction, which is E05 emitter work. Filed as **E11-S04-T03**.
+  — measured 2026-09-04
+
+[C-E12-034] **`publish`/`download` steps are not native, so an artifact task needs a fetched task
+package.** `disposeStep` treats only `checkout` as runtime-performed; `PublishPipelineArtifact@1`
+goes to real-task mode and fails offline with "no cached package". The runtime *has*
+`azdo_artifact_publish`/`azdo_artifact_download`. **Consequence:** the samples assert artifacts as
+files under the staging directory rather than through a publish task. **Not fixed here** — making
+them native is E05/E07 work. Filed as **E11-S04-T03**.
+  — measured 2026-09-04
+
+[C-E12-036] **Open finding: a `condition: failed()` step ran after a `continueOnError: true`
+failure, when C-E06-040 says it should not.** Measured on the generated project: step results are
+recorded correctly (`030 = SucceededWithIssues`), `azdo__job_status_from_results` downgrades only
+from `Succeeded` and so should report `SucceededWithIssues`, and `azdo_status_failed` tests for
+`Failed` — yet the step whose compiled condition is `azdo_status_failed` executed.
+**The cause is not located, so nothing is asserted about it either way** and the step was removed
+from sample 03 rather than pinned. Recorded here with the evidence so the next person starts from
+it. Filed as **E11-S04-T03**.
+  — measured 2026-09-04; `research/experiments/E12-l5-e2e/first-run.md`

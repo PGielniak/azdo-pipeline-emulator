@@ -1,0 +1,30 @@
+# L5 sample 2 — a real toolchain: npm install and a test run, in the node image.
+#
+# The step body proves the base image could not have run this: `node --version` is the first thing
+# it does. Template-free for the same reason as sample 1 (C-E12-028).
+trigger: none
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+# Explicit, not implicit: the offline expansion of this document adds no `checkout` step of its own,
+# so a sample relying on the implicit one would test the expander rather than the runtime. Written
+# out, `azdo_checkout` copies the sample's own repository into the sources directory.
+- checkout: self
+- script: |
+    node --version
+    npm --version
+    echo "E2E-MARKER node toolchain present"
+  displayName: Report the toolchain
+- script: |
+    cd "$(Build.SourcesDirectory)"
+    npm install --no-audit --no-fund
+    npm test
+  displayName: Install and test
+- script: |
+    mkdir -p "$(Build.ArtifactStagingDirectory)/out"
+    cp "$(Build.SourcesDirectory)/result.json" "$(Build.ArtifactStagingDirectory)/out/result.json"
+    echo "E2E-MARKER node sample produced result.json"
+  displayName: Stage the result

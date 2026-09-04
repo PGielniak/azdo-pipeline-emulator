@@ -330,3 +330,64 @@ describe('the variables a real tool-lib task needs (E08-S02-T03)', () => {
     expect(files.get('run.sh')).toContain('"$AZDO_WORKSPACE_DIR/tools"');
   });
 });
+
+describe('the variables and flags a generated project needs to run (E11-S04-T01)', () => {
+  const emit = (): Map<string, string> => {
+    const { pipeline } = buildPipeline(parsePipelineYaml(FIXTURE, 'pipeline.expanded.yml'));
+    return emitEntrypoints(pipeline!, scaffold(pipeline!), 'pipeline.expanded.yml', []);
+  };
+
+  it('seeds the agent’s a/b/TestResults siblings of s (C-E12-031)', () => {
+    // Their absence was invisible until an L5 sample used `$(Build.ArtifactStagingDirectory)` — the
+    // commonest idiom in real pipelines — and the macro survived into the step body, where bash
+    // read `$(…)` as a command substitution.
+    const files = emit();
+    const runJob = [...files.entries()].find(([name]) => name.endsWith('run-job.sh'))?.[1] ?? '';
+    expect(runJob).toContain(
+      `azdo_var_set 'Build.ArtifactStagingDirectory' "$AZDO_WORKSPACE_DIR/a"`,
+    );
+    expect(runJob).toContain(`azdo_var_set 'Build.BinariesDirectory' "$AZDO_WORKSPACE_DIR/b"`);
+    expect(runJob).toContain(
+      `azdo_var_set 'Common.TestResultsDirectory' "$AZDO_WORKSPACE_DIR/TestResults"`,
+    );
+    // "Build.ArtifactStagingDirectory and Build.StagingDirectory are interchangeable" — an alias,
+    // not a second directory.
+    expect(runJob).toContain(`azdo_var_set 'Build.StagingDirectory' "$AZDO_WORKSPACE_DIR/a"`);
+    // And the directories must exist before a step writes into them.
+    expect(files.get('run.sh')).toContain('"$AZDO_WORKSPACE_DIR/a" "$AZDO_WORKSPACE_DIR/b"');
+  });
+
+  it('passes a step’s authored name to run_step, and only when it has one (C-E12-032)', () => {
+    // Without it `azdo_var_set … output=true` refuses, so *every* `isOutput=true` write in a
+    // generated project failed — while the runtime implemented output variables correctly.
+    const yaml = [
+      'stages:',
+      '- stage: s',
+      '  jobs:',
+      '  - job: j',
+      '    steps:',
+      '    - script: echo hi',
+      '      name: producer',
+      '    - script: echo bye',
+    ].join('\n');
+    const { pipeline } = buildPipeline(parsePipelineYaml(yaml, 'pipeline.expanded.yml'));
+    const files = emitEntrypoints(pipeline!, scaffold(pipeline!), 'pipeline.expanded.yml', []);
+    const runJob = [...files.entries()].find(([name]) => name.endsWith('run-job.sh'))?.[1] ?? '';
+    expect(runJob).toContain("--name 'producer'");
+    // The unnamed step gets no flag at all: most steps have none, and an empty one would be noise.
+    expect(runJob.match(/--name /g)).toHaveLength(1);
+  });
+
+  it('lets a failing stage reach the summary and the verdict (C-E12-035)', () => {
+    // `set -euo pipefail` aborted the parent before `azdo_run_summary` and
+    // `exit "$(azdo_run_exit_code)"`, so a failing pipeline printed no summary and exited with the
+    // failing step's raw status. The `|| :` is what keeps those two lines reachable.
+    const files = emit();
+    const run = files.get('run.sh') ?? '';
+    expect(run).toContain('run-stage.sh" "$@" || :');
+    expect(run).toContain('azdo_run_summary');
+    expect(run).toContain('exit "$(azdo_run_exit_code)"');
+    const stage = [...files.entries()].find(([name]) => name.endsWith('run-stage.sh'))?.[1] ?? '';
+    expect(stage).toContain('run-job.sh" "$@" || :');
+  });
+});

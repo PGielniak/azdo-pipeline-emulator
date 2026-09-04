@@ -22,3 +22,8 @@ fixtures/
 # Sibling sessions keep git worktrees here (untracked); their copies of the tree are not
 # this checkout's files to format.
 .claude/worktrees/
+
+# L5 sample apps (E11-S04-T01): input, not source. They are written the way a user's repository
+# would be, and reformatting them to this project's style would be reformatting the test data.
+fixtures/e2e/**/*.js
+fixtures/e2e/**/*.json

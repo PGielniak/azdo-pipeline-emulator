@@ -1,0 +1,34 @@
+# L5 sample 3 — the half a green pipeline cannot check: a step fails, and the run's *shape* is the
+# assertion. Condition evaluation, continueOnError, and the exit code the runner reports.
+#
+# This is where a controlled image pays for itself. `drift.ts` Phase B records exit codes rather
+# than pinning them (decision 75), because on a hosted GitHub runner the toolset decides them. Here
+# the toolset is the image, so the code is a fact about the runtime and can be asserted (C-E12-029).
+#
+# A `condition: failed()` step was written here and **removed**: after the tolerated failure above it
+# ran, when `SucceededWithIssues` should make `failed()` False (C-E06-040). That is an open finding,
+# not a settled behaviour — C-E12-036 records the evidence, and E11-S04-T03 is the task to chase it.
+# Asserting it either way here would pin something nobody has explained.
+trigger: none
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+- checkout: none
+- script: echo "E2E-MARKER first step ran"
+  displayName: Succeed
+- script: |
+    echo "E2E-MARKER tolerated failure"
+    exit 1
+  displayName: Fail but continue
+  continueOnError: true
+- script: echo "E2E-MARKER reached after continueOnError"
+  displayName: Runs because the failure was tolerated
+- script: |
+    echo "E2E-MARKER final step ran"
+    exit 4
+  displayName: Fail for real
+- script: echo "E2E-MARKER must not run after a real failure"
+  displayName: Never reached
