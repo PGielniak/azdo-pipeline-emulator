@@ -340,6 +340,13 @@ approximates would hide the failures this tier exists to catch.
   — https://github.com/actions/runner-images/blob/cbb8df97e1dd32af7cb23a90590f12734ec11d0b/images/ubuntu/Ubuntu2404-Readme.md
     (checked 2026-09-04)
 
+**Cost, measured rather than assumed** (E11-S04-T02's precedent): the whole `e2e (L5, containers)`
+job takes **58 s** on `ubuntu-latest` — checkout, install, `pnpm -r build`, both image builds from
+scratch and all three samples — against the 5-minute budget that task set for bats, and cheaper than
+every `test` leg on the same run (3 m 55 s – 6 m 48 s). Building in-job from official bases keeps it
+there; **no image is published anywhere**, which would be an outward-facing write and is not needed
+for "minimal images approximating hosted toolsets".
+
 ### How the tier is shaped, and why
 
 [C-E12-028] **Every sample is template-free, so the suite needs no credentials.** No `${{ }}`, no

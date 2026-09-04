@@ -127,5 +127,8 @@ explained. Filed as **E11-S04-T03**.
 
 ## Timing
 
-Three samples, warm image cache: **10 s** locally. The cold figure — which is what CI pays, since a
-runner builds both images every time — is measured by the `e2e` job itself on this branch.
+Three samples, warm image cache: **10 s** locally. **58 s** for the whole `e2e (L5, containers)` job
+on `ubuntu-latest` — checkout, install, `pnpm -r build`, both image builds from scratch, and all
+three samples — measured on run 33875135535. That is well inside the 5-minute budget E11-S04-T02
+used for bats, and cheaper than every `test` leg on the same run (3 m 55 s to 6 m 48 s), because the
+job builds once and runs three short pipelines rather than a full matrix.
