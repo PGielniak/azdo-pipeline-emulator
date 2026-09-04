@@ -3550,6 +3550,119 @@ mock_az() {
   [[ "$output" == *'usage: azdo_sc_preflight'* ]]
 }
 
+# --- E08-S02-T02: docker registry connections ---------------------------------------------------
+#
+# A Docker registry connection is read through a fourth variable family (C-E08-044): the task parses
+# ENDPOINT_AUTH_<name> as JSON and reads lowercase keys out of `.parameters`. The per-key .env lines
+# are the user-facing surface; the blob is derived here.
+
+@test "the derived blob uses lowercase keys, as the provider reads them (C-E08-044)" {
+  # Upper-casing them the way ENDPOINT_AUTH_PARAMETER_<id>_<KEY> does yields a blob that parses
+  # cleanly and returns undefined for every field — a failure with no message at all.
+  ENDPOINT_AUTH_PARAMETER_myreg_USERNAME=alice
+  ENDPOINT_AUTH_PARAMETER_myreg_PASSWORD=s3cret
+  ENDPOINT_AUTH_PARAMETER_myreg_REGISTRY=myreg.example.com
+  ENDPOINT_AUTH_PARAMETER_myreg_EMAIL=
+  export ENDPOINT_AUTH_PARAMETER_myreg_USERNAME ENDPOINT_AUTH_PARAMETER_myreg_PASSWORD \
+    ENDPOINT_AUTH_PARAMETER_myreg_REGISTRY ENDPOINT_AUTH_PARAMETER_myreg_EMAIL
+
+  run -0 azdo_sc_endpoint_auth_json myreg
+  azdo_sc_endpoint_auth_json myreg
+  [[ "$ENDPOINT_AUTH_myreg" == *'"username":"alice"'* ]]
+  [[ "$ENDPOINT_AUTH_myreg" == *'"password":"s3cret"'* ]]
+  [[ "$ENDPOINT_AUTH_myreg" == *'"registry":"myreg.example.com"'* ]]
+  [[ "$ENDPOINT_AUTH_myreg" == *'"email":""'* ]]
+  [[ "$ENDPOINT_AUTH_myreg" != *'"USERNAME"'* ]]
+}
+
+@test "the blob is valid JSON for a password full of metacharacters (C-E08-044)" {
+  # A registry password is arbitrary bytes. The blob is hand-built (dependency-free bash), so the
+  # escaping is ours to get right; node is the arbiter because JSON.parse is what actually reads it.
+  ENDPOINT_AUTH_PARAMETER_myreg_USERNAME='al ice'
+  ENDPOINT_AUTH_PARAMETER_myreg_PASSWORD=$'p"a\\ss\nx\ty'
+  ENDPOINT_AUTH_PARAMETER_myreg_REGISTRY='https://index.docker.io/v1/'
+  ENDPOINT_AUTH_PARAMETER_myreg_EMAIL=''
+  export ENDPOINT_AUTH_PARAMETER_myreg_USERNAME ENDPOINT_AUTH_PARAMETER_myreg_PASSWORD \
+    ENDPOINT_AUTH_PARAMETER_myreg_REGISTRY ENDPOINT_AUTH_PARAMETER_myreg_EMAIL
+
+  azdo_sc_endpoint_auth_json myreg
+  run -0 node -e '
+    const a = JSON.parse(process.argv[1]);
+    if (a.parameters.password !== "p\"a\\ss\nx\ty") throw new Error("password mangled: " + JSON.stringify(a.parameters.password));
+    if (a.parameters.username !== "al ice") throw new Error("username mangled");
+    console.log("ok");
+  ' "$ENDPOINT_AUTH_myreg"
+  [[ "$output" == ok ]]
+}
+
+@test "the scheme defaults, and a set one is carried through" {
+  ENDPOINT_AUTH_PARAMETER_myreg_USERNAME=alice
+  export ENDPOINT_AUTH_PARAMETER_myreg_USERNAME
+  azdo_sc_endpoint_auth_json myreg
+  [[ "$ENDPOINT_AUTH_myreg" == '{"scheme":"UsernamePassword"'* ]]
+
+  ENDPOINT_AUTH_SCHEME_myreg=ServicePrincipal
+  export ENDPOINT_AUTH_SCHEME_myreg
+  azdo_sc_endpoint_auth_json myreg
+  [[ "$ENDPOINT_AUTH_myreg" == '{"scheme":"ServicePrincipal"'* ]]
+}
+
+@test "a connection name bash cannot hold is refused, not mangled (C-E06-014)" {
+  # The task reads ENDPOINT_AUTH_<name> verbatim (C-E08-001); silently substituting underscores
+  # would export a variable the task never looks at.
+  run -1 azdo_sc_endpoint_auth_json 'my-reg.prod'
+  [[ "$output" == *'cannot be an environment variable'* ]]
+  [[ "$output" == *'Rename the connection'* ]]
+}
+
+@test "the registry preflight checks the registry fields, not the AzureRM ones (C-E08-043)" {
+  # Checking for ENDPOINT_AUTH_SCHEME_/SERVICEPRINCIPALID here would report a perfectly complete
+  # registry connection as broken.
+  run -1 azdo_sc_preflight 'myreg' 'Docker@2' dockerregistry
+  [[ "$output" == *'ENDPOINT_AUTH_PARAMETER_myreg_USERNAME='* ]]
+  [[ "$output" == *'ENDPOINT_AUTH_PARAMETER_myreg_PASSWORD='* ]]
+  [[ "$output" == *'ENDPOINT_AUTH_PARAMETER_myreg_REGISTRY='* ]]
+  [[ "$output" != *'SERVICEPRINCIPALID'* ]]
+}
+
+@test "the registry preflight explains that the task's own failure is a TypeError (C-E08-045)" {
+  # getEndpointAuthorization sets the result to Failed and *returns undefined*, so the provider
+  # dereferences .parameters and the user sees a stack trace naming nothing.
+  run -1 azdo_sc_preflight 'myreg' 'Docker@2' dockerregistry
+  [[ "$output" == *'TypeError'* ]]
+  [[ "$output" == *'C-E08-045'* ]]
+}
+
+@test "a complete registry connection preflights and leaves the blob exported" {
+  ENDPOINT_AUTH_PARAMETER_myreg_USERNAME=alice
+  ENDPOINT_AUTH_PARAMETER_myreg_PASSWORD=s3cret
+  ENDPOINT_AUTH_PARAMETER_myreg_REGISTRY=myreg.example.com
+  export ENDPOINT_AUTH_PARAMETER_myreg_USERNAME ENDPOINT_AUTH_PARAMETER_myreg_PASSWORD \
+    ENDPOINT_AUTH_PARAMETER_myreg_REGISTRY
+
+  run -0 azdo_sc_preflight 'myreg' 'Docker@2' dockerregistry
+  azdo_sc_preflight 'myreg' 'Docker@2' dockerregistry
+  [[ -n "$ENDPOINT_AUTH_myreg" ]]
+}
+
+@test "Docker@2 gets no session-clobber warning, because it clobbers nothing (C-E08-048)" {
+  # The contrast with C-E08-038/039 is measured: logout() restores the cached config and deletion is
+  # guarded by isPathInTempDirectory, so ~/.docker survives.
+  ENDPOINT_AUTH_PARAMETER_myreg_USERNAME=alice
+  ENDPOINT_AUTH_PARAMETER_myreg_PASSWORD=s3cret
+  ENDPOINT_AUTH_PARAMETER_myreg_REGISTRY=myreg.example.com
+  export ENDPOINT_AUTH_PARAMETER_myreg_USERNAME ENDPOINT_AUTH_PARAMETER_myreg_PASSWORD \
+    ENDPOINT_AUTH_PARAMETER_myreg_REGISTRY
+
+  run -0 azdo_sc_preflight 'myreg' 'Docker@2' dockerregistry
+  [[ "$output" != *'##[warning]'* ]]
+}
+
+@test "an unknown endpoint kind is refused rather than guessed" {
+  run -2 azdo_sc_preflight 'myreg' 'Docker@2' kubernetes
+  [[ "$output" == *'unknown endpoint kind kubernetes'* ]]
+}
+
 # --- E08-S03-T01: deployment strategies --------------------------------------------------------
 
 @test "one hook order serves all three strategies (C-E08-011)" {

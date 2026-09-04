@@ -59,6 +59,7 @@ export {
 // tasks that consume them.
 export {
   collectConnections,
+  dockerStepWarnings,
   localSessionWarnings,
   CONNECTED_SERVICE_TYPE_PREFIX,
   REAL_TASK_ENDPOINT_USE,

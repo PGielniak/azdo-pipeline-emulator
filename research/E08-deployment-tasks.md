@@ -10,7 +10,8 @@ off a service connection) and `microsoft/azure-pipelines-task-lib` (how those re
 | --- | --- | --- |
 | `C-E08-001` … `C-E08-029` | E08-S01 the connection contract | |
 | `C-E08-030` … `C-E08-042` | E08-S02-T01 `AzureCLI@2` + `AzurePowerShell@5` | |
-| `C-E08-043` … `C-E08-059` | E08-S02-T02…T04 per-task verification | *unallocated* |
+| `C-E08-043` … `C-E08-052` | E08-S02-T02 `Docker@2` | |
+| `C-E08-053` … `C-E08-059` | E08-S02-T03/T04 per-task verification | *unallocated* |
 
 ---
 
@@ -342,3 +343,156 @@ it is unset; `AzureCLI@2` warns and falls back to the global config dir. `emitEn
 prerequisite rather than a gap — recorded so a later reader does not re-derive it.
   — `azurepowershell.ts` L18-19 and `azureclitask.ts` L425-429 (same commit) ·
     `packages/emit/src/entrypoints.ts` L167 (checked 2026-09-03)
+
+---
+
+## E08-S02-T02 — `Docker@2` under real-task mode (`C-E08-043..052`)
+
+Recorded 2026-09-04, before implementation. Sources: `Tasks/DockerV2` at the `v277` pin
+`8ba25cfb5c7736ba98a37488c0323f7320cb5b3e`, and `docker-common` at
+`4b4690c1ecf5522d8c7f99a11a427d5ceb4a1a1d` in `microsoft/azure-pipelines-tasks-common-packages` —
+**the commit where that package is version 2.276.0, which is exactly what `DockerV2@v277`'s
+`package.json` depends on.** HEAD of that repo is 2.279.0; reading HEAD would have meant reading
+code this task version does not run. The common packages moved out of the tasks repo
+(`common-npm-packages/MIGRATION_OF_COMMON_PACKAGES.md`), which is why the obvious in-repo path 404s.
+
+E08-S02-T01 found a task that cannot use an ambient session and destroys the local one. **`Docker@2`
+is the opposite on the second count and subtler on the first**, and both differences are measured
+below rather than assumed by symmetry.
+
+### The connection, and a fourth variable family (`C-E08-043..046`)
+
+[C-E08-043] **`Docker@2`'s connection input is `containerRegistry`, declared
+`connectedService:dockerregistry` — a different endpoint kind from `connectedService:AzureRM`, in
+lowercase — with no aliases and, notably, `required` unset.** A pipeline that only builds needs no
+registry at all. **Consequence:** the collector's type-prefix match (C-E08-035) finds it, but the
+`.env` fields for it are *not* the AzureRM set — a connection block offering
+`ENDPOINT_DATA_<name>_SUBSCRIPTIONID` to a Docker registry asks for a value nothing reads.
+  — `packages/emit/vendor/tasks-meta/Docker@2/task.json`, pinned at `v277` with `PROVENANCE.json`
+    beside it (checked 2026-09-04)
+
+[C-E08-044] **A generic registry connection is read through a *fourth* endpoint variable family:
+`ENDPOINT_AUTH_<id>`, a JSON blob — and the keys inside it are lowercase, verbatim.** task-lib's
+`getEndpointAuthorization(id, optional)` does
+`im._vault.retrieveSecret('ENDPOINT_AUTH_' + id)` and `JSON.parse`s it;
+`GenericAuthenticationTokenProvider` then reads
+`parameters["username"]`, `["password"]`, `["registry"]`, `["email"]` with **no `toUpperCase()`
+anywhere on that path**, unlike `ENDPOINT_AUTH_PARAMETER_<id>_<KEY>` (C-E08-001).
+**Consequence:** the per-key variables our `.env` contract emits are not read on this path at all,
+and a blob generated with upper-cased keys parses cleanly and yields `undefined` for every field —
+C-E08-001's failure mode in a new costume.
+  — https://github.com/microsoft/azure-pipelines-task-lib/blob/c377a1115fdc0e5aea896df36219b59c181d9bc4/node/task.ts
+    (`getEndpointAuthorization` L593-613) and
+    https://github.com/microsoft/azure-pipelines-tasks-common-packages/blob/4b4690c1ecf5522d8c7f99a11a427d5ceb4a1a1d/common-npm-packages/docker-common/registryauthenticationprovider/genericauthenticationtokenprovider.ts
+    (L15-25; both checked 2026-09-04)
+
+[C-E08-045] **A missing blob is an unexplained crash, not `LIB_EndpointAuthNotExist`.** Unlike its
+sibling readers, `getEndpointAuthorization(id, false)` calls
+`setResult(TaskResult.Failed, loc('LIB_EndpointAuthNotExist', id))` and then **returns `undefined`**
+rather than throwing; `GenericAuthenticationTokenProvider` immediately dereferences
+`.parameters`, so the user sees a `TypeError`. **Consequence:** this is the case a preflight is
+worth the most — the task's own diagnostic is a stack trace.
+  — same `task.ts` L593-613 (checked 2026-09-04)
+
+[C-E08-046] **ACR and generic are chosen by a data parameter, and ACR needs one more field.**
+`getDockerRegistryEndpointAuthenticationToken` branches on
+`getEndpointDataParameter(endpointId, "registrytype", true) === "ACR"`; the ACR arm additionally
+reads auth parameter `loginServer` **required** (`getEndpointAuthorizationParameter(id, key, false)`
+throws when absent) and authenticates as a service principal, while everything else goes to the
+generic provider and the blob of C-E08-044.
+  — https://github.com/microsoft/azure-pipelines-tasks-common-packages/blob/4b4690c1ecf5522d8c7f99a11a427d5ceb4a1a1d/common-npm-packages/docker-common/registryauthenticationprovider/registryauthenticationtoken.ts
+    (L58-72; checked 2026-09-04)
+
+### The ambient path is narrower than the source comment suggests (`C-E08-047`)
+
+[C-E08-047] **`dockerbuild.ts` says "else, use the currently logged in registries" — but the config
+it consults is one the task itself wrote, never the developer's `~/.docker/config.json`.**
+`getExistingDockerConfigFilePath` resolves **only** through `tl.getVariable("DOCKER_CONFIG")` and
+then requires `isPathInTempDirectory(configurationFilePath)`, i.e. the path must start with
+`agent.tempDirectory` (or `os.tmpdir()`); otherwise it returns `null`. So with no
+`containerRegistry`, `getRegistryUrlsFromDockerConfig` is empty and
+`getQualifiedImageNamesFromConfig` takes its documented "tag the image to refer locally" branch —
+the **bare, unqualified repository name**. Exporting `DOCKER_CONFIG=~/.docker` does not help: the
+temp-directory guard rejects it.
+
+**But the split matters, and it is the useful half of this claim:** with no token,
+`openRegistryEndpoint` returns without writing anything (`if (authenticationToken)`), so
+`DOCKER_CONFIG` stays unset and the **`docker` CLI itself falls back to `~/.docker/config.json`**.
+So a local run has **ambient authentication and non-ambient image-name qualification**. A build
+succeeds and tags `myapp:1`; a push then goes wherever an unqualified name resolves — Docker Hub —
+rather than to the registry the developer is logged in to.
+  — https://github.com/microsoft/azure-pipelines-tasks-common-packages/blob/4b4690c1ecf5522d8c7f99a11a427d5ceb4a1a1d/common-npm-packages/docker-common/containerconnection.ts
+    (`getExistingDockerConfigFilePath` L305-313, `isPathInTempDirectory` L389-397,
+    `getRegistryUrlsFromDockerConfig` L363-380, `getQualifiedImageNamesFromConfig` L95-121,
+    `openRegistryEndpoint` L251-253) and
+    https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/DockerV2/dockerbuild.ts
+    (L26-36; all checked 2026-09-04)
+  — **confirmed by running the real task** (`research/experiments/E08-docker/real-task-run.md`,
+    runs 3 and 4): with no connection the image is named `docker.io/library/ambientprobe:3.0.0`,
+    and it stays unqualified even when `DOCKER_CONFIG` points at a directory holding a valid
+    `auths` entry — the temp-directory guard rejects it. Run 4 is the discriminating test, because
+    the source reading alone leaves "would `DOCKER_CONFIG` be enough?" arguable.
+
+### `Docker@2` does **not** clobber the local session (`C-E08-048`)
+
+[C-E08-048] **Measured, not assumed by symmetry with C-E08-038/039: this task leaves the
+developer's docker credentials alone.** Three independent guards. (1) `close()` calls `logout()`
+only when `isLogoutRequired` — `command === "logout"` **or** a registry is present — so with no
+connection a build/push does not log out at all. (2) `logout()` restores `oldDockerConfigContent`,
+cached in `open()` when it overwrote an existing auth for the same registry. (3) Deletion goes
+through `removeConfigDirAndUnsetEnvVariable`, which deletes only when
+`isPathInTempDirectory(dockerConfigDirPath)` holds. **Consequence:** `Docker@2` gets no
+session-clobber warning, and the registry that records these hazards must be able to say "this task
+was checked and is safe" rather than being silent about it.
+  — same `containerconnection.ts` (`close` L124-138, `logout` L158-208,
+    `removeConfigDirAndUnsetEnvVariable` L209-217, `isLogoutRequired` L223-225; checked 2026-09-04)
+
+### Image names and tags, which the Do field says not to invent (`C-E08-049..052`)
+
+[C-E08-049] **A qualified image name is `prefixRegistryIfRequired` then `generateValidImageName`, and
+the second step is lossy.** The registry host is prefixed as `hostname + "/" + repository` — taken
+from `url.parse(registry)`, `host` when the value has slashes and `href` when it does not — **unless
+the hostname is `index.docker.io`**, because a Docker Hub repository name is already qualified. Then
+`generateValidImageName` **lower-cases the whole name and strips every space**.
+**Consequence:** `repository: MyApp` silently becomes `myapp`, and that is the name that gets pushed.
+  — same `containerconnection.ts` (`getQualifiedImageName` L86-93, `prefixRegistryIfRequired`
+    L392-405) and
+    https://github.com/microsoft/azure-pipelines-tasks-common-packages/blob/4b4690c1ecf5522d8c7f99a11a427d5ceb4a1a1d/common-npm-packages/docker-common/containerimageutils.ts
+    (`generateValidImageName` L27-31, `hasRegistryComponent` L8-14; checked 2026-09-04)
+  — **confirmed by running the real task** (same transcript, run 2): `repository: "E08 Parity"` was
+    built and pushed as `localhost:5000/e08parity` — lower-cased, space-stripped, registry
+    prefixed.
+
+[C-E08-050] **The default `Dockerfile` input is a glob, and it resolves to the *first* match.**
+`findDockerFile` treats a value containing `*` or `?` as a pattern, lists
+`tl.find(tl.getVariable('System.DefaultWorkingDirectory'))` and matches with `{ matchBase: true }`,
+returning `matchingResultsFiles[0]`. The declared default is `**/Dockerfile`.
+**Consequence:** in a repository with several Dockerfiles the one built depends on directory-walk
+order, and the search root is `System.DefaultWorkingDirectory` — **not** the step's working
+directory, so a `workingDirectory` on the step does not narrow it.
+  — https://github.com/microsoft/azure-pipelines-tasks-common-packages/blob/4b4690c1ecf5522d8c7f99a11a427d5ceb4a1a1d/common-npm-packages/docker-common/fileutils.ts
+    (`findDockerFile` L29-46; checked 2026-09-04)
+
+[C-E08-051] **Tags split on newlines *and* commas, and build and push construct the tag identically —
+which is why pushed tags match built ones by construction.** Both do
+`tagsInput.split(/[\n,]+/)` and then, per image name, `imageName + ":" + tag` for each non-empty
+tag; with no tags at all both fall back to the bare `imageName` (docker's own `latest` default).
+The declared default is `$(Build.BuildId)` — a macro, so the runtime expands it before the task sees
+it. **Consequence for the Done field's "parity of pushed tags":** parity is structural, not
+coincidental; what can break it is the *image name* half (C-E08-047/049), not the tag half.
+  — https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/DockerV2/dockerbuild.ts
+    (L45-66) and
+    https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/DockerV2/dockerpush.ts
+    (`pushMultipleImages` L18-55; both checked 2026-09-04)
+  — **confirmed by running the real task** (same transcript, runs 1 and 2): `1.0.0,latest` and
+    `2.0.0\nv2-newline` each produced exactly two tags, and the registry afterwards held exactly
+    the tags the build named — `{"name":"e08","tags":["latest","1.0.0"]}`. Both split characters
+    exercised against the real implementation, not only read.
+
+[C-E08-052] **`buildAndPush` ignores the `arguments` input, with a warning.** `dockerbuildandpush.ts`
+warns `IgnoringArgumentsInput` when `arguments` is set, and both sub-commands are invoked with
+`isBuildAndPushCommand = true`, which forces `commandArguments` to `""`. The `task.json`
+`visibleRule` agrees (`command != buildAndPush`), so this is only reachable from hand-written YAML —
+which is exactly what a converted pipeline is.
+  — https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/DockerV2/dockerbuildandpush.ts
+    (L7-11; checked 2026-09-04)

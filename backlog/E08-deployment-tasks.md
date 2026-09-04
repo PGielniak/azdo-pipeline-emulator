@@ -34,7 +34,7 @@ Acceptance: each task verified under real-task mode; deltas documented, not tran
   **Do:** verify both run under real-task mode with the `.env` connection; wire `azdo_sc_login`/`Connect-AzAccount` ambient glue; register doctor rules (az, pwsh + Az).
   **Ground:** `Tasks/AzureCLIV2` + `Tasks/AzurePowerShellV5` task.json + source — pin the login sequence and env injection each performs, so our glue matches rather than guesses.
   **Done:** bats with az/pwsh present; one live parity check (a task-side `az account show` matches the cloud run).
-- [ ] **E08-S02-T02 — `Docker@2` (build/push/login)**
+- [x] **E08-S02-T02 — `Docker@2` (build/push/login)**
   **Do:** verify under real-task mode; registry connection → `.env` creds or ambient docker login; document image-name construction deltas (if any).
   **Ground:** `Tasks/DockerV2` task.json + source — pin default Dockerfile/context resolution and image-path construction (do not invent); docker CLI docs per flag.
   **Done:** one real build/push to a scratch registry; parity of pushed tags.

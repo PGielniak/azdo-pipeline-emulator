@@ -6,6 +6,7 @@ import { buildPipeline, parsePipelineYaml, type Step } from '@azdo-emu/engine';
 
 import {
   collectConnections,
+  dockerStepWarnings,
   localSessionWarnings,
   REAL_TASK_ENDPOINT_USE,
   type StepSite,
@@ -258,6 +259,165 @@ describe('the vendored snapshot loader (E08-S02-T01)', () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('Docker@2: a different endpoint kind, and a different verdict (E08-S02-T02)', () => {
+  const dockerStep = (inputs: Record<string, string>): Step =>
+    ({
+      id: 1,
+      displayName: 'Docker build',
+      task: { name: 'Docker', version: '2' },
+      inputs,
+    }) as Step;
+
+  it('declares its connection as connectedService:dockerregistry, not required (C-E08-043)', () => {
+    const input = VENDORED['Docker@2']?.inputs?.find((i) => i.name === 'containerRegistry');
+    expect(input?.type).toBe('connectedService:dockerregistry');
+    // A build-only pipeline needs no registry — which is why the mode rule below differs.
+    expect(input?.required).toBeUndefined();
+    expect(input?.aliases).toBeUndefined();
+  });
+
+  it('leaves the connection ambient, because Docker@2 only *accepts* an endpoint (C-E08-043)', () => {
+    // The contrast with AzureCLI@2 is the point: forcing `sp` here would demand registry
+    // credentials from a pipeline that builds locally and needs none (C-E08-005).
+    const { connections } = collectConnections(
+      [site(dockerStep({ containerRegistry: 'myreg', repository: 'app', command: 'build' }))],
+      VENDORED,
+    );
+    expect(connections[0]).toMatchObject({
+      name: 'myreg',
+      mode: 'ambient',
+      kind: 'dockerregistry',
+    });
+  });
+
+  it('offers registry fields, never the AzureRM ones (C-E08-043/044/046)', () => {
+    const keys = connectionKeys({ name: 'myreg', kind: 'dockerregistry', mode: 'sp' }).map(
+      (entry) => entry.key,
+    );
+    // The four the generic provider reads out of the blob, plus ACR's login server…
+    expect(keys).toContain('ENDPOINT_AUTH_PARAMETER_myreg_USERNAME');
+    expect(keys).toContain('ENDPOINT_AUTH_PARAMETER_myreg_PASSWORD');
+    expect(keys).toContain('ENDPOINT_AUTH_PARAMETER_myreg_REGISTRY');
+    expect(keys).toContain('ENDPOINT_AUTH_PARAMETER_myreg_EMAIL');
+    expect(keys).toContain('ENDPOINT_AUTH_PARAMETER_myreg_LOGINSERVER');
+    expect(keys).toContain('ENDPOINT_DATA_myreg_REGISTRYTYPE');
+    // …and none of the AzureRM set, which nothing on this path reads.
+    expect(keys).not.toContain('ENDPOINT_DATA_myreg_SUBSCRIPTIONID');
+    expect(keys).not.toContain('ENDPOINT_AUTH_PARAMETER_myreg_SERVICEPRINCIPALID');
+  });
+
+  it('asks a registry connection for registrytype even in ambient mode (C-E08-046)', () => {
+    const keys = connectionKeys({ name: 'myreg', kind: 'dockerregistry' }).map((e) => e.key);
+    expect(keys).toEqual(['ENDPOINT_DATA_myreg_REGISTRYTYPE']);
+  });
+
+  it('warns about the unqualified image name, not about a clobbered session (C-E08-047/048)', () => {
+    // Docker@2 restores the docker config it touched and guards deletion by temp-directory, so it
+    // gets no session-clobber warning — the absence is measured, not an oversight.
+    const { warnings } = collectConnections(
+      [site(dockerStep({ containerRegistry: 'myreg', repository: 'app' }))],
+      VENDORED,
+    );
+    const codes = warnings.map((w) => w.code);
+    expect(codes).toContain('local-task-delta');
+    expect(codes).not.toContain('local-session-clobber');
+    const delta = warnings.find((w) => w.code === 'local-task-delta');
+    expect(delta?.message).toContain('~/.docker/config.json');
+    expect(delta?.message).toContain('Docker Hub');
+  });
+
+  it('records Docker@2 as accepting, not requiring, an endpoint', () => {
+    expect(REAL_TASK_ENDPOINT_USE['Docker@2']?.requiresEndpoint).toBe(false);
+    expect(REAL_TASK_ENDPOINT_USE['AzureCLI@2']?.requiresEndpoint).toBe(true);
+    // C-E08-048: checked and safe, so no hazard string — distinguishable from "never examined",
+    // which is an absent registry entry.
+    expect(REAL_TASK_ENDPOINT_USE['Docker@2']?.hazard).toBeUndefined();
+  });
+});
+
+describe('Docker@2 per-step deltas, warned only when they can bite (E08-S02-T02)', () => {
+  const dockerStep = (inputs: Record<string, string>): Step =>
+    ({ id: 1, displayName: 'Docker', task: { name: 'Docker', version: '2' }, inputs }) as Step;
+  const codes = (inputs: Record<string, string>): string[] =>
+    dockerStepWarnings(dockerStep(inputs), 'Build/Job/step 1').map((w) => w.code);
+
+  it('warns that the repository is lower-cased and de-spaced (C-E08-049)', () => {
+    // Confirmed live: `E08 Parity` was pushed as `e08parity`.
+    const warnings = dockerStepWarnings(
+      dockerStep({ repository: 'E08 Parity', Dockerfile: 'src/Dockerfile' }),
+      'Build/Job/step 1',
+    );
+    const named = warnings.find((w) => w.code === 'docker-image-name-normalized');
+    expect(named?.message).toContain("'E08 Parity' is built and pushed as 'e08parity'");
+  });
+
+  it('stays quiet when the repository is already what docker will use', () => {
+    // The warning exists to be read; emitting it for `myapp` would train the reader to skip it.
+    expect(codes({ repository: 'myapp', Dockerfile: 'src/Dockerfile' })).not.toContain(
+      'docker-image-name-normalized',
+    );
+  });
+
+  it('does not guess at a macro repository', () => {
+    expect(codes({ repository: '$(imageName)', Dockerfile: 'src/Dockerfile' })).not.toContain(
+      'docker-image-name-normalized',
+    );
+  });
+
+  it('warns that a Dockerfile glob takes the first match (C-E08-050)', () => {
+    // Including the case that bites hardest: no input at all, where the default `**/Dockerfile`
+    // is a glob the author never wrote and may not know about.
+    const fromDefault = dockerStepWarnings(dockerStep({ repository: 'app' }), 'Build/Job/step 1');
+    expect(fromDefault.find((w) => w.code === 'docker-dockerfile-glob')?.message).toContain(
+      "its default Dockerfile pattern '**/Dockerfile'",
+    );
+    expect(codes({ repository: 'app', Dockerfile: '**/api/Dockerfile' })).toContain(
+      'docker-dockerfile-glob',
+    );
+    // An exact path resolves to itself, so there is nothing to warn about.
+    expect(codes({ repository: 'app', Dockerfile: 'src/Dockerfile' })).not.toContain(
+      'docker-dockerfile-glob',
+    );
+  });
+
+  it('does not warn about a Dockerfile for a command that does not build (C-E08-050)', () => {
+    expect(codes({ command: 'push', repository: 'app' })).not.toContain('docker-dockerfile-glob');
+    expect(codes({ command: 'login' })).toEqual([]);
+  });
+
+  it('warns that buildAndPush drops `arguments` (C-E08-052)', () => {
+    // Only reachable from hand-written YAML — which is exactly what a converted pipeline is.
+    expect(codes({ repository: 'app', arguments: '--no-cache', Dockerfile: 'D' })).toContain(
+      'docker-arguments-ignored',
+    );
+    // `build` honours them, so no warning.
+    expect(
+      codes({ command: 'build', repository: 'app', arguments: '--no-cache', Dockerfile: 'D' }),
+    ).not.toContain('docker-arguments-ignored');
+  });
+
+  it('warns that a comma inside `tags` is a separator, not a character (C-E08-051)', () => {
+    const warnings = dockerStepWarnings(
+      dockerStep({ repository: 'app', Dockerfile: 'D', tags: '1.0.0,latest' }),
+      'Build/Job/step 1',
+    );
+    expect(warnings.find((w) => w.code === 'docker-tags-split')?.message).toContain(
+      '2 separate tags',
+    );
+    expect(codes({ repository: 'app', Dockerfile: 'D', tags: '1.0.0' })).not.toContain(
+      'docker-tags-split',
+    );
+  });
+
+  it('says nothing at all about a task that is not Docker@2', () => {
+    const step = {
+      ...dockerStep({ repository: 'App Name' }),
+      task: { name: 'CopyFiles', version: '2' },
+    } as Step;
+    expect(dockerStepWarnings(step, 'Build/Job/step 1')).toEqual([]);
   });
 });
 
