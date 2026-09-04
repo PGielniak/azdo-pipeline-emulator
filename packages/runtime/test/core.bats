@@ -3658,9 +3658,12 @@ mock_az() {
   [[ "$output" != *'##[warning]'* ]]
 }
 
-@test "an unknown endpoint kind is refused rather than guessed" {
-  run -2 azdo_sc_preflight 'myreg' 'Docker@2' kubernetes
-  [[ "$output" == *'unknown endpoint kind kubernetes'* ]]
+@test "an unknown endpoint kind is refused rather than guessed (C-E08-053)" {
+  # E08-S02-T02 wrote this with `kubernetes` as its example of an unread kind; E08-S02-T03 made
+  # that kind known, so the example moved rather than the assertion. `github` is genuinely unread:
+  # `connectionKind` answers `unknown` for it and no `.env` fields are generated (C-E08-053).
+  run -2 azdo_sc_preflight 'myreg' 'Docker@2' github
+  [[ "$output" == *'unknown endpoint kind github'* ]]
 }
 
 # --- E08-S03-T01: deployment strategies --------------------------------------------------------
