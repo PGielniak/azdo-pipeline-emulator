@@ -496,3 +496,284 @@ warns `IgnoringArgumentsInput` when `arguments` is set, and both sub-commands ar
 which is exactly what a converted pipeline is.
   — https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/DockerV2/dockerbuildandpush.ts
     (L7-11; checked 2026-09-04)
+
+## E08-S02-T03 — the Kubernetes/Helm set under real-task mode (`C-E08-053..071`)
+
+Recorded 2026-09-04. Sources: `Tasks/{KubernetesV1,KubernetesManifestV1,HelmDeployV0,HelmInstallerV1,KubectlInstallerV0}`
+at the `v277` pin `8ba25cfb5c7736ba98a37488c0323f7320cb5b3e`; `kubernetes-common` at
+`4b4690c1ecf5522d8c7f99a11a427d5ceb4a1a1d` in `microsoft/azure-pipelines-tasks-common-packages` —
+**the commit where that package is version 2.272.0, which is what all five tasks' `package.json`
+depends on** (`^2.272.0`), and by coincidence the same commit E08-S02-T02 pinned for
+`docker-common`; and `microsoft/azure-pipelines-tool-lib`.
+
+Five tasks in one backlog item, and they split cleanly in two: three that consume a cluster
+connection and two that install a binary. The connection three broke an assumption the collector was
+built on, and the installer two do not run here at all without a runtime change.
+
+### The kind, the fields, and a fifth variable family (`C-E08-053..058`)
+
+[C-E08-053] **The endpoint kind is `connectedService:kubernetes`, lowercase, in all three
+consuming tasks — a third kind alongside `AzureRM` and `dockerregistry`.** `Kubernetes@1` and
+`HelmDeploy@0` declare `kubernetesServiceEndpoint`, `KubernetesManifest@1` the same name aliased
+`kubernetesServiceConnection`. **Consequence:** `connectionKind`'s "unknown kinds fall back to
+AzureRM" was safe while one kind existed and is a bug generator with three — it would offer a
+Kubernetes connection `ENDPOINT_DATA_<name>_SUBSCRIPTIONID`. An unrecognized kind now answers
+`unknown`, contributes no fields, and is reported.
+  — the three vendored `task.json` files at `v277` with `PROVENANCE.json` beside them (checked 2026-09-04)
+
+[C-E08-054] **The field set is chosen at run time by `ENDPOINT_DATA_<id>_AUTHORIZATIONTYPE`, read
+optionally — and there is no `else`.** `generickubernetescluster.getKubeConfig` does
+`getEndpointDataParameter(endpoint, 'authorizationType', true)`, sends `!authorizationType` and
+`"Kubeconfig"` to `getKubeconfigForCluster`, sends `"ServiceAccount"` and `"AzureSubscription"`
+to `createKubeconfig`, and **returns `undefined` for anything else** — which the caller then writes
+into the kubeconfig file. **Consequence:** the two arms want disjoint `.env` lines, so a preflight
+that checked both would call a complete ServiceAccount connection broken; and an unrecognized value
+must be refused rather than treated as the default.
+  — https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/KubernetesV1/src/clusters/generickubernetescluster.ts
+    (L6-17) — "if (!authorizationType || authorizationType === \"Kubeconfig\")" (checked 2026-09-04)
+
+[C-E08-055] **`ENDPOINT_URL_<id>` is a fifth endpoint variable family, and the first that is neither
+auth nor data.** `createKubeconfig` sets `clusters[0].cluster.server` from
+`tl.getEndpointUrl(kubernetesServiceEndpoint, false)`, which task-lib reads straight out of
+`process.env['ENDPOINT_URL_' + id]` with none of the vaulting `ENDPOINT_AUTH_*` gets (C-E08-002).
+**Consequence:** nothing in this repo emitted it before this task, so a ServiceAccount-authorized
+connection produced a kubeconfig whose server was `null` — a connection refusal standing in for an
+unfilled `.env` line.
+  — https://github.com/microsoft/azure-pipelines-tasks-common-packages/blob/4b4690c1ecf5522d8c7f99a11a427d5ceb4a1a1d/common-npm-packages/kubernetes-common/kubectlutility.ts
+    (L59-70) (checked 2026-09-04)
+
+[C-E08-056] **The `kubeconfig` parameter is a whole multi-line YAML document in one environment
+variable, and it is *not* base64.** `getKubeconfigForCluster` reads
+`getEndpointAuthorizationParameter(endpoint, 'kubeconfig', false)` and hands the string to
+`yaml.safeLoad` unchanged. **Consequence:** `.env` can carry it, because `azdo_env_load` sources
+the file with real bash and the DEBUG-trap parser is built for multi-line quoted assignments
+(C-E06-014..016) — a single-quoted heredoc-shaped value is one assignment. The ergonomic form is
+`ENDPOINT_AUTH_PARAMETER_<name>_KUBECONFIG="\$(cat "\$HOME/.kube/config")"`, which is inside the
+documented contract (command substitution in `.env` is permitted and deliberate). Proved by test,
+not asserted: `core.bats` "a multi-line kubeconfig survives .env loading".
+  — same `kubectlutility.ts` (L91-102) (checked 2026-09-04)
+
+[C-E08-057] **`clusterContext` is genuinely optional, and its absence is not a defaulted value but a
+different code path.** `getKubeconfigForCluster` returns the kubeconfig **byte-for-byte** when
+`clusterContext` is empty, and only otherwise parses it, rewrites `current-context` and re-dumps it
+through `yaml.safeDump`. **Consequence:** filling it in is not free — it round-trips the document
+through a YAML serializer, so comments and key order do not survive.
+  — same `kubectlutility.ts` (L91-102) (checked 2026-09-04)
+
+[C-E08-058] **`apiToken` is base64-encoded, and the task decodes it.**
+`Buffer.from(getEndpointAuthorizationParameter(endpoint, 'apiToken', false), 'base64').toString()`
+becomes the kubeconfig's `users[0].user.token`. **Consequence:** a raw service-account token pasted
+into `.env` reaches the cluster as decoded binary — an authentication failure that looks like a
+wrong token rather than a wrongly-encoded one. The generator comment says base64 for this reason.
+  — same `kubectlutility.ts` (L66-67) (checked 2026-09-04)
+
+### Which connection input a task actually reads (`C-E08-059..064`)
+
+[C-E08-059] **These tasks declare two to four `connectedService:*` inputs and read exactly one,
+selected at run time by another input.** `Kubernetes@1` declares four
+(`kubernetesServiceEndpoint`, `azureSubscriptionEndpoint`, `dockerRegistryEndpoint`,
+`azureSubscriptionEndpointForSecrets`); `clusterconnection.ts` dispatches on `connectionType` and
+`kubernetessecret.ts` on `secretType`/`containerRegistryType`, itself reached only when
+`secretName` is non-empty. **Consequence:** the collector's unconditional walk over every declared
+connection input over-collects on every step of every one of these tasks.
+  — https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/KubernetesV1/src/clusterconnection.ts
+    (L27-47, L64-73) and `.../KubernetesV1/src/kubernetes.ts` (L58-62),
+    `.../KubernetesV1/src/kubernetessecret.ts` (L26, L99-106) (checked 2026-09-04)
+
+[C-E08-060] **`connectionType: None` returns before any endpoint is read — so the warning the
+collector used to emit for it was actively false.** `open()` is
+`if (connectionType === "None") { return this.initialize(); }`, and `initialize()` only resolves a
+kubectl path. **Consequence:** a `Kubernetes@1` step with `connectionType: None` — the arm that uses
+the developer's own kubectl context, and the natural local arm — was told its empty
+`azureSubscriptionEndpoint` would make the task "fail with LIB_InputRequired". That is the defect
+`CONNECTION_INPUT_RULES` exists to remove, and its first test.
+  — same `clusterconnection.ts` (L64-69) (checked 2026-09-04)
+
+[C-E08-061] **The same two arms are spelled differently by tasks in the same family, and
+`KubernetesManifest@1`'s picklist has no `None` although its code still tests for one.**
+`Kubernetes@1`/`HelmDeploy@0`: `'Azure Resource Manager'`, `'Kubernetes Service Connection'`,
+`'None'`. `KubernetesManifest@1`: `'azureResourceManager'`, `'kubernetesServiceConnection'` — and
+`open()` compares against `"None"` regardless. **Consequence:** copying an arm value between tasks
+silently selects the *other* branch, with nothing to validate it (C-E08-034); and
+`connectionType: None` is reachable on `KubernetesManifest@1` by writing it in YAML even though the
+UI never offers it. That is this task's ambient arm, and it is undocumented.
+  — the two vendored `task.json` files, and
+    https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/KubernetesManifestV1/src/clusterconnection.ts
+    (L25-32, L64-69) (checked 2026-09-04)
+
+[C-E08-062] **`HelmDeploy@0`'s ARM arm needs `connectionType` *and* a non-empty subscription
+input.** `getKubeConfigFile` is
+`if (connectionType === "Azure Resource Manager" && azureSubscriptionEndpoint)`, and `getClusterType`
+repeats the same conjunction. **Consequence:** a step naming the ARM connection type and no
+subscription does not fail — it falls through to the generic reader and demands
+`kubernetesServiceEndpoint` instead. `Kubernetes@1` has no such second gate.
+  — https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/HelmDeployV0/src/helm.ts
+    (L32-40, L53-64) (checked 2026-09-04)
+
+[C-E08-063] **`azureSubscriptionEndpointForACR` is declared `"required": true` with no
+`visibleRule`, and is read by exactly one command, optionally.** Its only reader is
+`helmcommands/helmregistrylogin.ts`, reached from `runHelm(…, "registry", …)`, reached only from
+`runHelmSaveCommand`, reached only when `command === "save"`; and it reads it with
+`tl.getInput("azureSubscriptionEndpointForACR")` — no required flag. **Consequence:** this is the
+case that settles the discriminator question. `visibleRule` is a web-form hint the agent does not
+evaluate, so a `visibleRule`-driven collector would demand a `.env` block for this input on every
+`HelmDeploy@0` step. The task's own dispatch is the only sound source, which is why
+`CONNECTION_INPUT_RULES` is a table of readings rather than a grammar.
+  — https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/HelmDeployV0/src/helmcommands/helmregistrylogin.ts
+    (L11-14) and `.../HelmDeployV0/src/helm.ts` (L72-87, L161-171) (checked 2026-09-04)
+
+[C-E08-064] **`KubernetesManifest@1`'s `action: bake` needs no cluster connection at all.**
+`run.ts` returns `bake()` before `utils.getConnection()` is ever called. **Consequence:** a bake
+step is the one member of this set that converts with no `.env` block whatsoever.
+  — https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/KubernetesManifestV1/src/run.ts
+    (L18-22) (checked 2026-09-04)
+
+### What running these locally costs (`C-E08-065..071`)
+
+[C-E08-065] **`Kubernetes@1` destroys nothing of yours — measured, not assumed by symmetry with
+C-E08-038/039.** `close()` unlinks `this.kubeconfigFile` and unsets `KUBECONFIG`, but that file is
+always `path.join(this.userDir, "config")` under the task's own new temp directory: both arms
+*construct* a kubeconfig document and write it there rather than pointing at an existing file.
+**Consequence:** your `~/.kube/config` is untouched — and equally, it is not what the task uses.
+  — same `KubernetesV1/src/clusterconnection.ts` (L75-82, L97-108) (checked 2026-09-04)
+
+[C-E08-066] **`HelmDeploy@0` has a documented ambient path, and three near-misses on deleting your
+kubeconfig, each guarded.** With `connectionType: None` and `install`/`upgrade` it sets the
+`KUBECONFIG` variable to `$HOME/.kube/config` and deploys through your current context. The
+deletion risk is real and does not fire: `kubernetescli.logout()` is `fs.unlinkSync` on whatever
+path it holds, but `isKubConfigLogoutRequired` excludes `connectionType === "None"` (the
+`externalAuth` case, mutually exclusive with it) and excludes `command === "logout"` (the only other
+path that puts a user-supplied `KUBECONFIG` there). **Consequence:** the one task in the set whose
+ambient arm is intended, and worth stating precisely because the guard is three lines away from an
+`unlink` of the user's own file.
+  — same `HelmDeployV0/src/helm.ts` (L42-50, L89-107, L152-158) and
+    https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/HelmDeployV0/src/kubernetescli.ts
+    (L26-31) (checked 2026-09-04)
+
+[C-E08-067] **Both installers download a binary into the tool cache and prepend it to `PATH` for
+later steps.** `configureKubectl`/`configureHelm` call `toolLib.prependPath(dirname(path))`, which
+emits `##vso[task.prependpath]`. **Consequence:** the runtime already honours that command across
+steps, so the cross-step half works; what does not is the cache itself (C-E08-068). Both defaults
+resolve a version over the network on every run — `kubectlVersion: latest` fetches
+`https://dl.k8s.io/release/stable.txt`, `helmVersionToInstall: latest` the GitHub releases API — so
+the version installed depends on the day, not on the pipeline.
+  — https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/KubectlInstallerV0/src/kubectltoolinstaller.ts
+    (L10-18), `.../HelmInstallerV1/src/helmtoolinstaller.ts` (L12-19), and the two `utils.ts`
+    (checked 2026-09-04)
+
+[C-E08-068] **Nothing in the generated project set `Agent.ToolsDirectory`, and tool-lib throws
+before doing anything else without it.** `_getCacheRoot()` is
+`let cacheRoot = tl.getVariable('Agent.ToolsDirectory'); if (!cacheRoot) { throw new Error('Agent.ToolsDirectory is not set'); }`,
+and every `findLocalTool`/`cacheFile`/`cacheDir` path goes through it. **Consequence:** both
+installers — and `Kubernetes@1` on any non-default `versionSpec` (C-E08-070) — failed on their first
+line with an error naming no task and no input. The generated project now seeds
+`Agent.ToolsDirectory` to `$AZDO_WORKSPACE_DIR/tools` alongside `Agent.TempDirectory`. This is a
+runtime capability that benefits **every** tool-lib task, not only these two (docs/06 §5 decision 79).
+  — https://github.com/microsoft/azure-pipelines-tool-lib/blob/15fbc483ded6746d5c7c1cfc8274fd3d1b24d174/tool.ts
+    (`_getCacheRoot`) (checked 2026-09-04)
+
+[C-E08-069] **`HelmDeploy@0` cannot detect a Helm 4 CLI, because it probes with a flag Helm 4
+removed — measured live on this machine.** `helmcli.getHelmVersion()` runs
+`helm version --client --short` unless the `UseHelmVersionV3orHigher` pipeline feature is on (it is
+off by default and locally always off), and `isHelmV3orHigher()` regex-matches
+`getHelmVersion().stdout`. Against `helm v4.2.4+g3900f43`: **exit 1, stdout empty, stderr
+`Error: unknown flag: --client`** — while `helm version --short` alone prints `v4.2.4+g3900f43` and
+exits 0. **Consequence:** `isHelmV3orHigher()` answers *false* on a Helm 4 host, so `command: save`
+fails with `SaveSupportedInHelmsV3Only` against a CLI that supports it. Not a defect of ours and not
+patchable under PLAN D4 — reported as a delta, with "install a Helm 3 CLI" as the remedy.
+  — https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/HelmDeployV0/src/helmcli.ts
+    (L51-77) and `.../helm.ts` (L72-78); local measurement 2026-09-04
+
+[C-E08-070] **`Kubernetes@1` silently stops using your local kubectl the moment you pin a version.**
+`getKubectl()` with the declared default `versionSpec: "1.13.2"` and `checkLatest: false` returns
+the machine's kubectl if one exists; **any other `versionSpec`, or `checkLatest: true`, downloads
+that version into the tool cache instead**. **Consequence:** a step that looks like it merely records
+a version requirement changes which binary runs and adds a network dependency — and, before
+C-E08-068, made the task fail outright.
+  — same `KubernetesV1/src/clusterconnection.ts` (L150-183) (checked 2026-09-04)
+
+[C-E08-071] **`assertAgent` passes when `Agent.Version` is unset — so seeding it would be a risk
+with no benefit.** `assertAgent(minimum)` reads `getVariable('Agent.Version')` and throws only
+`if (agent && semver.lt(agent, minimum))`. **Consequence:** `toolLib.prependPath`'s and
+`_getCacheRoot`'s `assertAgent('2.115.0')` calls are satisfied by absence, and supplying a value
+would flip every other `assertAgent` gate in every task from unasserted to asserted-at-a-number-we-
+chose. `Agent.ToolsDirectory` is seeded (C-E08-068); `Agent.Version` deliberately is not.
+  — https://github.com/microsoft/azure-pipelines-task-lib/blob/master/node/task.ts (`assertAgent`,
+    L183-192) (checked 2026-09-04)
+
+### Not verified here
+
+- **`Kubelogin`.** Both `Kubernetes@1` and `HelmDeploy@0` convert the kubeconfig through
+  `kubelogin` when `kubelogin.isAvailable()`. It is not installed on this machine, so that branch is
+  **unverified by absence** — not verified safe. It matters only for AAD-authenticated AKS clusters.
+- **The AKS/ARM arm** (`azure-arm-rest/aksUtility`) needs an Azure service connection, the same
+  outward-facing write E08-S01-T02 and E08-S02-T01 are blocked on.
+
+### Found by running them, not by reading them (`C-E08-072..075`)
+
+The five claims above were read from source. These four were **only** reachable by executing the
+real packages against a live cluster — the transcript is
+`research/experiments/E08-kubernetes/real-task-run.md`.
+
+[C-E08-072] **`System.HostType` is dereferenced at module load, unguarded, and its absence crashed
+every one of these tasks before a single input was read.** `image-metadata-helper.js` — imported by
+`Kubernetes@1`, `KubernetesManifest@1` and `HelmDeploy@0` alike — has
+`const hostType = tl.getVariable("System.HostType").toLowerCase();` at top level. With the variable
+unset the task dies with `Cannot read properties of undefined (reading 'toLowerCase')`, naming
+neither the variable nor the task. **Consequence:** the generated project now seeds
+`System.HostType` = `build`, the value the predefined-variables table documents ("Set to build if
+the pipeline is a build" — C-E04-093) and the only correct one for a converted YAML pipeline. Same
+class as C-E08-068 and found the same way.
+  — `azure-pipelines-tasks-kubernetes-common/image-metadata-helper.js` L15 as shipped inside
+    `Kubernetes@1.277.0`; measured 2026-09-04
+
+[C-E08-073] **Real-task mode was omitting every input the step did not write, so declared defaults
+never reached the task.** On a real agent the *agent* builds `INPUT_*` from the task's declaration,
+so an input the author omits still arrives carrying its `task.json` default; task-lib never reads
+`task.json` itself. `realTaskBody` emitted only the authored inputs. **Consequence:** `Kubernetes@1`
+crashed in `clusterconnection.ts` dereferencing an undefined kubectl path, because
+`versionOrLocation` — declared default `version` — never reached `getKubectl()`, which then fell
+off the end of its `if/else if` and returned `undefined`. The fix is one call to
+`resolveTaskInputs`, which E07-S01-T02 built for exactly this and which nothing had ever called;
+aliases collapse to the declared name on the way through, matching the agent. **This is an E07
+defect found by an E08 task, and it would have hit any task with a load-bearing default.**
+  — measured 2026-09-04; `packages/emit/src/task-host.ts` `resolveTaskInputs`
+
+[C-E08-074] **`KubernetesManifest@1` annotates every resource it deploys with seven
+`azure-pipelines/*` annotations, and locally their values are the literal string `undefined` —
+written into your real cluster.** Confirmed on the kind cluster: `azure-pipelines/run=undefined`,
+`pipeline="undefined"`, `pipelineId="undefined"`, `jobName="undefined"`, `project=undefined`,
+`org=undefined`, and `runuri=undefinedundefined/_build/results?buildId=undefined`. The values come
+from run-identity variables (`Build.BuildNumber`, `System.TeamProject`,
+`System.TeamFoundationCollectionUri`, …) that a local run has no honest value for.
+**Consequence:** a converted pipeline pointed at a *shared* cluster stamps meaningless annotations
+on live objects, and `kubectl annotate --overwrite` means it overwrites whatever the real pipeline
+put there. Reported as a delta; the remedy is `.env` values for the run-identity variables, which
+the generated `.env.example` already offers in §1.
+  — measured 2026-09-04 against kind v0.30.0 / Kubernetes v1.34.0
+
+[C-E08-075] **Seeding `System.HostType` opens the next unguarded read: `Build.Reason`.** With
+`hostType === "build"` true, `image-metadata-helper.js` L146 evaluates
+`tl.getVariable("Build.Reason").toLowerCase()`, which is undefined locally because `Build.Reason` is
+deliberately a user-supplied run-identity override (`.env.example` §1) and is never seeded.
+**Consequence:** a *non-fatal* `publishToImageMetadataStore failed with error: TypeError…` warning on
+every `Kubernetes@1`/`KubernetesManifest@1`/`HelmDeploy@0` step — the call is inside a `catch`, the
+task still reports `Succeeded`. Not seeded here on purpose: `Build.Reason` participates in condition
+evaluation (`eq(variables['Build.Reason'], 'PullRequest')`), so choosing a value for the user would
+silently change which steps run — a decision that belongs to E02/E05, not to this task. One `.env`
+line removes the warning.
+  — measured 2026-09-04; `image-metadata-helper.js` L144-146
+
+### Live parity results (2026-09-04, kind v0.30.0 / Kubernetes v1.34.0)
+
+| Task | Result | What it proved |
+|---|---|---|
+| `Kubernetes@1` | **Succeeded** | `connectionType: None` applies to the ambient kubectl context (C-E08-060); pod `e08-parity` reached `Running` |
+| `KubernetesManifest@1` | **Succeeded** | the undocumented `connectionType: None` (C-E08-061) deploys and rolls out; the `undefined` annotations of C-E08-074 |
+| `HelmDeploy@0` `upgrade` | **Succeeded** | C-E08-066 measured: it set `KUBECONFIG` to the real `$HOME/.kube/config` and deployed through the current context — and left the file intact |
+| `HelmDeploy@0` `save` | **Failed, as predicted** | C-E08-069 end to end: `helm version --client --short` → `Error: unknown flag: --client` → "Save chart to Azure Container Registry is only supported in Helms V3" against Helm v4.2.4 |
+| `KubectlInstaller@0` | **Succeeded** | C-E08-068 before *and* after: `Agent.ToolsDirectory is not set` with it unset, kubectl v1.31.0 cached at `tools/kubectl/1.31.0/x64/` with it set |
+| `HelmInstaller@1` | **Succeeded** | helm 3.16.2 cached and `##vso[task.prependpath]` emitted (C-E08-067) |
+
+Not covered: the AKS/ARM arm of any of them, which needs an Azure service connection — the same
+outward-facing write E08-S01-T02 and E08-S02-T01 are blocked on.

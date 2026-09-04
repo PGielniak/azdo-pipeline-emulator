@@ -1,0 +1,17 @@
+{
+  "source": {
+    "repo": "microsoft/azure-pipelines-tasks",
+    "path": "Tasks/KubectlInstallerV0/task.json",
+    "tag": "v277",
+    "commit": "8ba25cfb5c7736ba98a37488c0323f7320cb5b3e",
+    "rawUrl": "https://raw.githubusercontent.com/microsoft/azure-pipelines-tasks/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/KubectlInstallerV0/task.json",
+    "permalink": "https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/KubectlInstallerV0/task.json"
+  },
+  "task": {
+    "name": "KubectlInstaller",
+    "version": "0.275.1"
+  },
+  "fetchedAt": "2026-09-04T07:35:04.939Z",
+  "sha256": "067a3d4a8e499c4ca6c4bdfe90c52dc6f373f643f4b915517e754d585275adb8",
+  "bytes": 1526
+}

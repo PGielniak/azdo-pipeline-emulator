@@ -29,6 +29,14 @@ const TASKS = [
   // E08-S02-T02: `Docker@2`'s connection input is `connectedService:dockerRegistry` (a different
   // endpoint kind from AzureRM), so the collector needs its declaration to see it at all.
   'DockerV2',
+  // E08-S02-T03: the Kubernetes/Helm set. `HelmDeployV0` and `KubernetesV1` each declare *two*
+  // connection inputs (AzureRM and kubernetes) selected by `connectionType`, so their declarations
+  // are what the collector needs to see which one a step actually uses.
+  'HelmDeployV0',
+  'HelmInstallerV1',
+  'KubectlInstallerV0',
+  'KubernetesV1',
+  'KubernetesManifestV1',
 ];
 const DEST_ROOT = path.join('packages', 'emit', 'vendor', 'tasks-meta');
 

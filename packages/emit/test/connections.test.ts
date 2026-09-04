@@ -441,3 +441,340 @@ describe('the prerequisites both tasks need from the runtime (C-E08-042)', () =>
     expect(emitted).toContain("azdo_var_set 'Agent.TempDirectory'");
   });
 });
+
+describe('the Kubernetes/Helm set: which connection input a task actually reads (E08-S02-T03)', () => {
+  it('vendors the declarations the rules key on, with the arm spellings that differ (C-E08-061)', () => {
+    // The whole reason `CONNECTION_INPUT_RULES` is a per-task table: the same two arms are spelled
+    // differently by tasks in the same family, so no shared constant can serve both.
+    const k1 = VENDORED['Kubernetes@1']?.inputs?.find((i) => i.name === 'connectionType');
+    const km = VENDORED['KubernetesManifest@1']?.inputs?.find((i) => i.name === 'connectionType');
+    expect(k1?.defaultValue).toBe('Kubernetes Service Connection');
+    expect(km?.defaultValue).toBe('kubernetesServiceConnection');
+    // …and `KubernetesManifest@1`'s picklist has no `None`, though `open()` still tests for one.
+    expect(Object.keys((k1 as { options?: object }).options ?? {})).toContain('None');
+    expect(Object.keys((km as { options?: object }).options ?? {})).not.toContain('None');
+  });
+
+  it('connectionType: None collects nothing and warns about nothing (C-E08-060)', () => {
+    // The bug this rules table exists to kill. Before it, the unconditional walk produced a site
+    // for the empty `azureSubscriptionEndpoint` and a `connection-missing` warning asserting the
+    // task "will fail with LIB_InputRequired" — for an input `open()` returns before reading.
+    const { connections, sites, warnings } = collectConnections(
+      [site(step('Kubernetes', '1', { connectionType: 'None', command: 'apply' }))],
+      VENDORED,
+    );
+    expect(connections).toEqual([]);
+    expect(sites).toEqual([]);
+    expect(warnings.map((w) => w.code)).not.toContain('connection-missing');
+  });
+
+  it('the default arm reads kubernetesServiceEndpoint and nothing else (C-E08-059)', () => {
+    const { sites } = collectConnections(
+      [
+        site(
+          step('Kubernetes', '1', { kubernetesServiceEndpoint: 'my-cluster', command: 'apply' }),
+        ),
+      ],
+      VENDORED,
+    );
+    expect(sites.map((s) => s.input)).toEqual(['kubernetesServiceEndpoint']);
+    expect(sites[0]?.endpointType).toBe('kubernetes');
+  });
+
+  it('the ARM arm reads azureSubscriptionEndpoint and nothing else (C-E08-059)', () => {
+    const { sites, connections } = collectConnections(
+      [
+        site(
+          step('Kubernetes', '1', {
+            connectionType: 'Azure Resource Manager',
+            azureSubscriptionEndpoint: 'my-sub',
+            kubernetesServiceEndpoint: 'ignored-by-this-arm',
+          }),
+        ),
+      ],
+      VENDORED,
+    );
+    expect(sites.map((s) => s.input)).toEqual(['azureSubscriptionEndpoint']);
+    expect(connections.map((c) => c.name)).toEqual(['my-sub']);
+  });
+
+  it('the secret-side inputs need secretName *and* the matching registry type', () => {
+    const base = { kubernetesServiceEndpoint: 'my-cluster' };
+    // No secretName: the secret arm is never entered (kubernetes.ts:58-62).
+    expect(
+      collectConnections(
+        [site(step('Kubernetes', '1', { ...base, dockerRegistryEndpoint: 'reg' }))],
+        VENDORED,
+      ).sites.map((s) => s.input),
+    ).toEqual(['kubernetesServiceEndpoint']);
+    // With it, `containerRegistryType` picks exactly one of the two — never both.
+    expect(
+      collectConnections(
+        [
+          site(
+            step('Kubernetes', '1', {
+              ...base,
+              secretName: 'regcred',
+              containerRegistryType: 'Container Registry',
+              dockerRegistryEndpoint: 'reg',
+              azureSubscriptionEndpointForSecrets: 'sub',
+            }),
+          ),
+        ],
+        VENDORED,
+      ).sites.map((s) => s.input),
+    ).toEqual(['kubernetesServiceEndpoint', 'dockerRegistryEndpoint']);
+    // The declared default is `Azure Container Registry`, so silence selects the ACR arm.
+    expect(
+      collectConnections(
+        [
+          site(
+            step('Kubernetes', '1', {
+              ...base,
+              secretName: 'regcred',
+              dockerRegistryEndpoint: 'reg',
+              azureSubscriptionEndpointForSecrets: 'sub',
+            }),
+          ),
+        ],
+        VENDORED,
+      ).sites.map((s) => s.input),
+    ).toEqual(['kubernetesServiceEndpoint', 'azureSubscriptionEndpointForSecrets']);
+  });
+
+  it('KubernetesManifest@1: action bake needs no connection at all (run.ts:18-22)', () => {
+    const { sites } = collectConnections(
+      [site(step('KubernetesManifest', '1', { action: 'bake', renderType: 'helm' }))],
+      VENDORED,
+    );
+    expect(sites).toEqual([]);
+  });
+
+  it("KubernetesManifest@1: its ARM arm is spelled azureResourceManager, not Kubernetes@1's", () => {
+    // Copying `Azure Resource Manager` across from `Kubernetes@1` selects the *other* branch, and
+    // silently: the value is not a member of this task's picklist, and nothing validates it.
+    const armSpelling = collectConnections(
+      [
+        site(
+          step('KubernetesManifest', '1', {
+            connectionType: 'azureResourceManager',
+            azureSubscriptionEndpoint: 'my-sub',
+          }),
+        ),
+      ],
+      VENDORED,
+    );
+    expect(armSpelling.sites.map((s) => s.input)).toEqual(['azureSubscriptionEndpoint']);
+
+    const wrongSpelling = collectConnections(
+      [
+        site(
+          step('KubernetesManifest', '1', {
+            connectionType: 'Azure Resource Manager',
+            azureSubscriptionEndpoint: 'my-sub',
+            kubernetesServiceConnection: 'my-cluster',
+          }),
+        ),
+      ],
+      VENDORED,
+    );
+    expect(wrongSpelling.sites.map((s) => s.input)).toEqual(['kubernetesServiceEndpoint']);
+  });
+
+  it('HelmDeploy@0 wants the ACR connection only for command: save (C-E08-063)', () => {
+    // Declared `"required": true` with **no** visibleRule, and read by exactly one command. A
+    // visibleRule-driven collector would demand a `.env` block for it on every HelmDeploy step.
+    const acr = VENDORED['HelmDeploy@0']?.inputs?.find(
+      (i) => i.name === 'azureSubscriptionEndpointForACR',
+    );
+    expect(acr?.required).toBe(true);
+    expect((acr as { visibleRule?: string }).visibleRule).toBeUndefined();
+
+    const upgrade = collectConnections(
+      [
+        site(
+          step('HelmDeploy', '0', {
+            command: 'upgrade',
+            connectionType: 'Kubernetes Service Connection',
+            kubernetesServiceEndpoint: 'my-cluster',
+            azureSubscriptionEndpointForACR: 'acr-sub',
+          }),
+        ),
+      ],
+      VENDORED,
+    );
+    expect(upgrade.sites.map((s) => s.input)).toEqual(['kubernetesServiceEndpoint']);
+
+    const save = collectConnections(
+      [
+        site(
+          step('HelmDeploy', '0', {
+            command: 'save',
+            connectionType: 'Kubernetes Service Connection',
+            kubernetesServiceEndpoint: 'my-cluster',
+            azureSubscriptionEndpointForACR: 'acr-sub',
+          }),
+        ),
+      ],
+      VENDORED,
+    );
+    // `save` also skips the kubeconfig entirely (helm.ts:42-45), so the cluster input drops out.
+    expect(save.sites.map((s) => s.input)).toEqual(['azureSubscriptionEndpointForACR']);
+  });
+
+  it('HelmDeploy@0 falls through to the generic reader when the ARM arm has no subscription (C-E08-062)', () => {
+    // `connectionType` alone does not choose the ARM arm — `helm.ts:57` requires the subscription
+    // input to be non-empty too, which is the one place this task differs from `Kubernetes@1`.
+    const { sites } = collectConnections(
+      [
+        site(
+          step('HelmDeploy', '0', {
+            command: 'upgrade',
+            connectionType: 'Azure Resource Manager',
+            kubernetesServiceEndpoint: 'my-cluster',
+          }),
+        ),
+      ],
+      VENDORED,
+    );
+    expect(sites.map((s) => s.input)).toEqual(['kubernetesServiceEndpoint']);
+  });
+
+  it('a gate written under its alias is still read (C-E08-030)', () => {
+    // `kubernetesServiceConnection` is the alias; matched by name alone the gate would read '' and
+    // fall back to its default, which is the same arm here — so the observable is the *site*.
+    const { sites, connections } = collectConnections(
+      [site(step('KubernetesManifest', '1', { kubernetesServiceConnection: 'my-cluster' }))],
+      VENDORED,
+    );
+    expect(sites.map((s) => s.input)).toEqual(['kubernetesServiceEndpoint']);
+    expect(connections.map((c) => c.name)).toEqual(['my-cluster']);
+  });
+
+  it('an unresolvable macro gate is taken as satisfied, not as a miss', () => {
+    const { sites } = collectConnections(
+      [
+        site(
+          step('Kubernetes', '1', {
+            connectionType: '$(howDoWeConnect)',
+            kubernetesServiceEndpoint: 'my-cluster',
+          }),
+        ),
+      ],
+      VENDORED,
+    );
+    expect(sites.map((s) => s.input)).toContain('kubernetesServiceEndpoint');
+  });
+
+  it('a connection consumed here cannot stay ambient, and is a kubernetes-kind block', () => {
+    const { connections } = collectConnections(
+      [site(step('Kubernetes', '1', { kubernetesServiceEndpoint: 'my-cluster' }))],
+      VENDORED,
+    );
+    expect(connections[0]?.mode).toBe('sp');
+    expect(connections[0]?.kind).toBe('kubernetes');
+    const keys = connectionKeys(connections[0]!).map((k) => k.key);
+    expect(keys).toContain('ENDPOINT_URL_my-cluster');
+    expect(keys).toContain('ENDPOINT_AUTH_PARAMETER_my-cluster_KUBECONFIG');
+    // The AzureRM field set has no business here — offering it is C-E08-001's failure mode.
+    expect(keys).not.toContain('ENDPOINT_DATA_my-cluster_SUBSCRIPTIONID');
+  });
+});
+
+describe('tool-task warnings: the tasks with no connection to hang a warning on (E08-S02-T03)', () => {
+  const codes = (steps: readonly StepSite[]): string[] =>
+    collectConnections(steps, VENDORED).warnings.map((w) => w.code);
+
+  it('the installers are reported even though they declare no connection input', () => {
+    // `localSessionWarnings` keys on connection sites, so these two would otherwise be silent —
+    // and their entire local behaviour is a delta.
+    expect(
+      VENDORED['HelmInstaller@1']?.inputs?.some((i) => i.type?.startsWith('connectedService:')),
+    ).toBe(false);
+    expect(codes([site(step('HelmInstaller', '1', {}))])).toContain('tool-cache-download');
+    expect(codes([site(step('KubectlInstaller', '0', {}))])).toContain('tool-cache-download');
+  });
+
+  it('the Helm 4 version probe is reported for HelmDeploy@0 (C-E08-069)', () => {
+    const warnings = collectConnections(
+      [site(step('HelmDeploy', '0', { command: 'save', azureSubscriptionEndpointForACR: 'acr' }))],
+      VENDORED,
+    ).warnings;
+    const probe = warnings.find((w) => w.code === 'helm-v4-version-probe');
+    expect(probe?.message).toContain('--client');
+  });
+
+  it('is stated once per task, not once per step (PLAN D10)', () => {
+    const many = [1, 2, 3].map((id) =>
+      site(step('KubectlInstaller', '0', {}, id), `Build/Job/step ${id}`),
+    );
+    expect(codes(many).filter((c) => c === 'tool-cache-download')).toHaveLength(1);
+  });
+});
+
+describe('the deltas only a live run could find (E08-S02-T03)', () => {
+  const codes = (steps: readonly StepSite[]): string[] =>
+    collectConnections(steps, VENDORED).warnings.map((w) => w.code);
+
+  it('warns that KubernetesManifest@1 stamps `undefined` annotations on real objects (C-E08-074)', () => {
+    // Read back off the kind cluster, not inferred: seven azure-pipelines/* annotations whose
+    // values are the literal string `undefined`, written with --overwrite.
+    const warnings = collectConnections(
+      [site(step('KubernetesManifest', '1', { connectionType: 'None', manifests: 'deploy.yaml' }))],
+      VENDORED,
+    ).warnings;
+    const annotations = warnings.find((w) => w.code === 'k8s-undefined-annotations');
+    expect(annotations?.message).toContain('--overwrite');
+    expect(annotations?.message).toContain('C-E08-074');
+  });
+
+  it('warns about the image-metadata TypeError on all three connection-consuming tasks (C-E08-075)', () => {
+    for (const [name, version] of [
+      ['Kubernetes', '1'],
+      ['KubernetesManifest', '1'],
+      ['HelmDeploy', '0'],
+    ] as const) {
+      expect(codes([site(step(name, version, {}))])).toContain('image-metadata-warning');
+    }
+    // The installers do not import the helper, so they must not carry the note.
+    expect(codes([site(step('KubectlInstaller', '0', {}))])).not.toContain(
+      'image-metadata-warning',
+    );
+  });
+});
+
+describe('an endpoint kind nobody has read (C-E08-053)', () => {
+  // No vendored task declares one, so the definition is synthetic — the point is the *shape* of a
+  // `connectedService:<kind>` this converter has not studied, not a particular task.
+  const GITHUB_TASK: TaskDefinitions = {
+    'GitHubRelease@1': {
+      name: 'GitHubRelease',
+      inputs: [{ name: 'gitHubConnection', type: 'connectedService:github', required: true }],
+    },
+  };
+
+  it('is reported once, and asks the user for nothing', () => {
+    const { connections, warnings } = collectConnections(
+      [site(step('GitHubRelease', '1', { gitHubConnection: 'my-gh' }))],
+      GITHUB_TASK,
+    );
+    const notice = warnings.find((w) => w.code === 'connection-kind-unknown');
+    expect(notice?.message).toContain("'connectedService:github'");
+    expect(notice?.message).toContain('C-E08-053');
+    // The connection is still collected — it was referenced — but contributes no `.env` lines,
+    // rather than the AzureRM set the pre-E08-S02-T03 fallback would have offered.
+    expect(connections.map((c) => c.kind)).toEqual(['unknown']);
+    expect(connectionKeys(connections[0]!)).toEqual([]);
+  });
+
+  it('is stated once per kind, not once per step', () => {
+    const steps = [1, 2, 3].map((id) =>
+      site(
+        step('GitHubRelease', '1', { gitHubConnection: `gh-${id}` }, id),
+        `Build/Job/step ${id}`,
+      ),
+    );
+    const codes = collectConnections(steps, GITHUB_TASK).warnings.map((w) => w.code);
+    expect(codes.filter((c) => c === 'connection-kind-unknown')).toHaveLength(1);
+  });
+});

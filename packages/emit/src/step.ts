@@ -22,9 +22,10 @@
 import type { Step } from '@azdo-emu/engine';
 
 import { collectConnections, REAL_TASK_ENDPOINT_USE, type TaskDefinitions } from './connections.js';
-import { connectionKind } from './service-connection.js';
+import { connectionKind, type ConnectionKind } from './service-connection.js';
 import { disposeStep, type DispositionOptions, type StepDisposition } from './disposition.js';
 import { originStepLabel } from './scaffold.js';
+import { resolveTaskInputs } from './task-host.js';
 import { hasMacro, taskRef } from './task-ref.js';
 
 export { hasMacro, taskRef } from './task-ref.js';
@@ -342,15 +343,32 @@ function preflightLines(step: Step, options: StepEmitOptions): readonly string[]
   const kind = connectionKind(site.endpointType);
   // C-E08-043: the endpoint kind decides which fields exist, so the preflight is told which to
   // check. Checking the AzureRM set against a registry connection would call a complete one broken.
-  const why =
-    kind === 'dockerregistry'
-      ? '# a missing credential surfaces as a TypeError inside the task, not as a named error (C-E08-045).'
-      : '# path (C-E08-036) and clears a local session on the way out (C-E08-038/039).';
+  // C-E08-053: an endpoint kind nobody has read has no field set to check, so there is nothing to
+  // preflight — checking it against the wrong set would be worse than silence. Unreachable today
+  // only because `REAL_TASK_ENDPOINT_USE` holds no task with an unread kind; the guard is what
+  // keeps that an invariant rather than a coincidence, and it makes the lookup below total.
+  /* istanbul ignore next -- see above: no tabled task declares an unread endpoint kind. */
+  if (kind === 'unknown') return [];
+  const NOTES: Readonly<Record<Exclude<ConnectionKind, 'unknown'>, readonly [string, string]>> = {
+    dockerregistry: [
+      '# the ENDPOINT_AUTH blob is derived from the .env keys before the task runs (C-E08-044), and',
+      '# a missing credential surfaces as a TypeError inside the task, not as a named error (C-E08-045).',
+    ],
+    // C-E08-054: the arm is chosen by a `.env` value, so the preflight checks one field set of two
+    // and says which — and unlike the Azure tasks, nothing here is destroyed on the way out.
+    kubernetes: [
+      '# the fields it needs depend on ENDPOINT_DATA_<name>_AUTHORIZATIONTYPE (C-E08-054), and an',
+      '# unfilled kubeconfig reaches kubectl as an unreachable cluster, not as a named error.',
+    ],
+    azurerm: [
+      '# it has no ambient',
+      '# path (C-E08-036) and clears a local session on the way out (C-E08-038/039).',
+    ],
+  };
+  const [lead, why] = NOTES[kind];
   return [
     `# ${site.taskRef} authenticates through service connection '${site.value}';`,
-    kind === 'dockerregistry'
-      ? '# the ENDPOINT_AUTH blob is derived from the .env keys before the task runs (C-E08-044), and'
-      : '# it has no ambient',
+    lead,
     why,
     `azdo_sc_preflight ${shellSingleQuote(site.value)} ${shellSingleQuote(key)} ${shellSingleQuote(kind)}`,
     '',
@@ -367,8 +385,27 @@ function connectionTaskKey(reference: string): string {
 }
 
 function realTaskBody(step: Step, options: StepEmitOptions): string {
-  const inputs = Object.entries(step.inputs)
-    .map(([key, value]) => `  ${key}: ${value}`)
+  // C-E08-073 (E08-S02-T03): the *declared defaults* belong here, not just what the author wrote.
+  // On a real agent the agent builds `INPUT_*` from the task's declaration, so an input the step
+  // omits still arrives carrying its `task.json` default; task-lib never reads `task.json` itself.
+  // Emitting only the authored inputs made every such default arrive as `undefined`, and
+  // `resolveTaskInputs` — built for exactly this in E07-S01-T02 — was exported, tested, and called
+  // by nothing. Found by running the real `Kubernetes@1`: it crashed in `clusterconnection.ts`
+  // dereferencing a kubectl path that was undefined because `versionOrLocation` (declared default
+  // `version`) never reached it.
+  //
+  // Aliases collapse to the declared name on the way through, which is also the agent's behaviour:
+  // the task reads its declared spelling and an alias never becomes an `INPUT_` of its own.
+  const definition = options.taskDefinitions?.[connectionTaskKey(taskRef(step))];
+  const entries =
+    definition === undefined
+      ? Object.entries(step.inputs)
+      : resolveTaskInputs(definition, step.inputs).inputs.map((input) => [input.name, input.value]);
+  const inputs = entries
+    // A value spanning lines cannot survive the `name: value` heredoc, and a declared default that
+    // is empty adds a line the task reads as unset either way (C-E07-002) — but it must still be
+    // emitted, because a task reading the environment directly does see it.
+    .map(([key, value]) => `  ${key}: ${String(value).replace(/\r?\n/g, ' ')}`)
     .join('\n');
   return [
     ...preflightLines(step, options),

@@ -3658,9 +3658,12 @@ mock_az() {
   [[ "$output" != *'##[warning]'* ]]
 }
 
-@test "an unknown endpoint kind is refused rather than guessed" {
-  run -2 azdo_sc_preflight 'myreg' 'Docker@2' kubernetes
-  [[ "$output" == *'unknown endpoint kind kubernetes'* ]]
+@test "an unknown endpoint kind is refused rather than guessed (C-E08-053)" {
+  # E08-S02-T02 wrote this with `kubernetes` as its example of an unread kind; E08-S02-T03 made
+  # that kind known, so the example moved rather than the assertion. `github` is genuinely unread:
+  # `connectionKind` answers `unknown` for it and no `.env` fields are generated (C-E08-053).
+  run -2 azdo_sc_preflight 'myreg' 'Docker@2' github
+  [[ "$output" == *'unknown endpoint kind github'* ]]
 }
 
 # --- E08-S03-T01: deployment strategies --------------------------------------------------------
@@ -3766,4 +3769,87 @@ mock_az() {
   [[ "$output" == *'percentages have no meaning without a cluster'* ]]
 
   run -2 azdo_strategy_deltas blueGreen
+}
+
+# ── E08-S02-T03: the Kubernetes connection arm of the preflight ───────────────────────────────────
+
+@test "the Kubeconfig arm asks for the kubeconfig and nothing from the other arm (C-E08-054)" {
+  # authorizationType is read optionally, so an empty value takes the same arm as 'Kubeconfig'.
+  run -1 azdo_sc_preflight 'mycluster' 'Kubernetes@1' kubernetes
+  [[ "$output" == *'ENDPOINT_AUTH_PARAMETER_mycluster_KUBECONFIG='* ]]
+  [[ "$output" != *'ENDPOINT_URL_mycluster'* ]]
+  [[ "$output" != *'APITOKEN'* ]]
+  # The AzureRM field set has no meaning for this endpoint (C-E08-001).
+  [[ "$output" != *'SERVICEPRINCIPALID'* ]]
+}
+
+@test "clusterContext is optional: a kubeconfig alone preflights (C-E08-057)" {
+  ENDPOINT_AUTH_PARAMETER_mycluster_KUBECONFIG='apiVersion: v1'
+  export ENDPOINT_AUTH_PARAMETER_mycluster_KUBECONFIG
+  run -0 azdo_sc_preflight 'mycluster' 'Kubernetes@1' kubernetes
+}
+
+@test "the ServiceAccount arm wants the URL family and the token, not a kubeconfig (C-E08-055/058)" {
+  # ENDPOINT_URL_<id> is the fifth endpoint variable family and the first that is neither auth nor
+  # data; without it createKubeconfig writes a cluster server of `null`.
+  ENDPOINT_DATA_mycluster_AUTHORIZATIONTYPE=ServiceAccount
+  export ENDPOINT_DATA_mycluster_AUTHORIZATIONTYPE
+  run -1 azdo_sc_preflight 'mycluster' 'Kubernetes@1' kubernetes
+  [[ "$output" == *'ENDPOINT_URL_mycluster='* ]]
+  [[ "$output" == *'ENDPOINT_AUTH_PARAMETER_mycluster_APITOKEN='* ]]
+  [[ "$output" != *'KUBECONFIG='* ]]
+  [[ "$output" == *'ServiceAccount'* ]]
+}
+
+@test "a complete ServiceAccount connection preflights" {
+  ENDPOINT_DATA_mycluster_AUTHORIZATIONTYPE=ServiceAccount
+  ENDPOINT_URL_mycluster=https://cluster.example.com:6443
+  ENDPOINT_AUTH_PARAMETER_mycluster_APITOKEN=ZXlKaGJHY2lPaUpTVXpJMU5pSjkK
+  export ENDPOINT_DATA_mycluster_AUTHORIZATIONTYPE ENDPOINT_URL_mycluster \
+    ENDPOINT_AUTH_PARAMETER_mycluster_APITOKEN
+  run -0 azdo_sc_preflight 'mycluster' 'Kubernetes@1' kubernetes
+}
+
+@test "AzureSubscription authorization takes the same fields as ServiceAccount (C-E08-054)" {
+  # generickubernetescluster.getKubeConfig sends both to createKubeconfig, so the field set is one.
+  ENDPOINT_DATA_mycluster_AUTHORIZATIONTYPE=AzureSubscription
+  export ENDPOINT_DATA_mycluster_AUTHORIZATIONTYPE
+  run -1 azdo_sc_preflight 'mycluster' 'Kubernetes@1' kubernetes
+  [[ "$output" == *'ENDPOINT_URL_mycluster='* ]]
+}
+
+@test "an authorizationType the task does not recognise is refused, not treated as Kubeconfig" {
+  # getKubeConfig has no else: an unrecognised value returns undefined, and the task then writes
+  # `undefined` into the kubeconfig file. Failing here names the variable instead.
+  ENDPOINT_DATA_mycluster_AUTHORIZATIONTYPE=Certificate
+  export ENDPOINT_DATA_mycluster_AUTHORIZATIONTYPE
+  run -1 azdo_sc_preflight 'mycluster' 'Kubernetes@1' kubernetes
+  [[ "$output" == *'Certificate'* ]]
+  [[ "$output" == *'C-E08-054'* ]]
+}
+
+@test "the kubeconfig hint names the command substitution a .env line can use (C-E08-056)" {
+  run -1 azdo_sc_preflight 'mycluster' 'Kubernetes@1' kubernetes
+  [[ "$output" == *'$(cat "$HOME/.kube/config")'* ]]
+}
+
+@test "Kubernetes@1 gets no session-clobber warning, because it clobbers nothing (C-E08-065)" {
+  ENDPOINT_AUTH_PARAMETER_mycluster_KUBECONFIG='apiVersion: v1'
+  export ENDPOINT_AUTH_PARAMETER_mycluster_KUBECONFIG
+  run -0 azdo_sc_preflight 'mycluster' 'Kubernetes@1' kubernetes
+  [[ "$output" != *'sign back in'* ]]
+}
+
+@test "a multi-line kubeconfig survives .env loading (C-E08-056)" {
+  # The whole reason the Kubeconfig arm is usable at all: .env is sourced by bash, so a
+  # single-quoted multi-line value is one assignment, not four broken ones.
+  local env_file="$BATS_TEST_TMPDIR/multiline.env"
+  cat >"$env_file" <<'ENV'
+ENDPOINT_AUTH_PARAMETER_mycluster_KUBECONFIG='apiVersion: v1
+kind: Config
+current-context: kind-e08'
+ENV
+  azdo_env_load "$env_file"
+  [[ "$(azdo_var ENDPOINT_AUTH_PARAMETER_mycluster_KUBECONFIG)" == *'kind: Config'* ]]
+  [[ "$(azdo_var ENDPOINT_AUTH_PARAMETER_mycluster_KUBECONFIG)" == *'current-context: kind-e08'* ]]
 }
