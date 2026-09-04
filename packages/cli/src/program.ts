@@ -20,6 +20,14 @@ import {
 } from './config/index.js';
 import { convert, type ConvertFlags, type ConvertResult } from './convert/index.js';
 import { runProject } from './run/index.js';
+import {
+  defaultAuthDeps,
+  loginReport,
+  statusReport,
+  type AuthDeps,
+  type AuthFlags,
+  type AuthReport,
+} from './auth/index.js';
 import { CliError, EXIT, NotImplementedError, ProxiedExit } from './exit.js';
 
 /** Where the CLI writes, and what it knows about the terminal. Injected so tests are hermetic. */
@@ -40,6 +48,13 @@ export const PROGRAM_NAME = 'azdo-emu';
 export interface GlobalOptions {
   /** Machine-readable output for tooling (docs/06 §1). */
   readonly json: boolean;
+}
+
+/** The flags both `auth` subcommands accept; `--mode` is login-only and simply absent on status. */
+interface AuthCommandOptions {
+  readonly github: boolean;
+  readonly org?: string;
+  readonly mode?: 'interactive' | 'az' | 'pat';
 }
 
 export function createProgram(io: Io): Command {
@@ -75,25 +90,78 @@ export function createProgram(io: Io): Command {
         : { getOutHelpWidth: () => helpWidth, getErrHelpWidth: () => helpWidth }),
     });
 
+  /**
+   * Run one `auth` subcommand and render it (E10-S03-T01).
+   *
+   * The table goes to stdout whatever the verdict; a diagnosis becomes a `CliError`, so the exit
+   * code and the stderr formatting come from the CLI's one error path rather than a second one here.
+   * `--json` prints the same report as a versioned document — the lines *and* the failure — because
+   * a tool that had to scrape the table to learn the verdict would be no better off.
+   */
+  const emitAuthReport = async (
+    build: (flags: AuthFlags, deps: AuthDeps) => Promise<AuthReport>,
+    options: AuthCommandOptions,
+    command: Command,
+  ): Promise<void> => {
+    const globals = command.parent?.parent?.opts<GlobalOptions>() ?? { json: false };
+    const report = await build(
+      {
+        github: options.github,
+        json: globals.json,
+        ...(options.org === undefined ? {} : { org: options.org }),
+        ...(options.mode === undefined ? {} : { mode: options.mode }),
+      },
+      defaultAuthDeps,
+    );
+    if (globals.json) {
+      io.out(
+        `${JSON.stringify({ version: 1, lines: report.lines, failure: report.failure ?? null }, undefined, 2)}\n`,
+      );
+    } else {
+      io.out(`${report.lines.join('\n')}\n`);
+    }
+    if (report.failure !== undefined) {
+      throw new CliError(report.failure.message, { hint: report.failure.hint });
+    }
+  };
+
   const auth = program
     .command('auth')
     .description('sign in to Azure DevOps or GitHub, and inspect the current session');
 
   auth
+    // Not "sign in and cache a refresh token", which is what this said before E10-S03-T01 measured
+    // it: no implemented arm writes the credential store, and for `pat` caching would persist a
+    // secret the user chose to keep in their environment (C-E10-031).
     .command('login')
-    .description('sign in and cache a refresh token')
-    .option('--github', 'sign in to GitHub instead of Azure DevOps', false)
+    .description(
+      'check which authentication mode works for an organization, and why the others do not',
+    )
+    .option(
+      '--github',
+      'GitHub instead of Azure DevOps (refused — see `auth status --github`)',
+      false,
+    )
     .option('--org <url>', 'organization URL, e.g. https://dev.azure.com/contoso')
     .addOption(choice('--mode <mode>', 'authentication mode', ['interactive', 'az', 'pat']))
-    .action(() => {
-      throw new NotImplementedError('auth login', 'E10-S03-T01 (auth UX) on top of E09-S01');
+    .action(async (options: AuthCommandOptions, command: Command) => {
+      await emitAuthReport(loginReport, options, command);
     });
 
   auth
     .command('status')
     .description('show who you are signed in as, and for which organization')
-    .action(() => {
-      throw new NotImplementedError('auth status', 'E10-S03-T01 (auth UX) on top of E09-S01');
+    .option('--github', 'report the GitHub credential source instead', false)
+    .option('--org <url>', 'organization URL, e.g. https://dev.azure.com/contoso')
+    .addOption(
+      choice('--mode <mode>', 'check one mode instead of the auto chain', [
+        'interactive',
+        'az',
+        'pat',
+      ]),
+    )
+    .action(async (options: AuthCommandOptions, command: Command) => {
+      await emitAuthReport(statusReport, options, command);
     });
 
   program

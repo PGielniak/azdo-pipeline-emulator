@@ -42,6 +42,18 @@ export type AzureAuthStatus =
 export interface AuthStatusOptions {
   readonly store?: AzureCredentialStore;
   readonly fetchImpl?: StatusFetch;
+  /**
+   * Probe **this** credential instead of loading one from the store (E10-S03-T01).
+   *
+   * Without it `authStatus` answers `signed-out` for the majority case. Nothing in this repo calls
+   * `AzureCredentialStore.save()` — only the device-code arm would, and that is E09-S01-T01, still
+   * unbuilt — so the store is empty for every user today, while a user with `AZDO_PAT` set is
+   * perfectly well authenticated (C-E09-023: on a Microsoft-account-backed organization the PAT arm
+   * is the *only* working one, i.e. the default case). `auth status` must report the credential the
+   * converter would actually use, which is what `selectAzureCredential` returns; this is the seam
+   * that lets it, without the CLI re-deriving the grounded 302/401/403 mapping below (C-E10-030).
+   */
+  readonly credential?: StoredAzureCredential;
 }
 
 /** Profile is deployment-scoped; derive its host from either supported Azure DevOps cloud URL. */
@@ -108,11 +120,15 @@ export async function authStatus(
   options: AuthStatusOptions = {},
 ): Promise<AzureAuthStatus> {
   const normalized = normalizeAzureOrgUrl(orgUrl);
-  const store = options.store ?? new AzureCredentialStore();
-  const loaded = await store.load(normalized);
-  if (loaded === undefined) return { kind: 'signed-out', orgUrl: normalized };
+  let credential = options.credential;
+  if (credential === undefined) {
+    const store = options.store ?? new AzureCredentialStore();
+    const loaded = await store.load(normalized);
+    if (loaded === undefined) return { kind: 'signed-out', orgUrl: normalized };
+    credential = loaded.credential;
+  }
 
-  const fields = storedFields(loaded.credential);
+  const fields = storedFields(credential);
   let response: Response;
   try {
     response = await (options.fetchImpl ?? globalThis.fetch)(profileUrl(normalized), {
@@ -120,7 +136,7 @@ export async function authStatus(
       redirect: 'manual',
       headers: {
         Accept: 'application/json',
-        Authorization: credentialAuthorizationHeader(loaded.credential),
+        Authorization: credentialAuthorizationHeader(credential),
       },
     });
   } catch (error) {

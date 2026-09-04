@@ -11,8 +11,8 @@
 ## 1. CLI
 
 ```
-azdo-emu auth login [--github] [--org URL] [--mode interactive|az|pat]
-azdo-emu auth status
+azdo-emu auth login [--org URL] [--mode az|pat]   # reports which mode works; caches nothing
+azdo-emu auth status [--github] [--org URL] [--mode interactive|az|pat]
 
 azdo-emu convert <pipeline.yml> -o <dir>
     [--org URL --project NAME]            # context for @alias resolution, variable groups, schema
@@ -671,3 +671,17 @@ The re-baselined numbers *are* the left-hand column. The whole gap is a single 7
 82. **A task whose only handler is `PowerShell3` is dispositioned as a stub at convert time (2026-09-04, E08-S02-T04).** The reason is not the shell — `pwsh` runs fine here, and native `powershell:`/`pwsh:` steps are emitted as bash that calls it. The reason is the handler *contract*: `PowerShell3` means the agent imports `VstsTaskSdk` from the task's own `ps_modules` and then runs the script, and `azdo_run_task` execs `pwsh -File`, which imports nothing. Measured against the real `AzureFileCopy@6.278.1`: `Trace-VstsEnteringInvocation` is undefined on line 4, and because PowerShell's errors are non-terminating the script continues through **19** more `is not recognized` errors before dying on a null dereference (C-E08-076).
 
     The choice recorded here is *where* to refuse. The runtime's `azdo__task_handler` still resolves a `PowerShell3` handler exactly as before — its preference order mirrors the agent's (C-E07-006) and a lower-level primitive should not grow policy. `disposeStep` is the module whose whole job is "how does this task run here?", so the refusal belongs there, where it becomes a stub *with a warning naming the mechanism* instead of a wall of red text at run time. Implementing real `PowerShell3` support (importing the SDK, satisfying its environment expectations) is E07 architecture and is not attempted here.
+
+83. **`auth login` reports which mode works; it does not cache a token, and `--github` moved to `status` (2026-09-04, E10-S03-T01).** The surface in §1 promised `auth login [--github] … [--mode interactive|az|pat]` and the command's own description said "sign in and cache a refresh token". Building it revealed that two of those clauses describe surfaces that do not exist, and they are *different* failures:
+
+    (a) **Caching is not possible, and for the working arm not desirable.** `AzureCredentialStore.save()` has no production caller anywhere in the repository (C-E10-030/031): the only arm that would write it is the device-code flow, which is E09-S01-T01 and unbuilt. The `az` arm reuses a session `az login` created; the `pat` arm reads an environment variable, and writing *that* to disk would persist a secret the user deliberately kept in their environment — a decision the tool has no business taking for them. `login`'s honest job is select → probe → report, and its description now says so.
+
+    (b) **`--github` on `login` is an invented surface; on `status` it is real.** `resolveGitHubCredential` has three arms — `gh-cli`, `env`, `anonymous` — and `github.ts`'s header records that the OAuth device flow is "deferred there until demand" (C-E10-033). There is nothing to sign in *to*, so `auth login --github` is refused with what to do instead, while `auth status --github` reports which arm supplied the credential. `anonymous` is a working state (public templates resolve without a token) and never fails the command.
+
+    (c) **`--mode interactive` is deferred, not wrong.** The Azure DevOps device-code flow is grounded end to end (C-E09-001..006) and blocked only on a human at a browser. The command refuses it by naming E09-S01-T01 rather than rendering a code no arm will mint. This is the one clause that will simply start working.
+
+    (d) **The Do field's spinner has nothing to spin for** (C-E10-034). Device-code polling is the only operation that would justify one. Every other call is a single request, so "non-TTY behaviour" here is the *absence* of terminal-dependent output rather than a fallback for it: plain lines and no ANSI on a TTY or off it, asserted by testing that neither stream contains an escape byte. The work a spinner would not do is done by the stream split — the table on stdout so `auth status | grep mode` keeps working, the verdict on stderr through the CLI's one error path.
+
+84. **`auth status` probes past the first refusal, and reports the working mode as an instruction rather than applying it (2026-09-04, E10-S03-T01).** Measured on the test organization (C-E10-032): `AUTH_MODE_ORDER` is `interactive → az → pat`, so an existing `az` session wins selection, and on that Microsoft-account-backed organization the token is rejected with HTTP 302 while the `AZDO_PAT` in the same shell returns 200 on the same URL seconds later. A status command that reported only the refusal would tell a user who *can* authenticate that they cannot.
+
+    So on a rejection the command probes the remaining modes and, when one authenticates, prints `works --mode pat …` and makes that the hint. It deliberately does **not** change what selection returns: `convert` uses `selectAzureCredential`'s answer, and a status command that reported a different mode would disagree with the tool it exists to explain. The gap this exposes — that the auto chain has no way to prefer an arm the organization will actually accept — is E09's to close, and is named here rather than papered over.
