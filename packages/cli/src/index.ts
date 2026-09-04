@@ -34,6 +34,14 @@ export {
   type ToolRequirement,
 } from './doctor/probe.js';
 
+// E10-S04-T01 — the `doctor` command wiring over that engine.
+export {
+  doctor,
+  readManifestTools,
+  type DoctorCommandOptions,
+  type DoctorOutput,
+} from './doctor/command.js';
+
 // E10-S04-T02 — the doctor↔task contract.
 export {
   TASK_TOOLS,

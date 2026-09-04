@@ -28,6 +28,7 @@ import {
   type AuthFlags,
   type AuthReport,
 } from './auth/index.js';
+import { doctor } from './doctor/command.js';
 import { CliError, EXIT, NotImplementedError, ProxiedExit } from './exit.js';
 
 /** Where the CLI writes, and what it knows about the terminal. Injected so tests are hermetic. */
@@ -222,8 +223,18 @@ export function createProgram(io: Io): Command {
     .description("verify the generated project's tool prerequisites from its manifest")
     .argument('<outdir>', 'a generated project directory')
     .option('--sandbox', 'check inside the sandbox image instead of on the host', false)
-    .action(() => {
-      throw new NotImplementedError('doctor', 'E10-S04-T01 (doctor engine)');
+    .action((outdir: string, options: { sandbox: boolean }, command: Command) => {
+      const globals = command.parent?.opts<GlobalOptions>() ?? { json: false };
+      const result = doctor(outdir, { sandbox: options.sandbox, json: globals.json });
+      io.out(result.text);
+      if (!result.ok) {
+        // A missing tool is a real failure of the thing the command was asked to check, so it must
+        // not exit 0 — a CI step running `doctor` has to be able to gate on it. The report is
+        // already on stdout; this carries only the verdict (the split E10-S03-T01 established).
+        throw new CliError('some required tools are missing or outdated', {
+          hint: 'install what is marked above, then re-run `azdo-emu doctor`',
+        });
+      }
     });
 
   program

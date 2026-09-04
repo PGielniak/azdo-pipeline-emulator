@@ -55,6 +55,7 @@ import {
   type Scaffold,
   type StepSite,
 } from '@azdo-emu/emit';
+import { aggregateTools, type StepToolContext } from '../doctor/requirements.js';
 import {
   resolveExpansion,
   type ExpansionManifestEntry,
@@ -536,10 +537,18 @@ function buildManifest(
   warnings: readonly ManifestWarning[],
   settings: ResolvedSettings,
 ): SerializedManifest {
+  // E10-S04-T01: `tools[]` is what `doctor` reads, and until now it was always empty — the third
+  // instance in this repo of a module built, tested, and never called (C-E10-035). `aggregateTools`
+  // landed with E10-S04-T02's contract; nothing invoked it, so every generated project claimed to
+  // need no external tools no matter how many `az`/`kubectl`/`helm` steps it contained.
+  //
+  // Built from the *scaffold*, not from the model, because `neededBy` records the step path the
+  // generated project uses — the same spelling the warnings list and the README already use.
   const manifest = serializeManifest(pipeline, {
     expansion: expansion as never,
     env,
     warnings,
+    tools: aggregateTools(toolContexts(plan)),
   });
 
   const paths = new Map<string, string>();
@@ -562,4 +571,28 @@ function buildManifest(
       })),
     })),
   };
+}
+
+/**
+ * Every step of the generated project, as the tool registry wants to see it.
+ *
+ * The path spelling is `StageId/JobId/step N` — identical to the one `collectConnections` and the
+ * warnings list use, so a user reading "needed by: Deploy/Apply/step 2" can find that step by the
+ * same name everywhere.
+ */
+function toolContexts(plan: Scaffold): readonly StepToolContext[] {
+  const contexts: StepToolContext[] = [];
+  for (const stage of plan.stages) {
+    for (const job of stage.jobs) {
+      for (const step of job.steps) {
+        const reference = step.step.task;
+        if (reference === undefined) continue;
+        contexts.push({
+          taskRef: `${reference.name}@${reference.version}`,
+          path: `${stage.stage.id}/${job.job.id}/step ${step.number}`,
+        });
+      }
+    }
+  }
+  return contexts;
 }
