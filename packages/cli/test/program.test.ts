@@ -94,20 +94,20 @@ describe('CLI scaffold (E13-S01-T01)', async () => {
     });
 
     it('an unimplemented command fails with 1 and names the epic that implements it', async () => {
-      const { code, err } = await cli('doctor', 'out');
+      // `doctor` was this test's subject until E10-S04-T01 implemented it; `fetch-artifacts` is
+      // the remaining one, and the assertion — a usage failure names its epic — is unchanged.
+      const { code, err } = await cli('fetch-artifacts', 'out');
       expect(code).toBe(EXIT.error);
-      expect(err).toContain('`azdo-emu doctor` is not implemented yet');
-      expect(err).toContain('E10-S04-T01');
+      expect(err).toContain('`azdo-emu fetch-artifacts` is not implemented yet');
+      expect(err).toContain('E09-S03-T02');
     });
 
     it('every still-unimplemented command reports not-implemented rather than doing something', async () => {
       // `convert` left this list with E10-S02-T01, `run` with E10-S02-T02, and both `auth`
       // subcommands with E10-S03-T01: each now does the work, and their failure modes are
       // exercised in `convert.test.ts` / `run.test.ts` / `auth.test.ts`.
-      const invocations: readonly string[][] = [
-        ['doctor', 'out'],
-        ['fetch-artifacts', 'out'],
-      ];
+      // `doctor` left it with E10-S04-T01; its failure modes live in `doctor-command.test.ts`.
+      const invocations: readonly string[][] = [['fetch-artifacts', 'out']];
       for (const argv of invocations) {
         const { code, err } = await cli(...argv);
         expect({ argv, code }).toEqual({ argv, code: EXIT.error });

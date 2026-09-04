@@ -1,0 +1,11 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the input that made the whole command vacuous (C-E10-035) > the doctor report for that project is stable 1`] = `
+"[ok]      az 2.89.1
+    needed by: Deploy/Apply/step 010
+[ok]      kubectl v1.31.0
+    needed by: Deploy/Apply/step 020
+
+All required tools are present.
+"
+`;
