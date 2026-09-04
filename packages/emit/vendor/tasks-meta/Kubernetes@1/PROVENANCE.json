@@ -1,0 +1,17 @@
+{
+  "source": {
+    "repo": "microsoft/azure-pipelines-tasks",
+    "path": "Tasks/KubernetesV1/task.json",
+    "tag": "v277",
+    "commit": "8ba25cfb5c7736ba98a37488c0323f7320cb5b3e",
+    "rawUrl": "https://raw.githubusercontent.com/microsoft/azure-pipelines-tasks/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/KubernetesV1/task.json",
+    "permalink": "https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/KubernetesV1/task.json"
+  },
+  "task": {
+    "name": "Kubernetes",
+    "version": "1.277.0"
+  },
+  "fetchedAt": "2026-09-04T07:35:05.299Z",
+  "sha256": "5f2b57a763023aa6dd1893b544b096277db16c64df76036ace43baac9d9fe601",
+  "bytes": 19952
+}

@@ -1,0 +1,17 @@
+{
+  "source": {
+    "repo": "microsoft/azure-pipelines-tasks",
+    "path": "Tasks/HelmInstallerV1/task.json",
+    "tag": "v277",
+    "commit": "8ba25cfb5c7736ba98a37488c0323f7320cb5b3e",
+    "rawUrl": "https://raw.githubusercontent.com/microsoft/azure-pipelines-tasks/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/HelmInstallerV1/task.json",
+    "permalink": "https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/HelmInstallerV1/task.json"
+  },
+  "task": {
+    "name": "HelmInstaller",
+    "version": "1.277.0"
+  },
+  "fetchedAt": "2026-09-04T07:35:04.667Z",
+  "sha256": "710cee6c8c0bbf7ab342cb051a8d99486a6b99f2bdebb66c6cba2029d6e673b1",
+  "bytes": 1419
+}

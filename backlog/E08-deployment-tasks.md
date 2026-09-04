@@ -38,7 +38,7 @@ Acceptance: each task verified under real-task mode; deltas documented, not tran
   **Do:** verify under real-task mode; registry connection → `.env` creds or ambient docker login; document image-name construction deltas (if any).
   **Ground:** `Tasks/DockerV2` task.json + source — pin default Dockerfile/context resolution and image-path construction (do not invent); docker CLI docs per flag.
   **Done:** one real build/push to a scratch registry; parity of pushed tags.
-- [ ] **E08-S02-T03 — `HelmDeploy@0` / `HelmInstaller@1` / `KubectlInstaller@0` / `Kubernetes@1` / `KubernetesManifest@1`**
+- [!] **E08-S02-T03 — `HelmDeploy@0` / `HelmInstaller@1` / `KubectlInstaller@0` / `Kubernetes@1` / `KubernetesManifest@1`** *(In progress 2026-09-04 — branch `e08-s02-t03-helm-kubernetes`.)*
   **Do:** verify under real-task mode; `connectionType` kubeconfig vs AKS credentials via `az aks get-credentials`; installers → tool cache.
   **Ground:** each task.json + source pinned (arg assembly per command, connectionType handling); helm/kubectl docs per flag; manifest-rewrite deltas documented as claims.
   **Done:** bats arg-assembly snapshots; live parity against a kind/AKS test cluster; deltas in the warnings list.
