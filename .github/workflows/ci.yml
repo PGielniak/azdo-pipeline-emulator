@@ -83,3 +83,28 @@ jobs:
           path: |
             reports/
             coverage/
+
+  # E11-S04-T01 — the L5 tier: convert sample pipelines and *run* them inside images that
+  # approximate a hosted ubuntu runner. Its own job, on ubuntu only: the images are Linux, and
+  # `macos-latest` has no Docker daemon.
+  #
+  # Separate from `test` on purpose. L1/L2/L4 are fast and gate every push; this one builds images,
+  # so pinning it to the same matrix would multiply the build across four legs for no extra signal.
+  e2e:
+    name: e2e (L5, containers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The harness drives the *built* CLI, exactly as a user would: E11-S03-T01 found a green suite
+      # sitting over a `convert` binary that could not run, because every test imported `../src`.
+      - run: pnpm -r build
+      # CI runs the shipped entry point rather than re-spelling docker commands here — E11-S04-T02's
+      # lesson, and the reason `pnpm test:e2e` exists at all.
+      - name: L5 end-to-end samples
+        run: pnpm test:e2e

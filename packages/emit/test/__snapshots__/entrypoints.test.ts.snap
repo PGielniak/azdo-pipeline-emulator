@@ -57,7 +57,7 @@ if [[ "$resume" != true ]]; then
 fi
 AZDO_RUN_DIR="$WORK_DIR/run-$run_number"
 export AZDO_RUN_DIR AZDO_STATE_DIR="$AZDO_RUN_DIR/state" AZDO_WORKSPACE_DIR="$AZDO_RUN_DIR/workspace" AZDO_ATTACHMENT_DIR="$AZDO_RUN_DIR/logs/attachments"
-mkdir -p "$AZDO_WORKSPACE_DIR/s" "$AZDO_WORKSPACE_DIR/tmp" "$AZDO_WORKSPACE_DIR/tools" "$AZDO_WORKSPACE_DIR/TestResults" "$AZDO_STATE_DIR" "$AZDO_ATTACHMENT_DIR"
+mkdir -p "$AZDO_WORKSPACE_DIR/s" "$AZDO_WORKSPACE_DIR/a" "$AZDO_WORKSPACE_DIR/b" "$AZDO_WORKSPACE_DIR/tmp" "$AZDO_WORKSPACE_DIR/tools" "$AZDO_WORKSPACE_DIR/TestResults" "$AZDO_STATE_DIR" "$AZDO_ATTACHMENT_DIR"
 
 azdo_env_load "$PROJECT_DIR/.env" "\${env_file:-}"
 
@@ -74,12 +74,12 @@ azdo_run_identity_seed "$azdo_build_number" "$run_number"
 AZDO_STAGE_DIR="$PROJECT_DIR/stages/010-build"
 AZDO_STAGE_ID='Build'
 export AZDO_STAGE_DIR AZDO_STAGE_ID
-bash "$AZDO_STAGE_DIR/run-stage.sh" "$@"
+bash "$AZDO_STAGE_DIR/run-stage.sh" "$@" || :
 
 AZDO_STAGE_DIR="$PROJECT_DIR/stages/020-report"
 AZDO_STAGE_ID='Report'
 export AZDO_STAGE_DIR AZDO_STAGE_ID
-bash "$AZDO_STAGE_DIR/run-stage.sh" "$@"
+bash "$AZDO_STAGE_DIR/run-stage.sh" "$@" || :
 
 azdo_run_summary
 exit "$(azdo_run_exit_code)""
@@ -150,6 +150,10 @@ if [[ -z "$(azdo_var System.DefaultWorkingDirectory)" ]]; then
   azdo_var_set 'Agent.TempDirectory' "$AZDO_WORKSPACE_DIR/tmp"
   azdo_var_set 'Agent.ToolsDirectory' "$AZDO_WORKSPACE_DIR/tools"
   azdo_var_set 'System.HostType' build
+  azdo_var_set 'Build.ArtifactStagingDirectory' "$AZDO_WORKSPACE_DIR/a"
+  azdo_var_set 'Build.StagingDirectory' "$AZDO_WORKSPACE_DIR/a"
+  azdo_var_set 'Build.BinariesDirectory' "$AZDO_WORKSPACE_DIR/b"
+  azdo_var_set 'Common.TestResultsDirectory' "$AZDO_WORKSPACE_DIR/TestResults"
 fi
 
 id='010'
@@ -190,7 +194,7 @@ if ! cond_stage; then
 fi
 
 if cond_job_compile; then
-  bash "$AZDO_STAGE_DIR/jobs/010-compile-and-test/run-job.sh" "$@"
+  bash "$AZDO_STAGE_DIR/jobs/010-compile-and-test/run-job.sh" "$@" || :
 else
   printf 'Skipping job %s due to condition.\\n' 'compile'
   azdo_job_result_set "$AZDO_STAGE_ID" 'compile' Skipped

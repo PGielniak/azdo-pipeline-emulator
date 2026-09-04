@@ -1,0 +1,33 @@
+# E11-S04-T01 — the L5 base image: what a generated project needs to run *at all*.
+#
+# "Minimal images approximating hosted toolsets" (docs/06 §3, L5). The reference is
+# `actions/runner-images` `images/ubuntu/Ubuntu2404-Readme.md`, pinned at
+# cbb8df97e1dd32af7cb23a90590f12734ec11d0b, which lists ~125 tool entries. This image carries seven,
+# and the gap is the point rather than a shortfall: L5 asks whether a *converted project* runs, and
+# the tools it needs are the ones the runtime shells out to. Every omission is recorded in
+# C-E12-037 rather than left for a reader to infer from the Dockerfile.
+#
+# **This is not PLAN D9's sandbox.** D9 defers the *converter* wrapping steps in a container, and
+# `convert` refuses `--exec-env sandbox` for that reason (decision 69). Here the container is the
+# harness's own environment: `azdo-emu convert` and `bash run.sh` run inside it in ordinary host
+# mode. Passing those flags would be a category error.
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# The runtime's hard requirements, and nothing else:
+#   bash    — PLAN D2 needs >= 4; Ubuntu 24.04 ships 5.2, matching the hosted image's 5.2.21
+#   git     — `azdo_checkout` is git, in all three modes
+#   ca-certificates, curl — anything a sample pipeline fetches
+#   jq      — hosted carries it (1.7) and sample pipelines may use it; the runtime itself does not
+#   unzip   — real-task mode extracts task packages
+#   tzdata  — timestamps in the run log are otherwise UTC-only and differ from the hosted image
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+       bash git ca-certificates curl jq unzip tzdata \
+  && rm -rf /var/lib/apt/lists/*
+
+# A non-root user, because the hosted image's `runner` is not root and a generated project that only
+# works as root would pass here and fail there.
+RUN useradd --create-home --shell /bin/bash runner
+WORKDIR /work

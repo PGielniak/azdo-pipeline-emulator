@@ -187,6 +187,17 @@ const RUN_DIR_VARS = [
   // C-E08-072: "Set to build if the pipeline is a build" — the vendored predefined-variables table
   // (C-E04-093). Not a `.env` question: a converted YAML pipeline is always a build.
   ['System.HostType', 'build'],
+  // C-E12-031 (E11-S04-T01): the agent's `a`/`b`/`TestResults` siblings of `s`. Their absence was
+  // invisible until an L5 sample used `$(Build.ArtifactStagingDirectory)` — the single most common
+  // idiom in real pipelines — and the macro survived unexpanded into the step body, where bash read
+  // `$(...)` as a command substitution and reported `Build.ArtifactStagingDirectory: command not
+  // found`. The layout was always intended: `run.sh` already created `TestResults` next to `s`.
+  ['Build.ArtifactStagingDirectory', '"$AZDO_WORKSPACE_DIR/a"'],
+  // "Build.ArtifactStagingDirectory and Build.StagingDirectory are interchangeable" — same page, so
+  // this is an alias rather than a second directory.
+  ['Build.StagingDirectory', '"$AZDO_WORKSPACE_DIR/a"'],
+  ['Build.BinariesDirectory', '"$AZDO_WORKSPACE_DIR/b"'],
+  ['Common.TestResultsDirectory', '"$AZDO_WORKSPACE_DIR/TestResults"'],
 ] as const;
 
 /** The `run-job.sh` file. */
@@ -249,6 +260,11 @@ export function emitRunJob(job: ScaffoldJob, stage: ScaffoldStage): string {
       `id=${shQuote(id)}`,
       `if [[ -z "$from_step" || "$id" > "$from_step" || "$id" = "$from_step" ]] && [[ -z "$to_step" || "$id" < "$to_step" || "$id" = "$to_step" ]] && [[ -z "$only_step" || "$id" = "$only_step" ]]; then`,
       `  run_step --id ${shQuote(id)} --file "$AZDO_JOB_DIR/steps/${fileName}" --cond ${conditionFunctionName('step', id)} \\`,
+      // C-E12-032: the authored `name:` is what an output variable is referenced by
+      // (`dependencies.<job>.outputs['<name>.<var>']`). It was never passed, so `AZDO_STEP_NAME`
+      // was never set and **every** `isOutput=true` write in a generated project failed with
+      // "AZDO_STEP_NAME and AZDO_OUTPUT_DIR must be set". Found by running an L5 sample.
+      ...(step.step.name === undefined ? [] : [`    --name ${shQuote(step.step.name)} \\`]),
       `    --display ${shQuote(step.step.displayName)} --wd ${shQuote(wd)} \\`,
       `    --continue-on-error ${step.step.continueOnError} --fail-on-stderr ${step.step.failOnStderr} \\`,
       `    --retries ${step.step.retryCountOnTaskFailure} --timeout ${timeout} \\`,
@@ -289,7 +305,7 @@ export function emitRunStage(stage: ScaffoldStage, jobOrder: readonly string[]):
     const cond = conditionFunctionName('job', referenceName);
     lines.push(
       `if ${cond}; then`,
-      `  bash "$AZDO_STAGE_DIR/jobs/${job.name}/run-job.sh" "$@"`,
+      `  bash "$AZDO_STAGE_DIR/jobs/${job.name}/run-job.sh" "$@" || :`,
       'else',
       `  printf 'Skipping job %s due to condition.\\n' ${shQuote(referenceName)}`,
       `  azdo_job_result_set "$AZDO_STAGE_ID" ${shQuote(referenceName)} Skipped`,
@@ -369,7 +385,7 @@ export function emitRunScript(
     'fi',
     'AZDO_RUN_DIR="$WORK_DIR/run-$run_number"',
     'export AZDO_RUN_DIR AZDO_STATE_DIR="$AZDO_RUN_DIR/state" AZDO_WORKSPACE_DIR="$AZDO_RUN_DIR/workspace" AZDO_ATTACHMENT_DIR="$AZDO_RUN_DIR/logs/attachments"',
-    'mkdir -p "$AZDO_WORKSPACE_DIR/s" "$AZDO_WORKSPACE_DIR/tmp" "$AZDO_WORKSPACE_DIR/tools" "$AZDO_WORKSPACE_DIR/TestResults" "$AZDO_STATE_DIR" "$AZDO_ATTACHMENT_DIR"',
+    'mkdir -p "$AZDO_WORKSPACE_DIR/s" "$AZDO_WORKSPACE_DIR/a" "$AZDO_WORKSPACE_DIR/b" "$AZDO_WORKSPACE_DIR/tmp" "$AZDO_WORKSPACE_DIR/tools" "$AZDO_WORKSPACE_DIR/TestResults" "$AZDO_STATE_DIR" "$AZDO_ATTACHMENT_DIR"',
     '',
     'azdo_env_load "$PROJECT_DIR/.env" "${env_file:-}"',
     '',
@@ -386,7 +402,15 @@ export function emitRunScript(
       `AZDO_STAGE_DIR="$PROJECT_DIR/${stage.dir}"`,
       `AZDO_STAGE_ID=${shQuote(stage.stage.id)}`,
       'export AZDO_STAGE_DIR AZDO_STAGE_ID',
-      `bash "$AZDO_STAGE_DIR/run-stage.sh" "$@"`,
+      // C-E12-035 (E11-S04-T01): `|| :` because `run.sh` and `run-stage.sh` both carry
+      // `set -euo pipefail`, so a failing stage aborted the parent *before* `azdo_run_summary`
+      // and `exit "$(azdo_run_exit_code)"` — the two lines docs/04 §2 makes the end of a run.
+      // A failing pipeline therefore printed no summary and exited with the failing step's raw
+      // status instead of the runner's verdict. Found by running an L5 sample whose pinned exit
+      // code is non-zero; nothing below L5 could see it, because no other tier asserts what a
+      // *failing* run prints. Stopping dependent work is unaffected: that is decided by the
+      // next stage's compiled condition reading the result store, not by this status.
+      `bash "$AZDO_STAGE_DIR/run-stage.sh" "$@" || :`,
       '',
     );
   }

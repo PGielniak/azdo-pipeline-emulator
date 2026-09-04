@@ -1,0 +1,47 @@
+{
+  "$comment": "E11-S04-T01 \u2014 what each L5 sample must do. Exit codes are pinned, not recorded: inside a controlled image the toolset is fixed, which is exactly what drift.ts Phase B could not assume (decision 75).",
+  "samples": {
+    "01-shell-artifacts": {
+      "image": "base",
+      "exitCode": 0,
+      "artifacts": [
+        "workspace/a/app/build.txt"
+      ],
+      "markers": [
+        "E2E-MARKER staged build.txt",
+        "E2E-MARKER cross-job output variable is app"
+      ],
+      "absentMarkers": [
+        "E2E-MARKER must not appear"
+      ]
+    },
+    "02-node-app": {
+      "image": "node",
+      "exitCode": 0,
+      "artifacts": [
+        "workspace/a/out/result.json"
+      ],
+      "markers": [
+        "E2E-MARKER node toolchain present",
+        "sample app tests passed",
+        "E2E-MARKER node sample produced result.json"
+      ],
+      "absentMarkers": []
+    },
+    "03-failure-and-conditions": {
+      "image": "base",
+      "exitCode": 1,
+      "artifacts": [],
+      "markers": [
+        "E2E-MARKER first step ran",
+        "E2E-MARKER tolerated failure",
+        "E2E-MARKER reached after continueOnError",
+        "E2E-MARKER final step ran",
+        "Result: Failed"
+      ],
+      "absentMarkers": [
+        "E2E-MARKER must not run after a real failure"
+      ]
+    }
+  }
+}

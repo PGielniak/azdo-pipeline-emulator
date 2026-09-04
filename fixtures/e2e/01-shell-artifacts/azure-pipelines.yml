@@ -1,0 +1,49 @@
+# L5 sample 1 — the staging directory, an output variable, and a cross-job read.
+#
+# Deliberately template-free: no `${{ }}` anywhere, so the offline expander and the service produce
+# the same document and this suite never depends on a live PAT (C-E12-028).
+#
+# The cross-job read goes through a **job condition** rather than a job-level `variables:` block,
+# and that is a finding rather than a style choice: variable blocks are not seeded into a generated
+# project at all (C-E12-033), so `$[ dependencies… ]` in one would evaluate to nothing. Conditions
+# are compiled (E02-S05) and do work, and they exercise the same machinery — an output variable
+# written in one job, read in another. `PublishPipelineArtifact@1` is absent for its own reason
+# (C-E12-034).
+trigger: none
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+- stage: build
+  jobs:
+  - job: compile
+    steps:
+    - script: |
+        mkdir -p "$(Build.ArtifactStagingDirectory)/app"
+        echo "built" > "$(Build.ArtifactStagingDirectory)/app/build.txt"
+        test -d "$(Build.BinariesDirectory)" || { echo "Build.BinariesDirectory is missing"; exit 3; }
+        echo "E2E-MARKER staged build.txt"
+        echo "##vso[task.setvariable variable=artifactName;isOutput=true]app"
+      name: stage
+      displayName: Stage build output
+
+  # Runs only if the producing job's output variable crossed the boundary with the right value.
+  - job: verify
+    dependsOn: compile
+    condition: eq(dependencies.compile.outputs['stage.artifactName'], 'app')
+    steps:
+    - checkout: none
+    - script: echo "E2E-MARKER cross-job output variable is app"
+      displayName: Confirm the output variable crossed
+
+  # The negative half: this job must be skipped, so its marker must never appear. A suite that only
+  # checks for markers cannot tell a working condition from one that is always true.
+  - job: must_not_run
+    dependsOn: compile
+    condition: eq(dependencies.compile.outputs['stage.artifactName'], 'not-the-value')
+    steps:
+    - checkout: none
+    - script: echo "E2E-MARKER must not appear"
+      displayName: Never reached

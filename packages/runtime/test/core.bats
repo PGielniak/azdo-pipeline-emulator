@@ -3917,3 +3917,47 @@ VSO
   done
   [[ "$found" == true ]]
 }
+
+# ── E11-S04-T01: run_step --name, without which no output variable works (C-E12-032) ─────────────
+
+@test "run_step --name exports AZDO_STEP_NAME, so an output variable can be written (C-E12-032)" {
+  # `azdo_var_set … output=true` refuses without it. The emitter never passed the authored `name:`,
+  # and run_step had no flag for it, so *every* `##vso[task.setvariable isOutput=true]` in a
+  # generated project failed while the runtime implemented output variables correctly.
+  prepare_run_step
+  AZDO_OUTPUT_DIR="$BATS_TEST_TMPDIR/outputs"
+  export AZDO_OUTPUT_DIR
+  local step="$BATS_TEST_TMPDIR/step.sh"
+  printf '%s\n' '#!/usr/bin/env bash' \
+    'echo "##vso[task.setvariable variable=artifactName;isOutput=true]app"' >"$step"
+
+  run -0 run_step --id 010 --name producer --file "$step" --display 'Produce' \
+    --wd "$BATS_TEST_TMPDIR" --continue-on-error false --fail-on-stderr false \
+    --retries 0 --timeout 60 --no-condition
+
+  # Stored under the agent-faithful `<step>.<name>` alias (C-E06-002), and in AZDO_OUTPUT_DIR for
+  # the cross-job read (C-E06-005).
+  [[ "$(azdo_var 'producer.artifactName')" == app ]]
+  [[ -s "$AZDO_OUTPUT_DIR/producer.artifactName" ]]
+}
+
+@test "without --name the same step fails, which is what the emitter used to produce (C-E12-032)" {
+  # The measured before-state: every generated project emitted run_step without a name.
+  prepare_run_step
+  AZDO_OUTPUT_DIR="$BATS_TEST_TMPDIR/outputs"
+  export AZDO_OUTPUT_DIR
+  local step="$BATS_TEST_TMPDIR/step.sh"
+  printf '%s\n' '#!/usr/bin/env bash' \
+    'echo "##vso[task.setvariable variable=artifactName;isOutput=true]app"' >"$step"
+
+  run run_step --id 010 --file "$step" --display 'Produce' \
+    --wd "$BATS_TEST_TMPDIR" --continue-on-error false --fail-on-stderr false \
+    --retries 0 --timeout 60 --no-condition
+  [[ "$output" == *'AZDO_STEP_NAME and AZDO_OUTPUT_DIR must be set'* ]]
+}
+
+@test "run_step rejects a duplicate --name, like every other flag" {
+  run -2 run_step --id 010 --name a --name b --file /dev/null --display d --wd . \
+    --continue-on-error false --fail-on-stderr false --retries 0 --timeout 60
+  [[ "$output" == *'duplicate run_step option: --name'* ]]
+}
