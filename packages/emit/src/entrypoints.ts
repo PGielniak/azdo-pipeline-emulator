@@ -165,6 +165,17 @@ const RUN_DIR_VARS = [
   ['Agent.BuildDirectory', '"$AZDO_WORKSPACE_DIR"'],
   ['Pipeline.Workspace', '"$AZDO_WORKSPACE_DIR"'],
   ['Agent.TempDirectory', '"$AZDO_WORKSPACE_DIR/tmp"'],
+  // C-E08-068 (E08-S02-T03): `azure-pipelines-tool-lib`'s `_getCacheRoot` throws
+  // `Agent.ToolsDirectory is not set` before doing anything else, so without this every tool
+  // installer — and `Kubernetes@1` on any non-default `versionSpec` — fails on its first line with
+  // an error that names no task and no input. It is a directory, not a credential, so seeding it is
+  // the whole fix (docs/06 §5 decision 79).
+  //
+  // Deliberately *not* seeded alongside it: `Agent.Version`. `assertAgent` throws only when the
+  // variable is **set and lower** than the minimum — an unset value passes (C-E08-071) — so
+  // supplying one buys nothing and would silently flip every other `assertAgent` gate in every task
+  // from "unasserted" to "asserted at whatever number we picked".
+  ['Agent.ToolsDirectory', '"$AZDO_WORKSPACE_DIR/tools"'],
 ] as const;
 
 /** The `run-job.sh` file. */
@@ -347,7 +358,7 @@ export function emitRunScript(
     'fi',
     'AZDO_RUN_DIR="$WORK_DIR/run-$run_number"',
     'export AZDO_RUN_DIR AZDO_STATE_DIR="$AZDO_RUN_DIR/state" AZDO_WORKSPACE_DIR="$AZDO_RUN_DIR/workspace" AZDO_ATTACHMENT_DIR="$AZDO_RUN_DIR/logs/attachments"',
-    'mkdir -p "$AZDO_WORKSPACE_DIR/s" "$AZDO_WORKSPACE_DIR/tmp" "$AZDO_WORKSPACE_DIR/TestResults" "$AZDO_STATE_DIR" "$AZDO_ATTACHMENT_DIR"',
+    'mkdir -p "$AZDO_WORKSPACE_DIR/s" "$AZDO_WORKSPACE_DIR/tmp" "$AZDO_WORKSPACE_DIR/tools" "$AZDO_WORKSPACE_DIR/TestResults" "$AZDO_STATE_DIR" "$AZDO_ATTACHMENT_DIR"',
     '',
     'azdo_env_load "$PROJECT_DIR/.env" "${env_file:-}"',
     '',

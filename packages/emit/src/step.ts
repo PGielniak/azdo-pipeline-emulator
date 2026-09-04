@@ -342,15 +342,30 @@ function preflightLines(step: Step, options: StepEmitOptions): readonly string[]
   const kind = connectionKind(site.endpointType);
   // C-E08-043: the endpoint kind decides which fields exist, so the preflight is told which to
   // check. Checking the AzureRM set against a registry connection would call a complete one broken.
-  const why =
-    kind === 'dockerregistry'
-      ? '# a missing credential surfaces as a TypeError inside the task, not as a named error (C-E08-045).'
-      : '# path (C-E08-036) and clears a local session on the way out (C-E08-038/039).';
+  // C-E08-053: an endpoint kind nobody has read has no field set to check, so there is nothing to
+  // preflight and a checked-against-the-wrong-set failure would be worse than silence.
+  if (kind === 'unknown') return [];
+  const NOTES: Readonly<Record<string, readonly [string, string]>> = {
+    dockerregistry: [
+      '# the ENDPOINT_AUTH blob is derived from the .env keys before the task runs (C-E08-044), and',
+      '# a missing credential surfaces as a TypeError inside the task, not as a named error (C-E08-045).',
+    ],
+    // C-E08-054: the arm is chosen by a `.env` value, so the preflight checks one field set of two
+    // and says which — and unlike the Azure tasks, nothing here is destroyed on the way out.
+    kubernetes: [
+      '# the fields it needs depend on ENDPOINT_DATA_<name>_AUTHORIZATIONTYPE (C-E08-054), and an',
+      '# unfilled kubeconfig reaches kubectl as an unreachable cluster, not as a named error.',
+    ],
+    azurerm: [
+      '# it has no ambient',
+      '# path (C-E08-036) and clears a local session on the way out (C-E08-038/039).',
+    ],
+  };
+  /* istanbul ignore next -- every kind reaching here has an entry; the fallback is belt-and-braces. */
+  const [lead, why] = NOTES[kind] ?? NOTES.azurerm!;
   return [
     `# ${site.taskRef} authenticates through service connection '${site.value}';`,
-    kind === 'dockerregistry'
-      ? '# the ENDPOINT_AUTH blob is derived from the .env keys before the task runs (C-E08-044), and'
-      : '# it has no ambient',
+    lead,
     why,
     `azdo_sc_preflight ${shellSingleQuote(site.value)} ${shellSingleQuote(key)} ${shellSingleQuote(kind)}`,
     '',

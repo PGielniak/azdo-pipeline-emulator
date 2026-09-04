@@ -57,7 +57,7 @@ if [[ "$resume" != true ]]; then
 fi
 AZDO_RUN_DIR="$WORK_DIR/run-$run_number"
 export AZDO_RUN_DIR AZDO_STATE_DIR="$AZDO_RUN_DIR/state" AZDO_WORKSPACE_DIR="$AZDO_RUN_DIR/workspace" AZDO_ATTACHMENT_DIR="$AZDO_RUN_DIR/logs/attachments"
-mkdir -p "$AZDO_WORKSPACE_DIR/s" "$AZDO_WORKSPACE_DIR/tmp" "$AZDO_WORKSPACE_DIR/TestResults" "$AZDO_STATE_DIR" "$AZDO_ATTACHMENT_DIR"
+mkdir -p "$AZDO_WORKSPACE_DIR/s" "$AZDO_WORKSPACE_DIR/tmp" "$AZDO_WORKSPACE_DIR/tools" "$AZDO_WORKSPACE_DIR/TestResults" "$AZDO_STATE_DIR" "$AZDO_ATTACHMENT_DIR"
 
 azdo_env_load "$PROJECT_DIR/.env" "\${env_file:-}"
 
@@ -148,6 +148,7 @@ if [[ -z "$(azdo_var System.DefaultWorkingDirectory)" ]]; then
   azdo_var_set 'Agent.BuildDirectory' "$AZDO_WORKSPACE_DIR"
   azdo_var_set 'Pipeline.Workspace' "$AZDO_WORKSPACE_DIR"
   azdo_var_set 'Agent.TempDirectory' "$AZDO_WORKSPACE_DIR/tmp"
+  azdo_var_set 'Agent.ToolsDirectory' "$AZDO_WORKSPACE_DIR/tools"
 fi
 
 id='010'

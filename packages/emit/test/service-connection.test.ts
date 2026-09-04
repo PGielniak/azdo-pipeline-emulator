@@ -6,7 +6,9 @@ import {
   connectionManifestEntry,
   connectionsSection,
   dataKey,
+  connectionKind,
   schemeKey,
+  urlKey,
   type ServiceConnection,
 } from '../src/service-connection.js';
 
@@ -152,5 +154,65 @@ describe('connectionManifestEntry', () => {
       scheme: 'serviceprincipal',
       secretKeys: [],
     });
+  });
+});
+
+describe('the Kubernetes endpoint kind (E08-S02-T03)', () => {
+  it('recognises the lowercase spelling all three tasks declare (C-E08-053)', () => {
+    expect(connectionKind('kubernetes')).toBe('kubernetes');
+    expect(connectionKind('AzureRM')).toBe('azurerm');
+    expect(connectionKind('dockerRegistry')).toBe('dockerregistry');
+  });
+
+  it('answers `unknown` rather than guessing AzureRM (C-E08-053)', () => {
+    // The pre-E08-S02-T03 fallback returned `azurerm` here, which offered a GitHub connection a
+    // subscription id — C-E08-001's failure mode in a third costume.
+    expect(connectionKind('github')).toBe('unknown');
+    expect(connectionKind(undefined)).toBe('unknown');
+    expect(connectionKeys({ name: 'gh', mode: 'sp', kind: 'unknown' })).toEqual([]);
+  });
+
+  it('emits the URL family, which nothing before this task did (C-E08-055)', () => {
+    expect(urlKey('my-cluster')).toBe('ENDPOINT_URL_my-cluster');
+    const keys = connectionKeys({ name: 'my-cluster', mode: 'sp', kind: 'kubernetes' });
+    const url = keys.find((key) => key.key === urlKey('my-cluster'));
+    expect(url).toBeDefined();
+    // `getEndpointUrl` reads process.env directly — none of the vaulting ENDPOINT_AUTH_* gets.
+    expect(url?.secret).toBe(false);
+  });
+
+  it('offers both authorizationType arms, each labelled with the arm that needs it', () => {
+    const keys = connectionKeys({ name: 'k8s', mode: 'sp', kind: 'kubernetes' });
+    const byKey = new Map(keys.map((key) => [key.key, key]));
+    expect(byKey.get(dataKey('k8s', 'authorizationType'))?.secret).toBe(false);
+    expect([...byKey.keys()]).toEqual([
+      'ENDPOINT_DATA_k8s_AUTHORIZATIONTYPE',
+      'ENDPOINT_URL_k8s',
+      'ENDPOINT_AUTH_PARAMETER_k8s_KUBECONFIG',
+      'ENDPOINT_AUTH_PARAMETER_k8s_CLUSTERCONTEXT',
+      'ENDPOINT_AUTH_PARAMETER_k8s_APITOKEN',
+      'ENDPOINT_AUTH_PARAMETER_k8s_SERVICEACCOUNTCERTIFICATE',
+    ]);
+    // C-E08-058: a raw token pasted here arrives at the cluster as decoded binary.
+    expect(byKey.get(authKey('k8s', 'apiToken'))?.comment).toContain('base64');
+    // C-E08-056: the multi-line answer, because `.env` is sourced by bash.
+    expect(byKey.get(authKey('k8s', 'kubeconfig'))?.comment).toContain('cat');
+  });
+
+  it('asks for nothing in ambient mode, exactly as the other kinds do (C-E08-005)', () => {
+    const keys = connectionKeys({ name: 'k8s', kind: 'kubernetes' });
+    expect(keys.map((key) => key.key)).toEqual(['ENDPOINT_DATA_k8s_AUTHORIZATIONTYPE']);
+  });
+
+  it('renders a block a reader can fill in without opening the pipeline', () => {
+    const block = connectionBlock({
+      name: 'prod-cluster',
+      mode: 'sp',
+      kind: 'kubernetes',
+      usedBy: ['Deploy/Apply/step 1'],
+    }).join('\n');
+    expect(block).toContain("Service connection 'prod-cluster' · mode: sp");
+    expect(block).toContain('used by: Deploy/Apply/step 1');
+    expect(block).toContain('ENDPOINT_URL_prod-cluster=');
   });
 });

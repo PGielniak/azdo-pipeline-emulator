@@ -4617,6 +4617,13 @@ azdo__sc_endpoint_data() {
   printf '%s' "${!__sc_var-}"
 }
 
+# azdo__sc_endpoint_url <name> — C-E08-055: the fifth family, `ENDPOINT_URL_<id>`, read by
+# `getEndpointUrl` and neither vaulted nor keyed by a field name.
+azdo__sc_endpoint_url() {
+  local __sc_var="ENDPOINT_URL_${1}"
+  printf '%s' "${!__sc_var-}"
+}
+
 # azdo_sc_preflight <connection-name> <task-ref> — check a real task can authenticate, and say
 # what running it here will cost (E08-S02-T01).
 #
@@ -4644,6 +4651,12 @@ azdo_sc_preflight() {
   case "${3:-azurerm}" in
     dockerregistry)
       azdo__sc_preflight_dockerregistry "$1" "$2"
+      return
+      ;;
+    # C-E08-054: a Kubernetes connection shares no field with either of the others — it is checked
+    # per `authorizationType`, which is itself a `.env` value rather than anything the pipeline says.
+    kubernetes)
+      azdo__sc_preflight_kubernetes "$1" "$2"
       return
       ;;
     azurerm) ;;
@@ -4736,6 +4749,58 @@ azdo__sc_preflight_dockerregistry() {
 
   azdo_sc_endpoint_auth_json "$name" || return
   azdo__sc_hazard "$task"
+}
+
+# azdo__sc_preflight_kubernetes <connection-name> <task-ref> — E08-S02-T03.
+#
+# `generickubernetescluster.getKubeConfig` branches on `ENDPOINT_DATA_<name>_AUTHORIZATIONTYPE`
+# (C-E08-054), read optionally — so an empty value takes the same arm as `Kubeconfig`, and the two
+# arms want disjoint sets of `.env` lines. Checking both would report a perfectly complete
+# ServiceAccount connection as missing its kubeconfig.
+#
+# The failure this replaces is worth stating: with no `KUBECONFIG` parameter the task hands an empty
+# document to `yaml.safeLoad` and writes it out, and kubectl then reports a cluster it cannot reach —
+# a connection error for what is really an unfilled `.env` line.
+azdo__sc_preflight_kubernetes() {
+  local name="$1" task="$2" auth_type missing=()
+
+  auth_type="$(azdo__sc_endpoint_data "$name" AUTHORIZATIONTYPE)"
+  case "$auth_type" in
+    ServiceAccount|AzureSubscription)
+      # C-E08-055: `createKubeconfig` puts the endpoint URL in `clusters[0].cluster.server`; without
+      # it the document names a server of `null`.
+      [[ -n "$(azdo__sc_endpoint_url "$name")" ]] || missing+=("ENDPOINT_URL_${name}")
+      # C-E08-058: base64, because the task decodes it before writing the kubeconfig.
+      [[ -n "$(azdo__sc_endpoint_auth "$name" APITOKEN)" ]] ||
+        missing+=("ENDPOINT_AUTH_PARAMETER_${name}_APITOKEN")
+      ;;
+    ''|Kubeconfig)
+      # C-E08-057: `clusterContext` is genuinely optional — absent, the document's own
+      # `current-context` is used and the kubeconfig passes through unmodified.
+      [[ -n "$(azdo__sc_endpoint_auth "$name" KUBECONFIG)" ]] ||
+        missing+=("ENDPOINT_AUTH_PARAMETER_${name}_KUBECONFIG")
+      ;;
+    *)
+      printf "azdo_sc_preflight: connection '%s' declares authorizationType '%s'; %s\n" \
+        "$name" "$auth_type" 'the task recognises only Kubeconfig, ServiceAccount and' >&2
+      printf '%s\n' "  AzureSubscription (C-E08-054), and returns undefined for anything else." >&2
+      return 1
+      ;;
+  esac
+
+  azdo__sc_hazard "$task"
+
+  ((${#missing[@]} == 0)) && return 0
+  printf "azdo_sc_preflight: %s needs Kubernetes connection '%s', and .env is missing:\n" \
+    "$task" "$name" >&2
+  local key
+  for key in "${missing[@]}"; do printf '  %s=\n' "$key" >&2; done
+  printf '%s\n' "  Arm selected by ENDPOINT_DATA_${name}_AUTHORIZATIONTYPE='${auth_type:-Kubeconfig}'." >&2
+  # The hint names a command substitution, which shellcheck would read as an unexpanded expression
+  # if it appeared literally here; it is a `.env` line for the user to write, not one to run.
+  printf '  See .env.example; a kubeconfig can be written as "%s(cat "%sHOME/.kube/config")".\n' \
+    '$' '$' >&2
+  return 1
 }
 
 # azdo_sc_endpoint_auth_json <connection-name> — derive and export ENDPOINT_AUTH_<name>.

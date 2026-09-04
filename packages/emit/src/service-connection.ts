@@ -37,11 +37,32 @@ export type ConnectionScheme = 'serviceprincipal' | 'workloadidentityfederation'
  * the failure C-E08-001 exists to prevent. Kinds are lower-cased because the declared spelling
  * differs between tasks (`AzureRM` vs `dockerregistry`) while the endpoint itself does not.
  */
-export type ConnectionKind = 'azurerm' | 'dockerregistry';
+export type ConnectionKind = 'azurerm' | 'dockerregistry' | 'kubernetes' | 'unknown';
 
-/** Normalize a declared `connectedService:<kind>` suffix; unknown kinds fall back to AzureRM. */
+/**
+ * Normalize a declared `connectedService:<kind>` suffix.
+ *
+ * **`unknown` is deliberate, and it replaces a fallback that was safe with one kind and is a bug
+ * generator with three** (docs/06 §5 decision 78). Until E08-S02-T03 this function answered
+ * `azurerm` for anything it did not recognize, which was harmless while AzureRM was the only kind
+ * anyone reached. With `dockerregistry` and `kubernetes` alongside it, that same fallback would
+ * offer a `connectedService:github` connection `ENDPOINT_DATA_<name>_SUBSCRIPTIONID` — a variable no
+ * task reads, which is C-E08-001's failure mode wearing a third costume. An unrecognized kind now
+ * contributes **no** fields and the collector says so out loud, because "we have not read that
+ * task's source" is a thing the user can act on and a wrong subscription field is not.
+ */
 export function connectionKind(endpointType: string | undefined): ConnectionKind {
-  return endpointType?.toLowerCase() === 'dockerregistry' ? 'dockerregistry' : 'azurerm';
+  switch (endpointType?.toLowerCase()) {
+    case 'azurerm':
+      return 'azurerm';
+    case 'dockerregistry':
+      return 'dockerregistry';
+    // C-E08-053: `Kubernetes@1`, `KubernetesManifest@1` and `HelmDeploy@0` all spell it lowercase.
+    case 'kubernetes':
+      return 'kubernetes';
+    default:
+      return 'unknown';
+  }
 }
 
 export interface ServiceConnection {
@@ -87,6 +108,20 @@ export function dataKey(connection: string, field: string): string {
 }
 
 /**
+ * C-E08-055: `ENDPOINT_URL_<id>` — the **fifth** endpoint variable family, and the first one that is
+ * neither auth nor data.
+ *
+ * `getEndpointUrl(id, optional)` reads it directly, and `createKubeconfig` puts the result in the
+ * kubeconfig's `clusters[0].cluster.server`. Nothing before E08-S02-T03 emitted it, so a
+ * ServiceAccount-authorized Kubernetes connection would have produced a kubeconfig pointing at
+ * `null` — a cluster address of literally nothing, which fails as a connection refusal rather than
+ * as a missing credential.
+ */
+export function urlKey(connection: string): string {
+  return `ENDPOINT_URL_${connection}`;
+}
+
+/**
  * The fields each scheme actually uses, named as `AzureCLIV2` reads them (C-E08-003/004).
  *
  * `serviceprincipalkey` and `servicePrincipalCertificate` are alternatives selected by
@@ -117,7 +152,50 @@ const DATA_FIELDS: Readonly<Record<ConnectionKind, readonly [string, string][]>>
   dockerregistry: [
     ['registrytype', "'ACR' for Azure Container Registry, anything else for generic"],
   ],
+  // C-E08-054: `generickubernetescluster.getKubeConfig` branches on this one data parameter, read
+  // optionally — an empty value takes the same arm as `Kubeconfig`.
+  kubernetes: [
+    [
+      'authorizationType',
+      "'Kubeconfig' (the default, and what an empty value means), 'ServiceAccount' or " +
+        "'AzureSubscription'",
+    ],
+  ],
+  // C-E08-053: an endpoint kind whose consuming task nobody has read contributes no fields; see
+  // `connectionKind`.
+  unknown: [],
 };
+
+/**
+ * A Kubernetes connection's fields, per `authorizationType` arm (C-E08-054..057).
+ *
+ * Both arms are emitted, because the arm is chosen by a value the user fills in below rather than by
+ * anything the pipeline declares — the task reads `authorizationType` at run time. Each line says
+ * which arm needs it, so nobody fills in all five.
+ */
+const KUBERNETES_AUTH_FIELDS: readonly [string, string][] = [
+  [
+    'kubeconfig',
+    'authorizationType=Kubeconfig: the whole kubeconfig document. `.env` is sourced by bash, so ' +
+      'this can be a single-quoted multi-line value — or, far easier, ' +
+      '"$(cat "$HOME/.kube/config")" (C-E08-056)',
+  ],
+  [
+    'clusterContext',
+    'authorizationType=Kubeconfig, optional: the context to select. Left empty, the kubeconfig is ' +
+      'passed through byte-for-byte and its own `current-context` wins (C-E08-057)',
+  ],
+  [
+    'apiToken',
+    'authorizationType=ServiceAccount: the service-account token, **base64-encoded** — the task ' +
+      'decodes it, so a raw token arrives as binary garbage (C-E08-058)',
+  ],
+  [
+    'serviceAccountCertificate',
+    'authorizationType=ServiceAccount: the cluster CA, base64 as it appears under ' +
+      '`certificate-authority-data` in a kubeconfig',
+  ],
+];
 
 /**
  * A Docker registry connection's credentials (C-E08-044).
@@ -154,6 +232,25 @@ export function connectionKeys(connection: ServiceConnection): readonly EnvKey[]
   // C-E08-005: ambient reuses the developer's own `az`/`docker`/`kubectl` session, so there is no
   // credential to ask for — asking anyway would be the emulator inventing work for the user.
   if (mode === 'ambient') return keys;
+
+  if (kind === 'kubernetes') {
+    // C-E08-055: the server address is its own family, and it is not a secret — `getEndpointUrl`
+    // reads `process.env` directly, with none of the vaulting `ENDPOINT_AUTH_*` gets (C-E08-002).
+    keys.push({
+      key: urlKey(connection.name),
+      secret: false,
+      comment:
+        'authorizationType=ServiceAccount: the API server URL, e.g. https://my-cluster:6443 — it ' +
+        "becomes the kubeconfig's `clusters[0].cluster.server` (C-E08-055)",
+    });
+    for (const [field, comment] of KUBERNETES_AUTH_FIELDS) {
+      keys.push({ key: authKey(connection.name, field), secret: true, comment });
+    }
+    return keys;
+  }
+
+  // C-E08-053: nothing is known about this endpoint's field set, so nothing is asked for.
+  if (kind === 'unknown') return keys;
 
   if (kind === 'dockerregistry') {
     // C-E08-044: the generic provider reads these from the JSON blob, so they are emitted per key
