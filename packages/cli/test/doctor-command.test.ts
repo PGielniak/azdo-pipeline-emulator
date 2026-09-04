@@ -40,7 +40,7 @@ describe('reading tools[] out of a generated manifest', () => {
       tools: [{ cmd: 'docker', min: '20.10', neededBy: ['Build/Job/step 2'] }],
     });
     const result = doctor(dir, {
-      runner: runner({ docker: '24.0.7' }),
+      run: runner({ docker: '24.0.7' }),
     });
     expect(result.text).toContain('docker');
     expect(result.text).toContain('needed by: Build/Job/step 2');
