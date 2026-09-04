@@ -37,6 +37,12 @@ const TASKS = [
   'KubectlInstallerV0',
   'KubernetesV1',
   'KubernetesManifestV1',
+  // E08-S02-T04: the ARM/Key Vault/storage trio. `AzureFileCopyV6` is the one with *two* connection
+  // inputs of different kinds, and `AzureKeyVaultV2` is the one whose output is a variable per
+  // secret rather than a fixed set.
+  'AzureResourceManagerTemplateDeploymentV3',
+  'AzureKeyVaultV2',
+  'AzureFileCopyV6',
 ];
 const DEST_ROOT = path.join('packages', 'emit', 'vendor', 'tasks-meta');
 

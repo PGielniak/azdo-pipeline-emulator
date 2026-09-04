@@ -108,9 +108,9 @@ Priority (decision 2026-07-30): **group D — the Azure/Kubernetes deployment se
 | `AzureWebApp@1`, `AzureRmWebAppDeployment@4`, `AzureFunctionApp@2` | degraded-equivalent: `az webapp deploy` / `az functionapp deployment` mappings; warnings for slot/takeover niceties |
 | **`KubernetesManifest@1`**, **`Kubernetes@1`**, **`HelmDeploy@0`** | `kubectl`/`helm` against current kubeconfig context (or from `.env`); helm `install`/`upgrade`, `bake` action via helm/kustomize |
 | `HelmInstaller@1`, `KubectlInstaller@0` | Pinned versions downloaded into `Agent.ToolsDirectory`, PATH prepend |
-| **`AzureResourceManagerTemplateDeployment@3`** (+ legacy `AzureResourceGroupDeployment@2`) | `az deployment group create` for ARM & Bicep; `deploymentMode` Incremental/Complete/Validate; `deploymentOutputs` JSON parsed into an output variable via the store |
-| **`AzureKeyVault@2`** | Two modes: **ambient** — `az keyvault secret list/show` pulls real values into local **secret** variables (`equivalent`); **offline** — `KV_<vault>_<secret>` entries from `.env`; `secretsFilter`/`runAsPreJob` honored |
-| **`AzureFileCopy@6`** | `azcopy` to blob/file share, ambient or SAS auth from `.env` (doctor checks `azcopy`); storage-account operations written as `AzureCLI` steps (`az storage …`) are covered by the AzureCLI handler |
+| **`AzureResourceManagerTemplateDeployment@3`** (+ legacy `AzureResourceGroupDeployment@2`) | Real-task mode. `deploymentOutputs` is **not** "an output variable": it is one variable per *leaf* of the outputs object (`out.region.type`, `out.region.value`) **plus** one holding the whole object, and every leaf is JSON-encoded unless `useWithoutJSON` — so a string output carries its quotes (C-E08-077) |
+| **`AzureKeyVault@2`** | Real-task mode. Each secret becomes a variable named **exactly as the secret is named in the vault** — no prefix, no transform (C-E08-078). Its `prejobexecution` handler is not run here (C-E08-079), and disabled/expired secrets are filtered out server-side under `SecretsFilter: *` (C-E08-080) |
+| **`AzureFileCopy@6`** | **Stub — it cannot run on this host.** It ships only a `PowerShell3` handler, whose contract is that the agent imports `VstsTaskSdk` from the task's `ps_modules` first (C-E08-076), and it is Windows-only regardless: the package contains `AzCopy.exe` and no other binary (C-E08-081). Use `az storage blob upload-batch` in a `script:` step |
 
 ### E — Build & test publishing (P5; Windows-native ones `degraded` on Linux)
 | Task | Strategy |
@@ -151,6 +151,13 @@ Drop-in escape hatch: before stubbing, the runtime looks for an executable at `<
 ## 5. Service connections (`connectedService:*` inputs) — **live** (E08)
 
 Never resolvable via API by design → structured `.env` contract per connection, generated from usage.
+
+**Corrected 2026-09-04 (E08-S02-T04).** The `AzureKeyVault@2` row above used to promise
+`KV_<vault>_<secret>` entries from `.env`, and an "ambient mode" that shelled out to
+`az keyvault secret list/show`. Both were transpiler-era: under real-task mode (PLAN D4) the task
+runs its own implementation, and that implementation calls `setVariable(secretName, …)` with **no
+transform at all** (C-E08-078). A `KV_`-prefixed key would be read by nobody — the same error, in
+the same place, as the `SC_<NAME>_*` keys corrected below. Recorded as decisions record entry 81.
 
 **Corrected 2026-09-02 (E08-S01-T01/T02).** The `SC_<NAME>_*` keys this section used to show were
 transpiler-era: under the old design *our own* generated bash read them. Under real-task mode

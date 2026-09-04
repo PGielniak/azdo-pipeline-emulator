@@ -1,0 +1,17 @@
+{
+  "source": {
+    "repo": "microsoft/azure-pipelines-tasks",
+    "path": "Tasks/AzureResourceManagerTemplateDeploymentV3/task.json",
+    "tag": "v277",
+    "commit": "8ba25cfb5c7736ba98a37488c0323f7320cb5b3e",
+    "rawUrl": "https://raw.githubusercontent.com/microsoft/azure-pipelines-tasks/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/AzureResourceManagerTemplateDeploymentV3/task.json",
+    "permalink": "https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/AzureResourceManagerTemplateDeploymentV3/task.json"
+  },
+  "task": {
+    "name": "AzureResourceManagerTemplateDeployment",
+    "version": "3.277.0"
+  },
+  "fetchedAt": "2026-09-04T09:10:41.455Z",
+  "sha256": "dfa1bad817fdeaecd807e31cc8d377764a8c90b9a2822522788748dbed41e24f",
+  "bytes": 21165
+}

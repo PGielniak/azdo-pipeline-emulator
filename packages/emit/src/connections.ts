@@ -171,6 +171,45 @@ export const REAL_TASK_ENDPOINT_USE: Readonly<Record<string, RealTaskEndpointUse
       'unlinks the kubeconfig it holds, but `isKubConfigLogoutRequired` excludes exactly the ' +
       '`None` and `logout` cases that could put your own path there',
   },
+  // E08-S02-T04. All three take exactly one AzureRM connection, unconditionally — no
+  // `CONNECTION_INPUT_RULES` entry is needed or wanted, because the unconditional walk is correct
+  // when a task declares one connection input and always reads it.
+  'AzureResourceManagerTemplateDeployment@3': {
+    requiresEndpoint: true,
+    certificateAuth: true,
+    // C-E08-077: the `deploymentOutputs` gotcha, which the Ground field calls out by name.
+    delta:
+      'does not set one output variable but **one per leaf plus a whole-object one** ' +
+      '(C-E08-077). With `deploymentOutputs: out`, an ARM output `region` becomes `out.region.type` ' +
+      'and `out.region.value` — and `out` itself, holding the entire outputs object as JSON. Every ' +
+      'leaf is `JSON.stringify`d unless `useWithoutJSON: true`, so a string output arrives **with ' +
+      'its quotes**: `out.region.value` is `"westeurope"`, not `westeurope`',
+  },
+  'AzureKeyVault@2': {
+    requiresEndpoint: true,
+    certificateAuth: true,
+    // C-E08-078/079: the variable name is the secret name verbatim, and the prejob half is missing.
+    delta:
+      'names each variable **exactly as the secret is named in the vault**, with no prefix and no ' +
+      'transform (C-E08-078) — a secret `db-password` becomes the variable `db-password`. Locally, ' +
+      'set those variables in `.env` directly. Two further deltas: its `prejobexecution` handler ' +
+      'is **not run here** (C-E08-079), so anything that depended on secrets existing before the ' +
+      'first step will not see them; and disabled or expired secrets are silently filtered out ' +
+      'under `SecretsFilter: *` (C-E08-080), so a missing variable may mean a disabled secret ' +
+      'rather than a wrong name',
+  },
+  'AzureFileCopy@6': {
+    requiresEndpoint: true,
+    certificateAuth: true,
+    // C-E08-076/081: it cannot run here at all; `disposeStep` turns it into a stub before this is
+    // ever read, and the reason is recorded in both places because they are read by different people.
+    delta:
+      'cannot run on this host and is emitted as a stub (C-E08-076/081). It ships only a ' +
+      '`PowerShell3` handler, whose contract is that the agent imports `VstsTaskSdk` from the ' +
+      'task’s `ps_modules` first — and it is Windows-only regardless: the package contains ' +
+      '`AzCopy/AzCopy.exe` and `AzCopy_Prev/AzCopy/AzCopy.exe` and **no other binary**. Copy the ' +
+      'files with `az storage blob upload-batch` in a `script:` step instead',
+  },
   'Docker@2': {
     // C-E08-043: `containerRegistry` is not a required input; building with no registry is a
     // supported path, so a connection here is not forced out of ambient mode.

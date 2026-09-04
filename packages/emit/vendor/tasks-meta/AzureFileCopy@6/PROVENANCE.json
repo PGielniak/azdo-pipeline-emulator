@@ -1,0 +1,17 @@
+{
+  "source": {
+    "repo": "microsoft/azure-pipelines-tasks",
+    "path": "Tasks/AzureFileCopyV6/task.json",
+    "tag": "v277",
+    "commit": "8ba25cfb5c7736ba98a37488c0323f7320cb5b3e",
+    "rawUrl": "https://raw.githubusercontent.com/microsoft/azure-pipelines-tasks/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/AzureFileCopyV6/task.json",
+    "permalink": "https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/AzureFileCopyV6/task.json"
+  },
+  "task": {
+    "name": "AzureFileCopy",
+    "version": "6.277.8"
+  },
+  "fetchedAt": "2026-09-04T09:10:41.968Z",
+  "sha256": "2034c60a4ca765327c3e93e43ef8d3a0b8fb41b3c5a5a83c072feeb0a7285328",
+  "bytes": 17011
+}

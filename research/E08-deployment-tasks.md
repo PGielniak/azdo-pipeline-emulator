@@ -777,3 +777,97 @@ line removes the warning.
 
 Not covered: the AKS/ARM arm of any of them, which needs an Azure service connection — the same
 outward-facing write E08-S01-T02 and E08-S02-T01 are blocked on.
+
+## E08-S02-T04 — `AzureResourceManagerTemplateDeployment@3`, `AzureKeyVault@2`, `AzureFileCopy@6` (`C-E08-076..081`)
+
+Recorded 2026-09-04. Sources: the three tasks at the `v277` pin `8ba25cfb5c7736ba98a37488c0323f7320cb5b3e`, and the real
+`AzureFileCopy@6.278.1` package downloaded from the org.
+
+All three take **one** AzureRM connection input, read unconditionally, so none needs a
+`CONNECTION_INPUT_RULES` entry — the pre-E08-S02-T03 unconditional walk is correct for exactly this
+shape. What they do need is three deltas the Ground field names, one Do-field correction, and one
+task that cannot run here at all.
+
+### `AzureFileCopy@6` cannot run on this host, for two independent reasons (`C-E08-076`, `C-E08-081`)
+
+[C-E08-076] **A `PowerShell3` task fails at its first SDK call under our host, and PowerShell's
+non-terminating errors turn that into a cascade rather than a stop.** The `PowerShell3` contract is
+that the agent imports `VstsTaskSdk` from the task's own `ps_modules` and *then* runs the script;
+`azdo_run_task` execs `pwsh -NoLogo -NonInteractive -File`, which imports nothing. Measured against
+the real package: `Trace-VstsEnteringInvocation` on line 4 is "not recognized", and because
+`$ErrorActionPreference` is `Continue` the script runs on through the whole input block — **19**
+`is not recognized` errors — before dying on `.Trim()` of a null, exit 1. **Consequence:** this is
+general to *every* `PowerShell3` task, not to this one, and it is why `disposeStep` now turns such
+a task into a stub with the reason rather than letting the run produce that wall of text. The
+runtime's handler *resolution* is unchanged and still correct — it mirrors the agent's preference
+order (C-E07-006); what changed is the convert-time decision about whether to use it.
+  — the real `AzureFileCopy@6.278.1` package (15,322 files) run under `pwsh 7.6.5`; measured 2026-09-04
+
+[C-E08-081] **It is Windows-only regardless: the package ships `AzCopy.exe` and nothing else.**
+`AzureFileCopy.ps1` builds its tool path as `AzCopy_Prev\AzCopy\AzCopy.exe` or
+`AzCopy\AzCopy.exe` — backslashes and `.exe` — and gates on `Get-Command pwsh.exe`, which on this
+Linux host answers *not found* (measured). The downloaded package contains exactly two binaries,
+`AzCopy/AzCopy.exe` and `AzCopy_Prev/AzCopy/AzCopy.exe`; there is no Linux or macOS azcopy in it.
+**Consequence:** even with the SDK loaded this task could not copy a file here. CLAUDE.md defers the
+Windows host, so the honest disposition is a stub whose warning names the alternative
+(`az storage blob upload-batch` in a `script:` step) rather than a half-working emulation.
+  — https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/AzureFileCopyV6/AzureFileCopy.ps1
+    (L44-62, L96-104) and the package's own file list (checked 2026-09-04)
+
+### The `deploymentOutputs` shape, which the Ground field calls "a known gotcha" (`C-E08-077`)
+
+[C-E08-077] **`deploymentOutputs: out` sets one variable per *leaf* of the outputs object, plus one
+more holding the whole object — and every leaf is JSON-encoded by default.**
+`DeploymentScopeBase.ts` walks `result.properties.outputs` recursively: any value that is a
+non-null object recurses with the path extended, anything else is emitted as
+`##vso[task.setvariable variable=${path}.${key};]` with the value passed through `JSON.stringify`
+**unless `useWithoutJSON` is set**. After the walk it emits one more `setvariable` for
+`deploymentOutputs` itself, holding `JSON.stringify(outputs)`. ARM outputs are always shaped
+`{ name: { type, value } }`, so a single output `region` yields `out.region.type`,
+`out.region.value` **and** `out`. **Consequence:** the value an author expects to be `westeurope`
+is `"westeurope"` — quotes included — which breaks any downstream step that pastes it into a URL or
+an `az` argument. Verified against our own runtime by replaying the exact `##vso` lines that code
+produces (`core.bats`, "deploymentOutputs sets one variable per leaf"); the dotted names map to
+`OUT_REGION_VALUE` and the flat one to `OUT`, so they do not collide (C-E06-008).
+  — https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/AzureResourceManagerTemplateDeploymentV3/operations/DeploymentScopeBase.ts
+    (L74-91) (checked 2026-09-04)
+
+### Key Vault: the variable *is* the secret name (`C-E08-078..080`)
+
+[C-E08-078] **`AzureKeyVault@2` names each variable exactly as the secret is named in the vault —
+no prefix, no transform.** `setVaultVariable` calls `tl.setVariable(secretName, secretValue, true)`
+and, for a versioned reference, also `tl.setVariable(secretName.split("/")[0], …)`; for an
+unversioned name the two are identical and it sets the same variable twice.
+**Consequence: the backlog's `KV_<vault>_<secret>` is a transpiler-era invention and is wrong** —
+the same shape of error as the `SC_<NAME>_*` keys E08-S01-T02 corrected in docs/03 §5 (decision 73).
+The local substitute is a variable named after the secret; `db-password` stays `db-password`.
+Recorded as decision 81 and as a Do-field correction rather than silently implemented differently.
+Hyphens are *not* transformed by `azdo__env_name` — nor by the agent's own
+`ConvertToEnvVariableFormat` (C-E06-008) — so the child receives `DB-PASSWORD`, which `exec env --`
+passes through intact and a task reads by name. Bash cannot dereference it as `$DB-PASSWORD`, but
+that is equally true on a hosted agent: **checked, and faithful, not a defect of ours.**
+  — https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/AzureKeyVaultV2/operations/KeyVault.ts
+    (L182-217) (checked 2026-09-04)
+
+[C-E08-079] **Its `prejobexecution` handler is not run here, and nothing in this repo runs one.**
+`AzureKeyVault@2` declares `prejobexecution` → `runprejob.js` (as does `AzureFileCopy@6`), a
+handler the agent runs **before the job's steps**. `azdo_run_task` reads `execution` only; the word
+`prejob` appears nowhere in the codebase. **Consequence:** anything relying on secrets existing
+before the first step will not see them. Implementing pre-job handlers is E07 architecture, not this
+task — recorded here and surfaced as a delta so the gap is visible rather than mysterious.
+  — the vendored `task.json` files, and `grep -rn prejob packages/` (checked 2026-09-04)
+
+[C-E08-080] **Disabled and expired secrets are filtered out silently under `SecretsFilter: *`.**
+`filterDisabledAndExpiredSecrets` keeps only `value.enabled && (!value.expires || value.expires > now)`.
+**Consequence:** a variable that is simply absent may mean a disabled secret rather than a
+misspelled name — worth saying, because the local substitute (a `.env` line) has no such notion and
+so behaves *differently* by being more permissive.
+  — same `KeyVault.ts` (L144-148) (checked 2026-09-04)
+
+### Not verified here
+
+- **Live parity for all three** — deploying a template, reading a secret, uploading to storage — needs
+  an Azure subscription and a service connection: the same outward-facing write into the owner's
+  Entra tenant that blocks E08-S01-T02, E08-S02-T01, and E08-S02-T03's ARM arm.
+- **`AzureFileCopy@6` end to end** is additionally blocked by C-E08-076/081 and would need a Windows
+  host, which CLAUDE.md defers.
