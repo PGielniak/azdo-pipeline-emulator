@@ -708,3 +708,72 @@ chose. `Agent.ToolsDirectory` is seeded (C-E08-068); `Agent.Version` deliberatel
   **unverified by absence** — not verified safe. It matters only for AAD-authenticated AKS clusters.
 - **The AKS/ARM arm** (`azure-arm-rest/aksUtility`) needs an Azure service connection, the same
   outward-facing write E08-S01-T02 and E08-S02-T01 are blocked on.
+
+### Found by running them, not by reading them (`C-E08-072..075`)
+
+The five claims above were read from source. These four were **only** reachable by executing the
+real packages against a live cluster — the transcript is
+`research/experiments/E08-kubernetes/real-task-run.md`.
+
+[C-E08-072] **`System.HostType` is dereferenced at module load, unguarded, and its absence crashed
+every one of these tasks before a single input was read.** `image-metadata-helper.js` — imported by
+`Kubernetes@1`, `KubernetesManifest@1` and `HelmDeploy@0` alike — has
+`const hostType = tl.getVariable("System.HostType").toLowerCase();` at top level. With the variable
+unset the task dies with `Cannot read properties of undefined (reading 'toLowerCase')`, naming
+neither the variable nor the task. **Consequence:** the generated project now seeds
+`System.HostType` = `build`, the value the predefined-variables table documents ("Set to build if
+the pipeline is a build" — C-E04-093) and the only correct one for a converted YAML pipeline. Same
+class as C-E08-068 and found the same way.
+  — `azure-pipelines-tasks-kubernetes-common/image-metadata-helper.js` L15 as shipped inside
+    `Kubernetes@1.277.0`; measured 2026-09-04
+
+[C-E08-073] **Real-task mode was omitting every input the step did not write, so declared defaults
+never reached the task.** On a real agent the *agent* builds `INPUT_*` from the task's declaration,
+so an input the author omits still arrives carrying its `task.json` default; task-lib never reads
+`task.json` itself. `realTaskBody` emitted only the authored inputs. **Consequence:** `Kubernetes@1`
+crashed in `clusterconnection.ts` dereferencing an undefined kubectl path, because
+`versionOrLocation` — declared default `version` — never reached `getKubectl()`, which then fell
+off the end of its `if/else if` and returned `undefined`. The fix is one call to
+`resolveTaskInputs`, which E07-S01-T02 built for exactly this and which nothing had ever called;
+aliases collapse to the declared name on the way through, matching the agent. **This is an E07
+defect found by an E08 task, and it would have hit any task with a load-bearing default.**
+  — measured 2026-09-04; `packages/emit/src/task-host.ts` `resolveTaskInputs`
+
+[C-E08-074] **`KubernetesManifest@1` annotates every resource it deploys with seven
+`azure-pipelines/*` annotations, and locally their values are the literal string `undefined` —
+written into your real cluster.** Confirmed on the kind cluster: `azure-pipelines/run=undefined`,
+`pipeline="undefined"`, `pipelineId="undefined"`, `jobName="undefined"`, `project=undefined`,
+`org=undefined`, and `runuri=undefinedundefined/_build/results?buildId=undefined`. The values come
+from run-identity variables (`Build.BuildNumber`, `System.TeamProject`,
+`System.TeamFoundationCollectionUri`, …) that a local run has no honest value for.
+**Consequence:** a converted pipeline pointed at a *shared* cluster stamps meaningless annotations
+on live objects, and `kubectl annotate --overwrite` means it overwrites whatever the real pipeline
+put there. Reported as a delta; the remedy is `.env` values for the run-identity variables, which
+the generated `.env.example` already offers in §1.
+  — measured 2026-09-04 against kind v0.30.0 / Kubernetes v1.34.0
+
+[C-E08-075] **Seeding `System.HostType` opens the next unguarded read: `Build.Reason`.** With
+`hostType === "build"` true, `image-metadata-helper.js` L146 evaluates
+`tl.getVariable("Build.Reason").toLowerCase()`, which is undefined locally because `Build.Reason` is
+deliberately a user-supplied run-identity override (`.env.example` §1) and is never seeded.
+**Consequence:** a *non-fatal* `publishToImageMetadataStore failed with error: TypeError…` warning on
+every `Kubernetes@1`/`KubernetesManifest@1`/`HelmDeploy@0` step — the call is inside a `catch`, the
+task still reports `Succeeded`. Not seeded here on purpose: `Build.Reason` participates in condition
+evaluation (`eq(variables['Build.Reason'], 'PullRequest')`), so choosing a value for the user would
+silently change which steps run — a decision that belongs to E02/E05, not to this task. One `.env`
+line removes the warning.
+  — measured 2026-09-04; `image-metadata-helper.js` L144-146
+
+### Live parity results (2026-09-04, kind v0.30.0 / Kubernetes v1.34.0)
+
+| Task | Result | What it proved |
+|---|---|---|
+| `Kubernetes@1` | **Succeeded** | `connectionType: None` applies to the ambient kubectl context (C-E08-060); pod `e08-parity` reached `Running` |
+| `KubernetesManifest@1` | **Succeeded** | the undocumented `connectionType: None` (C-E08-061) deploys and rolls out; the `undefined` annotations of C-E08-074 |
+| `HelmDeploy@0` `upgrade` | **Succeeded** | C-E08-066 measured: it set `KUBECONFIG` to the real `$HOME/.kube/config` and deployed through the current context — and left the file intact |
+| `HelmDeploy@0` `save` | **Failed, as predicted** | C-E08-069 end to end: `helm version --client --short` → `Error: unknown flag: --client` → "Save chart to Azure Container Registry is only supported in Helms V3" against Helm v4.2.4 |
+| `KubectlInstaller@0` | **Succeeded** | C-E08-068 before *and* after: `Agent.ToolsDirectory is not set` with it unset, kubectl v1.31.0 cached at `tools/kubectl/1.31.0/x64/` with it set |
+| `HelmInstaller@1` | **Succeeded** | helm 3.16.2 cached and `##vso[task.prependpath]` emitted (C-E08-067) |
+
+Not covered: the AKS/ARM arm of any of them, which needs an Azure service connection — the same
+outward-facing write E08-S01-T02 and E08-S02-T01 are blocked on.

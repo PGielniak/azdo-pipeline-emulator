@@ -8,7 +8,7 @@
     "02-artifact-handoff": {
       "finalYamlSha256": "7f7f1482919260e7edc5ce058917cfb18340a99f2dc29e53c64b1125452222df",
       "stepCount": 10,
-      "treeDigest": "093e8330e1bd7f817d5c2f319fd749e39de29ddd3b9df5d3c9df553bc73463dc"
+      "treeDigest": "26ec14ff15405742d407b60f0a4c77de87faa8ae2019d3232fc0decc8317bc47"
     },
     "03-dependencies-and-conditions": {
       "finalYamlSha256": "187a1989a43588b1c69690c821061cb4d699e6f3d82fcde1d7102c3f7ce0beca",

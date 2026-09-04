@@ -683,6 +683,13 @@ const TOOL_TASK_NOTES: Readonly<Record<string, readonly (readonly [string, strin
   ],
   'HelmDeploy@0': [
     [
+      'image-metadata-warning',
+      'prints a non-fatal `publishToImageMetadataStore failed … TypeError` on every run ' +
+        '(C-E08-075): once `System.HostType` is seeded, the image-metadata helper goes on to read ' +
+        '`Build.Reason`, which a local run deliberately leaves to you. The call is inside a catch, ' +
+        'so the step still succeeds. Set `Build.Reason` in `.env` §1 to silence it.',
+    ],
+    [
       'helm-v4-version-probe',
       'detects the Helm major version by running `helm version --client --short`, and **Helm 4 ' +
         'rejects `--client`** — measured on this machine against helm v4.2.4: exit 1, empty ' +
@@ -692,7 +699,33 @@ const TOOL_TASK_NOTES: Readonly<Record<string, readonly (readonly [string, strin
         'Install a Helm 3 CLI to reproduce the cloud behaviour.',
     ],
   ],
+  'KubernetesManifest@1': [
+    [
+      'image-metadata-warning',
+      'prints a non-fatal `publishToImageMetadataStore failed … TypeError` on every run ' +
+        '(C-E08-075): once `System.HostType` is seeded, the image-metadata helper goes on to read ' +
+        '`Build.Reason`, which a local run deliberately leaves to you. The call is inside a catch, ' +
+        'so the step still succeeds. Set `Build.Reason` in `.env` §1 to silence it.',
+    ],
+    [
+      'k8s-undefined-annotations',
+      'annotates every resource it deploys with seven `azure-pipelines/*` annotations, and locally ' +
+        'their values are the literal string `undefined` (C-E08-074) — read back off a live ' +
+        'cluster: `azure-pipelines/run=undefined`, ' +
+        '`runuri=undefinedundefined/_build/results?buildId=undefined`, and five more. They are ' +
+        'written with `kubectl annotate --overwrite`, so against a **shared** cluster this ' +
+        'overwrites what the real pipeline recorded. Fill in the run-identity variables in ' +
+        '`.env` §1 if that matters.',
+    ],
+  ],
   'Kubernetes@1': [
+    [
+      'image-metadata-warning',
+      'prints a non-fatal `publishToImageMetadataStore failed … TypeError` on every run ' +
+        '(C-E08-075): once `System.HostType` is seeded, the image-metadata helper goes on to read ' +
+        '`Build.Reason`, which a local run deliberately leaves to you. The call is inside a catch, ' +
+        'so the step still succeeds. Set `Build.Reason` in `.env` §1 to silence it.',
+    ],
     [
       'kubectl-version-default',
       'resolves its own kubectl before running: with the default `versionSpec: 1.13.2` it uses the ' +

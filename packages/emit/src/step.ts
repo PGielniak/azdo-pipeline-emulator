@@ -25,6 +25,7 @@ import { collectConnections, REAL_TASK_ENDPOINT_USE, type TaskDefinitions } from
 import { connectionKind } from './service-connection.js';
 import { disposeStep, type DispositionOptions, type StepDisposition } from './disposition.js';
 import { originStepLabel } from './scaffold.js';
+import { resolveTaskInputs } from './task-host.js';
 import { hasMacro, taskRef } from './task-ref.js';
 
 export { hasMacro, taskRef } from './task-ref.js';
@@ -382,8 +383,27 @@ function connectionTaskKey(reference: string): string {
 }
 
 function realTaskBody(step: Step, options: StepEmitOptions): string {
-  const inputs = Object.entries(step.inputs)
-    .map(([key, value]) => `  ${key}: ${value}`)
+  // C-E08-073 (E08-S02-T03): the *declared defaults* belong here, not just what the author wrote.
+  // On a real agent the agent builds `INPUT_*` from the task's declaration, so an input the step
+  // omits still arrives carrying its `task.json` default; task-lib never reads `task.json` itself.
+  // Emitting only the authored inputs made every such default arrive as `undefined`, and
+  // `resolveTaskInputs` — built for exactly this in E07-S01-T02 — was exported, tested, and called
+  // by nothing. Found by running the real `Kubernetes@1`: it crashed in `clusterconnection.ts`
+  // dereferencing a kubectl path that was undefined because `versionOrLocation` (declared default
+  // `version`) never reached it.
+  //
+  // Aliases collapse to the declared name on the way through, which is also the agent's behaviour:
+  // the task reads its declared spelling and an alias never becomes an `INPUT_` of its own.
+  const definition = options.taskDefinitions?.[connectionTaskKey(taskRef(step))];
+  const entries =
+    definition === undefined
+      ? Object.entries(step.inputs)
+      : resolveTaskInputs(definition, step.inputs).inputs.map((input) => [input.name, input.value]);
+  const inputs = entries
+    // A value spanning lines cannot survive the `name: value` heredoc, and a declared default that
+    // is empty adds a line the task reads as unset either way (C-E07-002) — but it must still be
+    // emitted, because a task reading the environment directly does see it.
+    .map(([key, value]) => `  ${key}: ${String(value).replace(/\r?\n/g, ' ')}`)
     .join('\n');
   return [
     ...preflightLines(step, options),

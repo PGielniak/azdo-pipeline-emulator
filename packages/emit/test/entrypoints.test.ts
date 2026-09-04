@@ -312,3 +312,21 @@ describe('generated project runs end-to-end', () => {
     }
   }, 60_000);
 });
+
+describe('the variables a real tool-lib task needs (E08-S02-T03)', () => {
+  it('seeds Agent.ToolsDirectory and System.HostType, and does not seed Agent.Version', () => {
+    // C-E08-068: tool-lib's `_getCacheRoot` throws `Agent.ToolsDirectory is not set` before doing
+    // anything else — measured before *and* after against the real `KubectlInstaller@0`.
+    // C-E08-072: `System.HostType` is dereferenced at module load, unguarded.
+    // C-E08-071: `assertAgent` passes when `Agent.Version` is *unset*, so seeding one would flip
+    // every other assertAgent gate in every task to a number we chose.
+    const { pipeline } = buildPipeline(parsePipelineYaml(FIXTURE, 'pipeline.expanded.yml'));
+    const files = emitEntrypoints(pipeline!, scaffold(pipeline!), 'pipeline.expanded.yml', []);
+    const runJob = [...files.entries()].find(([name]) => name.endsWith('run-job.sh'))?.[1] ?? '';
+    expect(runJob).toContain(`azdo_var_set 'Agent.ToolsDirectory' "$AZDO_WORKSPACE_DIR/tools"`);
+    expect(runJob).toContain(`azdo_var_set 'System.HostType' build`);
+    expect(runJob).not.toContain('Agent.Version');
+    // The directory has to exist before a task caches into it.
+    expect(files.get('run.sh')).toContain('"$AZDO_WORKSPACE_DIR/tools"');
+  });
+});

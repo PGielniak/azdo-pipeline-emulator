@@ -711,3 +711,34 @@ describe('tool-task warnings: the tasks with no connection to hang a warning on 
     expect(codes(many).filter((c) => c === 'tool-cache-download')).toHaveLength(1);
   });
 });
+
+describe('the deltas only a live run could find (E08-S02-T03)', () => {
+  const codes = (steps: readonly StepSite[]): string[] =>
+    collectConnections(steps, VENDORED).warnings.map((w) => w.code);
+
+  it('warns that KubernetesManifest@1 stamps `undefined` annotations on real objects (C-E08-074)', () => {
+    // Read back off the kind cluster, not inferred: seven azure-pipelines/* annotations whose
+    // values are the literal string `undefined`, written with --overwrite.
+    const warnings = collectConnections(
+      [site(step('KubernetesManifest', '1', { connectionType: 'None', manifests: 'deploy.yaml' }))],
+      VENDORED,
+    ).warnings;
+    const annotations = warnings.find((w) => w.code === 'k8s-undefined-annotations');
+    expect(annotations?.message).toContain('--overwrite');
+    expect(annotations?.message).toContain('C-E08-074');
+  });
+
+  it('warns about the image-metadata TypeError on all three connection-consuming tasks (C-E08-075)', () => {
+    for (const [name, version] of [
+      ['Kubernetes', '1'],
+      ['KubernetesManifest', '1'],
+      ['HelmDeploy', '0'],
+    ] as const) {
+      expect(codes([site(step(name, version, {}))])).toContain('image-metadata-warning');
+    }
+    // The installers do not import the helper, so they must not carry the note.
+    expect(codes([site(step('KubectlInstaller', '0', {}))])).not.toContain(
+      'image-metadata-warning',
+    );
+  });
+});

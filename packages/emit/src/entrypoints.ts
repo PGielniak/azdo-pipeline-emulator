@@ -158,7 +158,15 @@ export function emitConditions(conditions: readonly CompiledCondition[]): string
   ].join('\n');
 }
 
-/** The predefined directory variables the runner seeds once per job (decision 62). */
+/**
+ * The predefined variables the runner seeds once per job (decision 62).
+ *
+ * Directories, plus one that is not: `System.HostType`. E08-S02-T03 found the real
+ * `Kubernetes@1` package crashing at **module load** on
+ * `tl.getVariable("System.HostType").toLowerCase()` — no guard, before a single input is read, on
+ * every command and every `connectionType` (C-E08-072). A converted YAML pipeline is a build, which
+ * is the documented value.
+ */
 const RUN_DIR_VARS = [
   ['System.DefaultWorkingDirectory', '"$AZDO_WORKSPACE_DIR/s"'],
   ['Build.SourcesDirectory', '"$AZDO_WORKSPACE_DIR/s"'],
@@ -176,6 +184,9 @@ const RUN_DIR_VARS = [
   // supplying one buys nothing and would silently flip every other `assertAgent` gate in every task
   // from "unasserted" to "asserted at whatever number we picked".
   ['Agent.ToolsDirectory', '"$AZDO_WORKSPACE_DIR/tools"'],
+  // C-E08-072: "Set to build if the pipeline is a build" — the vendored predefined-variables table
+  // (C-E04-093). Not a `.env` question: a converted YAML pipeline is always a build.
+  ['System.HostType', 'build'],
 ] as const;
 
 /** The `run-job.sh` file. */

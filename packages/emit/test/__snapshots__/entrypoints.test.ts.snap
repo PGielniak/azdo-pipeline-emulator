@@ -149,6 +149,7 @@ if [[ -z "$(azdo_var System.DefaultWorkingDirectory)" ]]; then
   azdo_var_set 'Pipeline.Workspace' "$AZDO_WORKSPACE_DIR"
   azdo_var_set 'Agent.TempDirectory' "$AZDO_WORKSPACE_DIR/tmp"
   azdo_var_set 'Agent.ToolsDirectory' "$AZDO_WORKSPACE_DIR/tools"
+  azdo_var_set 'System.HostType' build
 fi
 
 id='010'
