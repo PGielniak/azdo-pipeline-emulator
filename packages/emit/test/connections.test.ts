@@ -778,3 +778,63 @@ describe('an endpoint kind nobody has read (C-E08-053)', () => {
     expect(codes.filter((c) => c === 'connection-kind-unknown')).toHaveLength(1);
   });
 });
+
+describe('the ARM / Key Vault / storage trio (E08-S02-T04)', () => {
+  it('each declares exactly one AzureRM connection input, read unconditionally', () => {
+    // Why they need no CONNECTION_INPUT_RULES entry: the unconditional walk is *correct* when a
+    // task has one connection input and always reads it. The rules table exists for the tasks that
+    // declare several and pick one at run time (C-E08-059).
+    for (const key of [
+      'AzureResourceManagerTemplateDeployment@3',
+      'AzureKeyVault@2',
+      'AzureFileCopy@6',
+    ]) {
+      const connectionInputs = (VENDORED[key]?.inputs ?? []).filter((input) =>
+        (input.type ?? '').startsWith('connectedService:'),
+      );
+      expect(connectionInputs).toHaveLength(1);
+      expect(connectionInputs[0]?.type).toBe('connectedService:AzureRM');
+      expect(connectionInputs[0]?.required).toBe(true);
+    }
+  });
+
+  it('collects the connection under its alias and forces sp mode', () => {
+    // `azureSubscription:` is the alias two of the three carry, and what real pipelines write.
+    const { connections } = collectConnections(
+      [site(step('AzureKeyVault', '2', { azureSubscription: 'prod', KeyVaultName: 'kv' }))],
+      VENDORED,
+    );
+    expect(connections.map((c) => [c.name, c.mode, c.kind])).toEqual([['prod', 'sp', 'azurerm']]);
+  });
+
+  it('warns that deploymentOutputs is per-leaf plus whole-object, and quoted (C-E08-077)', () => {
+    const warnings = collectConnections(
+      [
+        site(
+          step('AzureResourceManagerTemplateDeployment', '3', {
+            azureResourceManagerConnection: 'prod',
+            deploymentOutputs: 'out',
+          }),
+        ),
+      ],
+      VENDORED,
+    ).warnings;
+    const delta = warnings.find((w) => w.code === 'local-task-delta');
+    expect(delta?.message).toContain('out.region.value');
+    expect(delta?.message).toContain('useWithoutJSON');
+  });
+
+  it('states the Key Vault naming as the secret name verbatim, not an invented prefix', () => {
+    // The backlog Do field asked for `KV_<vault>_<secret>`; the task calls
+    // `setVariable(secretName, …)` with no transform (C-E08-078). Transpiler-era invention, same
+    // shape as the `SC_<NAME>_*` keys E08-S01-T02 corrected — decisions 73 and 81.
+    const warnings = collectConnections(
+      [site(step('AzureKeyVault', '2', { azureSubscription: 'prod' }))],
+      VENDORED,
+    ).warnings;
+    const delta = warnings.find((w) => w.code === 'local-task-delta');
+    expect(delta?.message).toContain('db-password');
+    expect(delta?.message).not.toContain('KV_');
+    expect(delta?.message).toContain('prejobexecution');
+  });
+});

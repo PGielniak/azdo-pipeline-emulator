@@ -102,7 +102,40 @@ export function disposeStep(step: Step, options: DispositionOptions = {}): StepD
     };
   }
 
+  // E08-S02-T04: a task whose only handler is `PowerShell3` cannot run faithfully here, and this is
+  // the place to say so — before the step is written, not after the run produces a wall of errors.
+  //
+  // The reason is not the shell. It is that the `PowerShell3` contract is "the agent imports
+  // `VstsTaskSdk` from the task's own `ps_modules` and *then* dot-sources the script"; our host
+  // execs `pwsh -File`, which imports nothing. Measured against the real `AzureFileCopy@6.278.1`
+  // (C-E08-076): `Trace-VstsEnteringInvocation` on line 4 is undefined, and because PowerShell's
+  // errors are non-terminating the script runs on through **19** more `is not recognized` errors
+  // before dying on a null dereference. A stub with a reason is strictly better than that.
+  if (info?.definition !== undefined && onlyPowerShellHandler(info.definition.execution)) {
+    return {
+      disposition: 'stub',
+      fidelity: 'stub',
+      kind: step.origin ?? reference,
+      warning:
+        `\`${reference}\` runs as a stub: it ships only a \`PowerShell3\` handler, whose contract is ` +
+        'that the agent imports `VstsTaskSdk` from the task’s `ps_modules` before running the ' +
+        'script (C-E08-076). This host runs `pwsh -File`, which imports nothing, so every ' +
+        '`Get-VstsInput` in the task is undefined. Its inputs are logged and the step succeeds ' +
+        'without doing the task’s work.',
+    };
+  }
+
   return { disposition: 'real-task', fidelity: 'degraded', kind: step.origin ?? reference };
+}
+
+/** True when the `execution` block names a PowerShell handler and no Node one. */
+function onlyPowerShellHandler(execution: Readonly<Record<string, unknown>> | undefined): boolean {
+  if (execution === undefined) return false;
+  const keys = Object.keys(execution);
+  if (keys.length === 0) return false;
+  // Mirrors `resolveHandler`'s preference order: a Node handler wins, and we can run it.
+  if (keys.some((key) => key.startsWith('Node'))) return false;
+  return keys.some((key) => key.startsWith('PowerShell'));
 }
 
 /**

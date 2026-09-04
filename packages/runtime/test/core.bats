@@ -3853,3 +3853,67 @@ ENV
   [[ "$(azdo_var ENDPOINT_AUTH_PARAMETER_mycluster_KUBECONFIG)" == *'kind: Config'* ]]
   [[ "$(azdo_var ENDPOINT_AUTH_PARAMETER_mycluster_KUBECONFIG)" == *'current-context: kind-e08'* ]]
 }
+
+# ── E08-S02-T04: the `deploymentOutputs` shape (C-E08-077) ───────────────────────────────────────
+
+# The lines below are what `DeploymentScopeBase.ts` emits for a two-output ARM deployment, produced
+# by hand-executing its `setVariablesInObject` walk over the outputs object ARM actually returns.
+# Feeding them through our own runtime is the offline half of "output-variable shape byte-compared":
+# the only thing a live deployment would add is that the object came from Azure rather than a
+# fixture.
+azdo__t04_deployment_outputs() {
+  cat <<'VSO'
+##vso[task.setvariable variable=out.region.type;]"String"
+##vso[task.setvariable variable=out.region.value;]"westeurope"
+##vso[task.setvariable variable=out.count.type;]"Int"
+##vso[task.setvariable variable=out.count.value;]3
+##vso[task.setvariable variable=out;]{"region":{"type":"String","value":"westeurope"},"count":{"type":"Int","value":3}}
+VSO
+}
+
+@test "deploymentOutputs sets one variable per leaf *and* one for the whole object (C-E08-077)" {
+  # The gotcha the Ground field names: `deploymentOutputs: out` does not produce `out` alone.
+  azdo__t04_deployment_outputs | azdo_logging_stream
+  [[ "$(azdo_var 'out.region.type')" == '"String"' ]]
+  [[ "$(azdo_var 'out.count.value')" == '3' ]]
+  [[ "$(azdo_var 'out')" == '{"region":{"type":"String","value":"westeurope"},"count":{"type":"Int","value":3}}' ]]
+}
+
+@test "a string deployment output arrives with its JSON quotes (C-E08-077)" {
+  # Every leaf goes through JSON.stringify unless `useWithoutJSON: true`, so the value a pipeline
+  # author expects to be `westeurope` is `"westeurope"` -- seven characters longer, and it breaks
+  # any downstream step that pastes it into a URL or an `az` argument.
+  azdo__t04_deployment_outputs | azdo_logging_stream
+  [[ "$(azdo_var 'out.region.value')" == '"westeurope"' ]]
+  [[ "$(azdo_var 'out.region.value')" != 'westeurope' ]]
+}
+
+@test "the dotted output names do not collide with the flat one in the environment (C-E08-077)" {
+  # `azdo__env_name` maps `.` to `_` (C-E06-008), so `out.region.value` becomes OUT_REGION_VALUE and
+  # the whole-object `out` becomes OUT. Distinct, which is what makes both usable from a script step.
+  local leaf flat
+  azdo__env_name 'out.region.value' leaf
+  azdo__env_name 'out' flat
+  [[ "$leaf" == 'OUT_REGION_VALUE' ]]
+  [[ "$flat" == 'OUT' ]]
+}
+
+@test "a Key Vault secret name is stored and materialized verbatim, hyphens included (C-E08-078)" {
+  # AzureKeyVault@2 calls setVariable(secretName, ...) with no transform, so `db-password` is the
+  # variable name. `azdo__env_name` does not touch hyphens -- neither does the agent's own
+  # ConvertToEnvVariableFormat (C-E06-008) -- so the child sees DB-PASSWORD. Bash cannot *reference*
+  # that with `$DB-PASSWORD`, but `exec env --` passes it through and a task reading its own
+  # environment by name finds it. Checked, and faithful: not a defect of ours.
+  local name
+  azdo__env_name 'db-password' name
+  [[ "$name" == 'DB-PASSWORD' ]]
+
+  azdo_var_set 'db-password' 'hunter2'
+  [[ "$(azdo_var 'db-password')" == 'hunter2' ]]
+  azdo_env_materialize
+  local found=false entry
+  for entry in "${AZDO_STEP_ENV[@]}"; do
+    [[ "$entry" == 'DB-PASSWORD=hunter2' ]] && found=true
+  done
+  [[ "$found" == true ]]
+}

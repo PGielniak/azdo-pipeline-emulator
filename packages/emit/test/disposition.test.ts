@@ -182,3 +182,63 @@ describe('every classification path is table-driven (the Done criterion)', () =>
     }
   });
 });
+
+describe('a task this host cannot run faithfully (E08-S02-T04)', () => {
+  const psTask = {
+    id: 1,
+    displayName: 'copy',
+    task: { name: 'AzureFileCopy', version: '6' },
+    inputs: {},
+  } as never as Step;
+
+  it('a PowerShell3-only handler becomes a stub, with the SDK reason (C-E08-076)', () => {
+    // Not "PowerShell does not work here" — pwsh runs fine. The `PowerShell3` contract is that the
+    // agent imports `VstsTaskSdk` from the task's own `ps_modules` first; `pwsh -File` imports
+    // nothing, so every `Get-VstsInput` is undefined. Measured against the real package: 19
+    // `is not recognized` errors before it died, because PowerShell errors do not terminate.
+    const result = disposeStep(psTask, {
+      packages: {
+        'AzureFileCopy@6': { definition: { execution: { PowerShell3: { target: 'x.ps1' } } } },
+      },
+    });
+    expect(result.disposition).toBe('stub');
+    expect(result.fidelity).toBe('stub');
+    expect(result.warning).toContain('VstsTaskSdk');
+  });
+
+  it('a task with both handlers still runs for real — Node wins, as resolveHandler orders it', () => {
+    const result = disposeStep(psTask, {
+      packages: {
+        'AzureFileCopy@6': {
+          definition: {
+            execution: { PowerShell3: { target: 'x.ps1' }, Node20_1: { target: 'x.js' } },
+          },
+        },
+      },
+    });
+    expect(result.disposition).toBe('real-task');
+  });
+
+  it('an empty or absent execution block is not a PowerShell refusal', () => {
+    // Both are "we do not know", not "we cannot run it": a definition fetched without an execution
+    // block, and one whose block is empty, must keep the real-task default rather than degrade a
+    // task that will run perfectly well (the module's existing rule, unchanged).
+    const packages = (execution?: Record<string, unknown>): DispositionOptions => ({
+      packages: { 'AzureFileCopy@6': { definition: execution === undefined ? {} : { execution } } },
+    });
+    expect(disposeStep(psTask, packages()).disposition).toBe('real-task');
+    expect(disposeStep(psTask, packages({})).disposition).toBe('real-task');
+  });
+
+  it('a Process-only handler is left alone — the refusal is specific to PowerShell3', () => {
+    const result = disposeStep(psTask, {
+      packages: { 'AzureFileCopy@6': { definition: { execution: { Process: { target: 'x' } } } } },
+    });
+    expect(result.disposition).toBe('real-task');
+  });
+
+  it('says nothing when no package information is available', () => {
+    // Unchanged: an unfetched package must not be labelled a stub (the module's existing rule).
+    expect(disposeStep(psTask).disposition).toBe('real-task');
+  });
+});
