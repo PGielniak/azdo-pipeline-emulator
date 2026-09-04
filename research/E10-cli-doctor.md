@@ -5,6 +5,7 @@
 | Block | Task | Notes |
 | --- | --- | --- |
 | `C-E10-001` … `C-E10-029` | E10-S04 doctor | |
+| `C-E10-030` … `C-E10-049` | E10-S03 auth UX | |
 
 ---
 
@@ -125,3 +126,61 @@ requires this — it is the check the Do field asks for ("CI check: every task d
 declares requirements"), and it exists so a task added later cannot silently become a step that
 fails at run time with `command not found` instead of failing the doctor before the run.
   — project policy; no source claims otherwise
+
+---
+
+## E10-S03-T01 — `auth login` / `auth status` UX (`C-E10-030..034`)
+
+Recorded 2026-09-04. This is a UX task over E09's implementations, so its grounding is **this
+repository's own code plus one live walkthrough** — the Ground field asks for "E09-S01
+implementations + their pinned sources", and the four claims below are what reading them changed.
+
+[C-E10-030] **`authStatus` consults only the credential *store*, and nothing in this repository ever
+writes it — so `auth status` would have answered "signed out" for every user alive.**
+`authStatus(orgUrl, options)` did `store.load(normalized)` and returned `{ kind: 'signed-out' }` when
+that missed. `AzureCredentialStore.save()` exists and has **no production caller**: the only arm that
+would write it is the device-code flow, which is E09-S01-T01 and unbuilt. Meanwhile a user with
+`AZDO_PAT` set is authenticated perfectly well — and per C-E09-023 that is the *default* case, not an
+edge one. **Consequence:** `AuthStatusOptions` gains a `credential` field so the CLI can probe the
+credential `selectAzureCredential` actually returns. The alternative — re-deriving the 302/401/403
+mapping in the CLI — would have duplicated grounded E09 logic in an unguarded place.
+  — `packages/fetch/src/auth/status.ts`, `storage.ts`; `grep -rn '\.save(' packages/*/src` returns
+    nothing outside tests (checked 2026-09-04)
+
+[C-E10-031] **`auth login` cannot cache a token, and for the working arm it should not.** Its
+description was "sign in and cache a refresh token". No implemented arm writes the store (C-E10-030);
+the `az` arm reuses a session `az login` created, and the `pat` arm reads an environment variable —
+**caching that one to disk would persist a secret the user chose to keep in their environment**,
+which is a decision the tool has no business making for them. **Consequence:** the command's honest
+job is *select, probe, report* — which mode works, which declined and why — and its description now
+says that. Recorded as a Do-field correction (decision 83) rather than implemented as promised.
+  — same modules; `select.ts` `tryInteractive` is the sole `options.store` reader (checked 2026-09-04)
+
+[C-E10-032] **The auto chain picks a mode this organization refuses while a working one sits in the
+same environment — measured, and the reason `auth status` probes further.** `AUTH_MODE_ORDER` is
+`interactive → az → pat`, so an existing `az` session wins selection. Against the test organization
+that token is rejected with **HTTP 302** (C-E09-022, an MSA-backed org) while the `AZDO_PAT` in the
+same shell returns **200** on the same URL seconds later. **Consequence:** reporting only the refusal
+would tell a user who *can* authenticate that they cannot. On a rejection the command probes the
+remaining modes and, when one authenticates, prints `works --mode pat …` and makes that the hint.
+Deliberately a *report*, not a change to selection: `convert` uses `selectAzureCredential`'s answer,
+so silently reporting a different mode would make this command disagree with the tool it explains.
+  — live walkthrough, `research/experiments/E10-auth/walkthrough.md` (2026-09-04)
+
+[C-E10-033] **There is no GitHub sign-in to front, and none is planned.**
+`resolveGitHubCredential` has three arms — `gh-cli`, `env`, `anonymous` — and `github.ts`'s own
+header records that "OAuth device flow is deferred there until demand, so this module has three arms
+and no more". **Consequence:** the Do field's "`--github` variant" is an invented surface for
+`login` and is refused with what to do instead; it survives on **`status`**, where reporting which of
+the three arms supplied the credential is real, testable UX. `anonymous` is reported as a *working*
+state — public templates resolve without a token — so it never fails the command.
+  — `packages/fetch/src/auth/github.ts` (module header, `resolveGitHubCredential`) (checked 2026-09-04)
+
+[C-E10-034] **"Non-tty behaviour" here is the absence of terminal-dependent output, not a fallback
+for it.** The Do field asks for a spinner; the only thing that would justify one is polling the
+device-code endpoint, and that flow does not exist (E09-S01-T01). Every other operation is a single
+request. **Consequence:** the command emits plain lines and no ANSI escape on a TTY *or* off it —
+tested by asserting the absence of `\x1b` in both streams — and the data/diagnosis split does the
+work a spinner would not: the table goes to stdout so `auth status | grep mode` works, the verdict to
+stderr through the CLI's one error path.
+  — `packages/cli/test/auth.test.ts` (checked 2026-09-04)

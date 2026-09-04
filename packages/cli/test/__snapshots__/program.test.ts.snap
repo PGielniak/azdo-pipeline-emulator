@@ -32,22 +32,25 @@ exports[`CLI scaffold (E13-S01-T01) > help > \`azdo-emu auth --help\` output is 
 sign in to Azure DevOps or GitHub, and inspect the current session
 
 Options:
-  -h, --help       display help for command
+  -h, --help        display help for command
 
 Commands:
-  login [options]  sign in and cache a refresh token
-  status           show who you are signed in as, and for which organization
-  help [command]   display help for command
+  login [options]   check which authentication mode works for an organization,
+                    and why the others do not
+  status [options]  show who you are signed in as, and for which organization
+  help [command]    display help for command
 "
 `;
 
 exports[`CLI scaffold (E13-S01-T01) > help > \`azdo-emu auth login --help\` output is stable 1`] = `
 "Usage: azdo-emu auth login [options]
 
-sign in and cache a refresh token
+check which authentication mode works for an organization, and why the others do
+not
 
 Options:
-  --github       sign in to GitHub instead of Azure DevOps (default: false)
+  --github       GitHub instead of Azure DevOps (refused — see \`auth status
+                 --github\`) (default: false)
   --org <url>    organization URL, e.g. https://dev.azure.com/contoso
   --mode <mode>  authentication mode (choices: "interactive", "az", "pat")
   -h, --help     display help for command
@@ -60,7 +63,11 @@ exports[`CLI scaffold (E13-S01-T01) > help > \`azdo-emu auth status --help\` out
 show who you are signed in as, and for which organization
 
 Options:
-  -h, --help  display help for command
+  --github       report the GitHub credential source instead (default: false)
+  --org <url>    organization URL, e.g. https://dev.azure.com/contoso
+  --mode <mode>  check one mode instead of the auto chain (choices:
+                 "interactive", "az", "pat")
+  -h, --help     display help for command
 "
 `;
 
