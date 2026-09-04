@@ -22,7 +22,7 @@
 import type { Step } from '@azdo-emu/engine';
 
 import { collectConnections, REAL_TASK_ENDPOINT_USE, type TaskDefinitions } from './connections.js';
-import { connectionKind } from './service-connection.js';
+import { connectionKind, type ConnectionKind } from './service-connection.js';
 import { disposeStep, type DispositionOptions, type StepDisposition } from './disposition.js';
 import { originStepLabel } from './scaffold.js';
 import { resolveTaskInputs } from './task-host.js';
@@ -344,9 +344,12 @@ function preflightLines(step: Step, options: StepEmitOptions): readonly string[]
   // C-E08-043: the endpoint kind decides which fields exist, so the preflight is told which to
   // check. Checking the AzureRM set against a registry connection would call a complete one broken.
   // C-E08-053: an endpoint kind nobody has read has no field set to check, so there is nothing to
-  // preflight and a checked-against-the-wrong-set failure would be worse than silence.
+  // preflight — checking it against the wrong set would be worse than silence. Unreachable today
+  // only because `REAL_TASK_ENDPOINT_USE` holds no task with an unread kind; the guard is what
+  // keeps that an invariant rather than a coincidence, and it makes the lookup below total.
+  /* istanbul ignore next -- see above: no tabled task declares an unread endpoint kind. */
   if (kind === 'unknown') return [];
-  const NOTES: Readonly<Record<string, readonly [string, string]>> = {
+  const NOTES: Readonly<Record<Exclude<ConnectionKind, 'unknown'>, readonly [string, string]>> = {
     dockerregistry: [
       '# the ENDPOINT_AUTH blob is derived from the .env keys before the task runs (C-E08-044), and',
       '# a missing credential surfaces as a TypeError inside the task, not as a named error (C-E08-045).',
@@ -362,8 +365,7 @@ function preflightLines(step: Step, options: StepEmitOptions): readonly string[]
       '# path (C-E08-036) and clears a local session on the way out (C-E08-038/039).',
     ],
   };
-  /* istanbul ignore next -- every kind reaching here has an entry; the fallback is belt-and-braces. */
-  const [lead, why] = NOTES[kind] ?? NOTES.azurerm!;
+  const [lead, why] = NOTES[kind];
   return [
     `# ${site.taskRef} authenticates through service connection '${site.value}';`,
     lead,

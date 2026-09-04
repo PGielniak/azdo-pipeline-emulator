@@ -742,3 +742,39 @@ describe('the deltas only a live run could find (E08-S02-T03)', () => {
     );
   });
 });
+
+describe('an endpoint kind nobody has read (C-E08-053)', () => {
+  // No vendored task declares one, so the definition is synthetic — the point is the *shape* of a
+  // `connectedService:<kind>` this converter has not studied, not a particular task.
+  const GITHUB_TASK: TaskDefinitions = {
+    'GitHubRelease@1': {
+      name: 'GitHubRelease',
+      inputs: [{ name: 'gitHubConnection', type: 'connectedService:github', required: true }],
+    },
+  };
+
+  it('is reported once, and asks the user for nothing', () => {
+    const { connections, warnings } = collectConnections(
+      [site(step('GitHubRelease', '1', { gitHubConnection: 'my-gh' }))],
+      GITHUB_TASK,
+    );
+    const notice = warnings.find((w) => w.code === 'connection-kind-unknown');
+    expect(notice?.message).toContain("'connectedService:github'");
+    expect(notice?.message).toContain('C-E08-053');
+    // The connection is still collected — it was referenced — but contributes no `.env` lines,
+    // rather than the AzureRM set the pre-E08-S02-T03 fallback would have offered.
+    expect(connections.map((c) => c.kind)).toEqual(['unknown']);
+    expect(connectionKeys(connections[0]!)).toEqual([]);
+  });
+
+  it('is stated once per kind, not once per step', () => {
+    const steps = [1, 2, 3].map((id) =>
+      site(
+        step('GitHubRelease', '1', { gitHubConnection: `gh-${id}` }, id),
+        `Build/Job/step ${id}`,
+      ),
+    );
+    const codes = collectConnections(steps, GITHUB_TASK).warnings.map((w) => w.code);
+    expect(codes.filter((c) => c === 'connection-kind-unknown')).toHaveLength(1);
+  });
+});
