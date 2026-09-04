@@ -1,0 +1,17 @@
+{
+  "source": {
+    "repo": "microsoft/azure-pipelines-tasks",
+    "path": "Tasks/DockerV2/task.json",
+    "tag": "v277",
+    "commit": "8ba25cfb5c7736ba98a37488c0323f7320cb5b3e",
+    "rawUrl": "https://raw.githubusercontent.com/microsoft/azure-pipelines-tasks/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/DockerV2/task.json",
+    "permalink": "https://github.com/microsoft/azure-pipelines-tasks/blob/8ba25cfb5c7736ba98a37488c0323f7320cb5b3e/Tasks/DockerV2/task.json"
+  },
+  "task": {
+    "name": "Docker",
+    "version": "2.276.0"
+  },
+  "fetchedAt": "2026-09-04T06:35:48.939Z",
+  "sha256": "83da92a39c75fc89ee4a5d377cded2f2d475a39aeadcd418dea3705d99768949",
+  "bytes": 9060
+}

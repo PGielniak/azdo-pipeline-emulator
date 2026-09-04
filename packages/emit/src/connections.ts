@@ -25,7 +25,12 @@
 
 import type { ManifestWarning, Step } from '@azdo-emu/engine';
 
-import type { ConnectionMode, ServiceConnection } from './service-connection.js';
+import {
+  connectionKind,
+  type ConnectionKind,
+  type ConnectionMode,
+  type ServiceConnection,
+} from './service-connection.js';
 import { hasMacro, taskRef } from './task-ref.js';
 import type { TaskDefinition } from './task-host.js';
 
@@ -79,12 +84,30 @@ function majorKey(reference: string): string {
  * a guess — the same failure C-E08-005 exists to avoid, in the other direction.
  */
 export interface RealTaskEndpointUse {
-  /** C-E08-036/039: the task requires the endpoint in the environment; `ambient` cannot serve it. */
-  readonly requiresEndpoint: true;
+  /**
+   * Does the task *require* the endpoint in the environment, so that `ambient` cannot serve it?
+   *
+   * `true` for the two Azure tasks (C-E08-036/039). **`false` for `Docker@2`** (C-E08-043): its
+   * `containerRegistry` input is not `required`, and a build with no connection is a supported
+   * path. Hard-coding `true` here would force every Docker step's connection into `sp` mode and
+   * demand credentials for a pipeline that needs none.
+   */
+  readonly requiresEndpoint: boolean;
   /** C-E08-040: false when the task rejects `spnCertificate`, so no PEM line is offered. */
   readonly certificateAuth: boolean;
-  /** What running this task locally destroys, phrased for a developer's own machine. */
-  readonly hazard: string;
+  /**
+   * What running this task locally destroys, or `undefined` when it was **checked and destroys
+   * nothing** (C-E08-048).
+   *
+   * The distinction is deliberate: absent-because-safe and absent-because-unexamined would
+   * otherwise look identical, and a reader arriving from `AzureCLI@2` will expect symmetry.
+   */
+  readonly hazard?: string;
+  /**
+   * A local-run delta that is not a hazard: the task runs, but does something measurably different
+   * from the cloud. Surfaced in the warnings list (PLAN D10) rather than left for the user to find.
+   */
+  readonly delta?: string;
 }
 
 /**
@@ -109,6 +132,22 @@ export const REAL_TASK_ENDPOINT_USE: Readonly<Record<string, RealTaskEndpointUse
       'runs `Clear-AzContext -Scope CurrentUser -Force` before connecting (C-E08-039), which ' +
       'deletes your saved `Connect-AzAccount` session — there is no input that opts out',
   },
+  'Docker@2': {
+    // C-E08-043: `containerRegistry` is not a required input; building with no registry is a
+    // supported path, so a connection here is not forced out of ambient mode.
+    requiresEndpoint: false,
+    // Not an AzureRM connection at all (C-E08-043); the field has no meaning for a registry and the
+    // value is inert because the kind decides which fields are emitted.
+    certificateAuth: true,
+    // C-E08-048: checked, and it leaves `~/.docker` alone — three separate guards. Recorded as an
+    // absence with a reason rather than as silence.
+    delta:
+      'without a `containerRegistry` connection the image name is **not** qualified with a ' +
+      'registry (C-E08-047): the task only reads a docker config it wrote itself under the agent ' +
+      'temp directory, never your `~/.docker/config.json`. Your `docker login` still authenticates ' +
+      'the push — but an unqualified name pushes to Docker Hub, not to the registry you are logged ' +
+      'in to. Set `containerRegistry`, or put the registry host in `repository:`',
+  },
 };
 
 /**
@@ -128,7 +167,7 @@ export function collectConnections(
   /** name → the connection being accumulated; `usedBy` and the mode grow as sites are seen. */
   const byName = new Map<
     string,
-    { mode: ConnectionMode; certificateAuth: boolean; usedBy: string[] }
+    { mode: ConnectionMode; certificateAuth: boolean; kind: ConnectionKind; usedBy: string[] }
   >();
 
   for (const { step, path } of steps) {
@@ -174,12 +213,15 @@ export function collectConnections(
       const existing = byName.get(value) ?? {
         mode: 'ambient' as ConnectionMode,
         certificateAuth: true,
+        kind: connectionKind(endpointType),
         usedBy: [],
       };
       if (!existing.usedBy.includes(path)) existing.usedBy.push(path);
-      if (use !== undefined) {
-        // C-E08-036/037: one real-task consumer is enough to rule ambient out for the connection —
-        // the keys have to be there for that step whatever the other steps do.
+      if (use?.requiresEndpoint === true) {
+        // C-E08-036/037: one consumer that *requires* the endpoint is enough to rule ambient out —
+        // the keys have to be there for that step whatever the other steps do. A consumer that
+        // merely *accepts* one (C-E08-043) leaves the connection ambient, because demanding
+        // credentials a pipeline does not need is the failure C-E08-005 exists to avoid.
         existing.mode = 'sp';
         // C-E08-040: and one consumer that rejects certificates is enough to stop offering a PEM.
         existing.certificateAuth &&= use.certificateAuth;
@@ -194,11 +236,13 @@ export function collectConnections(
       name,
       mode: entry.mode,
       scheme: 'serviceprincipal' as const,
+      kind: entry.kind,
       certificateAuth: entry.certificateAuth,
       usedBy: entry.usedBy,
     }));
 
   warnings.push(...localSessionWarnings(sites));
+  for (const { step, path } of steps) warnings.push(...dockerStepWarnings(step, path));
   return { connections, sites, warnings };
 }
 
@@ -230,6 +274,79 @@ function resolveConnectionInputs(
 }
 
 /**
+ * Per-step warnings for `Docker@2`, computed from the step's own inputs (E08-S02-T02).
+ *
+ * These are deltas between what the author wrote and what the task will actually do. They are
+ * emitted **conditionally** — only when the step's inputs can trigger them — because a converted
+ * pipeline that warns about every possibility teaches the reader to skip the warnings list.
+ *
+ * Nothing here re-implements the task; the task is run for real (PLAN D4). The warnings exist
+ * because these transformations are silent, and all three were confirmed by running the real
+ * package (`research/experiments/E08-docker/real-task-run.md`).
+ */
+export function dockerStepWarnings(step: Step, path: string): readonly ManifestWarning[] {
+  if (majorKey(taskRef(step)) !== 'Docker@2') return [];
+  const warnings: ManifestWarning[] = [];
+  const input = (name: string): string => {
+    const key = Object.keys(step.inputs).find((k) => k.toLowerCase() === name.toLowerCase());
+    return key === undefined ? '' : (step.inputs[key] ?? '');
+  };
+
+  // C-E08-049: `generateValidImageName` lower-cases and strips spaces. Confirmed live: a repository
+  // of `E08 Parity` was pushed as `e08parity`.
+  const repository = input('repository');
+  const normalized = repository.toLowerCase().replaceAll(' ', '');
+  if (repository.length > 0 && !hasMacro(repository) && normalized !== repository) {
+    warnings.push({
+      code: 'docker-image-name-normalized',
+      message:
+        `${path}: Docker@2 lower-cases the repository and strips its spaces (C-E08-049), so ` +
+        `'${repository}' is built and pushed as '${normalized}'.`,
+    });
+  }
+
+  // C-E08-050: a glob resolves to the *first* match of a walk rooted at System.DefaultWorkingDirectory.
+  const dockerfile = input('Dockerfile');
+  const command = input('command').toLowerCase() || 'buildandpush';
+  const builds = command === 'build' || command === 'buildandpush';
+  if (builds && (dockerfile === '' || dockerfile.includes('*') || dockerfile.includes('?'))) {
+    warnings.push({
+      code: 'docker-dockerfile-glob',
+      message:
+        `${path}: Docker@2 resolves ` +
+        (dockerfile === '' ? "its default Dockerfile pattern '**/Dockerfile'" : `'${dockerfile}'`) +
+        ' by walking System.DefaultWorkingDirectory and taking the **first** match (C-E08-050); ' +
+        'with several Dockerfiles the one built depends on directory order, and the step’s ' +
+        'workingDirectory does not narrow the search. Name the file exactly to be sure.',
+    });
+  }
+
+  // C-E08-052: `buildAndPush` warns and drops `arguments`, so a converted step silently loses them.
+  if (command === 'buildandpush' && input('arguments').length > 0) {
+    warnings.push({
+      code: 'docker-arguments-ignored',
+      message:
+        `${path}: Docker@2 ignores 'arguments' when command is buildAndPush (C-E08-052) — the ` +
+        'task warns and drops them. Split the step into build and push to keep them.',
+    });
+  }
+
+  // C-E08-051: the tag split is on newlines *and* commas, which surprises anyone who wrote a
+  // comma inside a single intended tag.
+  const tags = input('tags');
+  if (tags.includes(',')) {
+    warnings.push({
+      code: 'docker-tags-split',
+      message:
+        `${path}: Docker@2 splits 'tags' on both newlines and commas (C-E08-051), so '${tags}' is ` +
+        `${tags.split(/[\n,]+/).filter((t) => t.length > 0).length} separate tags.`,
+    });
+  }
+
+  return warnings;
+}
+
+/**
  * One warning per task that destroys a local session, de-duplicated by task reference.
  *
  * Deliberately reported even when the pipeline uses the task twenty times: the hazard is a property
@@ -244,12 +361,17 @@ export function localSessionWarnings(sites: readonly ConnectionSite[]): readonly
     const use = REAL_TASK_ENDPOINT_USE[key];
     if (use === undefined || seen.has(key)) continue;
     seen.add(key);
-    warnings.push({
-      code: 'local-session-clobber',
-      message:
-        `${key} run locally ${use.hazard}. It is run here for fidelity (PLAN D4), so the ` +
-        'behaviour is the real task’s and cannot be patched out; sign back in afterwards.',
-    });
+    if (use.hazard !== undefined) {
+      warnings.push({
+        code: 'local-session-clobber',
+        message:
+          `${key} run locally ${use.hazard}. It is run here for fidelity (PLAN D4), so the ` +
+          'behaviour is the real task’s and cannot be patched out; sign back in afterwards.',
+      });
+    }
+    if (use.delta !== undefined) {
+      warnings.push({ code: 'local-task-delta', message: `${key} run locally ${use.delta}.` });
+    }
   }
   return warnings;
 }

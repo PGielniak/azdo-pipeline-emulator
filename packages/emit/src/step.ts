@@ -22,6 +22,7 @@
 import type { Step } from '@azdo-emu/engine';
 
 import { collectConnections, REAL_TASK_ENDPOINT_USE, type TaskDefinitions } from './connections.js';
+import { connectionKind } from './service-connection.js';
 import { disposeStep, type DispositionOptions, type StepDisposition } from './disposition.js';
 import { originStepLabel } from './scaffold.js';
 import { hasMacro, taskRef } from './task-ref.js';
@@ -337,10 +338,21 @@ function preflightLines(step: Step, options: StepEmitOptions): readonly string[]
       REAL_TASK_ENDPOINT_USE[connectionTaskKey(candidate.taskRef)] !== undefined,
   );
   if (site === undefined) return [];
+  const key = connectionTaskKey(site.taskRef);
+  const kind = connectionKind(site.endpointType);
+  // C-E08-043: the endpoint kind decides which fields exist, so the preflight is told which to
+  // check. Checking the AzureRM set against a registry connection would call a complete one broken.
+  const why =
+    kind === 'dockerregistry'
+      ? '# a missing credential surfaces as a TypeError inside the task, not as a named error (C-E08-045).'
+      : '# path (C-E08-036) and clears a local session on the way out (C-E08-038/039).';
   return [
-    `# ${site.taskRef} authenticates through service connection '${site.value}'; it has no ambient`,
-    '# path (C-E08-036) and clears a local session on the way out (C-E08-038/039).',
-    `azdo_sc_preflight ${shellSingleQuote(site.value)} ${shellSingleQuote(connectionTaskKey(site.taskRef))}`,
+    `# ${site.taskRef} authenticates through service connection '${site.value}';`,
+    kind === 'dockerregistry'
+      ? '# the ENDPOINT_AUTH blob is derived from the .env keys before the task runs (C-E08-044), and'
+      : '# it has no ambient',
+    why,
+    `azdo_sc_preflight ${shellSingleQuote(site.value)} ${shellSingleQuote(key)} ${shellSingleQuote(kind)}`,
     '',
   ];
 }

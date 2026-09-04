@@ -26,6 +26,9 @@ const TASKS = [
   // (name + aliases) is what the connection collector keys on.
   'AzureCLIV2',
   'AzurePowerShellV5',
+  // E08-S02-T02: `Docker@2`'s connection input is `connectedService:dockerRegistry` (a different
+  // endpoint kind from AzureRM), so the collector needs its declaration to see it at all.
+  'DockerV2',
 ];
 const DEST_ROOT = path.join('packages', 'emit', 'vendor', 'tasks-meta');
 

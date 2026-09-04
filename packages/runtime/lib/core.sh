@@ -4634,10 +4634,24 @@ azdo__sc_endpoint_data() {
 # (C-E08-038) and `Clear-AzContext -Scope CurrentUser -Force` (C-E08-039) — and they are run here
 # for fidelity (PLAN D4), so the behavior cannot be patched out, only announced.
 azdo_sc_preflight() {
-  (($# == 2)) || {
-    printf '%s\n' 'usage: azdo_sc_preflight <connection-name> <task-ref>' >&2
+  (($# >= 2 && $# <= 3)) || {
+    printf '%s\n' 'usage: azdo_sc_preflight <connection-name> <task-ref> [kind]' >&2
     return 2
   }
+  # C-E08-043: `kind` is the endpoint kind the consuming task declares after `connectedService:`.
+  # A Docker registry connection shares none of the AzureRM fields, and checking for the AzureRM
+  # ones would report a perfectly complete registry connection as broken.
+  case "${3:-azurerm}" in
+    dockerregistry)
+      azdo__sc_preflight_dockerregistry "$1" "$2"
+      return
+      ;;
+    azurerm) ;;
+    *)
+      printf 'azdo_sc_preflight: unknown endpoint kind %s\n' "$3" >&2
+      return 2
+      ;;
+  esac
   local name="$1" task="$2" scheme missing=()
 
   # C-E08-001: the key is upper-cased, the connection name verbatim — same spelling as the task's.
@@ -4689,6 +4703,105 @@ azdo_sc_preflight() {
   printf '%s\n' '  These are the names the real task reads (C-E08-001); see .env.example.' >&2
   printf '%s\n' "  'mode: ambient' cannot serve a task run in real-task mode (C-E08-036)." >&2
   return 1
+}
+
+# azdo__sc_preflight_dockerregistry <connection-name> <task-ref> — E08-S02-T02.
+#
+# A Docker registry connection is read through a *fourth* variable family (C-E08-044):
+# `getEndpointAuthorization` parses `ENDPOINT_AUTH_<name>` as JSON and the provider reads
+# `parameters.username|password|registry|email` under **lowercase** keys. So the per-key `.env`
+# lines are the user-facing surface and the blob is derived here — `.env` is documented as a plain
+# `NAME=value` file and hand-written JSON has no place in one.
+#
+# Failing early matters more here than for the Azure tasks: a missing blob is not
+# `LIB_EndpointAuthNotExist` but a TypeError inside the provider (C-E08-045), which tells the reader
+# nothing about which value is absent.
+azdo__sc_preflight_dockerregistry() {
+  local name="$1" task="$2" missing=() field value
+  local -a fields=(USERNAME PASSWORD REGISTRY)
+
+  for field in "${fields[@]}"; do
+    value="$(azdo__sc_endpoint_auth "$name" "$field")"
+    [[ -n "$value" ]] || missing+=("ENDPOINT_AUTH_PARAMETER_${name}_${field}")
+  done
+
+  if ((${#missing[@]} > 0)); then
+    printf "azdo_sc_preflight: %s names registry connection '%s', and .env is missing:\n" \
+      "$task" "$name" >&2
+    for field in "${missing[@]}"; do printf '  %s=\n' "$field" >&2; done
+    printf '%s\n' '  Without them the task fails inside its own provider with a TypeError, not a' >&2
+    printf '%s\n' '  message naming the connection (C-E08-045). See .env.example.' >&2
+    return 1
+  fi
+
+  azdo_sc_endpoint_auth_json "$name" || return
+  azdo__sc_hazard "$task"
+}
+
+# azdo_sc_endpoint_auth_json <connection-name> — derive and export ENDPOINT_AUTH_<name>.
+#
+# C-E08-044: the keys inside the blob are lowercase and verbatim. Upper-casing them the way
+# `ENDPOINT_AUTH_PARAMETER_<id>_<KEY>` does produces a blob that parses cleanly and yields an
+# undefined value for every field — a failure with no error message at all.
+#
+# The connection name is used verbatim, exactly as `azdo__sc_endpoint_auth` uses it (C-E08-001).
+# That confines this to names bash can hold as a variable, which is the same set `.env` can carry
+# (`NAME=value`, letters/digits/underscore — C-E06-014); a name outside it is reported rather than
+# silently mangled into a variable the task will not read.
+azdo_sc_endpoint_auth_json() {
+  (($# == 1)) || {
+    printf '%s\n' 'usage: azdo_sc_endpoint_auth_json <connection-name>' >&2
+    return 2
+  }
+  local name="$1" scheme_var="ENDPOINT_AUTH_SCHEME_$1" scheme json field value pairs=()
+
+  [[ "$name" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]] || {
+    printf "azdo_sc_endpoint_auth_json: connection name '%s' cannot be an environment variable\n" \
+      "$name" >&2
+    printf '%s\n' '  The task reads ENDPOINT_AUTH_<name> verbatim, and .env carries only' >&2
+    printf '%s\n' '  letters, digits and underscores (C-E06-014). Rename the connection, or set' >&2
+    printf '%s\n' '  ENDPOINT_AUTH_<name> yourself before the run.' >&2
+    return 1
+  }
+
+  scheme="${!scheme_var:-UsernamePassword}"
+  for field in username password registry email; do
+    # The per-key variables are upper-cased (C-E08-001); the blob's keys are not (C-E08-044).
+    value="$(azdo__sc_endpoint_auth "$name" "${field^^}")"
+    pairs+=("\"$field\":$(azdo__json_string "$value")")
+  done
+
+  local IFS=,
+  json="{\"scheme\":$(azdo__json_string "$scheme"),\"parameters\":{${pairs[*]}}}"
+  unset IFS
+  printf -v "ENDPOINT_AUTH_$name" '%s' "$json"
+  export "ENDPOINT_AUTH_${name?}"
+}
+
+# azdo__json_string <value> — render a bash string as a JSON string literal, quotes included.
+#
+# Hand-rolled because the runtime is dependency-free bash (PLAN): no `jq`, no python. Escapes the
+# two characters JSON requires plus the control characters a password or token can legitimately
+# contain; anything else passes through as UTF-8, which JSON permits unescaped.
+azdo__json_string() {
+  local __js_value="$1" __js_out='' __js_char __js_i
+  for ((__js_i = 0; __js_i < ${#__js_value}; __js_i++)); do
+    __js_char="${__js_value:__js_i:1}"
+    case "$__js_char" in
+      '"') __js_out+='\"' ;;
+      "\\") __js_out+="\\\\" ;;
+      $'\n') __js_out+='\n' ;;
+      $'\r') __js_out+='\r' ;;
+      $'\t') __js_out+='\t' ;;
+      *)
+        if [[ "$__js_char" < ' ' ]]; then
+          printf -v __js_char '\\u%04x' "'$__js_char"
+        fi
+        __js_out+="$__js_char"
+        ;;
+    esac
+  done
+  printf '"%s"' "$__js_out"
 }
 
 # azdo__sc_hazard <task-ref> — announce what running this task locally destroys, once per run.

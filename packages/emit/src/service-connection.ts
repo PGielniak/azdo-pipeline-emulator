@@ -28,11 +28,29 @@ export type ConnectionMode = 'ambient' | 'sp';
 /** C-E08-004: the schemes a generated block can be shaped for. */
 export type ConnectionScheme = 'serviceprincipal' | 'workloadidentityfederation';
 
+/**
+ * The endpoint *kind*, as the consuming task's `task.json` declares it after `connectedService:`.
+ *
+ * E08-S02-T02 forced this distinction. `Docker@2` declares `connectedService:dockerregistry`
+ * (C-E08-043), and a registry connection reads none of the AzureRM fields — offering it
+ * `ENDPOINT_DATA_<name>_SUBSCRIPTIONID` asks for a value nothing will ever read, which is exactly
+ * the failure C-E08-001 exists to prevent. Kinds are lower-cased because the declared spelling
+ * differs between tasks (`AzureRM` vs `dockerregistry`) while the endpoint itself does not.
+ */
+export type ConnectionKind = 'azurerm' | 'dockerregistry';
+
+/** Normalize a declared `connectedService:<kind>` suffix; unknown kinds fall back to AzureRM. */
+export function connectionKind(endpointType: string | undefined): ConnectionKind {
+  return endpointType?.toLowerCase() === 'dockerregistry' ? 'dockerregistry' : 'azurerm';
+}
+
 export interface ServiceConnection {
   /** The connection name as the pipeline writes it — interpolated verbatim (C-E08-001). */
   readonly name: string;
   readonly mode?: ConnectionMode;
   readonly scheme?: ConnectionScheme;
+  /** C-E08-043: which endpoint kind this is. Defaults to `azurerm`, the kind E08-S01 was built on. */
+  readonly kind?: ConnectionKind;
   /**
    * Whether a consuming task accepts `spnCertificate` at all. Defaults to true.
    *
@@ -89,16 +107,45 @@ const SCHEME_AUTH_FIELDS: Readonly<Record<ConnectionScheme, readonly [string, st
   ],
 };
 
-const DATA_FIELDS: readonly [string, string][] = [
-  ['SubscriptionID', 'the Azure subscription the pipeline deploys into'],
-  ['environment', "'AzureCloud' unless you are on a sovereign cloud"],
+const DATA_FIELDS: Readonly<Record<ConnectionKind, readonly [string, string][]>> = {
+  azurerm: [
+    ['SubscriptionID', 'the Azure subscription the pipeline deploys into'],
+    ['environment', "'AzureCloud' unless you are on a sovereign cloud"],
+  ],
+  // C-E08-046: `registrytype` is what selects the ACR arm from the generic one, and the task reads
+  // it as a *data* parameter, so it is not a secret.
+  dockerregistry: [
+    ['registrytype', "'ACR' for Azure Container Registry, anything else for generic"],
+  ],
+};
+
+/**
+ * A Docker registry connection's credentials (C-E08-044).
+ *
+ * These are **not** `ENDPOINT_AUTH_PARAMETER_*` fields. `GenericAuthenticationTokenProvider` reads
+ * them out of the `ENDPOINT_AUTH_<name>` JSON blob, under **lowercase** keys — so the per-key
+ * variables are emitted for the user to fill in and the runtime derives the blob from them
+ * (`azdo_sc_endpoint_auth_json`). Keeping the user-facing surface `NAME=value` matters: `.env` is
+ * documented as a trusted Bash assignment file, and hand-written JSON does not belong in one.
+ */
+const REGISTRY_BLOB_FIELDS: readonly [string, string][] = [
+  ['username', 'the registry user name'],
+  ['password', 'the registry password or access token'],
+  ['registry', 'the registry login server, e.g. https://index.docker.io/v1/ or myreg.azurecr.io'],
+  ['email', 'the account e-mail; registries that do not use one accept an empty value'],
+];
+
+/** C-E08-046: the ACR arm needs `loginServer` on top of the service-principal fields. */
+const ACR_AUTH_FIELDS: readonly [string, string][] = [
+  ['loginServer', 'the ACR login server, e.g. myreg.azurecr.io — required for registrytype=ACR'],
 ];
 
 /** Every key a connection contributes, in emission order. */
 export function connectionKeys(connection: ServiceConnection): readonly EnvKey[] {
   const mode = connection.mode ?? 'ambient';
   const scheme = connection.scheme ?? 'serviceprincipal';
-  const keys: EnvKey[] = DATA_FIELDS.map(([field, comment]) => ({
+  const kind = connection.kind ?? 'azurerm';
+  const keys: EnvKey[] = DATA_FIELDS[kind].map(([field, comment]) => ({
     key: dataKey(connection.name, field),
     secret: false,
     comment,
@@ -107,6 +154,20 @@ export function connectionKeys(connection: ServiceConnection): readonly EnvKey[]
   // C-E08-005: ambient reuses the developer's own `az`/`docker`/`kubectl` session, so there is no
   // credential to ask for — asking anyway would be the emulator inventing work for the user.
   if (mode === 'ambient') return keys;
+
+  if (kind === 'dockerregistry') {
+    // C-E08-044: the generic provider reads these from the JSON blob, so they are emitted per key
+    // and assembled at run time. The blob itself is never a `.env` line.
+    for (const [field, comment] of REGISTRY_BLOB_FIELDS) {
+      keys.push({ key: authKey(connection.name, field), secret: true, comment });
+    }
+    // C-E08-046: ACR authenticates as a service principal *and* needs its login server, so both
+    // sets are offered with the comment saying which `registrytype` uses which.
+    for (const [field, comment] of ACR_AUTH_FIELDS) {
+      keys.push({ key: authKey(connection.name, field), secret: true, comment });
+    }
+    return keys;
+  }
 
   keys.push({
     key: schemeKey(connection.name),
