@@ -303,6 +303,58 @@ describe('the generated project actually runs', () => {
     const log = readFileSync(join(out, '.work/run-1/logs/010-default/010-job/010.log'), 'utf8');
     expect(log).toContain('hello-from-convert');
   }, 120_000);
+
+  // E12-S02-T02: the *positive* half of the demotion. Its blocker note drew the distinction that
+  // matters here — E12-S02-T01's criterion ("no coverage files are emitted") is negative and an
+  // unbuilt emitter satisfies it vacuously, while this one asserts what `convert` **does** emit and
+  // therefore could not be checked until the emitter existed. It does now (E10-S02-T01), so the
+  // defaults are pinned by running a multi-job, multi-stage pipeline rather than by reading config.
+  it('emits the host + shared-workspace defaults (D8/D9 revised, decision 44)', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'azdo-convert-defaults-'));
+    const file = join(dir, 'azure-pipelines.yml');
+    // Two stages, three jobs: a shared workspace is only observable across job boundaries.
+    writeFileSync(
+      file,
+      [
+        'stages:',
+        '- stage: one',
+        '  jobs:',
+        '  - job: a',
+        '    steps:',
+        '    - script: echo a > $(Pipeline.Workspace)/from-a',
+        '  - job: b',
+        '    steps:',
+        '    - script: cat $(Pipeline.Workspace)/from-a',
+        '- stage: two',
+        '  jobs:',
+        '  - job: c',
+        '    steps:',
+        '    - script: cat $(Pipeline.Workspace)/from-a',
+        '',
+      ].join('\n'),
+    );
+    const out = join(dir, 'out');
+    await convert(file, { out, offlineExpand: true });
+
+    // Host execution (D9 revised): the sandbox wrapper and its image directory are not emitted.
+    expect(existsSync(join(out, 'lib', 'sandbox.sh'))).toBe(false);
+    expect(existsSync(join(out, 'environment'))).toBe(false);
+    // The runtime that *is* copied in is the host one.
+    expect(readdirSync(join(out, 'lib')).sort()).toEqual(['expr.sh', 'runtime.sh']);
+
+    writeFileSync(join(out, '.env'), '');
+    const stdout = execFileSync('bash', ['run.sh'], { cwd: out, encoding: 'utf8' });
+    expect(stdout).toContain('Result: Succeeded');
+
+    // Shared workspace (D8 revised): exactly one `workspace/` for the whole run, and jobs in
+    // *different stages* read a file an earlier job wrote — which per-job isolation would break.
+    const workspaces = readdirSync(join(out, '.work', 'run-1'), {
+      recursive: true,
+      withFileTypes: true,
+    }).filter((entry) => entry.isDirectory() && entry.name === 'workspace');
+    expect(workspaces).toHaveLength(1);
+    expect(existsSync(join(out, '.work', 'run-1', 'workspace', 'from-a'))).toBe(true);
+  }, 120_000);
 });
 
 // ── through the CLI ───────────────────────────────────────────────────────────────────────────
