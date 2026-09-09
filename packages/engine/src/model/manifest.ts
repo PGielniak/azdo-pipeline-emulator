@@ -63,6 +63,24 @@ export interface ManifestEnvEntry {
   readonly origin?: string;
 }
 
+/**
+ * A service connection the pipeline references, and the `.env` keys standing in for it (E08-S01).
+ *
+ * The key lists are the machine-readable half of the contract the `.env.example` block states in
+ * prose, so a consumer can check a `.env` against it without re-deriving the names. Structurally
+ * mirrors `packages/emit`'s `ConnectionManifestEntry`, which produces these — `engine → emit` is
+ * the wrong direction (decision 42(a)), the same shape-mirroring `ManifestExpansion` uses.
+ */
+export interface ManifestConnection {
+  readonly name: string;
+  readonly mode: 'ambient' | 'sp';
+  readonly scheme: 'serviceprincipal' | 'workloadidentityfederation';
+  /** Every `.env` key this connection contributes. */
+  readonly keys: readonly string[];
+  /** The subset of `keys` carrying secret values — never written with a value, only named. */
+  readonly secretKeys: readonly string[];
+}
+
 /** A tool prerequisite (doctor checks it). Filled by E07/E08. */
 export interface ManifestTool {
   readonly cmd: string;
@@ -187,6 +205,7 @@ export interface SerializedManifest {
   readonly stages: readonly ManifestStage[];
   readonly env: readonly ManifestEnvEntry[];
   readonly tools: readonly ManifestTool[];
+  readonly connections: readonly ManifestConnection[];
   readonly warnings: readonly ManifestWarning[];
   readonly unsupported: readonly string[];
 }
@@ -197,6 +216,7 @@ export interface ManifestOptions {
   /** Aggregation hooks, filled by E07/E08. Default to empty rather than omitted. */
   readonly env?: readonly ManifestEnvEntry[];
   readonly tools?: readonly ManifestTool[];
+  readonly connections?: readonly ManifestConnection[];
   /** Convert-time warnings in addition to the per-step warnings the model already carries. */
   readonly warnings?: readonly ManifestWarning[];
   readonly unsupported?: readonly string[];
@@ -230,6 +250,7 @@ export function serializeManifest(
     stages,
     env: options.env ?? [],
     tools: options.tools ?? [],
+    connections: options.connections ?? [],
     warnings: options.warnings ?? [],
     unsupported: options.unsupported ?? [],
   };

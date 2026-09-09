@@ -584,6 +584,45 @@ describe('E08-S02-T01 — service connections reach the generated project', () =
     expect(read(out, 'README.md')).toContain('az account clear');
   });
 
+  // E08-S01-T01 (C-E08-082): the fourth "built, tested, never called" — `connectionManifestEntry`
+  // had no caller, so `manifest.json` carried no `connections[]` at all while the `.env.example`
+  // beside it described the very same connection in prose. Asserted end to end, against a manifest
+  // read back off disk, because a structural assertion on the generator passed for months.
+  it('records the connection in manifest.json, keys and secrets separated', async () => {
+    const { file, out } = workspace(AZURE_FINAL);
+    await convert(file, { out, bundle: false }, stubWith(AZURE_FINAL));
+
+    const manifest = JSON.parse(read(out, 'manifest.json')) as {
+      connections: {
+        name: string;
+        mode: string;
+        scheme: string;
+        keys: string[];
+        secretKeys: string[];
+      }[];
+    };
+
+    expect(manifest.connections).toHaveLength(1);
+    const connection = manifest.connections[0]!;
+    expect(connection.name).toBe('my-prod-sub');
+    // `sp`, for the same reason the `.env.example` block says so: a real-task run cannot reuse an
+    // ambient session (C-E08-036), and the collector forces the mode rather than hoping.
+    expect(connection.mode).toBe('sp');
+    expect(connection.scheme).toBe('serviceprincipal');
+
+    // The manifest's key list is the machine-readable half of what `.env.example` states in prose,
+    // so the two must agree rather than be derived twice.
+    const env = read(out, '.env.example');
+    for (const key of connection.keys) expect(env).toContain(key);
+
+    // The secret split is the load-bearing part: these names are written, their values never are.
+    expect(connection.secretKeys).toContain(
+      'ENDPOINT_AUTH_PARAMETER_my-prod-sub_SERVICEPRINCIPALKEY',
+    );
+    expect(connection.secretKeys).not.toContain('ENDPOINT_DATA_my-prod-sub_SUBSCRIPTIONID');
+    expect(connection.keys).toEqual(expect.arrayContaining(connection.secretKeys));
+  });
+
   it('warns instead of inventing a block when the connection is a macro', async () => {
     const macroFinal = AZURE_FINAL.replace('my-prod-sub', '$(azureSub)');
     const { file, out } = workspace(macroFinal);
@@ -591,8 +630,11 @@ describe('E08-S02-T01 — service connections reach the generated project', () =
 
     const manifest = JSON.parse(read(out, 'manifest.json')) as {
       warnings: { code: string }[];
+      connections: unknown[];
     };
     expect(manifest.warnings.map((w) => w.code)).toContain('connection-macro-name');
     expect(read(out, '.env.example')).toContain('# (this pipeline references none)');
+    // An unresolvable name yields no entry — the manifest states what it knows, not a guess.
+    expect(manifest.connections).toEqual([]);
   });
 });

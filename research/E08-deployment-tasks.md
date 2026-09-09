@@ -15,7 +15,7 @@ off a service connection) and `microsoft/azure-pipelines-task-lib` (how those re
 
 ---
 
-## E08-S01-T01 — the service-connection `.env` contract (`C-E08-001..005`)
+## E08-S01-T01 — the service-connection `.env` contract (`C-E08-001..005`, `C-E08-082`)
 
 Recorded 2026-09-02, before implementation. The task's **Ground** field asks for the mapping
 *endpoint field → env key → consuming code*; the three claims below are that table, and the fourth
@@ -71,6 +71,21 @@ to `az`/`docker`/`kubectl`, so the default connection mode reuses that ambient s
 credential fields at all. `sp` is the explicit-credential fallback. Recorded so the mode switch is
 not mistaken for a service behavior.
   — project design (docs/03 D, docs/05 §1); no source claims otherwise
+
+[C-E08-082] **`manifest.json` carried no `connections[]`, because `connectionManifestEntry` had no
+caller — the fourth instance in this repository of a module built, tested, and never called.** The
+generator landed 2026-09-02 with unit tests asserting its return value, and `collectConnections`
+already ran inside `writeProject` to synthesize the `.env.example`; nothing routed that same result
+into the manifest, and `SerializedManifest` had no field to route it into. **Consequence:** the
+`.env.example` described a connection's keys in prose while the machine-readable record beside it
+said the project referenced no connections at all — so any consumer checking a `.env` against the
+manifest (the use the entry exists for) would have found nothing to check, for every project.
+Structural tests on the generator passed throughout. **The pattern, now four for four:**
+`resolveTaskInputs` (C-E08-073, found by running a task), `AzureCredentialStore.save()` (C-E10-030,
+found by running `auth status`), `aggregateTools` (C-E10-035, found by running `doctor`), and this
+one — every instance found by exercising the product end to end, none by reading code.
+  — measured 2026-09-09; `packages/cli/src/convert/convert.ts` `buildManifest`,
+  `packages/emit/src/service-connection.ts` `connectionManifestEntry`
 
 ---
 

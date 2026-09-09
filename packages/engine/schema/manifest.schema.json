@@ -12,6 +12,7 @@
     "stages",
     "env",
     "tools",
+    "connections",
     "warnings",
     "unsupported"
   ],
@@ -112,6 +113,12 @@
       "type": "array",
       "items": {
         "$ref": "#/definitions/tool"
+      }
+    },
+    "connections": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/connection"
       }
     },
     "warnings": {
@@ -354,6 +361,34 @@
           "type": "string"
         },
         "neededBy": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "connection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "mode", "scheme", "keys", "secretKeys"],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "mode": {
+          "enum": ["ambient", "sp"]
+        },
+        "scheme": {
+          "enum": ["serviceprincipal", "workloadidentityfederation"]
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "secretKeys": {
           "type": "array",
           "items": {
             "type": "string"

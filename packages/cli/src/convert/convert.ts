@@ -38,6 +38,7 @@ import {
   validateExpandedPipeline,
   type Diagnostic,
   type ExpandedDiagnostic,
+  type ManifestConnection,
   type ManifestEnvEntry,
   type ManifestWarning,
   type Pipeline,
@@ -45,6 +46,7 @@ import {
 } from '@azdo-emu/engine';
 import {
   collectConnections,
+  connectionManifestEntry,
   emitEntrypoints,
   emitStepScript,
   generateReadme,
@@ -484,7 +486,15 @@ function writeProject(
   );
   warnings.push(...entrypointWarnings);
 
-  const manifest = buildManifest(pipeline, plan, expansion, env.manifestEnv, warnings, settings);
+  const manifest = buildManifest(
+    pipeline,
+    plan,
+    expansion,
+    env.manifestEnv,
+    collected.connections.map(connectionManifestEntry),
+    warnings,
+    settings,
+  );
 
   mkdirSync(out, { recursive: true });
   let files = 0;
@@ -534,6 +544,7 @@ function buildManifest(
   plan: Scaffold,
   expansion: ExpansionManifestEntry,
   env: readonly ManifestEnvEntry[],
+  connections: readonly ManifestConnection[],
   warnings: readonly ManifestWarning[],
   settings: ResolvedSettings,
 ): SerializedManifest {
@@ -544,11 +555,19 @@ function buildManifest(
   //
   // Built from the *scaffold*, not from the model, because `neededBy` records the step path the
   // generated project uses — the same spelling the warnings list and the README already use.
+  //
+  // E08-S01-T01: `connections[]` is the same defect one field over, and the **fourth** instance of
+  // the pattern (C-E08-082, after C-E08-073, C-E10-030 and C-E10-035). `connectionManifestEntry`
+  // shipped with tests on 2026-09-02 and had no caller, so the `.env.example` named a connection's
+  // keys in prose while `manifest.json` said the project referenced none — the machine-readable
+  // half of E08-S01's contract was simply absent. The collector already ran here for `.env`; this
+  // routes the same result into the manifest rather than re-deriving it.
   const manifest = serializeManifest(pipeline, {
     expansion: expansion as never,
     env,
     warnings,
     tools: aggregateTools(toolContexts(plan)),
+    connections,
   });
 
   const paths = new Map<string, string>();
