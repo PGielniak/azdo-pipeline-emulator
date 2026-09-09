@@ -2,6 +2,7 @@
 
 exports[`golden corpus manifests > 01-matrix-multi-config serializes stably 1`] = `
 {
+  "connections": [],
   "env": [],
   "expansion": {
     "apiVersion": "7.1",
@@ -426,6 +427,7 @@ echo "$(buildConfiguration)" > out/config.txt
 
 exports[`golden corpus manifests > 02-artifact-handoff serializes stably 1`] = `
 {
+  "connections": [],
   "env": [],
   "expansion": {
     "apiVersion": "7.1",
@@ -697,6 +699,7 @@ test -f "$(Pipeline.Workspace)/docs/index.md"
 
 exports[`golden corpus manifests > 03-dependencies-and-conditions serializes stably 1`] = `
 {
+  "connections": [],
   "env": [],
   "expansion": {
     "apiVersion": "7.1",
@@ -1037,6 +1040,7 @@ echo "##vso[task.setvariable variable=changedWeb;isOutput=true]false"
 
 exports[`golden corpus manifests > 04-variable-layers serializes stably 1`] = `
 {
+  "connections": [],
   "env": [],
   "expansion": {
     "apiVersion": "7.1",
@@ -1301,6 +1305,7 @@ exports[`golden corpus manifests > 04-variable-layers serializes stably 1`] = `
 
 exports[`golden corpus manifests > 05-steps-template-nested serializes stably 1`] = `
 {
+  "connections": [],
   "env": [],
   "expansion": {
     "apiVersion": "7.1",
@@ -1497,6 +1502,7 @@ exports[`golden corpus manifests > 05-steps-template-nested serializes stably 1`
 
 exports[`golden corpus manifests > 06-extends-each-joblist serializes stably 1`] = `
 {
+  "connections": [],
   "env": [],
   "expansion": {
     "apiVersion": "7.1",
@@ -1750,6 +1756,7 @@ exports[`golden corpus manifests > 06-extends-each-joblist serializes stably 1`]
 
 exports[`golden corpus manifests > 07-template-parameter-types serializes stably 1`] = `
 {
+  "connections": [],
   "env": [],
   "expansion": {
     "apiVersion": "7.1",
@@ -2099,6 +2106,7 @@ exports[`golden corpus manifests > 07-template-parameter-types serializes stably
 
 exports[`golden corpus manifests > 08-deployment-runonce serializes stably 1`] = `
 {
+  "connections": [],
   "env": [],
   "expansion": {
     "apiVersion": "7.1",
@@ -2450,6 +2458,7 @@ echo "app" > $(Build.ArtifactStagingDirectory)/drop/app.txt
 
 exports[`golden corpus manifests > 09-multi-checkout serializes stably 1`] = `
 {
+  "connections": [],
   "env": [],
   "expansion": {
     "apiVersion": "7.1",
@@ -2651,6 +2660,7 @@ echo "repo local path $(Build.Repository.LocalPath)"
 
 exports[`golden corpus manifests > 10-monorepo-triggers-pools serializes stably 1`] = `
 {
+  "connections": [],
   "env": [],
   "expansion": {
     "apiVersion": "7.1",
@@ -2847,6 +2857,7 @@ echo "cwd=$PWD"
 
 exports[`golden corpus manifests > 11-implicit-wrapping serializes stably 1`] = `
 {
+  "connections": [],
   "env": [],
   "expansion": {
     "apiVersion": "7.1",

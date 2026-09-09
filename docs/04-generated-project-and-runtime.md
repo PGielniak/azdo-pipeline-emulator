@@ -304,6 +304,9 @@ E07-S03-T01 registry's output, and since E12-S02-T03 the only per-task classific
         "warnings": [] }]}]}],
   "env": [{"name": "SC_MY_AZURE_SUB_CLIENT_SECRET", "secret": true, "origin": "service connection 'my-azure-sub'"}],
   "tools": [{"cmd": "dotnet", "min": "8.0", "neededBy": ["Build/BuildJob/030"]}],
+  "connections": [{"name": "my-azure-sub", "mode": "sp", "scheme": "serviceprincipal",
+    "keys": ["ENDPOINT_AUTH_SCHEME_my-azure-sub", "ENDPOINT_DATA_my-azure-sub_SUBSCRIPTIONID"],
+    "secretKeys": ["ENDPOINT_AUTH_PARAMETER_my-azure-sub_SERVICEPRINCIPALKEY"]}],
   "warnings": [], "unsupported": [] }
 ```
 
@@ -315,8 +318,16 @@ produced `finalYaml` — service or the `--offline-expand` fallback) is a discri
 field, not prose; a stage's `dependsOn` is the **effective** list with the sequential default already
 applied; a step's `source` is `{file, line}` (the `via` template chain lives in the bundler's
 `bundle.json`, E03-S07-T01); `file` (the emitted script path) and `targetOs` are filled by E05 and
-were deferred with it; and `env`/`tools`/`unsupported` are aggregation hooks defaulting to empty until
-E07/E08 fill them. The `condition` is a plain string, not the object form sketched above.
+were deferred with it; and `env`/`tools`/`connections`/`unsupported` are aggregation hooks defaulting
+to empty until E07/E08 fill them. The `condition` is a plain string, not the object form sketched
+above.
+
+`connections[]` is the machine-readable half of the service-connection contract whose prose half is
+the `.env.example` block (E08-S01, decision 85): per connection, the resolved `mode`/`scheme` and the
+`.env` keys it contributes, with `secretKeys` marking the subset whose **values** are never written
+anywhere — only their names. A consumer checks a `.env` against this list rather than re-deriving the
+names from the endpoint schema. A connection named by an unresolvable macro yields no entry at all,
+because the manifest records what was determined, not what was guessed (a warning covers that case).
 
 ## 12. Sample emitted steps (illustrative)
 
