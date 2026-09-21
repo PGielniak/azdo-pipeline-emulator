@@ -2,11 +2,18 @@
 #
 # The step body proves the base image could not have run this: `node --version` is the first thing
 # it does. Template-free for the same reason as sample 1 (C-E12-028).
+#
+# Since E11-S04-T03 it also carries the *keyword* spellings of the two idioms sample 1 writes out in
+# full: a pipeline `variables:` block (C-E12-033) and `publish:` (C-E12-034/040), so both the
+# shorthand and the catalogue reference are covered by the tier rather than only one of them.
 trigger: none
 pr: none
 
 pool:
   vmImage: ubuntu-latest
+
+variables:
+  artifactName: node-result
 
 steps:
 # Explicit, not implicit: the offline expansion of this document adds no `checkout` step of its own,
@@ -27,4 +34,8 @@ steps:
     mkdir -p "$(Build.ArtifactStagingDirectory)/out"
     cp "$(Build.SourcesDirectory)/result.json" "$(Build.ArtifactStagingDirectory)/out/result.json"
     echo "E2E-MARKER node sample produced result.json"
+    echo "E2E-MARKER publishing as $(artifactName)"
   displayName: Stage the result
+- publish: $(Build.ArtifactStagingDirectory)/out
+  artifact: $(artifactName)
+  displayName: Publish the staged result

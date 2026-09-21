@@ -1,33 +1,53 @@
-# L5 sample 1 — the staging directory, an output variable, and a cross-job read.
+# L5 sample 1 — the staging directory, an output variable, a cross-job read, pipeline variables and
+# a real artifact publish/download round trip.
 #
 # Deliberately template-free: no `${{ }}` anywhere, so the offline expander and the service produce
 # the same document and this suite never depends on a live PAT (C-E12-028).
 #
-# The cross-job read goes through a **job condition** rather than a job-level `variables:` block,
-# and that is a finding rather than a style choice: variable blocks are not seeded into a generated
-# project at all (C-E12-033), so `$[ dependencies… ]` in one would evaluate to nothing. Conditions
-# are compiled (E02-S05) and do work, and they exercise the same machinery — an output variable
-# written in one job, read in another. `PublishPipelineArtifact@1` is absent for its own reason
-# (C-E12-034).
+# Two idioms this sample had to avoid on its first run (E11-S04-T01) are now the point of it, and
+# E11-S04-T03 is why. **`variables:` blocks** were seeded nowhere, so `$(anyVariable)` was
+# unresolvable in every generated project (C-E12-033); all three levels are read below, and the
+# job-level entry shadows the pipeline-level one of the same name, which is the documented
+# precedence (C-E12-039). **`PublishPipelineArtifact@1`** went to real-task mode and failed offline
+# with "no cached package" (C-E12-034), though its own package has an `AgentPlugin` handler and no
+# Node one at all (C-E12-040) — so nothing could ever have run it. It is native now, and the
+# artifact is asserted in the store rather than as a file under the staging directory.
 trigger: none
 pr: none
 
 pool:
   vmImage: ubuntu-latest
 
+variables:
+  artifactDirName: app
+  greeting: hello-from-pipeline
+
 stages:
 - stage: build
+  variables:
+    stageLabel: build-stage
   jobs:
   - job: compile
+    variables:
+      # Same name as the pipeline-level entry above: the most locally scoped one wins.
+      greeting: hello-from-job
     steps:
     - script: |
-        mkdir -p "$(Build.ArtifactStagingDirectory)/app"
-        echo "built" > "$(Build.ArtifactStagingDirectory)/app/build.txt"
+        mkdir -p "$(Build.ArtifactStagingDirectory)/$(artifactDirName)"
+        echo "built" > "$(Build.ArtifactStagingDirectory)/$(artifactDirName)/build.txt"
         test -d "$(Build.BinariesDirectory)" || { echo "Build.BinariesDirectory is missing"; exit 3; }
         echo "E2E-MARKER staged build.txt"
+        echo "E2E-MARKER pipeline variable stageLabel=$(stageLabel)"
+        echo "E2E-MARKER job variable wins greeting=$(greeting)"
         echo "##vso[task.setvariable variable=artifactName;isOutput=true]app"
       name: stage
       displayName: Stage build output
+    # The catalogue spelling, by hand — the one E11-S04-T03's Done criterion names.
+    - task: PublishPipelineArtifact@1
+      displayName: Publish the staged directory
+      inputs:
+        targetPath: $(Build.ArtifactStagingDirectory)/$(artifactDirName)
+        artifactName: drop
 
   # Runs only if the producing job's output variable crossed the boundary with the right value.
   - job: verify
@@ -35,8 +55,17 @@ stages:
     condition: eq(dependencies.compile.outputs['stage.artifactName'], 'app')
     steps:
     - checkout: none
-    - script: echo "E2E-MARKER cross-job output variable is app"
-      displayName: Confirm the output variable crossed
+    # The keyword spelling, and the other half of the round trip: the artifact published in a
+    # *different* job is downloaded here, to `$(Pipeline.Workspace)/drop` (C-E06-084).
+    - download: current
+      artifact: drop
+    - script: |
+        test -f "$(Pipeline.Workspace)/drop/build.txt" || {
+          echo "downloaded artifact is missing"; exit 3;
+        }
+        echo "E2E-MARKER cross-job output variable is app"
+        echo "E2E-MARKER downloaded artifact content is $(cat "$(Pipeline.Workspace)/drop/build.txt")"
+      displayName: Confirm the output variable crossed and the artifact arrived
 
   # The negative half: this job must be skipped, so its marker must never appear. A suite that only
   # checks for markers cannot tell a working condition from one that is always true.

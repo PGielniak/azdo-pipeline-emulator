@@ -105,7 +105,13 @@ ${minimal}`,
     const manifest = serializeManifest(pipeline!, { expansion: serviceExpansion('x') });
 
     expect(manifest.schemaVersion).toBe(MANIFEST_SCHEMA_VERSION);
-    expect(manifest.pipeline).toEqual({ name: 'my-pipeline', parameters: { deployEnv: 'dev' } });
+    // `variables` joined the envelope in E11-S04-T03: stage and job levels were serialized from
+    // the start and the pipeline level was not, so the manifest under-reported (C-E12-033).
+    expect(manifest.pipeline).toEqual({
+      name: 'my-pipeline',
+      parameters: { deployEnv: 'dev' },
+      variables: [],
+    });
     expect(manifest.env).toEqual([]);
     expect(manifest.tools).toEqual([]);
     expect(manifest.warnings).toEqual([]);

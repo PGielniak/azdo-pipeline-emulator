@@ -96,11 +96,65 @@ describe('real-task is the default (PLAN D4)', () => {
     ).toBe('real-task');
   });
 
-  it('uses the origin as the label for a desugared non-native shorthand', () => {
-    const download = step('a0f6b0dd-1234-4f0d-bd5e-000000000000', '1', {
+  it('uses the origin as the label for a desugared shorthand', () => {
+    // Was `real-task` until E11-S04-T03: `download` now joins `checkout` as runtime-performed,
+    // because its package has an `AgentPlugin` handler and nothing else to exec (C-E12-040).
+    const download = step('30f35852-3f7e-4c0c-9a88-e127b4f97211', '1', {
       origin: 'download',
     } as Partial<Step>);
-    expect(disposeStep(download)).toMatchObject({ disposition: 'real-task', kind: 'download' });
+    expect(disposeStep(download)).toMatchObject({ disposition: 'native', kind: 'download' });
+  });
+});
+
+describe('publish and download are runtime-performed (C-E12-034/040, E11-S04-T03)', () => {
+  it('treats both keyword spellings as native', () => {
+    for (const origin of ['publish', 'download'] as const) {
+      const guid =
+        origin === 'publish'
+          ? 'ecdc45f6-832d-4ad9-b52b-ee49e94659be'
+          : '30f35852-3f7e-4c0c-9a88-e127b4f97211';
+      expect(disposeStep(step(guid, '1', { origin } as Partial<Step>))).toMatchObject({
+        disposition: 'native',
+        fidelity: 'exact',
+        kind: origin,
+      });
+    }
+  });
+
+  it('treats the catalogue references as native too, with no origin to go on', () => {
+    // An author who writes `- task: PublishPipelineArtifact@1` by hand gets no `origin`, so the
+    // task reference is the only thing to match on — and the Done criterion of E11-S04-T03 names
+    // exactly that spelling.
+    expect(disposeStep(step('PublishPipelineArtifact', '1'))).toMatchObject({
+      disposition: 'native',
+      fidelity: 'exact',
+      kind: 'publish',
+    });
+    expect(disposeStep(step('DownloadPipelineArtifact', '2'))).toMatchObject({
+      disposition: 'native',
+      fidelity: 'exact',
+      kind: 'download',
+    });
+  });
+
+  it('does not claim a different major version of the same task', () => {
+    // `DownloadPipelineArtifact@1` is a different task from `@2` (C-E04-034 makes the same point
+    // about the keyword GUID), and nothing here has read its handler.
+    expect(disposeStep(step('DownloadPipelineArtifact', '1'))).toMatchObject({
+      disposition: 'real-task',
+    });
+  });
+
+  it('stays native even when the package could not be fetched', () => {
+    // The fetch is irrelevant: there is no handler to run either way, so degrading to a stub would
+    // replace a working implementation with a no-op.
+    expect(
+      disposeStep(step('PublishPipelineArtifact', '1'), {
+        packages: {
+          'PublishPipelineArtifact@1': { available: false, unavailableReason: 'offline' },
+        },
+      }),
+    ).toMatchObject({ disposition: 'native' });
   });
 });
 

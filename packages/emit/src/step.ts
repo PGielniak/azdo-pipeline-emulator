@@ -291,6 +291,141 @@ const CHECKOUT_FLAGS: Readonly<Record<string, string>> = {
   sparseCheckoutPatterns: '--sparse-checkout-patterns',
 };
 
+/**
+ * `publish`/`download` — the other two steps the runtime performs itself (C-E12-034, E11-S04-T03).
+ *
+ * **Why native is the only possible answer, not merely the convenient one.** Both tasks' `execution`
+ * block is `AgentPlugin` and nothing else (C-E12-040) — there is no `Node`, `Node16`, `Node20` or
+ * even `PowerShell3` handler in the package, so real-task mode has nothing to exec. Before this,
+ * `disposeStep` sent them to the runner, which failed offline with "no cached package" while the
+ * runtime already implemented the whole behaviour in `azdo_artifact_publish`/`azdo_artifact_download`.
+ *
+ * Both spellings reach here: the keyword (a bare GUID recovered through `step.origin`, C-E04-032)
+ * and the catalogue reference an author writes by hand. They are **not** interchangeable — the
+ * keyword's target layout is the emitter's to supply (C-E06-084) while the task defaults its own
+ * (C-E06-085) — so the two are told apart below rather than merged.
+ */
+export function artifactStepKind(step: Step): 'publish' | 'download' | undefined {
+  if (step.origin === 'publish' || step.origin === 'download') return step.origin;
+  const reference = taskRef(step);
+  if (reference === 'PublishPipelineArtifact@1') return 'publish';
+  if (reference === 'DownloadPipelineArtifact@2') return 'download';
+  return undefined;
+}
+
+/** First present key of `names`, with its value. Input aliases are alternatives, not duplicates. */
+function firstInput(
+  step: Step,
+  names: readonly string[],
+): { key: string; value: string } | undefined {
+  for (const name of names) {
+    const value = step.inputs[name];
+    if (value !== undefined) return { key: name, value };
+  }
+  return undefined;
+}
+
+// The documented alias sets (C-E06-085/091). `path`/`targetPath` on publish, and
+// `path`/`targetPath`/`downloadPath` on download, are the same input under different names.
+const PUBLISH_PATH_INPUTS = ['path', 'targetPath'] as const;
+const PUBLISH_NAME_INPUTS = ['artifactName', 'artifact'] as const;
+const DOWNLOAD_NAME_INPUTS = ['artifact', 'artifactName'] as const;
+const DOWNLOAD_PATTERN_INPUTS = ['patterns', 'itemPattern'] as const;
+const DOWNLOAD_PATH_INPUTS = ['path', 'targetPath', 'downloadPath'] as const;
+const DOWNLOAD_SOURCE_INPUTS = ['source', 'buildType'] as const;
+
+function publishBody(step: Step): string {
+  const notes: string[] = [];
+  const args: string[] = [];
+  const path = firstInput(step, PUBLISH_PATH_INPUTS);
+  const name = firstInput(step, PUBLISH_NAME_INPUTS);
+  const handled = new Set<string>([
+    ...(path === undefined ? [] : [path.key]),
+    ...(name === undefined ? [] : [name.key]),
+  ]);
+
+  // `path` is required and the task defaults it to `$(Pipeline.Workspace)` (C-E06-091); the runtime
+  // requires it explicitly, so the default is supplied here rather than left to fail at run time.
+  args.push(`--path ${shellSingleQuote(path?.value ?? '$(Pipeline.Workspace)')}`);
+  if (name !== undefined) args.push(`--artifact ${shellSingleQuote(name.value)}`);
+  else {
+    // The agent falls back to a normalized `System.JobIdentifier` (C-E06-091). That identifier is
+    // a server-side value we do not model, so the omission is reported instead of invented.
+    notes.push(
+      '# note: no artifact name given; the agent would derive one from System.JobIdentifier ' +
+        '(C-E06-091). The runtime names it after the step instead.',
+    );
+  }
+
+  const artifactType = firstInput(step, ['artifactType', 'publishLocation']);
+  if (artifactType !== undefined) {
+    handled.add(artifactType.key);
+    if (artifactType.value !== 'pipeline') {
+      // `filepath` publishes to a file share, which is not a local concept.
+      notes.push(
+        `# note: ${artifactType.key} '${artifactType.value}' is not emulated; the artifact is ` +
+          'published to the local .artifacts/ store as a pipeline artifact.',
+      );
+    }
+  }
+  for (const key of Object.keys(step.inputs)) {
+    if (handled.has(key)) continue;
+    notes.push(`# note: publish input '${key}' has no runtime flag and is not applied`);
+  }
+  return [...notes, `azdo_artifact_publish ${args.join(' ')}`, ''].join('\n');
+}
+
+function downloadBody(step: Step): string {
+  const notes: string[] = [];
+  const args: string[] = [];
+  const keyword = step.origin === 'download';
+  const name = firstInput(step, DOWNLOAD_NAME_INPUTS);
+  const patterns = firstInput(step, DOWNLOAD_PATTERN_INPUTS);
+  const path = firstInput(step, DOWNLOAD_PATH_INPUTS);
+  const source = firstInput(step, DOWNLOAD_SOURCE_INPUTS);
+  const alias = step.inputs['alias'];
+  const handled = new Set<string>(
+    [name, patterns, path, source].flatMap((entry) => (entry === undefined ? [] : [entry.key])),
+  );
+  if (alias !== undefined) handled.add('alias');
+
+  // `download: none` is the author asking for nothing to be downloaded — in a deployment job it
+  // suppresses the automatic download (C-E06-096). As a step it has no work to do.
+  if (keyword && alias === 'none') {
+    return ['# `download: none` — nothing to download (C-E06-096).', ':', ''].join('\n');
+  }
+
+  if (name !== undefined) args.push(`--artifact ${shellSingleQuote(name.value)}`);
+  if (patterns !== undefined) args.push(`--patterns ${shellSingleQuote(patterns.value)}`);
+
+  if (keyword) {
+    // C-E06-084: the keyword's layout is `$(Pipeline.Workspace)/<artifact name>`, and it is the
+    // *emitter* that produces it — the task's own default is the bare workspace (C-E06-085). A
+    // keyword download with no artifact name takes every artifact, which is the no-name form's
+    // one-subdirectory-per-artifact layout under the workspace itself.
+    const target =
+      name === undefined ? '$(Pipeline.Workspace)' : `$(Pipeline.Workspace)/${name.value}`;
+    args.push(`--path ${shellSingleQuote(target)}`);
+    // An alias other than `current` names a pipeline *resource*, whose artifacts come from another
+    // run. The runtime refuses that with its own message rather than silently serving this run's
+    // artifacts, so the alias is passed through instead of being dropped.
+    if (alias !== undefined && alias !== 'current') {
+      args.push(`--source ${shellSingleQuote(alias)}`);
+    }
+  } else {
+    if (path !== undefined) args.push(`--path ${shellSingleQuote(path.value)}`);
+    if (source !== undefined && source.value !== 'current') {
+      args.push(`--source ${shellSingleQuote(source.value)}`);
+    }
+  }
+
+  for (const key of Object.keys(step.inputs)) {
+    if (handled.has(key)) continue;
+    notes.push(`# note: download input '${key}' has no runtime flag and is not applied`);
+  }
+  return [...notes, `azdo_artifact_download ${args.join(' ')}`.trimEnd(), ''].join('\n');
+}
+
 function checkoutBody(step: Step): string {
   const args: string[] = [];
   const unmapped: string[] = [];
@@ -439,6 +574,10 @@ export function emitStepScript(step: Step, number: string, options: StepEmitOpti
     body = pwshBody(step);
   } else if (step.origin === 'checkout') {
     body = checkoutBody(step);
+  } else if (disposition.disposition === 'native' && artifactStepKind(step) === 'publish') {
+    body = publishBody(step);
+  } else if (disposition.disposition === 'native' && artifactStepKind(step) === 'download') {
+    body = downloadBody(step);
   } else if (disposition.disposition === 'real-task') {
     body = realTaskBody(step, options);
   } else {

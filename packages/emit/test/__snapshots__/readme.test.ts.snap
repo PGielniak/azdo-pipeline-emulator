@@ -180,7 +180,7 @@ Every stage, job and step below is a script you can read, edit, and run on its o
 
 - **Structure:** 2 stages, 3 jobs, 10 step scripts.
 - **Expansion:** **service** — expanded by Azure DevOps (pipeline \`42\`, api-version \`7.1-preview.1\`, fresh).
-- **Gaps:** 5 entries in [Warnings](#warnings); 0 unsupported constructs.
+- **Gaps:** 1 entry in [Warnings](#warnings); 0 unsupported constructs.
 
 ## Quick start
 
@@ -219,7 +219,7 @@ See [.env.example](.env.example) for the values this pipeline needs.
 | 010 | 6d15af64-176c-496d-b583-fd2ae21d4df4 | \`checkout-self\` | \`exact\` | [\`010-checkout-self.sh\`](stages/010-build-and-publish/jobs/010-compile/steps/010-checkout-self.sh) |
 | 020 | Stage build output | \`CmdLine@2\` | \`exact\` | [\`020-stage-build-output.sh\`](stages/010-build-and-publish/jobs/010-compile/steps/020-stage-build-output.sh) |
 | 030 | Copy config next to the binary | \`CopyFiles@2\` | \`degraded\` | [\`030-copy-config-next-to-the-binary.sh\`](stages/010-build-and-publish/jobs/010-compile/steps/030-copy-config-next-to-the-binary.sh) |
-| 040 | Publish app artifact | \`PublishPipelineArtifact@1\` | \`degraded\` | [\`040-publish-app-artifact.sh\`](stages/010-build-and-publish/jobs/010-compile/steps/040-publish-app-artifact.sh) |
+| 040 | Publish app artifact | \`PublishPipelineArtifact@1\` | \`exact\` | [\`040-publish-app-artifact.sh\`](stages/010-build-and-publish/jobs/010-compile/steps/040-publish-app-artifact.sh) |
 
 #### Job \`docs\` (agent)
 
@@ -230,7 +230,7 @@ See [.env.example](.env.example) for the values this pipeline needs.
 | # | Step | Task | Fidelity | Script |
 | --- | --- | --- | --- | --- |
 | 010 | Generate docs | \`CmdLine@2\` | \`exact\` | [\`010-generate-docs.sh\`](stages/010-build-and-publish/jobs/020-docs/steps/010-generate-docs.sh) |
-| 020 | ecdc45f6-832d-4ad9-b52b-ee49e94659be | \`publish-docs\` | \`degraded\` | [\`020-publish-docs.sh\`](stages/010-build-and-publish/jobs/020-docs/steps/020-publish-docs.sh) |
+| 020 | ecdc45f6-832d-4ad9-b52b-ee49e94659be | \`publish-docs\` | \`exact\` | [\`020-publish-docs.sh\`](stages/010-build-and-publish/jobs/020-docs/steps/020-publish-docs.sh) |
 
 ### Stage \`deploy\`
 
@@ -247,8 +247,8 @@ See [.env.example](.env.example) for the values this pipeline needs.
 | # | Step | Task | Fidelity | Script |
 | --- | --- | --- | --- | --- |
 | 010 | 6d15af64-176c-496d-b583-fd2ae21d4df4 | \`checkout-none\` | \`exact\` | [\`010-checkout-none.sh\`](stages/020-consume-artifacts/jobs/010-consume/steps/010-checkout-none.sh) |
-| 020 | Download only the binary | \`30f35852-3f7e-4c0c-9a88-e127b4f97211@1\` | \`degraded\` | [\`020-download-only-the-binary.sh\`](stages/020-consume-artifacts/jobs/010-consume/steps/020-download-only-the-binary.sh) |
-| 030 | Download docs to an explicit path | \`DownloadPipelineArtifact@2\` | \`degraded\` | [\`030-download-docs-to-an-explicit-path.sh\`](stages/020-consume-artifacts/jobs/010-consume/steps/030-download-docs-to-an-explicit-path.sh) |
+| 020 | Download only the binary | \`30f35852-3f7e-4c0c-9a88-e127b4f97211@1\` | \`exact\` | [\`020-download-only-the-binary.sh\`](stages/020-consume-artifacts/jobs/010-consume/steps/020-download-only-the-binary.sh) |
+| 030 | Download docs to an explicit path | \`DownloadPipelineArtifact@2\` | \`exact\` | [\`030-download-docs-to-an-explicit-path.sh\`](stages/020-consume-artifacts/jobs/010-consume/steps/030-download-docs-to-an-explicit-path.sh) |
 | 040 | Assert both artifacts landed | \`CmdLine@2\` | \`exact\` | [\`040-assert-both-artifacts-landed.sh\`](stages/020-consume-artifacts/jobs/010-consume/steps/040-assert-both-artifacts-landed.sh) |
 
 
@@ -307,18 +307,6 @@ Ranked worst-first. Each entry says where the gap is, what the step is, how fait
 and what to do about it.
 
 1. **stages/010-build-and-publish/jobs/010-compile/steps/030-copy-config-next-to-the-binary.sh** — \`CopyFiles@2\` · \`degraded\`
-   runs, but some behavior is approximated on this host.
-   → Install the tool the step needs and re-run; \`azdo-emu doctor\` reports what is missing.
-2. **stages/010-build-and-publish/jobs/010-compile/steps/040-publish-app-artifact.sh** — \`PublishPipelineArtifact@1\` · \`degraded\`
-   runs, but some behavior is approximated on this host.
-   → Install the tool the step needs and re-run; \`azdo-emu doctor\` reports what is missing.
-3. **stages/010-build-and-publish/jobs/020-docs/steps/020-publish-docs.sh** — \`publish-docs\` · \`degraded\`
-   runs, but some behavior is approximated on this host.
-   → Install the tool the step needs and re-run; \`azdo-emu doctor\` reports what is missing.
-4. **stages/020-consume-artifacts/jobs/010-consume/steps/020-download-only-the-binary.sh** — \`30f35852-3f7e-4c0c-9a88-e127b4f97211@1\` · \`degraded\`
-   runs, but some behavior is approximated on this host.
-   → Install the tool the step needs and re-run; \`azdo-emu doctor\` reports what is missing.
-5. **stages/020-consume-artifacts/jobs/010-consume/steps/030-download-docs-to-an-explicit-path.sh** — \`DownloadPipelineArtifact@2\` · \`degraded\`
    runs, but some behavior is approximated on this host.
    → Install the tool the step needs and re-run; \`azdo-emu doctor\` reports what is missing.
 
@@ -1061,7 +1049,7 @@ Every stage, job and step below is a script you can read, edit, and run on its o
 
 - **Structure:** 3 stages, 4 jobs, 12 step scripts.
 - **Expansion:** **service** — expanded by Azure DevOps (pipeline \`42\`, api-version \`7.1-preview.1\`, fresh).
-- **Gaps:** 2 entries in [Warnings](#warnings); 0 unsupported constructs.
+- **Gaps:** 0 entries in [Warnings](#warnings); 0 unsupported constructs.
 
 ## Quick start
 
@@ -1098,7 +1086,7 @@ See [.env.example](.env.example) for the values this pipeline needs.
 | # | Step | Task | Fidelity | Script |
 | --- | --- | --- | --- | --- |
 | 010 | Package | \`CmdLine@2\` | \`exact\` | [\`010-package.sh\`](stages/010-build/jobs/010-package/steps/010-package.sh) |
-| 020 | ecdc45f6-832d-4ad9-b52b-ee49e94659be | \`publish-drop\` | \`degraded\` | [\`020-publish-drop.sh\`](stages/010-build/jobs/010-package/steps/020-publish-drop.sh) |
+| 020 | ecdc45f6-832d-4ad9-b52b-ee49e94659be | \`publish-drop\` | \`exact\` | [\`020-publish-drop.sh\`](stages/010-build/jobs/010-package/steps/020-publish-drop.sh) |
 
 ### Stage \`deploy_staging\`
 
@@ -1114,7 +1102,7 @@ See [.env.example](.env.example) for the values this pipeline needs.
 
 | # | Step | Task | Fidelity | Script |
 | --- | --- | --- | --- | --- |
-| 010 | 30f35852-3f7e-4c0c-9a88-e127b4f97211 _(preDeploy)_ | \`download-current\` | \`degraded\` | [\`010-download-current.sh\`](stages/020-deploy-to-staging/jobs/010-staging-runonce/steps/010-download-current.sh) |
+| 010 | 30f35852-3f7e-4c0c-9a88-e127b4f97211 _(preDeploy)_ | \`download-current\` | \`exact\` | [\`010-download-current.sh\`](stages/020-deploy-to-staging/jobs/010-staging-runonce/steps/010-download-current.sh) |
 | 020 | CmdLine _(preDeploy)_ | \`CmdLine@2\` | \`exact\` | [\`020-cmdline.sh\`](stages/020-deploy-to-staging/jobs/010-staging-runonce/steps/020-cmdline.sh) |
 | 030 | Deploy to staging _(deploy)_ | \`CmdLine@2\` | \`exact\` | [\`030-deploy-to-staging.sh\`](stages/020-deploy-to-staging/jobs/010-staging-runonce/steps/030-deploy-to-staging.sh) |
 | 040 | CmdLine _(deploy)_ | \`CmdLine@2\` | \`exact\` | [\`040-cmdline.sh\`](stages/020-deploy-to-staging/jobs/010-staging-runonce/steps/040-cmdline.sh) |
@@ -1200,15 +1188,7 @@ None recorded. Run \`azdo-emu doctor\` against this project to re-check the host
 
 ## Warnings
 
-Ranked worst-first. Each entry says where the gap is, what the step is, how faithful it is,
-and what to do about it.
-
-1. **stages/010-build/jobs/010-package/steps/020-publish-drop.sh** — \`publish-drop\` · \`degraded\`
-   runs, but some behavior is approximated on this host.
-   → Install the tool the step needs and re-run; \`azdo-emu doctor\` reports what is missing.
-2. **stages/020-deploy-to-staging/jobs/010-staging-runonce/steps/010-download-current.sh** — \`download-current\` · \`degraded\`
-   runs, but some behavior is approximated on this host.
-   → Install the tool the step needs and re-run; \`azdo-emu doctor\` reports what is missing.
+No warnings: every step converted to a faithful local equivalent.
 
 ## Unsupported
 

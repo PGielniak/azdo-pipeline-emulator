@@ -37,7 +37,7 @@ const shellcheck =
 // The ADO-macro false positives (C-E06-018/024): `$(name)` is a macro the runtime expands, not a
 // shell command substitution, so shellcheck's `echo "$(cmd)"` (SC2005) and "quote the unquoted
 // `$(…)`" (SC2046) findings are by construction — the emitter must leave the macro verbatim.
-const SHELLCHECK_MACRO_EXCLUDES = ['SC2005', 'SC2046'];
+const SHELLCHECK_MACRO_EXCLUDES = ['SC2005', 'SC2046', 'SC2016'];
 
 const build = (yaml: string, file = 'pipeline.expanded.yml') =>
   buildPipeline(parsePipelineYaml(yaml, file));
@@ -506,5 +506,117 @@ describe('real-task steps preflight their service connection (E08-S02-T01)', () 
     expect(emitStepScript(azureStep({ azureSubscription: 'prod' }), '010')).not.toContain(
       'azdo_sc_preflight',
     );
+  });
+});
+
+describe('publish and download are emitted natively (C-E12-034/040, E11-S04-T03)', () => {
+  const body = (yaml: string): string => emitStepScript(stepOf(yaml), '010');
+
+  it('maps the publish keyword’s inputs to azdo_artifact_publish', () => {
+    // `publish: out` / `artifact: drop` desugars to the GUID with `path` + `artifactName`.
+    const script = body(
+      'task: ecdc45f6-832d-4ad9-b52b-ee49e94659be@1\n      inputs:\n        path: out\n        artifactName: drop',
+    );
+    expect(script).toContain(`azdo_artifact_publish --path 'out' --artifact 'drop'`);
+    // Never the runner: there is no handler to run (C-E12-040).
+    expect(script).not.toContain('azdo_run_task');
+  });
+
+  it('accepts the catalogue task’s alias spellings (C-E06-091)', () => {
+    // `targetPath` and `artifact` are aliases of `path` and `artifactName`, not extra inputs.
+    const script = body(
+      'task: PublishPipelineArtifact@1\n      inputs:\n        targetPath: bin\n        artifact: drop',
+    );
+    expect(script).toContain(`azdo_artifact_publish --path 'bin' --artifact 'drop'`);
+    expect(script).not.toContain('has no runtime flag');
+  });
+
+  it('supplies the documented default path and reports a missing artifact name', () => {
+    const script = body('task: PublishPipelineArtifact@1');
+    expect(script).toContain(`azdo_artifact_publish --path '$(Pipeline.Workspace)'`);
+    // The agent's fallback is a normalized `System.JobIdentifier` (C-E06-091) — a server-side value
+    // we do not model, so the difference is stated rather than invented.
+    expect(script).toContain('System.JobIdentifier');
+  });
+
+  it('notes a publishLocation it cannot emulate instead of dropping it', () => {
+    const script = body(
+      'task: PublishPipelineArtifact@1\n      inputs:\n        targetPath: bin\n        publishLocation: filepath\n        fileSharePath: //share/drop',
+    );
+    expect(script).toContain("publishLocation 'filepath' is not emulated");
+    expect(script).toContain("publish input 'fileSharePath' has no runtime flag");
+  });
+
+  it('gives the download keyword the $(Pipeline.Workspace)/<name> layout (C-E06-084)', () => {
+    // The keyword's layout is the *emitter's* to supply; the task's own default is the bare
+    // workspace (C-E06-085), which is why the two spellings are not merged.
+    const script = body(
+      'task: 30f35852-3f7e-4c0c-9a88-e127b4f97211@1\n      inputs:\n        alias: current\n        artifact: drop',
+    );
+    expect(script).toContain(
+      `azdo_artifact_download --artifact 'drop' --path '$(Pipeline.Workspace)/drop'`,
+    );
+  });
+
+  it('falls back to the bare workspace for a keyword download with no artifact name', () => {
+    const script = body(
+      'task: 30f35852-3f7e-4c0c-9a88-e127b4f97211@1\n      inputs:\n        alias: current',
+    );
+    // The no-name form takes every artifact, one subdirectory each (C-E06-087).
+    expect(script).toContain(`azdo_artifact_download --path '$(Pipeline.Workspace)'`);
+  });
+
+  it('passes a pipeline-resource alias through so the runtime can refuse it', () => {
+    // Serving this run's artifacts for another pipeline's alias would be silently wrong; the
+    // runtime already refuses `--source` other than `current` with its own message.
+    const script = body(
+      'task: 30f35852-3f7e-4c0c-9a88-e127b4f97211@1\n      inputs:\n        alias: upstream\n        artifact: drop',
+    );
+    expect(script).toContain(`--source 'upstream'`);
+  });
+
+  it('emits `download: none` as a no-op (C-E06-096)', () => {
+    const script = body(
+      'task: 30f35852-3f7e-4c0c-9a88-e127b4f97211@1\n      inputs:\n        alias: none',
+    );
+    expect(script).toContain('nothing to download');
+    expect(script).not.toContain('azdo_artifact_download');
+  });
+
+  it('honors the task’s own path and patterns, and omits a redundant --source', () => {
+    const script = body(
+      'task: DownloadPipelineArtifact@2\n      inputs:\n        artifact: drop\n        path: /tmp/dl\n        itemPattern: "**/*.bin"\n        source: current',
+    );
+    expect(script).toContain(
+      `azdo_artifact_download --artifact 'drop' --patterns '**/*.bin' --path '/tmp/dl'`,
+    );
+    // `current` is the runtime's default; spelling it would be noise.
+    expect(script).not.toContain('--source');
+  });
+
+  it('passes a non-current `source` on the task form through to the runtime', () => {
+    // `specific` needs a run id, a REST fetch and the lockfile-pinned `.cache/artifacts/` tree
+    // (docs/04 §7). The runtime refuses it by name; serving this run's artifacts instead would be
+    // silently wrong.
+    const script = body(
+      'task: DownloadPipelineArtifact@2\n      inputs:\n        artifact: drop\n        buildType: specific',
+    );
+    expect(script).toContain(`--source 'specific'`);
+  });
+
+  it('notes a download input it has no flag for rather than dropping it', () => {
+    // The task declares thirteen inputs and the runtime implements four; the rest describe a
+    // *specific run* and belong to the same deferred work as `--source specific`.
+    const script = body(
+      'task: DownloadPipelineArtifact@2\n      inputs:\n        artifact: drop\n        runId: "1234"',
+    );
+    expect(script).toContain("download input 'runId' has no runtime flag and is not applied");
+  });
+
+  it('labels both as exact rather than degraded', () => {
+    // The runtime performs the documented work, as it does for `checkout` — it is not an
+    // approximation of a task that could otherwise have run.
+    expect(body('task: PublishPipelineArtifact@1')).toContain('exact');
+    expect(body('task: DownloadPipelineArtifact@2')).toContain('exact');
   });
 });

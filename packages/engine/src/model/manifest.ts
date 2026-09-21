@@ -183,6 +183,15 @@ export interface SerializedManifest {
   readonly pipeline: {
     readonly name?: string;
     readonly parameters: Readonly<Record<string, string>>;
+    /**
+     * The root `variables:` block, as authored.
+     *
+     * Recorded since E11-S04-T03: stage and job variables were serialized from the start, but the
+     * pipeline level was not, so `manifest.json` claimed a pipeline had no variables when it had
+     * several (C-E12-033). The emitter seeds all three levels from the model, not from here — this
+     * is what `doctor` and `--list` read.
+     */
+    readonly variables: readonly ManifestVariable[];
   };
   readonly stages: readonly ManifestStage[];
   readonly env: readonly ManifestEnvEntry[];
@@ -226,6 +235,7 @@ export function serializeManifest(
     pipeline: {
       ...optional('name', pipeline.name),
       parameters: pipeline.parameters,
+      variables: serializeVariables(pipeline.variables),
     },
     stages,
     env: options.env ?? [],

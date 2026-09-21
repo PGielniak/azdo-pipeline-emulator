@@ -50,12 +50,17 @@ const repoRoot = fileURLToPath(new URL('../../..', import.meta.url));
 const shellcheck =
   process.env.SHELLCHECK ?? join(repoRoot, 'packages/runtime/node_modules/.bin/shellcheck');
 
-// The only findings a golden may carry, and both are by construction (docs/06 §5 decision 61): an
+// The only findings a golden may carry, and each is by construction (docs/06 §5 decision 61): an
 // ADO `$(name)` macro is expanded by the runtime's `azdo_expand_macros`, not by the shell
 // (C-E06-018/024), so the emitter must leave it verbatim — and shellcheck then reads it as a
-// command substitution. `SC2005` is `echo "$(cmd)"`, `SC2046` the unquoted one. Nothing else is
-// excused; the guard below pins the list so a real finding cannot be silenced by appending a code.
-const BY_CONSTRUCTION_EXCLUDES = ['SC2005', 'SC2046'];
+// command substitution. `SC2005` is `echo "$(cmd)"`, `SC2046` the unquoted one, and `SC2016` the
+// **single-quoted** one: a macro passed as an argument the runtime expands, not bash. `SC2016` was
+// added by E11-S04-T03 (decision 85) when `publish`/`download` became native — their `--path` is
+// the first macro a *step* script carries as an argument rather than inside a body. It is not a new
+// excuse: the project's own shipped `.shellcheckrc` has disabled all four since decision 62(d),
+// so the harness was stricter than the artifact it checks. Nothing else is excused; the guard below
+// pins the list so a real finding cannot be silenced by appending a code.
+const BY_CONSTRUCTION_EXCLUDES = ['SC2005', 'SC2046', 'SC2016'];
 
 const corpus = await readCorpus(repoRoot);
 const oracleManifest = await readManifest(repoRoot);
@@ -354,10 +359,14 @@ describe('freshFinalYaml over the real corpus', () => {
 });
 
 describe('the shellcheck exclusions stay honest', () => {
-  it('excuses exactly the two macro false positives and nothing else', () => {
+  it('excuses exactly the three macro false positives and nothing else', () => {
     // Growing this list is how a golden suite stops finding bugs. A new code needs its own
-    // decision entry, not an append here.
-    expect(BY_CONSTRUCTION_EXCLUDES).toEqual(['SC2005', 'SC2046']);
+    // decision entry, not an append here — SC2016's is decision 85.
+    expect(BY_CONSTRUCTION_EXCLUDES).toEqual(['SC2005', 'SC2046', 'SC2016']);
+    // And every code here must already be sanctioned by the `.shellcheckrc` the generated project
+    // ships (decisions 61 and 62(d)), so the harness can never be *laxer* than the artifact.
+    const shipped = ['SC2005', 'SC2046', 'SC2016', 'SC2071'];
+    expect(BY_CONSTRUCTION_EXCLUDES.every((code) => shipped.includes(code))).toBe(true);
   });
 });
 

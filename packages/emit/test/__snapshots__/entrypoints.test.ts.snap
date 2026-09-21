@@ -100,10 +100,10 @@ cond_stage() {
 cond_job_compile() {
   azdo_status_succeeded
 }
-cond_step_010() {
+cond_step_compile_010() {
   azdo_status_succeeded
 }
-cond_step_020() {
+cond_step_compile_020() {
   azdo_status_succeeded
 }
 "
@@ -133,6 +133,10 @@ while (($# > 0)); do
   esac
 done
 
+condition_flag=""
+[[ "$no_condition" != true ]] || condition_flag=--no-condition
+job_status=0
+
 export AZDO_VAR_SCOPE='job-compile'
 AZDO_LOG_DIR="$AZDO_RUN_DIR/logs/010-build/010-compile-and-test"
 AZDO_RESULT_DIR="$(azdo_result_dir 'Build' 'compile')"
@@ -158,21 +162,23 @@ fi
 
 id='010'
 if [[ -z "$from_step" || "$id" > "$from_step" || "$id" = "$from_step" ]] && [[ -z "$to_step" || "$id" < "$to_step" || "$id" = "$to_step" ]] && [[ -z "$only_step" || "$id" = "$only_step" ]]; then
-  run_step --id '010' --file "$AZDO_JOB_DIR/steps/010-say-hello.sh" --cond cond_step_010 \\
+  run_step --id '010' --file "$AZDO_JOB_DIR/steps/010-say-hello.sh" --cond cond_step_compile_010 \\
     --display 'Say hello' --wd '$(System.DefaultWorkingDirectory)' \\
     --continue-on-error false --fail-on-stderr false \\
     --retries 0 --timeout 3600 \\
-    \${no_condition:+--no-condition}
+    \${condition_flag:+--no-condition} || job_status=$?
 fi
 
 id='020'
 if [[ -z "$from_step" || "$id" > "$from_step" || "$id" = "$from_step" ]] && [[ -z "$to_step" || "$id" < "$to_step" || "$id" = "$to_step" ]] && [[ -z "$only_step" || "$id" = "$only_step" ]]; then
-  run_step --id '020' --file "$AZDO_JOB_DIR/steps/020-fail-loudly.sh" --cond cond_step_020 \\
+  run_step --id '020' --file "$AZDO_JOB_DIR/steps/020-fail-loudly.sh" --cond cond_step_compile_020 \\
     --display 'Fail loudly' --wd '$(System.DefaultWorkingDirectory)' \\
     --continue-on-error false --fail-on-stderr false \\
     --retries 0 --timeout 3600 \\
-    \${no_condition:+--no-condition}
+    \${condition_flag:+--no-condition} || job_status=$?
 fi
+
+exit "$job_status"
 "
 `;
 

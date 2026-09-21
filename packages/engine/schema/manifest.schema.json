@@ -83,7 +83,7 @@
     "pipeline": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["parameters"],
+      "required": ["parameters", "variables"],
       "properties": {
         "name": {
           "type": "string"
@@ -92,6 +92,13 @@
           "type": "object",
           "additionalProperties": {
             "type": "string"
+          }
+        },
+        "variables": {
+          "description": "The root `variables:` block as authored. Added by E11-S04-T03: stage and job levels were serialized from the start and the pipeline level was not (C-E12-033).",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/variable"
           }
         }
       }

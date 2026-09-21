@@ -24,6 +24,7 @@ import {
   type ExprSlot,
   type Pipeline,
   type Stage,
+  type VariableDeclaration,
 } from '@azdo-emu/engine';
 
 import { synthesizeEnvExample } from './env-example.js';
@@ -63,11 +64,25 @@ export function topologicalOrder(
   return order;
 }
 
-/** The condition function name for a stage, job (by referenceName), or step (by `NNN`). */
-export function conditionFunctionName(kind: 'stage' | 'job' | 'step', key: string): string {
+/**
+ * The condition function name for a stage, job (by referenceName), or step (by `NNN`).
+ *
+ * A step's name carries its **job** as well as its number, and that is not cosmetic (C-E12-041).
+ * `conditions.sh` is emitted per *stage* and sourced once, so every job in the stage contributes its
+ * functions to one namespace — and step numbers restart at `010` in each job. Without the job
+ * segment, the last job's `cond_step_010` silently redefined the first job's, and a job whose first
+ * step was a `checkout: none` (a constant-`False` condition) skipped the first step of every sibling
+ * job in the stage. Found by running an L5 sample, and only after C-E12-038 made step conditions
+ * run at all.
+ */
+export function conditionFunctionName(
+  kind: 'stage' | 'job' | 'step',
+  key: string,
+  jobKey?: string,
+): string {
   if (kind === 'stage') return 'cond_stage';
   if (kind === 'job') return `cond_job_${slugify(key) || 'job'}`;
-  return `cond_step_${key}`;
+  return `cond_step_${slugify(jobKey ?? '') || 'job'}_${key}`;
 }
 
 function slotFor(kind: 'stage' | 'job' | 'step'): ExprSlot {
@@ -87,8 +102,9 @@ export function compileCondition(
   condition: string | undefined,
   diagnostics: Diagnostic[],
   file: string,
+  jobKey?: string,
 ): CompiledCondition {
-  const fnName = conditionFunctionName(kind, key);
+  const fnName = conditionFunctionName(kind, key, jobKey);
   if (condition === undefined || condition === '') return { fnName, body: 'azdo_status_succeeded' };
   const parsed = parseExpression(condition, { registry: registryForSlot(slotFor(kind)) });
   if (!parsed.ok) {
@@ -135,6 +151,7 @@ export function compileStageConditions(
           scaffoldStep.step.condition,
           diagnostics,
           file,
+          scaffoldJob.job.referenceName,
         ),
       );
     }
@@ -156,6 +173,48 @@ export function emitConditions(conditions: readonly CompiledCondition[]): string
     ...conditions.map((c) => `${c.fnName}() {\n  ${c.body}\n}`),
     '',
   ].join('\n');
+}
+
+/**
+ * Seed one `variables:` block into the current store scope (C-E12-033, E11-S04-T03).
+ *
+ * **Precedence is the whole reason this is three separate calls rather than one resolved map.**
+ * The documented YAML order, highest first, is: job → stage → pipeline → queue time → the Pipeline
+ * settings UI (C-E12-039). Our `.env` stands in for the last two (PLAN D7), so every YAML level
+ * outranks it — which is why `run.sh` seeds the root block *after* `azdo_env_load` and not before.
+ * The resolver in `@azdo-emu/engine` is deliberately not used: layering here would flatten three
+ * scopes into one and lose the per-scope shadowing the store already implements (C-E04-082/083,
+ * C-E05-017).
+ *
+ * Two entries are dropped rather than emitted. A `- group: <name>` entry names a group, not a
+ * variable — its values arrive through `.env` and are never fetched (PLAN D7) — and an entry with
+ * an empty name cannot be written to a store keyed by name.
+ *
+ * Nothing here is marked secret: a YAML `variables:` block cannot declare one (a secret comes from
+ * the UI or a group, i.e. through `.env`, where `manifest.json`'s `env[].secret` flag marks it —
+ * C-E06-013). `readonly: true` survives expansion (C-E04-085) and the runtime enforces it
+ * (C-E06-005/006), so it is passed through rather than dropped.
+ *
+ * Values are stored **raw**: a value containing `$(other)` is expanded when a step reads it, not
+ * when it is set, which is what makes a variable that refers to another one work at all.
+ */
+export function emitVariableSeeds(
+  variables: readonly VariableDeclaration[],
+  scopeLabel: string,
+  indent = '',
+): string[] {
+  const lines: string[] = [];
+  for (const variable of variables) {
+    if (variable.group !== undefined || variable.name === '') continue;
+    // `azdo_var_set <name> <value> [secret] [output] [readonly]` — the trailing flags are only
+    // spelled out when one of them is not the default, so an ordinary variable stays readable.
+    const flags = variable.readonly ? ' false false true' : '';
+    lines.push(
+      `${indent}azdo_var_set ${shQuote(variable.name)} ${shQuote(variable.value)}${flags}`,
+    );
+  }
+  if (lines.length > 0) lines.unshift(`${indent}# ${scopeLabel} variables (C-E12-033)`);
+  return lines;
 }
 
 /**
@@ -228,6 +287,21 @@ export function emitRunJob(job: ScaffoldJob, stage: ScaffoldStage): string {
     '  esac',
     'done',
     '',
+    // C-E12-036/C-E12-038: the flag is carried in its own variable because `${name:+word}` tests
+    // for a **non-empty** value, not for truth — and `no_condition=false` is a non-empty string.
+    // The earlier `${no_condition:+--no-condition}` therefore passed `--no-condition` on *every*
+    // step of *every* generated project, so no step condition was ever evaluated: a `checkout:
+    // none` step whose compiled condition is `False` ran and reported `Succeeded` instead of
+    // `Skipped`, and a `condition: failed()` step ran after a tolerated failure. That last symptom
+    // is what E11-S04-T01 recorded as the open finding C-E12-036.
+    'condition_flag=""',
+    '[[ "$no_condition" != true ]] || condition_flag=--no-condition',
+    // C-E12-042: the sequencer must not *abort* on a failing step, but it must still *report* one.
+    // `run-stage.sh` ignores this status (it reads the result store), so the only consumer is a
+    // developer running `run-job.sh --only-step NNN` by hand — for whom exit 0 on a step that just
+    // failed is the wrong answer, and is what a bare `|| :` would have given them.
+    'job_status=0',
+    '',
     `export AZDO_VAR_SCOPE=${shQuote(scope)}`,
     `AZDO_LOG_DIR="$AZDO_RUN_DIR/logs/${stage.name}/${job.name}"`,
     `AZDO_RESULT_DIR="$(azdo_result_dir ${shQuote(stage.stage.id)} ${shQuote(job.job.referenceName)})"`,
@@ -241,6 +315,16 @@ export function emitRunJob(job: ScaffoldJob, stage: ScaffoldStage): string {
     // (C-E04-082/083, C-E05-017). The copy preserves value bytes and metadata, unlike an env bridge.
     '  azdo_var_scope_copy pipeline "$AZDO_VAR_SCOPE"',
     ...RUN_DIR_VARS.map(([name, value]) => `  azdo_var_set ${shQuote(name)} ${value}`),
+    // Stage before job, both after the inherited pipeline scope: "the most locally scoped variable
+    // takes precedence" (C-E12-039). A job belongs to exactly one stage, so the stage's block is
+    // known here statically — seeding it in `run-stage.sh` instead would write it into the shared
+    // pipeline scope, where a sibling stage would see it, which C-E04-083 forbids.
+    //
+    // Inside the guard, for the same reason the scope copy is: on `--resume` this job's store
+    // already holds the earlier run's values, including whatever its steps wrote with
+    // `setvariable`, and re-seeding would silently discard them.
+    ...emitVariableSeeds(stage.stage.variables, 'Stage', '  '),
+    ...emitVariableSeeds(job.job.variables, 'Job', '  '),
     'fi',
     '',
   ];
@@ -259,7 +343,14 @@ export function emitRunJob(job: ScaffoldJob, stage: ScaffoldStage): string {
     lines.push(
       `id=${shQuote(id)}`,
       `if [[ -z "$from_step" || "$id" > "$from_step" || "$id" = "$from_step" ]] && [[ -z "$to_step" || "$id" < "$to_step" || "$id" = "$to_step" ]] && [[ -z "$only_step" || "$id" = "$only_step" ]]; then`,
-      `  run_step --id ${shQuote(id)} --file "$AZDO_JOB_DIR/steps/${fileName}" --cond ${conditionFunctionName('step', id)} \\`,
+      // C-E12-042, and found the same way as C-E12-035 one level up. `run-job.sh` is
+      // `set -euo pipefail`, so a failing `run_step` aborted the sequencer and every later step
+      // simply never happened — missing from the summary rather than recorded. The agent does the
+      // opposite: it runs on, evaluates each remaining step's condition, and records `Skipped` for
+      // the ones whose condition is now false (C-E06-041/043), which is what makes `always()` and
+      // `failed()` steps work at all. `|| job_status=$?` rather than `|| :` so the sequencer still
+      // *reports* the failure it no longer aborts on.
+      `  run_step --id ${shQuote(id)} --file "$AZDO_JOB_DIR/steps/${fileName}" --cond ${conditionFunctionName('step', id, job.job.referenceName)} \\`,
       // C-E12-032: the authored `name:` is what an output variable is referenced by
       // (`dependencies.<job>.outputs['<name>.<var>']`). It was never passed, so `AZDO_STEP_NAME`
       // was never set and **every** `isOutput=true` write in a generated project failed with
@@ -268,11 +359,12 @@ export function emitRunJob(job: ScaffoldJob, stage: ScaffoldStage): string {
       `    --display ${shQuote(step.step.displayName)} --wd ${shQuote(wd)} \\`,
       `    --continue-on-error ${step.step.continueOnError} --fail-on-stderr ${step.step.failOnStderr} \\`,
       `    --retries ${step.step.retryCountOnTaskFailure} --timeout ${timeout} \\`,
-      '    ${no_condition:+--no-condition}',
+      '    ${condition_flag:+--no-condition} || job_status=$?',
       'fi',
       '',
     );
   }
+  lines.push('exit "$job_status"', '');
   return lines.join('\n');
 }
 
@@ -389,6 +481,11 @@ export function emitRunScript(
     '',
     'azdo_env_load "$PROJECT_DIR/.env" "${env_file:-}"',
     '',
+    // **After** the `.env` load, not before: a YAML `variables:` entry outranks both queue-time and
+    // the Pipeline settings UI, the two things `.env` stands in for (C-E12-039, PLAN D7). Before
+    // the run-number init, because the `name:` format may read a user-defined variable (C-E05-012).
+    ...emitVariableSeeds(pipeline.variables, 'Pipeline'),
+    ...(pipeline.variables.length > 0 ? [''] : []),
     // The run number is rendered here and nowhere earlier: the format may read `.env`-supplied and
     // user-defined variables (C-E05-012), and `Build.BuildNumber` has to exist before the first
     // step reads it. Every job inherits the pipeline store before it starts (C-E05-017).

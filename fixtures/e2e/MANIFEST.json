@@ -5,11 +5,16 @@
       "image": "base",
       "exitCode": 0,
       "artifacts": [
-        "workspace/a/app/build.txt"
+        "workspace/a/app/build.txt",
+        ".artifacts/drop/build.txt",
+        "workspace/drop/build.txt"
       ],
       "markers": [
         "E2E-MARKER staged build.txt",
-        "E2E-MARKER cross-job output variable is app"
+        "E2E-MARKER pipeline variable stageLabel=build-stage",
+        "E2E-MARKER job variable wins greeting=hello-from-job",
+        "E2E-MARKER cross-job output variable is app",
+        "E2E-MARKER downloaded artifact content is built"
       ],
       "absentMarkers": [
         "E2E-MARKER must not appear"
@@ -19,12 +24,14 @@
       "image": "node",
       "exitCode": 0,
       "artifacts": [
-        "workspace/a/out/result.json"
+        "workspace/a/out/result.json",
+        ".artifacts/node-result/result.json"
       ],
       "markers": [
         "E2E-MARKER node toolchain present",
         "sample app tests passed",
-        "E2E-MARKER node sample produced result.json"
+        "E2E-MARKER node sample produced result.json",
+        "E2E-MARKER publishing as node-result"
       ],
       "absentMarkers": []
     },
@@ -37,10 +44,12 @@
         "E2E-MARKER tolerated failure",
         "E2E-MARKER reached after continueOnError",
         "E2E-MARKER final step ran",
+        "E2E-MARKER failed() is true after a real failure",
         "Result: Failed"
       ],
       "absentMarkers": [
-        "E2E-MARKER must not run after a real failure"
+        "E2E-MARKER must not run after a real failure",
+        "E2E-MARKER must not run while the only failure was tolerated"
       ]
     }
   }
