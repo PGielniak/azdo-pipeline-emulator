@@ -502,7 +502,22 @@ export function emitRunStage(stage: ScaffoldStage, jobOrder: readonly string[]):
     '# shellcheck disable=SC1091',
     'source "$AZDO_STAGE_DIR/conditions.sh"',
     '',
-    'if ! cond_stage; then',
+    // A compiled condition's exit status is 0 True / 1 False / **2 evaluation error**, and the
+    // `if ! cond_stage` this replaces sent 1 and 2 down the same branch — so a stage whose
+    // condition errored was recorded `Skipped`, indistinguishable from one the author had
+    // conditioned out (C-E12-048). The service completes that node `Abandoned`, a sixth result no
+    // status function except `always()` matches (C-E02-071). Status is captured into a variable
+    // rather than tested twice because a condition may have side effects and must run once.
+    'cond_status=0',
+    'cond_stage || cond_status=$?',
+    'if ((cond_status > 1)); then',
+    '  printf \'Abandoning stage %s: condition evaluation error.\\n\' "$AZDO_STAGE_ID" >&2',
+    '  azdo_stage_result_set "$AZDO_STAGE_ID" Abandoned',
+    ...stage.jobs.map(
+      (job) => `  azdo_job_result_set "$AZDO_STAGE_ID" ${shQuote(job.job.referenceName)} Abandoned`,
+    ),
+    '  exit 0',
+    'elif ((cond_status == 1)); then',
     '  printf \'Skipping stage %s due to condition.\\n\' "$AZDO_STAGE_ID"',
     '  azdo_stage_result_set "$AZDO_STAGE_ID" Skipped',
     ...stage.jobs.map(
@@ -518,11 +533,16 @@ export function emitRunStage(stage: ScaffoldStage, jobOrder: readonly string[]):
     if (job === undefined) continue;
     const cond = conditionFunctionName('job', referenceName);
     lines.push(
-      `if ${cond}; then`,
+      'cond_status=0',
+      `${cond} || cond_status=$?`,
+      'if ((cond_status == 0)); then',
       `  bash "$AZDO_STAGE_DIR/jobs/${job.name}/run-job.sh" "$@" || :`,
-      'else',
+      'elif ((cond_status == 1)); then',
       `  printf 'Skipping job %s due to condition.\\n' ${shQuote(referenceName)}`,
       `  azdo_job_result_set "$AZDO_STAGE_ID" ${shQuote(referenceName)} Skipped`,
+      'else',
+      `  printf 'Abandoning job %s: condition evaluation error.\\n' ${shQuote(referenceName)} >&2`,
+      `  azdo_job_result_set "$AZDO_STAGE_ID" ${shQuote(referenceName)} Abandoned`,
       'fi',
       '',
     );

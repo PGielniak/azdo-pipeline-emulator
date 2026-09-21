@@ -690,9 +690,12 @@ STREAM
   run -0 azdo_job_result build ''
   [ "$output" = Succeeded ]
 
-  run ! azdo_job_result_set Build Bad Abandoned
+  # `Abandoned` **is** a job result as of E11-S04-T06 — this assertion used to read the other way,
+  # when one five-state validator gated every result the store accepted (C-E12-051). What is
+  # rejected here is a value in neither vocabulary.
+  run ! azdo_job_result_set Build Bad Bogus
   [ "$status" -eq 2 ]
-  [[ "$output" == *'invalid step result: Abandoned'* ]]
+  [[ "$output" == *'invalid node result: Bogus'* ]]
 }
 
 @test "dependency stage results fold jobs and preserve an explicit skip (C-E02-092/093)" {
@@ -4100,4 +4103,84 @@ VSO
   run -2 run_step --id 010 --name a --name b --file /dev/null --display d --wd . \
     --continue-on-error false --fail-on-stderr false --retries 0 --timeout 60
   [[ "$output" == *'duplicate run_step option: --name'* ]]
+}
+
+# ---------------------------------------------------------------------------------------------
+# E11-S04-T06 — `Abandoned`: the node vocabulary, the stage fold and the summary rows.
+#
+# A stage or job whose *condition* errors completes `Abandoned` on the service — a sixth result the
+# docs never list, which no status function except `always()` matches (C-E02-071). A *step* whose
+# condition errors is `Failed` instead (C-E06-042), so the two vocabularies stay apart here too.
+# ---------------------------------------------------------------------------------------------
+
+@test "Abandoned is a node result and not a task result (C-E12-051)" {
+  azdo_stage_result_set Build Abandoned
+  [ "$(azdo_stage_result Build)" = Abandoned ]
+  azdo_job_result_set Build compile Abandoned
+  [ "$(azdo_job_result Build compile)" = Abandoned ]
+
+  # The task vocabulary is untouched: a step cannot be abandoned, and neither can a summary row or
+  # the worst-wins merge behind `##vso[task.complete]`.
+  run -2 azdo_step_result_set 010 Abandoned
+  [[ "$output" == *'invalid step result: Abandoned'* ]]
+  run -2 azdo_summary_record 010 name Abandoned 1 /logs/010.log
+  [[ "$output" == *'invalid step result: Abandoned'* ]]
+  run -2 azdo_merge_task_results Succeeded Abandoned
+  [[ "$output" == *'invalid step result: Abandoned'* ]]
+
+  # And the node vocabulary is still a vocabulary.
+  run -2 azdo_stage_result_set Build Bogus
+  [[ "$output" == *'invalid node result: Bogus'* ]]
+}
+
+@test "an abandoned job folds into its stage and outranks a skipped sibling (C-E12-052)" {
+  # No `.stage-result` marker: this is the fold, not the short-circuit the stage-scope case takes.
+  azdo_job_result_set Build skipped Skipped
+  [ "$(azdo_stage_result Build)" = Skipped ]
+  azdo_job_result_set Build bad Abandoned
+  # Invented precedence, deliberately the louder of the two: hiding a condition-evaluation error
+  # behind a sibling's skip is the conflation this task exists to remove (docs/06 §5 decision 90).
+  [ "$(azdo_stage_result Build)" = Abandoned ]
+
+  # A job that actually ran still decides the stage — Abandoned never displaces a real result.
+  azdo_job_result_set Build ran Failed
+  [ "$(azdo_stage_result Build)" = Failed ]
+}
+
+@test "an abandoned dependency satisfies nothing but always() at both scopes (C-E02-071)" {
+  azdo_stage_result_set bad_stage Abandoned
+  run -1 azdo_status_stage_succeeded bad_stage
+  run -1 azdo_status_stage_failed bad_stage
+  run -1 azdo_status_stage_succeededorfailed bad_stage
+  run -0 azdo_status_always
+
+  AZDO_STAGE_ID=job_scope
+  export AZDO_STAGE_ID
+  azdo_job_result_set job_scope bad Abandoned
+  run -1 azdo_status_job_succeeded bad
+  run -1 azdo_status_job_failed bad
+  run -1 azdo_status_job_succeededorfailed bad
+}
+
+@test "the run summary names a node that ran no steps, abandoned apart from skipped (C-E12-053)" {
+  # The discriminating case, and the reason the node rows are gathered before the empty-table
+  # branch: neither of these stages records a single step, so the step table is empty for both and
+  # `No steps ran.` used to be the entire output in each.
+  azdo_stage_result_set bad_stage Abandoned
+  azdo_stage_result_set skipped_stage Skipped
+  azdo_job_result_set job_scope bad Abandoned
+  azdo_job_result_set job_scope skipped Skipped
+
+  run -0 azdo_run_summary
+  [[ "$output" == *'No steps ran.'* ]]
+  [[ "$output" == *'Stages and jobs that did not run:'* ]]
+  [[ "$output" == *'stage bad_stage: Abandoned'* ]]
+  [[ "$output" == *'stage skipped_stage: Skipped'* ]]
+  [[ "$output" == *'job job_scope/bad: Abandoned'* ]]
+  [[ "$output" == *'job job_scope/skipped: Skipped'* ]]
+
+  # A node that ran is represented by its steps and is not repeated in the block.
+  azdo_stage_result_set ok Succeeded
+  run -0 azdo_run_summary
+  [[ "$output" != *'stage ok:'* ]]
 }

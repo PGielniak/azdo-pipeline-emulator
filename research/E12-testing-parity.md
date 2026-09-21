@@ -690,3 +690,52 @@ each asserts the rewrite **applied** before asserting the digest moved, so a rep
 stopped matching would fail rather than pass forever. Each entry-point kind is also mutated
 one line at a time, so a tree that contains a file but whose digest does not observe it would fail.
   — measured 2026-09-21; `packages/emit/test/golden-harness.test.ts`
+
+## E11-S04-T06 — an errored stage or job condition
+
+[C-E12-051] **`Abandoned` is a node result and not a task result, and the local store now says so
+in two vocabularies rather than one.** Before this task `azdo__valid_step_result` gated every
+result the store accepted — step results, the summary table, the worst-wins task merge, *and* both
+node markers — so the sixth state had nowhere to go (C-E12-048). The split is not a local
+convenience but the service's own shape: a step is a task and `TaskResult` has five members, which
+is why a *step* whose condition errors is `Failed` (C-E06-042); a stage or job is a timeline node,
+and one whose condition errors completes `Abandoned` (C-E02-071). `azdo__valid_node_result` is
+therefore reachable from exactly two call sites — `azdo__result_marker_set`, the one write path for
+both `.job-result` and `.stage-result`, and the two marker reads that must accept back what that
+writer accepted. **The writer and its readers had to move together**: a value the writer accepts
+and a reader rejects returns status 2 from `azdo_job_result`, which `azdo__status_graph` propagates
+into the compiled condition of the *next* node, which the new emitter branch then reads as an
+evaluation error — one invalid marker would silently abandon a downstream node. `azdo_run_result`
+needed no change for a different reason worth recording: it scans `find … ! -name '.*'`, and both
+node markers are dotfiles, so node results have never entered the run aggregate.
+  — measured 2026-09-21; `packages/runtime/lib/core.sh`; `packages/runtime/test/core.bats`
+    "Abandoned is a node result and not a task result"
+
+[C-E12-052] **`VERIFY` — invented, not measured: an abandoned job outranks a skipped one in the
+stage fold.**
+`azdo_stage_result` short-circuits on a `.stage-result` marker, so the fold over job results only
+decides a stage that *ran* — which is exactly the job-condition-error case. An abandoned job
+contributes no status of its own (it did not run, as a skipped one did not), leaving the tail to
+choose between `Skipped` and `Abandoned` for a stage whose jobs were some of each. **No source
+states this cell and no experiment here settles it.** The rule taken is that `Abandoned` wins,
+because hiding a condition-evaluation error behind a sibling's skip is the same conflation the task
+exists to remove. The probe that would settle it is one agentless run in the test org: a stage with
+two jobs, one `condition: false` and one `condition: gt(1, 'not-a-number')`, reading the *stage's*
+timeline result. That run is not available here: the oracle PAT expired ~2026-09-10 per E00-S03's
+runbook (C-E09-022). The cost of being wrong is one `elif` in one function. Equally invented and
+settled the same way: a stage whose own condition errors marks its jobs `Abandoned` rather than
+`Skipped`, mirroring what the pre-existing skip path already did for `Skipped`.
+  — open 2026-09-21; rule implemented in `packages/runtime/lib/core.sh` `azdo_stage_result`
+
+[C-E12-053] **The run summary could not distinguish the two cases even once the store could,
+because it is a step table and neither node ran a step.** `azdo_run_summary` returned at
+`No steps ran.` before anything else could be printed, so a stage conditioned out and a stage whose
+condition errored produced byte-identical output — the discriminating case is precisely the one
+where the table is empty. The node rows are therefore gathered *before* that branch and printed
+after it, and the branch no longer returns. Only `Skipped` and `Abandoned` nodes are listed: a node
+that ran is already represented by its steps. Asserted twice — at unit scope over synthetic markers
+with no step records at all, and end-to-end against a generated project whose run produces all four
+rows.
+  — measured 2026-09-21; `packages/runtime/lib/core.sh` `azdo__run_summary_nodes`;
+    `packages/runtime/test/core.bats` "the run summary names a node that ran no steps";
+    `packages/emit/test/entrypoints.test.ts` "records Abandoned, not Skipped, at stage and job scope"

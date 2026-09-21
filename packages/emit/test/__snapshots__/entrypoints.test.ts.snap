@@ -196,18 +196,30 @@ source "$AZDO_EMU_LIB/expr.sh"
 # shellcheck disable=SC1091
 source "$AZDO_STAGE_DIR/conditions.sh"
 
-if ! cond_stage; then
+cond_status=0
+cond_stage || cond_status=$?
+if ((cond_status > 1)); then
+  printf 'Abandoning stage %s: condition evaluation error.\\n' "$AZDO_STAGE_ID" >&2
+  azdo_stage_result_set "$AZDO_STAGE_ID" Abandoned
+  azdo_job_result_set "$AZDO_STAGE_ID" 'compile' Abandoned
+  exit 0
+elif ((cond_status == 1)); then
   printf 'Skipping stage %s due to condition.\\n' "$AZDO_STAGE_ID"
   azdo_stage_result_set "$AZDO_STAGE_ID" Skipped
   azdo_job_result_set "$AZDO_STAGE_ID" 'compile' Skipped
   exit 0
 fi
 
-if cond_job_compile; then
+cond_status=0
+cond_job_compile || cond_status=$?
+if ((cond_status == 0)); then
   bash "$AZDO_STAGE_DIR/jobs/010-compile-and-test/run-job.sh" "$@" || :
-else
+elif ((cond_status == 1)); then
   printf 'Skipping job %s due to condition.\\n' 'compile'
   azdo_job_result_set "$AZDO_STAGE_ID" 'compile' Skipped
+else
+  printf 'Abandoning job %s: condition evaluation error.\\n' 'compile' >&2
+  azdo_job_result_set "$AZDO_STAGE_ID" 'compile' Abandoned
 fi
 "
 `;

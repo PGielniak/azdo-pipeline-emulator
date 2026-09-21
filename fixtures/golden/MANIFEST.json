@@ -4,67 +4,67 @@
       "finalYamlSha256": "eeeb28a058422d78c28e60103821ccc7154270f663941753a972f694c8c9588c",
       "stepCount": 13,
       "fileCount": 23,
-      "treeDigest": "473f3c9410da7258a465b68c2e9ea85a55216e1c6276e5b4f0a859be028436db"
+      "treeDigest": "36738ef7e78b52a50482bf13d2966979447e7b1c081d1205fee8560079143578"
     },
     "02-artifact-handoff": {
       "finalYamlSha256": "7f7f1482919260e7edc5ce058917cfb18340a99f2dc29e53c64b1125452222df",
       "stepCount": 10,
       "fileCount": 18,
-      "treeDigest": "fa29bacc4aa844bb3b90609714b848f0c07ed63596c99730f8d7223a66dd2b0f"
+      "treeDigest": "59da68d4d637d05de27e72059ebd58c64f2e40f42b70c4d76c4289f9eb5f64e7"
     },
     "03-dependencies-and-conditions": {
       "finalYamlSha256": "187a1989a43588b1c69690c821061cb4d699e6f3d82fcde1d7102c3f7ce0beca",
       "stepCount": 12,
       "fileCount": 24,
-      "treeDigest": "95062894774f656ccdbf477f43246bd7b4ddc6a989ac45931dc7b360d9fa4e0f"
+      "treeDigest": "b3e65750f262f0ca5fc254792a8f8ed5f017db8019eb63f5c8d70b54c5348841"
     },
     "04-variable-layers": {
       "finalYamlSha256": "b59e8457e9924555b456554070ac80fecbc122061d3f80dc08df54b3c2dd2657",
       "stepCount": 10,
       "fileCount": 15,
-      "treeDigest": "cb9a6abb633bd9658d5b7175b62eada940a1f4a632505c82e58d34a524860185"
+      "treeDigest": "a7e7c36a02a1c5465e1b27bf1e5aafe41e2d421eefb3ed8a8afdfe2301492b24"
     },
     "05-steps-template-nested": {
       "finalYamlSha256": "6405dd919765a5770db1f31de2e8510ea57f68869ed107fca8117cb26f31dff1",
       "stepCount": 8,
       "fileCount": 13,
-      "treeDigest": "2e65bfbf628a46171c873f0685f09e9fb8880793d71f334092d437bc81f6be8c"
+      "treeDigest": "9122c8652a870c0cf21a4b2ac06edd8d162b5c4e22073b537ee942de408b4be4"
     },
     "06-extends-each-joblist": {
       "finalYamlSha256": "44d80b9d6061a15caddaa818eedc9db45ecdfde0f168ec7e7e8322b24e978f30",
       "stepCount": 9,
       "fileCount": 20,
-      "treeDigest": "20408752a8b1d6de2ca8a9dd0ca999cc808a64b510d2eea49e13424c2750745a"
+      "treeDigest": "5b8303c58b29c737b50f011ea24b3d17ec464647f24c7ef2400ec5eb2e8dadd4"
     },
     "07-template-parameter-types": {
       "finalYamlSha256": "3cb896bebe346f11fcc9a6e83f440d84c3a7e428d661cf6a70f89b69451adb2e",
       "stepCount": 15,
       "fileCount": 20,
-      "treeDigest": "b112d95736d77fe10eacd7737ed4e9bd444c319e83c77382f5ea76e623b80633"
+      "treeDigest": "efea36caa56548042f69f38a68aa6f4b954c422336ac817f6bc6d129ca8d574a"
     },
     "08-deployment-runonce": {
       "finalYamlSha256": "9c6997799276b5456064558a4149f40877aa2f05d0e53823d3f452d75bcac8ae",
       "stepCount": 12,
       "fileCount": 23,
-      "treeDigest": "a1d92a374254beea23f5559816d635b8f285829d6dafb013561ce2d16990840f"
+      "treeDigest": "90d3c7584cb42fbf9d48ad2f0a7c67f547300377d69b14e68c81bd4ef83fe044"
     },
     "09-multi-checkout": {
       "finalYamlSha256": "350037b15cfd5c46ee6ace5a14a5921db1c8e98c832c80a54245a6e28d2c4d40",
       "stepCount": 7,
       "fileCount": 13,
-      "treeDigest": "53d5d5fa35a250eea4000208e9923147cafd7821a6c1d8bd24933cfbe359fc10"
+      "treeDigest": "520657b7e48adbc213b7817833091ce8e0941afb4575409bdc1dd003fd005314"
     },
     "10-monorepo-triggers-pools": {
       "finalYamlSha256": "c8ef9cc100abe8e7591406c6db5934b00364e88bbce769741e82fa8282ea0e17",
       "stepCount": 7,
       "fileCount": 13,
-      "treeDigest": "c29b593a4e57a80362b3a76477625f7f084d5c56923ef419d5bb43a306019f5f"
+      "treeDigest": "b22148bab42367afbd8959c1163cbe539a1e38ad64ba3a9073553d2432c64e0f"
     },
     "11-implicit-wrapping": {
       "finalYamlSha256": "5958c5eda73f1c3368b991a33e6d90c8daef5db9051e68ea372061b4135c6ba8",
       "stepCount": 1,
       "fileCount": 5,
-      "treeDigest": "c3eb477ecf759c1473571a4eaf4d3b079e1b51a29214724cc3da1fbe00f34fb9"
+      "treeDigest": "f57521fe602f260ec2e0d8cb21b43f9e7ce9b01cdcf90e74ffb32d1f5c313779"
     }
   }
 }

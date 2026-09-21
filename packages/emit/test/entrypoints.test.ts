@@ -959,3 +959,118 @@ describe('stage- and job-scope status functions (C-E12-043, E11-S04-T04)', () =>
     }
   }, 120_000);
 });
+
+describe('a condition that errors abandons its node (C-E12-048, E11-S04-T06)', () => {
+  // A compiled condition is 0 True / 1 False / **2 evaluation error**, and `if cond_stage` sent 1
+  // and 2 down the same branch — so a stage whose condition *errored* was recorded `Skipped`,
+  // byte-identical to one the author had conditioned out. On the service that node completes
+  // `Abandoned`, a sixth result no status function except `always()` matches (C-E02-071).
+  //
+  // `gt(1, 'not-a-number')` is the erroring condition the live measurement itself used: `gt`
+  // errors rather than returning False on an unconvertible operand (C-E02-022).
+  const step = (script: string, displayName: string): string[] => [
+    '    - task: CmdLine@2',
+    `      displayName: ${displayName}`,
+    '      inputs:',
+    `        script: ${script}`,
+  ];
+
+  const ERRORING = [
+    'stages:',
+    // The discriminating pair: same shape, same empty dependency set, conditions that differ only
+    // in erroring vs. evaluating False.
+    '- stage: bad_stage',
+    '  dependsOn: []',
+    "  condition: gt(1, 'not-a-number')",
+    '  jobs:',
+    '  - job: j',
+    '    steps:',
+    ...step('echo MARK abandoned-stage-ran', 'Must not run'),
+    '- stage: skipped_stage',
+    '  dependsOn: []',
+    '  condition: false',
+    '  jobs:',
+    '  - job: j',
+    '    steps:',
+    ...step('echo MARK skipped-stage-ran', 'Must not run'),
+    // What an abandoned stage looks like to whatever depends on it (C-E02-071): nothing catches it
+    // but `always()`, so the defaulted stage must be skipped and the `always()` one must run.
+    '- stage: after_bad',
+    '  dependsOn: bad_stage',
+    '  jobs:',
+    '  - job: j',
+    '    steps:',
+    ...step('echo MARK after-bad-defaulted-ran', 'Must not run'),
+    '- stage: after_bad_always',
+    '  dependsOn: bad_stage',
+    '  condition: always()',
+    '  jobs:',
+    '  - job: j',
+    '    steps:',
+    ...step('echo MARK after-bad-always-ran', 'Runs'),
+    // Job scope, detached from the sequential stage default so the stage condition decides nothing.
+    '- stage: job_scope',
+    '  dependsOn: []',
+    '  jobs:',
+    '  - job: bad',
+    "    condition: gt(1, 'not-a-number')",
+    '    steps:',
+    ...step('echo MARK abandoned-job-ran', 'Must not run'),
+    '  - job: skipped',
+    '    dependsOn: []',
+    '    condition: false',
+    '    steps:',
+    ...step('echo MARK skipped-job-ran', 'Must not run'),
+    '  - job: ok',
+    '    dependsOn: []',
+    '    steps:',
+    ...step('echo MARK ok-job-ran', 'Runs'),
+  ].join('\n');
+
+  it('records Abandoned, not Skipped, at stage and job scope against a real run', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'azdo-emit-abandon-'));
+    try {
+      generateProject(tmp, ERRORING);
+      let out = '';
+      try {
+        out = execFileSync('bash', ['run.sh'], { cwd: tmp, encoding: 'utf8' });
+      } catch (error) {
+        out = (error as { stdout?: string }).stdout ?? '';
+      }
+      const results = join(tmp, '.work/run-1/state/results');
+      const read = (path: string): string => readFileSync(join(results, path), 'utf8').trim();
+
+      // The whole point of the task: these two were the same string before it.
+      expect(read('bad_stage/.stage-result')).toBe('Abandoned');
+      expect(read('skipped_stage/.stage-result')).toBe('Skipped');
+      // A stage that never ran marks its jobs too, and with its own result.
+      expect(read('bad_stage/j/.job-result')).toBe('Abandoned');
+
+      // Job scope, inside a stage that did run — so this is the fold, not the stage marker.
+      expect(read('job_scope/bad/.job-result')).toBe('Abandoned');
+      expect(read('job_scope/skipped/.job-result')).toBe('Skipped');
+      expect(read('job_scope/ok/010')).toBe('Succeeded');
+
+      // Neither abandoned node executed anything.
+      expect(out).not.toContain('MARK abandoned-stage-ran');
+      expect(out).not.toContain('MARK abandoned-job-ran');
+      expect(out).not.toContain('MARK skipped-stage-ran');
+      expect(out).not.toContain('MARK skipped-job-ran');
+      expect(out).toContain('MARK ok-job-ran');
+
+      // C-E02-071 downstream: `always()` is the only thing that catches an abandoned dependency.
+      expect(out).toContain('MARK after-bad-always-ran');
+      expect(out).not.toContain('MARK after-bad-defaulted-ran');
+      expect(read('after_bad/.stage-result')).toBe('Skipped');
+
+      // The run summary is the other half of "distinguishable": a step table alone says nothing
+      // about a node that ran no steps, and both of these rows would otherwise be absent.
+      expect(out).toContain('stage bad_stage: Abandoned');
+      expect(out).toContain('stage skipped_stage: Skipped');
+      expect(out).toContain('job job_scope/bad: Abandoned');
+      expect(out).toContain('job job_scope/skipped: Skipped');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 120_000);
+});

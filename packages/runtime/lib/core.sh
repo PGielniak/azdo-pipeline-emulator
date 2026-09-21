@@ -271,6 +271,25 @@ azdo__valid_step_result() {
   esac
 }
 
+# azdo__valid_node_result <result>
+#
+# The *node* vocabulary: the five task results plus `Abandoned` (E11-S04-T06, C-E12-051). The two
+# vocabularies are different on the service and are different here. A task result is the five-state
+# `TaskResult` enum, and a step whose condition errors is `Failed` rather than anything new
+# (C-E06-042); a stage or job is a timeline node, and one whose condition errors completes
+# `Abandoned` — a sixth state the docs never list, which no status function except `always()`
+# matches (C-E02-071). Only the two node markers accept it; steps, the summary table and the
+# worst-wins task merge stay on the five.
+azdo__valid_node_result() {
+  case "$1" in
+    Succeeded | SucceededWithIssues | Failed | Skipped | Canceled | Abandoned) ;;
+    *)
+      printf 'invalid node result: %s\n' "$1" >&2
+      return 2
+      ;;
+  esac
+}
+
 azdo__step_result_dir() {
   local state_dir scope
   if [[ -n "${AZDO_RESULT_DIR:-}" ]]; then
@@ -361,7 +380,11 @@ azdo__result_marker_set() {
     printf '%s\n' 'usage: azdo__result_marker_set <path> <result>' >&2
     return 2
   }
-  azdo__valid_step_result "$2" || return
+  # The one write path for both `.job-result` and `.stage-result`, so it is the node vocabulary
+  # here and not the task one — and the two marker *readers* below move with it, because a value
+  # this accepts and a reader rejects would surface as exit 2 from `azdo_job_result`, which
+  # `azdo__status_graph` propagates into a compiled condition as an evaluation error (C-E12-051).
+  azdo__valid_node_result "$2" || return
 
   local marker_dir marker_tmp old_umask
   marker_dir="${1%/*}"
@@ -452,7 +475,7 @@ azdo_job_result() {
   marker="$job_dir/.job-result"
   if [[ -f "$marker" ]]; then
     IFS= read -r result <"$marker" || [[ -n "$result" ]] || return 0
-    azdo__valid_step_result "$result" || return
+    azdo__valid_node_result "$result" || return
     printf '%s\n' "$result"
     return 0
   fi
@@ -480,12 +503,21 @@ azdo_job_result() {
 #
 # A skipped stage has an explicit marker. Otherwise fold its job results, treating Skipped as the
 # stage result only when every recorded job was skipped.
+#
+# `Abandoned` joins that tail as a job result the fold can now see (E11-S04-T06): a job whose own
+# condition errored is marked `Abandoned` while its stage ran, so unlike the stage-scope case there
+# is no `.stage-result` marker short-circuiting this fold. It contributes no status of its own —
+# the job did not run, exactly as a skipped one did not — but it **outranks `Skipped` in the tail**
+# (C-E12-052). That precedence is invented, not measured: hiding a condition-evaluation error
+# behind a sibling's skip is the same conflation this task exists to remove, so the louder of the
+# two wins. docs/06 §5 decision 90 names the probe that would settle it.
 azdo_stage_result() {
   (($# == 1)) || {
     printf '%s\n' 'usage: azdo_stage_result <stage>' >&2
     return 2
   }
   local state_dir results_dir stage_dir marker result job_dir job_name status='' saw_skipped=false
+  local saw_abandoned=false
   state_dir="$(azdo__state_dir)" || return
   results_dir="$state_dir/results"
   if ! azdo__result_child_dir "$results_dir" "$1" stage_dir; then
@@ -494,7 +526,7 @@ azdo_stage_result() {
   marker="$stage_dir/.stage-result"
   if [[ -f "$marker" ]]; then
     IFS= read -r result <"$marker" || [[ -n "$result" ]] || return 0
-    azdo__valid_step_result "$result" || return
+    azdo__valid_node_result "$result" || return
     printf '%s\n' "$result"
     return 0
   fi
@@ -516,6 +548,7 @@ azdo_stage_result() {
         [[ -n "$status" ]] || status=Succeeded
         ;;
       Skipped) saw_skipped=true ;;
+      Abandoned) saw_abandoned=true ;;
       '') ;;
       *)
         printf 'invalid job result: %s\n' "$result" >&2
@@ -525,6 +558,8 @@ azdo_stage_result() {
   done
   if [[ -n "$status" ]]; then
     printf '%s\n' "$status"
+  elif [[ "$saw_abandoned" = true ]]; then
+    printf '%s\n' Abandoned
   elif [[ "$saw_skipped" = true ]]; then
     printf '%s\n' Skipped
   else
@@ -2053,8 +2088,10 @@ azdo__task_result_rank() {
 # azdo_merge_task_results <current-or-empty> <coming>
 #
 # TaskResultUtil's worst-wins merge: an empty current result takes the incoming one, a current
-# result worse than Failed is sticky, and otherwise the worse of the two wins (C-E06-060). The
-# agent's `Abandoned` state has no local meaning and is deliberately outside this vocabulary.
+# result worse than Failed is sticky, and otherwise the worse of the two wins (C-E06-060). This is
+# the *task* vocabulary, so `Abandoned` is deliberately outside it: a step whose condition errors is
+# `Failed` and never abandoned (C-E06-042). The state exists locally only at node scope, where
+# `azdo__valid_node_result` accepts it (C-E12-051).
 azdo_merge_task_results() {
   (($# == 2)) || {
     printf '%s\n' 'usage: azdo_merge_task_results <current-or-empty> <coming>' >&2
@@ -2158,8 +2195,9 @@ azdo__logging_task_complete() {
     canceled) canonical=Canceled ;;
     skipped) canonical=Skipped ;;
     *)
-      # The agent would also parse `Abandoned`, a server-assigned state the local five-state store
-      # has no room for; every other unparseable value fails the command there too (C-E06-059).
+      # The agent would also parse `Abandoned`, but a logging command sets a *task* result and that
+      # vocabulary is the five-state one at both ends — the local `Abandoned` is node-scope only
+      # (C-E12-051). Every other unparseable value fails the command on the agent too (C-E06-059).
       printf '%s\n' "Command doesn't have valid result value." >&2
       return 1
       ;;
@@ -4293,6 +4331,53 @@ azdo_run_exit_code() {
   esac
 }
 
+# azdo__run_summary_nodes
+#
+# The stage/job half of the summary (E11-S04-T06). The table above it is a *step* table, and a
+# stage or job that never ran contributes no steps — so before this, a stage whose condition was
+# False and a stage whose condition **errored** printed byte-identical output: the table was empty
+# in both cases and `azdo_run_summary` returned at `No steps ran.` before anything else could be
+# said (C-E12-053). Both are now named with their recorded node result, which is the half of
+# "distinguishable" the store alone cannot deliver.
+#
+# Only `Skipped` and `Abandoned` are listed: a node that ran is already represented by its steps.
+azdo__run_summary_nodes() {
+  local state_dir results_dir stage_dir job_dir marker result stage_name job_name
+  local -a rows=()
+
+  state_dir="$(azdo__state_dir)" || return
+  results_dir="$state_dir/results"
+  [[ -d "$results_dir" ]] || return 0
+
+  for stage_dir in "$results_dir"/*; do
+    [[ -d "$stage_dir" ]] || continue
+    stage_name="${stage_dir##*/}"
+    marker="$stage_dir/.stage-result"
+    if [[ -f "$marker" ]]; then
+      IFS= read -r result <"$marker" || :
+      case "$result" in
+        Skipped | Abandoned) rows+=("stage ${stage_name}: ${result}") ;;
+      esac
+    fi
+    for job_dir in "$stage_dir"/*; do
+      [[ -d "$job_dir" ]] || continue
+      job_name="${job_dir##*/}"
+      marker="$job_dir/.job-result"
+      [[ -f "$marker" ]] || continue
+      IFS= read -r result <"$marker" || :
+      case "$result" in
+        Skipped | Abandoned) rows+=("job ${stage_name}/${job_name}: ${result}") ;;
+      esac
+    done
+  done
+
+  # Guarded rather than expanded unconditionally: `set -u` makes a bare `"${rows[@]}"` fatal on an
+  # empty array under bash 4.2, which is the floor this runtime supports.
+  ((${#rows[@]} > 0)) || return 0
+  printf 'Stages and jobs that did not run:\n'
+  printf '  %s\n' "${rows[@]}"
+}
+
 # azdo_run_summary
 #
 # The end-of-run table of docs/04 §2. Columns are padded to the widest cell so the result column
@@ -4333,24 +4418,36 @@ azdo_run_summary() {
     done
   fi
 
+  # Gathered before the empty-table branch prints, because that branch used to `return 0` and take
+  # the node rows with it — the case that matters most is exactly the one where no step ran.
+  local nodes index
+  nodes="$(azdo__run_summary_nodes)" || return
+
   if ((${#ids[@]} == 0)); then
+    # Still an early return, and deliberately so. Falling through would append `Result: Succeeded`
+    # to a run whose every stage was abandoned — `azdo_run_result` folds *step* results and the node
+    # markers are dotfiles it never reads, so the aggregate has nothing to say here and saying it
+    # would be worse than silence. Whether an abandoned node should move the run result at all is a
+    # separate question, filed as E11-S04-T07 rather than answered in passing.
     printf 'No steps ran.\n'
+    [[ -z "$nodes" ]] || printf '\n%s\n' "$nodes"
     return 0
+  else
+    printf '%-*s  %-*s  %-*s  %-*s  %8s  %s\n' \
+      "$scope_width" 'SCOPE' "$id_width" 'STEP' "$display_width" 'NAME' \
+      "$result_width" 'RESULT' 'DURATION' 'LOG'
+    for ((index = 0; index < ${#ids[@]}; index++)); do
+      printf '%-*s  %-*s  %-*s  %-*s  %7ss  %s\n' \
+        "$scope_width" "${scopes[$index]}" \
+        "$id_width" "${ids[$index]}" \
+        "$display_width" "${displays[$index]}" \
+        "$result_width" "${results[$index]}" \
+        "${durations[$index]}" \
+        "${logs[$index]}"
+    done
   fi
 
-  local index
-  printf '%-*s  %-*s  %-*s  %-*s  %8s  %s\n' \
-    "$scope_width" 'SCOPE' "$id_width" 'STEP' "$display_width" 'NAME' \
-    "$result_width" 'RESULT' 'DURATION' 'LOG'
-  for ((index = 0; index < ${#ids[@]}; index++)); do
-    printf '%-*s  %-*s  %-*s  %-*s  %7ss  %s\n' \
-      "$scope_width" "${scopes[$index]}" \
-      "$id_width" "${ids[$index]}" \
-      "$display_width" "${displays[$index]}" \
-      "$result_width" "${results[$index]}" \
-      "${durations[$index]}" \
-      "${logs[$index]}"
-  done
+  [[ -z "$nodes" ]] || printf '\n%s\n' "$nodes"
 
   local overall
   # shellcheck disable=SC2119 # The aggregate intentionally accepts no arguments.
