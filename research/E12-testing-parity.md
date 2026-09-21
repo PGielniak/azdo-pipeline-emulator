@@ -694,7 +694,9 @@ one line at a time, so a tree that contains a file but whose digest does not obs
 ## E11-S04-T06 — an errored stage or job condition
 
 [C-E12-051] **`Abandoned` is a node result and not a task result, and the local store now says so
-in two vocabularies rather than one.** Before this task `azdo__valid_step_result` gated every
+in two vocabularies rather than one.** *(Sharpened 2026-09-21, E11-S05-T01: the split is not an
+inference from a live run — the REST `TaskResult` enum published for timeline records carries six
+values including `abandoned`, while the agent's step-level vocabulary carries five. C-E12-062.)* Before this task `azdo__valid_step_result` gated every
 result the store accepted — step results, the summary table, the worst-wins task merge, *and* both
 node markers — so the sixth state had nowhere to go (C-E12-048). The split is not a local
 convenience but the service's own shape: a step is a task and `TaskResult` has five members, which
@@ -794,3 +796,86 @@ than checked hardens into a citation, and the next reader has no way to tell the
 runbook's expiry line is now stated as an estimate to re-test, not a fact.
   — measured 2026-09-21; `research/oracle-setup.md`; both transcripts under
     `research/experiments/E12-abandoned-aggregate/`
+
+## E11-S05-T01 — L6, the same fixture on the service and locally
+
+[C-E12-057] **PARITY: the L5 fixture produces identical step results, variable dump and artifact
+contents on the real service and in a generated project.** Run 553 (hosted, `ubuntu-latest`)
+against `fixtures/e2e/01-shell-artifacts/` — five authored steps across two jobs plus a job that
+must not run — agrees with the local run on all 13 compared facts: every step result (including
+`Skipped` for the `checkout: none` step), all five `E2E-MARKER` lines
+(pipeline/stage/job variable precedence, the cross-job output variable, the downloaded artifact's
+content), the artifact's sha256 per path, and **the negative asserted rather than inferred**: both
+sides name `must_not_run` as a job that did not run, and both are checked to *lack* the forbidden
+marker. That last pair was added after the first version of this claim said parity "including the
+skipped `must_not_run` job" while the comparator never looked at it — a job that does not run
+contributes no steps to either side, so a union-keyed comparison agreed by mutual absence.
+
+**The one difference is cosmetic and is a real gap:**
+a step the author left unnamed is called `Checkout`/`Download` by the service and by a **GUID** in
+our summary table (`6d15af64-…`, `30f35852-…` — the task ids the desugarer emits). It changes no
+result, so it is not a parity failure; it does make a generated project's run summary unreadable
+where the service's is not. Filed as **E11-S05-T03**.
+  — research/experiments/E11-realrun/report.md + capture.json (live run 553, checked 2026-09-21)
+
+[C-E12-058] **Two timeline records that read as agent-internal are authored steps, and treating
+them as internal silently deleted them.** `Checkout` and `Download Pipeline Artifact` look exactly
+like the agent's own phases; in this fixture they are `verify`'s authored `checkout: none` and
+`download: current`, neither carrying a `displayName`. Listing them in the harness's internal set
+removed two real steps and shifted every later ordinal in that job — and the comparator then
+reported a clean result **over the wrong rows**, which is this instrument's characteristic failure.
+Caught by the unit test, not by the run. The distinguishing shape is measured, not guessed: the
+*implicit* checkout names its repo and target (`Checkout <repo>@<ref> to <dir>`) while the authored
+one is bare, and the bare `Post-job: Checkout` beside it **is** internal. This is why the dropped
+set is exact names plus one anchored pattern, and why an unrecognized record fails the run instead
+of being dropped.
+  — research/experiments/E11-realrun/capture.json (run 553); `test/realrun.test.ts`
+
+[C-E12-059] **The artifact route, the archive shape, and the measured half of C-E06-094.**
+A `PublishPipelineArtifact@1` artifact is reachable at
+`GET build/builds/{id}/artifacts?artifactName={name}` → `resource.downloadUrl`, whose body is a
+**zip wrapping everything under `{artifactName}/`** — so a comparison keyed on paths must strip
+that one segment, and must strip it only when *every* entry carries it. Contents are compared by
+sha256 per path and never as archive bytes: compression and timestamps make a byte compare
+unmatchable in principle. **This measures the directory half of C-E06-094**, which until now was
+doc-derived: publishing the directory `…/app` as `drop` put `build.txt` at the artifact root, not
+`app/build.txt`, and the local store agrees hash-for-hash. The **file** half of C-E06-094 stays
+open — this fixture publishes a directory.
+  — research/experiments/E11-realrun/report.md (run 553, `PipelineArtifact`)
+
+[C-E12-060] **Two properties of the log route that make a naive marker extraction wrong in both
+directions.** First, `GET build/builds/{id}/logs/{logId}` under `Accept: application/json` answers
+`{count, value: [line, …]}` — *not* plain text, so splitting the raw body on newlines yields JSON
+fragments rather than log lines. Second, a job log **embeds the pipeline source and the whole
+template-evaluation trace**, so every `echo "E2E-MARKER …"` in the YAML appears in the log
+alongside the line it actually printed. A substring search therefore collects source as if it were
+output, and the marker sets differed on every row while both runs had in fact printed the same five
+lines. The rule is anchored instead: strip the leading ISO timestamp the service adds (the local
+runner adds none), then require the remainder to *begin* with the marker.
+  — research/experiments/E11-realrun/capture.json (run 553)
+
+[C-E12-061] **A `Job` timeline record's `identifier` is `<stage>.<job>.__default` — the job is the
+middle segment, and its `name` is the job name outright.** Reading the first segment as the job
+attributed every `Task` to a job that does not exist. The harness reported 12 unrecognized records
+rather than an empty comparison, which is the designed behaviour working: the same mistake under a
+"drop what we do not recognize" rule would have produced a confident, empty, green report. Related:
+`order` restarts at 1 within each job, so Tasks must be grouped by job **before** being sorted, or
+ordinals attach to the wrong steps across job boundaries.
+  — research/experiments/E11-realrun/capture.json (run 553); `test/realrun.test.ts`
+
+[C-E12-062] **`abandoned` *is* a documented result — in the REST reference, which no earlier task
+had pinned.** C-E02-071 states that `Abandoned` is "a sixth job result **the docs never list**",
+and E11-S04-T06/T07 both repeated that framing. Pinning the Build/Timeline/Get page for this task's
+Ground field shows the `TaskResult` enumeration in full: `succeeded`, `succeededWithIssues`,
+`failed`, `canceled`, `skipped`, **`abandoned`**. The original claim is right about the *conceptual*
+pages — the conditions and expressions pages enumerate five and never mention the sixth, which is
+why a reader of those pages is surprised by it — and wrong as written, because "the docs" includes
+the REST reference. **The distinction this sharpens is real and worth keeping:** the *agent's*
+step-level result vocabulary is five (`StepsRunner` completes an errored condition as `Failed`,
+C-E06-042), while a *timeline record's* `TaskResult` — the type carried by `Stage`, `Phase`, `Job`
+and `Task` records alike — is six. So our two-vocabulary split (C-E12-051) matches the service, but
+its justification was half-stated: the node vocabulary is not an inference from a live run, it is a
+published enum. Both claims are corrected in place rather than superseded.
+  — https://learn.microsoft.com/rest/api/azure/devops/build/timeline/get (`git_commit_id`
+    `cb0d0b30ca71a83e03cc7a7bbd9361e1a432b377`, checked 2026-09-21) — "TaskResult … succeeded |
+    succeededWithIssues | failed | canceled | skipped | abandoned"

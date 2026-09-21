@@ -1,0 +1,69 @@
+# E11-S05-T01 — L6 real-run parity (docs/06 §3).
+#
+# What it answers: every tier below L6 compares the emulator against itself. This one runs the L5
+# fixture on the **real service** and locally and diffs step results, the fixture's variable dump
+# and artifact hashes. It is the only job in this repo that can tell a faithful emulation from a
+# confidently wrong one.
+#
+# **Manual trigger only, and deliberately so.** Unlike every other oracle job here, this one queues
+# a *hosted* run — `vmImage: ubuntu-latest`, because artifacts and step logs are the point — so it
+# spends agent minutes on the owner's organization every time it runs. A `push`/`pull_request`
+# trigger would spend them on every commit; a `schedule` would spend them nightly for a tier whose
+# own Done criterion calls it a spot-check on majors. So: `workflow_dispatch`, gated on
+# `ORACLE_ENABLED` like the nightly, so a fork never spends someone else's quota.
+#
+# **The PAT expires — and the estimate is not the fact** (C-E12-056). research/oracle-setup.md
+# carries the one-line curl that settles it. A lapsed token shows up as a 302 to a sign-in page,
+# not a 401 (C-E00-025).
+name: Real-run parity (L6)
+
+on:
+  workflow_dispatch:
+    inputs:
+      reuse_run:
+        description: >-
+          Re-read an existing completed run instead of queueing a new one (spends no agent
+          minutes). Leave blank to queue a fresh run.
+        required: false
+        default: ''
+
+jobs:
+  realrun-parity:
+    if: vars.ORACLE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The local half shells out to the built `convert`, so the bundle has to exist.
+      - run: pnpm build
+      - name: Run the fixture on the service and locally, and diff the facts
+        env:
+          AZDO_ORG_URL: ${{ secrets.AZDO_ORG_URL }}
+          AZDO_PROJECT: ${{ secrets.AZDO_PROJECT }}
+          AZDO_ORACLE_PIPELINE_ID: ${{ secrets.AZDO_ORACLE_PIPELINE_ID }}
+          AZDO_PAT: ${{ secrets.AZDO_PAT }}
+          # Through the environment, never interpolated into the script body: `${{ }}` is
+          # substituted before bash ever sees the line, so quoting it there would not help.
+          REUSE_RUN: ${{ inputs.reuse_run }}
+        run: |
+          if [ -n "$REUSE_RUN" ]; then
+            node scripts/realrun.ts --reuse-run "$REUSE_RUN"
+          else
+            node scripts/realrun.ts
+          fi
+      # Uploaded on failure *and* success: a reader needs to see what parity looked like, and the
+      # capture is what makes a later re-analysis free — `--from-capture` recomputes the whole
+      # report from it with no credentials and no agent minutes.
+      - name: Upload the parity report and the raw capture
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: realrun-report
+          path: |
+            research/experiments/E11-realrun/report.md
+            research/experiments/E11-realrun/capture.json

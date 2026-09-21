@@ -710,13 +710,17 @@ named forms. Agrees with the doc's "With no arguments, evaluates to `True` if an
 the dependency graph failed" and with the step-level source (C-E02-062).
   — research/experiments/E02-status/real-run.md §fail_* rows (live run, checked 2026-08-12)
 
-[C-E02-071] **`Abandoned` is a sixth job result the docs never list, and `failed()` does not catch
-it.** A job whose *condition itself* errors (`condition: gt(1, 'not-a-number')` — `gt` errors
+[C-E02-071] **`Abandoned` is a sixth job result the *conceptual* docs never list, and `failed()`
+does not catch it.** *(Corrected 2026-09-21, E11-S05-T01: "the docs never list" was too strong —
+the REST reference's `TaskResult` enumeration does list `abandoned`, pinned at C-E12-062. The
+conditions and expressions pages, which are what a pipeline author reads and what this claim was
+measured against, enumerate five and never mention it. The live measurement below is unaffected.)* A job whose *condition itself* errors (`condition: gt(1, 'not-a-number')` — `gt` errors
 rather than returning False on an unconvertible operand, C-E02-022) completes with result
 `abandoned`, not `failed`. Over that dependency `failed()`, `failed('dep_abandon')`,
 `succeededOrFailed()` and `succeeded()` are **all False**, only `always()` is True, and
-`eq(dependencies.dep_abandon.result, 'Failed')` is False. The documented result set is
-"Succeeded|SucceededWithIssues|Skipped|Failed|Canceled"; this is outside it. Consequence: an
+`eq(dependencies.dep_abandon.result, 'Failed')` is False. The result set documented **on those pages** is
+"Succeeded|SucceededWithIssues|Skipped|Failed|Canceled"; this is outside it (but inside the REST
+reference's `TaskResult`, C-E12-062). Consequence: an
 errored condition is not a failure any downstream condition can catch except `always()`.
   — research/experiments/E02-status/real-run.md §abandon_* rows (live run, checked 2026-08-12)
 
