@@ -594,6 +594,25 @@ describe('publish and download are emitted natively (C-E12-034/040, E11-S04-T03)
     expect(script).not.toContain('--source');
   });
 
+  it('passes a non-current `source` on the task form through to the runtime', () => {
+    // `specific` needs a run id, a REST fetch and the lockfile-pinned `.cache/artifacts/` tree
+    // (docs/04 §7). The runtime refuses it by name; serving this run's artifacts instead would be
+    // silently wrong.
+    const script = body(
+      'task: DownloadPipelineArtifact@2\n      inputs:\n        artifact: drop\n        buildType: specific',
+    );
+    expect(script).toContain(`--source 'specific'`);
+  });
+
+  it('notes a download input it has no flag for rather than dropping it', () => {
+    // The task declares thirteen inputs and the runtime implements four; the rest describe a
+    // *specific run* and belong to the same deferred work as `--source specific`.
+    const script = body(
+      'task: DownloadPipelineArtifact@2\n      inputs:\n        artifact: drop\n        runId: "1234"',
+    );
+    expect(script).toContain("download input 'runId' has no runtime flag and is not applied");
+  });
+
   it('labels both as exact rather than degraded', () => {
     // The runtime performs the documented work, as it does for `checkout` — it is not an
     // approximation of a task that could otherwise have run.
