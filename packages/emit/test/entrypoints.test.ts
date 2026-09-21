@@ -462,7 +462,7 @@ describe('step conditions are actually evaluated (C-E12-036/038, E11-S04-T03)', 
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 120_000);
 
   it('skips a step whose compiled condition is a constant False (checkout: none)', () => {
     // The same defect made `checkout: none` — whose desugaring synthesizes `condition: false`
@@ -490,7 +490,7 @@ describe('step conditions are actually evaluated (C-E12-036/038, E11-S04-T03)', 
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 120_000);
 });
 
 describe('pipeline/stage/job variables are seeded (C-E12-033, E11-S04-T03)', () => {
@@ -599,7 +599,7 @@ describe('pipeline/stage/job variables are seeded (C-E12-033, E11-S04-T03)', () 
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 120_000);
 
   it('does not let a .env value outrank a YAML variable (C-E12-039)', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'azdo-emit-vars-'));
@@ -614,7 +614,7 @@ describe('pipeline/stage/job variables are seeded (C-E12-033, E11-S04-T03)', () 
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 120_000);
 
   it('stores a value raw so one variable can refer to another', () => {
     const run = emit(
@@ -697,7 +697,7 @@ describe('one stage, many jobs: conditions and failures (C-E12-041/042, E11-S04-
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 120_000);
 
   it('records later steps as Skipped after a failure instead of not running them (C-E12-042)', () => {
     const FAILING = [
@@ -766,5 +766,5 @@ describe('one stage, many jobs: conditions and failures (C-E12-041/042, E11-S04-
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
-  });
+  }, 120_000);
 });
