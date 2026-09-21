@@ -127,12 +127,12 @@ describe('the service arm', () => {
     }
   });
 
-  it('ships a `.shellcheckrc` carrying all five by-construction disables', () => {
+  it('ships a `.shellcheckrc` carrying all six by-construction disables', () => {
     // The artifact half of the pair the golden harness's `BY_CONSTRUCTION_EXCLUDES` restates:
     // the harness must never excuse a code this file does not (decisions 61, 62(d), 85, 89).
-    for (const code of ['SC2005', 'SC2046', 'SC2016', 'SC2071', 'SC2329'])
+    for (const code of ['SC2005', 'SC2046', 'SC2016', 'SC2071', 'SC2317', 'SC2329'])
       expect(SHELLCHECKRC, code).toContain(code);
-    expect(SHELLCHECKRC).toContain('disable=SC2005,SC2046,SC2016,SC2071,SC2329');
+    expect(SHELLCHECKRC).toContain('disable=SC2005,SC2046,SC2016,SC2071,SC2317,SC2329');
   });
 });
 

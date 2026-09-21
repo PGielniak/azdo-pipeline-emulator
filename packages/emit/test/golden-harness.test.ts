@@ -65,16 +65,19 @@ const shellcheck =
 // excuse: the project's own shipped `.shellcheckrc` has disabled all four since decision 62(d),
 // so the harness was stricter than the artifact it checks.
 //
-// `SC2071` and `SC2329` join them in E11-S04-T05 (decision 89), and only because the tree now holds
-// the **entry points** — neither code can arise in a step script. `SC2071` is `run-job.sh`'s
-// `"$id" > "$from_step"`, a deliberate *string* compare of zero-padded `NNN` step numbers, and was
-// already in the shipped `.shellcheckrc`; `SC2329` is every `cond_*` function in `conditions.sh`,
-// which is sourced and called from `run-stage.sh` and `run-job.sh`, so "never invoked" is true only
-// of the file read alone. Two real defects were fixed rather than excused in the same task
+// `SC2071`, `SC2317` and `SC2329` join them in E11-S04-T05 (decision 89), and only because the tree
+// now holds the **entry points** — none of the three can arise in a step script. `SC2071` is
+// `run-job.sh`'s `"$id" > "$from_step"`, a deliberate *string* compare of zero-padded `NNN` step
+// numbers, and was already in the shipped `.shellcheckrc`. `SC2317` and `SC2329` are **one finding
+// under two shellcheck versions**: every `cond_*` function in `conditions.sh` is sourced and called
+// from `run-stage.sh` and `run-job.sh`, so "never invoked" is true only of the file read alone —
+// 0.11 says `SC2329` (the function is never invoked) and the older build on the Ubuntu CI image says
+// `SC2317` (its body is unreachable). Excusing one and not the other makes the suite pass on one
+// runner and fail on the other, which is how this was found (decision 89(c)). Two real defects were fixed rather than excused in the same task
 // (C-E12-049): an unguarded `source expr.sh` (SC1091) in all four entry points, and a dead
 // `AZDO_JOB_DIR` (SC2034) in a step-less deployment job. Nothing else is excused; the guard below
 // pins the list so a real finding cannot be silenced by appending a code.
-const BY_CONSTRUCTION_EXCLUDES = ['SC2005', 'SC2046', 'SC2016', 'SC2071', 'SC2329'];
+const BY_CONSTRUCTION_EXCLUDES = ['SC2005', 'SC2046', 'SC2016', 'SC2071', 'SC2317', 'SC2329'];
 
 const corpus = await readCorpus(repoRoot);
 const oracleManifest = await readManifest(repoRoot);
@@ -491,14 +494,21 @@ describe('the shellcheck exclusions stay honest', () => {
   it('excuses exactly the sanctioned false positives and nothing else', () => {
     // Growing this list is how a golden suite stops finding bugs. A new code needs its own
     // decision entry, not an append here — SC2016's is decision 85, SC2071's and SC2329's is 89.
-    expect(BY_CONSTRUCTION_EXCLUDES).toEqual(['SC2005', 'SC2046', 'SC2016', 'SC2071', 'SC2329']);
+    expect(BY_CONSTRUCTION_EXCLUDES).toEqual([
+      'SC2005',
+      'SC2046',
+      'SC2016',
+      'SC2071',
+      'SC2317',
+      'SC2329',
+    ]);
     // And every code here must already be sanctioned by the `.shellcheckrc` the generated project
     // ships (decisions 61, 62(d) and 89), so the harness can never be *laxer* than the artifact —
     // nor stricter, which is the direction decision 85 had to correct. Restated rather than
     // imported: `@azdo-emu/cli` depends on this package, so reading `SHELLCHECKRC` from here would
     // invert that. `convert.test.ts` pins the same five against the real file, which is the half of
     // the pair that can actually go stale.
-    const shipped = ['SC2005', 'SC2046', 'SC2016', 'SC2071', 'SC2329'];
+    const shipped = ['SC2005', 'SC2046', 'SC2016', 'SC2071', 'SC2317', 'SC2329'];
     expect(BY_CONSTRUCTION_EXCLUDES.every((code) => shipped.includes(code))).toBe(true);
   });
 });

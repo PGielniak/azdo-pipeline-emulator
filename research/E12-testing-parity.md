@@ -662,11 +662,17 @@ four at once:
     deliberate *string* compare of zero-padded `NNN` step numbers; `-gt` would read `080` as octal.
     It has been in the generated project's shipped `.shellcheckrc` since decision 62(d) and was
     missing only from the harness's list, the same direction decision 85(b) had to correct.
-  - **`SC2329` — by construction, newly sanctioned.** Every `cond_*` function in a stage's
-    `conditions.sh` is invoked from `run-stage.sh` or `run-job.sh`, which source the file; "never
-    invoked" is true only of the file read alone. Added to **both** the harness list and the shipped
-    `.shellcheckrc`, so a user linting their own generated project sees what our gate sees
-    (decision 89).
+  - **`SC2317`/`SC2329` — by construction, newly sanctioned, and *two codes for one finding*.**
+    Every `cond_*` function in a stage's `conditions.sh` is invoked from `run-stage.sh` or
+    `run-job.sh`, which source the file; "never invoked" is true only of the file read alone. Added
+    to **both** the harness list and the shipped `.shellcheckrc`, so a user linting their own
+    generated project sees what our gate sees (decision 89). **The pair is not redundancy — it is a
+    version split measured in CI.** ShellCheck 0.11 (the npm-vendored binary used locally, and what
+    `brew install shellcheck` gives the macOS job) reports `SC2329`, *the function is never invoked*;
+    the older build preinstalled on the `ubuntu-latest` image reports `SC2317`, *this command appears
+    to be unreachable*, pointing at the function's **body** instead. Excusing only `SC2329` made the
+    suite pass on macOS and fail on Ubuntu — which is how the split was found, on this very task's
+    first CI run, after a local suite that had been green on both counts.
 
   Neither by-construction code can arise in a step script, which is why neither appeared before.
   — measured 2026-09-21; `packages/emit/src/entrypoints.ts`; `packages/cli/src/convert/convert.ts`;
