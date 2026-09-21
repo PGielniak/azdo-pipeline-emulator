@@ -5,10 +5,14 @@
 # than pinning them (decision 75), because on a hosted GitHub runner the toolset decides them. Here
 # the toolset is the image, so the code is a fact about the runtime and can be asserted (C-E12-029).
 #
-# A `condition: failed()` step was written here and **removed**: after the tolerated failure above it
-# ran, when `SucceededWithIssues` should make `failed()` False (C-E06-040). That is an open finding,
-# not a settled behaviour — C-E12-036 records the evidence, and E11-S04-T03 is the task to chase it.
-# Asserting it either way here would pin something nobody has explained.
+# The two `condition: failed()` steps below were **removed** on this sample's first run, because the
+# first of them ran when `SucceededWithIssues` should have made `failed()` False (C-E06-040). That
+# was C-E12-036, filed as an open finding rather than guessed at. E11-S04-T03 found the cause and it
+# was not in the condition machinery at all: `${no_condition:+--no-condition}` tests for a
+# *non-empty* value and the variable's default was the string `false`, so every generated `run_step`
+# was passed `--no-condition` and no step condition in any generated project was ever evaluated
+# (C-E12-038). Both directions are pinned here now — False after a tolerated failure, True after a
+# real one — because a fix that only ever makes conditions False would pass a one-sided assertion.
 trigger: none
 pr: none
 
@@ -26,9 +30,15 @@ steps:
   continueOnError: true
 - script: echo "E2E-MARKER reached after continueOnError"
   displayName: Runs because the failure was tolerated
+- script: echo "E2E-MARKER must not run while the only failure was tolerated"
+  displayName: Skipped because a tolerated failure is not a failed job
+  condition: failed()
 - script: |
     echo "E2E-MARKER final step ran"
     exit 4
   displayName: Fail for real
 - script: echo "E2E-MARKER must not run after a real failure"
   displayName: Never reached
+- script: echo "E2E-MARKER failed() is true after a real failure"
+  displayName: Runs because the job really did fail
+  condition: failed()

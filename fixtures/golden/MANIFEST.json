@@ -8,7 +8,7 @@
     "02-artifact-handoff": {
       "finalYamlSha256": "7f7f1482919260e7edc5ce058917cfb18340a99f2dc29e53c64b1125452222df",
       "stepCount": 10,
-      "treeDigest": "26ec14ff15405742d407b60f0a4c77de87faa8ae2019d3232fc0decc8317bc47"
+      "treeDigest": "0340246c4201e22d826ec209b3bff8f112b71a6c0f75d7ebe66fb10aa5cec664"
     },
     "03-dependencies-and-conditions": {
       "finalYamlSha256": "187a1989a43588b1c69690c821061cb4d699e6f3d82fcde1d7102c3f7ce0beca",
@@ -38,7 +38,7 @@
     "08-deployment-runonce": {
       "finalYamlSha256": "9c6997799276b5456064558a4149f40877aa2f05d0e53823d3f452d75bcac8ae",
       "stepCount": 12,
-      "treeDigest": "5dbc159bebb610fd077b4d5f21af085a42ee1bd4d918c1643663f9c95fdd9ca3"
+      "treeDigest": "42d6825441f411a0f61eebd309ff415f0ce6813186f645965570b8371dcaf8ef"
     },
     "09-multi-checkout": {
       "finalYamlSha256": "350037b15cfd5c46ee6ace5a14a5921db1c8e98c832c80a54245a6e28d2c4d40",

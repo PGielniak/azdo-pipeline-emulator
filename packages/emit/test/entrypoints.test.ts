@@ -64,9 +64,9 @@ const FIXTURE = `stages:
 `;
 
 /** Generate a complete project into `dir`: scaffold + step scripts + entrypoints + lib/. */
-function generateProject(dir: string): void {
+function generateProject(dir: string, yaml: string = FIXTURE): void {
   const { pipeline, diagnostics } = buildPipeline(
-    parsePipelineYaml(FIXTURE, 'pipeline.expanded.yml'),
+    parsePipelineYaml(yaml, 'pipeline.expanded.yml'),
   );
   expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
   expect(pipeline).toBeDefined();
@@ -129,7 +129,9 @@ describe('emitEntrypoints', () => {
     const plan = scaffold(pipeline!);
     const files = emitEntrypoints(pipeline!, plan, 'pipeline.expanded.yml', []);
     const reportConditions = files.get('stages/020-report/conditions.sh')!;
-    expect(reportConditions).toContain('cond_step_010()');
+    // Qualified by job since C-E12-041: step numbers restart per job and `conditions.sh` is one
+    // file per stage, so the number alone collided.
+    expect(reportConditions).toContain('cond_step_report_010()');
     expect(reportConditions).toContain('azdo_expr_cmp eq str "$(azdo_var \'skip\')" str true');
   });
 
@@ -389,5 +391,359 @@ describe('the variables and flags a generated project needs to run (E11-S04-T01)
     expect(run).toContain('exit "$(azdo_run_exit_code)"');
     const stage = [...files.entries()].find(([name]) => name.endsWith('run-stage.sh'))?.[1] ?? '';
     expect(stage).toContain('run-job.sh" "$@" || :');
+  });
+});
+
+describe('step conditions are actually evaluated (C-E12-036/038, E11-S04-T03)', () => {
+  // The open finding E11-S04-T01 filed was a *symptom*: a `condition: failed()` step ran after a
+  // tolerated failure. The cause is one character class: `${name:+word}` substitutes when `name` is
+  // **non-empty**, and `no_condition=false` is a non-empty string — so every generated `run_step`
+  // was passed `--no-condition` and no step condition in any generated project was ever evaluated
+  // (C-E12-038). Both halves are pinned here: the emitted text, and a real run.
+  // Expanded form, as the service returns it: the model builder rejects a step with no `task:`
+  // (C-E04-002), so the `script:` shorthand is already desugared to `CmdLine@2`.
+  const CONDITION_FIXTURE = [
+    'stages:',
+    '- stage: s',
+    '  jobs:',
+    '  - job: j',
+    '    steps:',
+    '    - task: CmdLine@2',
+    '      displayName: Succeed',
+    '      inputs:',
+    '        script: echo "MARK ran-first"',
+    '    - task: CmdLine@2',
+    '      displayName: Fail but continue',
+    '      continueOnError: true',
+    '      inputs:',
+    '        script: |',
+    '          echo "MARK tolerated"',
+    '          exit 1',
+    '    - task: CmdLine@2',
+    '      displayName: Runs because the failure was tolerated',
+    '      inputs:',
+    '        script: echo "MARK after-tolerated"',
+    '    - task: CmdLine@2',
+    '      displayName: Must not run',
+    '      condition: failed()',
+    '      inputs:',
+    '        script: echo "MARK failed-cond"',
+    '    - task: CmdLine@2',
+    '      displayName: Runs anyway',
+    '      condition: always()',
+    '      inputs:',
+    '        script: echo "MARK always-cond"',
+  ].join('\n');
+
+  it('carries the flag in its own variable, not in the boolean (C-E12-038)', () => {
+    const { pipeline } = buildPipeline(parsePipelineYaml(FIXTURE, 'pipeline.expanded.yml'));
+    const files = emitEntrypoints(pipeline!, scaffold(pipeline!), 'pipeline.expanded.yml', []);
+    const runJob = [...files.entries()].find(([name]) => name.endsWith('run-job.sh'))?.[1] ?? '';
+    // The defect, spelled exactly: a `:+` test against the boolean is always true.
+    expect(runJob).not.toContain('${no_condition:+--no-condition}');
+    expect(runJob).toContain('condition_flag=""');
+    expect(runJob).toContain('[[ "$no_condition" != true ]] || condition_flag=--no-condition');
+    expect(runJob).toContain('${condition_flag:+--no-condition}');
+  });
+
+  it('skips a failed() step after a tolerated failure and runs always() (C-E06-040)', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'azdo-emit-cond-'));
+    try {
+      generateProject(tmp, CONDITION_FIXTURE);
+      const out = execFileSync('bash', ['run.sh'], { cwd: tmp, encoding: 'utf8' });
+      const logs = join(tmp, '.work/run-1/logs/010-s/010-j');
+      // `continueOnError` downgrades the failure to SucceededWithIssues *before* it is merged into
+      // the job status, so `succeeded()` still runs and `failed()` does not (C-E06-036/040).
+      expect(readFileSync(join(logs, '030.log'), 'utf8')).toContain('MARK after-tolerated');
+      expect(readFileSync(join(logs, '040.log'), 'utf8')).toContain(
+        'Skipping step due to condition evaluation.',
+      );
+      expect(readFileSync(join(logs, '040.log'), 'utf8')).not.toContain('MARK failed-cond');
+      expect(readFileSync(join(logs, '050.log'), 'utf8')).toContain('MARK always-cond');
+      expect(out).toContain('SucceededWithIssues');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('skips a step whose compiled condition is a constant False (checkout: none)', () => {
+    // The same defect made `checkout: none` — whose desugaring synthesizes `condition: false`
+    // (C-E03-260) — run and report `Succeeded` instead of `Skipped`.
+    const tmp = mkdtempSync(join(tmpdir(), 'azdo-emit-cond-'));
+    try {
+      generateProject(
+        tmp,
+        [
+          'stages:',
+          '- stage: s',
+          '  jobs:',
+          '  - job: j',
+          '    steps:',
+          // What `checkout: none` expands to: the checkout GUID with a constant-False condition.
+          '    - task: 6d15af64-176c-496d-b583-fd2ae21d4df4@1',
+          '      condition: false',
+          '      inputs:',
+          '        repository: none',
+        ].join('\n'),
+      );
+      execFileSync('bash', ['run.sh'], { cwd: tmp, encoding: 'utf8' });
+      const result = readFileSync(join(tmp, '.work/run-1/state/results/s/j/010'), 'utf8').trim();
+      expect(result).toBe('Skipped');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('pipeline/stage/job variables are seeded (C-E12-033, E11-S04-T03)', () => {
+  const VARIABLE_FIXTURE = [
+    'variables:',
+    '- name: a',
+    '  value: pipeline-value',
+    '- name: rootOnly',
+    '  value: root',
+    '- group: shared-secrets',
+    '- name: locked',
+    '  value: fixed',
+    '  readonly: true',
+    'stages:',
+    '- stage: s',
+    '  variables:',
+    '  - name: a',
+    '    value: stage-value',
+    '  jobs:',
+    '  - job: j',
+    '    variables:',
+    '    - name: a',
+    '      value: job-value',
+    '    steps:',
+    '    - task: CmdLine@2',
+    '      displayName: Read',
+    '      inputs:',
+    '        script: echo "a=$(a) rootOnly=$(rootOnly) locked=$(locked)"',
+    '  - job: sibling',
+    '    steps:',
+    '    - task: CmdLine@2',
+    '      displayName: Sibling',
+    '      inputs:',
+    '        script: echo "a=$(a)"',
+  ].join('\n');
+
+  const emit = (yaml = VARIABLE_FIXTURE): Map<string, string> => {
+    const { pipeline } = buildPipeline(parsePipelineYaml(yaml, 'pipeline.expanded.yml'));
+    return emitEntrypoints(pipeline!, scaffold(pipeline!), 'pipeline.expanded.yml', []);
+  };
+
+  it('seeds the root block into run.sh after the .env load (C-E12-039)', () => {
+    // Order is the assertion, not decoration: a YAML `variables:` entry outranks queue time and the
+    // settings UI, the two things `.env` stands in for, so seeding before the load would invert the
+    // documented precedence.
+    const run = emit().get('run.sh')!;
+    const envAt = run.indexOf('azdo_env_load');
+    const seedAt = run.indexOf(`azdo_var_set 'a' 'pipeline-value'`);
+    expect(envAt).toBeGreaterThan(-1);
+    expect(seedAt).toBeGreaterThan(envAt);
+    // And before the run-number init, whose format may read a user-defined variable (C-E05-012).
+    expect(run.indexOf('azdo_run_identity_seed')).toBeGreaterThan(seedAt);
+  });
+
+  it('passes readonly through and never invents a secret flag', () => {
+    const run = emit().get('run.sh')!;
+    expect(run).toContain(`azdo_var_set 'locked' 'fixed' false false true`);
+    // A YAML block cannot declare a secret; secrets arrive through `.env` (C-E06-013).
+    expect(run).not.toContain(`azdo_var_set 'locked' 'fixed' true`);
+  });
+
+  it('skips a `- group:` entry, which names a group and not a variable', () => {
+    const run = emit().get('run.sh')!;
+    expect(run).not.toContain('shared-secrets');
+  });
+
+  it('seeds stage then job into the job scope, inside the --resume guard', () => {
+    const runJob = emit().get('stages/010-s/jobs/010-j/run-job.sh')!;
+    const copyAt = runJob.indexOf('azdo_var_scope_copy');
+    const stageAt = runJob.indexOf(`azdo_var_set 'a' 'stage-value'`);
+    const jobAt = runJob.indexOf(`azdo_var_set 'a' 'job-value'`);
+    const guardEnd = runJob.indexOf('\nfi\n', copyAt);
+    expect(copyAt).toBeLessThan(stageAt);
+    expect(stageAt).toBeLessThan(jobAt);
+    // Inside the guard: on `--resume` this job's store already holds the earlier run's values.
+    expect(jobAt).toBeLessThan(guardEnd);
+  });
+
+  it('gives a sibling job the stage block but not the other job’s (C-E04-083)', () => {
+    const sibling = emit().get('stages/010-s/jobs/020-sibling/run-job.sh')!;
+    expect(sibling).toContain(`azdo_var_set 'a' 'stage-value'`);
+    expect(sibling).not.toContain('job-value');
+  });
+
+  it('emits nothing at all for a pipeline with no variables', () => {
+    const files = emit(
+      ['stages:', '- stage: s', '  jobs:', '  - job: j', '    steps: []'].join('\n'),
+    );
+    expect(files.get('run.sh')).not.toContain('variables (C-E12-033)');
+    expect(files.get('stages/010-s/jobs/010-j/run-job.sh')).not.toContain('variables (C-E12-033)');
+  });
+
+  it('resolves all three levels in a real run, job winning (C-E12-039)', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'azdo-emit-vars-'));
+    try {
+      generateProject(tmp, VARIABLE_FIXTURE);
+      execFileSync('bash', ['run.sh'], { cwd: tmp, encoding: 'utf8' });
+      // This is the doc page's own example: `a` is set at pipeline, stage and job level, and the
+      // job's value is what the step reads.
+      expect(readFileSync(join(tmp, '.work/run-1/logs/010-s/010-j/010.log'), 'utf8')).toContain(
+        'a=job-value rootOnly=root locked=fixed',
+      );
+      expect(readFileSync(join(tmp, '.work/run-1/logs/010-s/020-sibling/010.log'), 'utf8')).toContain(
+        'a=stage-value',
+      );
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('does not let a .env value outrank a YAML variable (C-E12-039)', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'azdo-emit-vars-'));
+    try {
+      generateProject(tmp, VARIABLE_FIXTURE);
+      // `.env` stands in for queue time, which the doc ranks *below* every YAML level.
+      writeFileSync(join(tmp, '.env'), 'ROOTONLY=from-env\n');
+      execFileSync('bash', ['run.sh'], { cwd: tmp, encoding: 'utf8' });
+      const log = readFileSync(join(tmp, '.work/run-1/logs/010-s/010-j/010.log'), 'utf8');
+      expect(log).toContain('rootOnly=root');
+      expect(log).not.toContain('from-env');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('stores a value raw so one variable can refer to another', () => {
+    const run = emit(
+      [
+        'variables:',
+        '- name: base',
+        '  value: root',
+        '- name: derived',
+        '  value: from-$(base)',
+        'stages:',
+        '- stage: s',
+        '  jobs:',
+        '  - job: j',
+        '    steps: []',
+      ].join('\n'),
+    ).get('run.sh')!;
+    // Expanded on read, not on write — otherwise a forward reference could never work.
+    expect(run).toContain(`azdo_var_set 'derived' 'from-$(base)'`);
+  });
+});
+
+describe('one stage, many jobs: conditions and failures (C-E12-041/042, E11-S04-T03)', () => {
+  // Both defects below were invisible until C-E12-038 made step conditions run at all, and both
+  // need a *multi-job stage with a failure* to show up — which is why running an L5 sample found
+  // them and 2,900 unit tests did not.
+  const MULTI_JOB = [
+    'stages:',
+    '- stage: s',
+    '  jobs:',
+    '  - job: first',
+    '    steps:',
+    '    - task: CmdLine@2',
+    '      displayName: Runs',
+    '      inputs:',
+    '        script: echo "MARK first-step-of-first-job"',
+    '  - job: second',
+    '    steps:',
+    // A constant-False first step, exactly as `checkout: none` desugars (C-E03-260). Its condition
+    // function used to redefine `first`'s step 010.
+    '    - task: 6d15af64-176c-496d-b583-fd2ae21d4df4@1',
+    '      condition: false',
+    '      inputs:',
+    '        repository: none',
+    '    - task: CmdLine@2',
+    '      displayName: Also runs',
+    '      inputs:',
+    '        script: echo "MARK second-step-of-second-job"',
+  ].join('\n');
+
+  it('qualifies a step condition function by its job (C-E12-041)', () => {
+    const { pipeline } = buildPipeline(parsePipelineYaml(MULTI_JOB, 'pipeline.expanded.yml'));
+    const files = emitEntrypoints(pipeline!, scaffold(pipeline!), 'pipeline.expanded.yml', []);
+    const conditions = files.get('stages/010-s/conditions.sh')!;
+    // One definition per job per number — never two functions of the same name in one file.
+    expect(conditions).toContain('cond_step_first_010()');
+    expect(conditions).toContain('cond_step_second_010()');
+    const names = [...conditions.matchAll(/^(cond_\S+?)\(\)/gm)].map((m) => m[1]);
+    expect(new Set(names).size).toBe(names.length);
+    // And the sequencer calls the qualified name.
+    expect(files.get('stages/010-s/jobs/010-first/run-job.sh')).toContain(
+      '--cond cond_step_first_010',
+    );
+  });
+
+  it('does not let one job’s false condition skip another job’s first step (C-E12-041)', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'azdo-emit-multi-'));
+    try {
+      generateProject(tmp, MULTI_JOB);
+      execFileSync('bash', ['run.sh'], { cwd: tmp, encoding: 'utf8' });
+      expect(readFileSync(join(tmp, '.work/run-1/logs/010-s/010-first/010.log'), 'utf8')).toContain(
+        'MARK first-step-of-first-job',
+      );
+      expect(readFileSync(join(tmp, '.work/run-1/state/results/s/first/010'), 'utf8').trim()).toBe(
+        'Succeeded',
+      );
+      // The job that really does start with a False condition still skips its own step.
+      expect(readFileSync(join(tmp, '.work/run-1/state/results/s/second/010'), 'utf8').trim()).toBe(
+        'Skipped',
+      );
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  it('records later steps as Skipped after a failure instead of not running them (C-E12-042)', () => {
+    const FAILING = [
+      'stages:',
+      '- stage: s',
+      '  jobs:',
+      '  - job: j',
+      '    steps:',
+      '    - task: CmdLine@2',
+      '      displayName: Fail for real',
+      '      inputs:',
+      '        script: exit 4',
+      '    - task: CmdLine@2',
+      '      displayName: Never reached',
+      '      inputs:',
+      '        script: echo "MARK must-not-run"',
+      '    - task: CmdLine@2',
+      '      displayName: Runs because the job failed',
+      '      condition: failed()',
+      '      inputs:',
+      '        script: echo "MARK failed-cond-ran"',
+    ].join('\n');
+    const tmp = mkdtempSync(join(tmpdir(), 'azdo-emit-fail-'));
+    try {
+      generateProject(tmp, FAILING);
+      // `run.sh` exits with the run's verdict, so a failing pipeline is expected to be non-zero.
+      let out = '';
+      try {
+        out = execFileSync('bash', ['run.sh'], { cwd: tmp, encoding: 'utf8' });
+      } catch (error) {
+        out = String((error as { stdout?: string }).stdout ?? '');
+      }
+      const results = join(tmp, '.work/run-1/state/results/s/j');
+      expect(readFileSync(join(results, '010'), 'utf8').trim()).toBe('Failed');
+      // Recorded, not absent: before the fix the sequencer aborted and these two never happened.
+      expect(readFileSync(join(results, '020'), 'utf8').trim()).toBe('Skipped');
+      expect(readFileSync(join(results, '030'), 'utf8').trim()).toBe('Succeeded');
+      expect(out).toContain('MARK failed-cond-ran');
+      expect(out).not.toContain('MARK must-not-run');
+      // The summary must list every step, including the ones after the failure (C-E12-035).
+      expect(out).toContain('Never reached');
+      expect(out).toContain('Result: Failed');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });

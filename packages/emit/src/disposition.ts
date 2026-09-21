@@ -25,7 +25,7 @@
 
 import type { Step } from '@azdo-emu/engine';
 
-import { nativeScriptKind, type NativeScriptKind } from './step.js';
+import { artifactStepKind, nativeScriptKind, type NativeScriptKind } from './step.js';
 import { taskRef } from './task-ref.js';
 
 /** How a step runs locally. */
@@ -87,6 +87,18 @@ export function disposeStep(step: Step, options: DispositionOptions = {}): StepD
 
   if (step.origin !== undefined && NATIVE_ORIGINS.has(step.origin)) {
     return { disposition: 'native', fidelity: 'exact', kind: step.origin };
+  }
+
+  // C-E12-034/040 (E11-S04-T03): `publish`/`download` join `checkout` as runtime-performed, by
+  // both spellings — the keyword's bare GUID and the catalogue reference. This is not a preference
+  // between two working paths: the `execution` block of `PublishPipelineArtifact@1` and
+  // `DownloadPipelineArtifact@2` is `AgentPlugin` alone, with no Node handler of any generation, so
+  // the runner has nothing to exec and every such step failed offline with "no cached package"
+  // while the runtime already implemented the behaviour. `exact` for the same reason `checkout` is:
+  // the runtime performs the documented work rather than approximating it.
+  const artifactKind = artifactStepKind(step);
+  if (artifactKind !== undefined) {
+    return { disposition: 'native', fidelity: 'exact', kind: artifactKind };
   }
 
   const reference = taskRef(step);

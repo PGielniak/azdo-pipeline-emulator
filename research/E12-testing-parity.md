@@ -434,3 +434,86 @@ from `Succeeded` and so should report `SucceededWithIssues`, and `azdo_status_fa
 from sample 03 rather than pinned. Recorded here with the evidence so the next person starts from
 it. Filed as **E11-S04-T03**.
   — measured 2026-09-04; `research/experiments/E12-l5-e2e/first-run.md`
+  — **superseded 2026-09-21 by C-E12-038**, which located the cause: the condition was never
+    evaluated, because the emitter passed `--no-condition` on every step. The step results this
+    entry read were right, and so was its reasoning about them; what it could not see from the
+    results alone was that nothing consulted them.
+
+## E11-S04-T03 — closing the three gaps L5 found
+
+[C-E12-038] **The cause of C-E12-036, and it is not in the condition machinery: every generated
+`run_step` was passed `--no-condition`, so no step condition in any generated project was ever
+evaluated.** `emitRunJob` ended each invocation with `${no_condition:+--no-condition}`, while the
+variable it tests is a **boolean spelled as a word** — `no_condition=false`. `${name:+word}`
+substitutes when `name` is set and **non-empty**, and the four-character string `false` is
+non-empty, so the flag was passed unconditionally. Measured on a generated project before and after
+the fix (`research/experiments/E12-l5-e2e/conditions.md`): before, a `checkout: none` step whose
+compiled condition is the constant `False` ran and recorded `Succeeded`, and a `condition: failed()`
+step ran after a tolerated failure; after, both record `Skipped` and the tolerated-failure step's
+`succeeded()` successor still runs. **Nothing in the runtime was wrong** — `azdo__job_status_from_results`,
+the `continueOnError` downgrade and `azdo_status_failed` all behaved as C-E06-036/040 describe,
+which is why reading them found nothing. The flag now lives in its own variable
+(`condition_flag=""`, set to `--no-condition` only when `no_condition` is `true`).
+**C-E12-036 is superseded by this entry**: the symptom it recorded was real and its diagnosis
+("the step results are right") was correct; what it could not see was that the condition was never
+consulted at all.
+  — measured 2026-09-21; `packages/emit/src/entrypoints.ts`; `packages/emit/test/entrypoints.test.ts`
+    ("step conditions are actually evaluated")
+
+[C-E12-039] **YAML `variables:` outrank queue time and the Pipeline settings UI at every level, so
+the generated project must seed them *after* the `.env` load, not before.** The documented order,
+highest precedence first, is: job-level YAML → stage-level YAML → pipeline-level YAML → variable set
+at queue time → pipeline variable set in the Pipeline settings UI. —
+https://learn.microsoft.com/en-us/azure/devops/pipelines/process/variables (git_commit_id
+`9bb823ead8c926c72b8f9035e2585f5f90c48f36`, checked 2026-09-21) — "When you set a variable with the
+same name in multiple scopes, the following precedence applies (highest precedence first): 1. Job
+level variable set in the YAML file 2. Stage level variable set in the YAML file 3. Pipeline level
+variable set in the YAML file 4. Variable set at queue time 5. Pipeline variable set in Pipeline
+settings UI", corroborated on the same page by "If you define a variable in both the variables block
+of a YAML and in the UI, the value in the YAML has priority." **Why this matters here:** PLAN D7
+makes `.env` the stand-in for exactly those last two rows, so the intuitive ordering — load `.env`
+last because the user's local file should win — is the wrong one, and a generated project that used
+it would invert the documented precedence. Verified end to end against the page's own example (the
+same name `a` at all three levels reads as the job value, and a sibling job with no job-level entry
+reads the stage value), and against a `.env` entry that does **not** displace a root YAML variable.
+  — checked 2026-09-21; `packages/emit/test/entrypoints.test.ts` ("variables are seeded")
+
+[C-E12-040] **`PublishPipelineArtifact@1` and `DownloadPipelineArtifact@2` declare an `AgentPlugin`
+handler and no other, so real-task mode can never run them — native is the only possible
+disposition.** Their `execution` blocks are `{"AgentPlugin": {"target":
+"Agent.Plugins.PipelineArtifact.PublishPipelineArtifactTaskV1, Agent.Plugins"}}` and
+`{"AgentPlugin": {"target": "Agent.Plugins.PipelineArtifact.DownloadPipelineArtifactTaskV2_0_0,
+Agent.Plugins"}}` respectively — no `Node`, `Node10`, `Node16`, `Node20` or `PowerShell3` entry
+exists in either package. —
+https://github.com/microsoft/azure-pipelines-tasks/blob/299572e25b6cf14b21c7b60e5228603cbb5ffb42/Tasks/PublishPipelineArtifactV1/task.json
+and
+https://github.com/microsoft/azure-pipelines-tasks/blob/299572e25b6cf14b21c7b60e5228603cbb5ffb42/Tasks/DownloadPipelineArtifactV2/task.json
+(checked 2026-09-21). This settles C-E12-034 in the direction it guessed at: the failure was not
+"the package was not fetched", it was that fetching it could never have helped. The same pages
+confirm the alias sets the emitter maps (C-E06-085/091): `path`/`targetPath` and
+`artifactName`/`artifact` on publish; `path`/`targetPath`/`downloadPath`, `artifact`/`artifactName`,
+`patterns`/`itemPattern` and `source`/`buildType` on download.
+  — checked 2026-09-21; `packages/emit/src/disposition.ts`; `packages/emit/src/step.ts`
+
+[C-E12-041] **Step condition functions collided across jobs: `conditions.sh` is per *stage*, step
+numbers restart at `010` in every job, and the function name carried only the number.** A stage with
+three jobs emitted `cond_step_010` three times into one sourced file, so the **last** definition won
+for all of them. Measured on L5 sample 01, where job `must_not_run` begins with `checkout: none` —
+whose compiled condition is the constant `False` (C-E03-260) — and therefore skipped the *first step
+of every job in the stage*, including the one that produces the artifact. The name is now
+`cond_step_<job>_<NNN>`. **This was invisible until C-E12-038 was fixed**, because before that no
+step condition was evaluated at all; the two defects hid each other, and the second could only be
+found by running a multi-job stage.
+  — measured 2026-09-21; `packages/emit/src/entrypoints.ts`; `fixtures/e2e/01-shell-artifacts`
+
+[C-E12-042] **A failing step aborted the whole job sequencer, so later steps never ran and were
+absent from the summary rather than recorded as `Skipped`.** `run-job.sh` carries `set -euo
+pipefail` and `run_step` returns the step's status, so the first `Failed` step ended the script.
+The agent does the opposite: it continues, evaluates each remaining step's condition, and records
+`Skipped` for the ones whose condition is now false (C-E06-041/043) — which is the only reason an
+`always()` or `failed()` step after a failure runs at all. Measured on L5 sample 03: before, steps
+070 and 080 were missing from the summary entirely; after, `070` (default `succeeded()`) is
+`Skipped` and `080` (`condition: failed()`) runs. Fixed with `|| :` on the `run_step` invocation,
+the same shape and the same cause as C-E12-035 one level up. The step's result is already in the
+store before `run_step` returns, so the discarded status carried nothing the run needed.
+  — measured 2026-09-21; `packages/emit/src/entrypoints.ts`; `fixtures/e2e/03-failure-and-conditions`

@@ -143,6 +143,11 @@ export function containerScript(): string {
     // produced instead of leaving the reader to guess — and so the assertion matches a marked line
     // rather than anything that happens to mention the path.
     'find /work/out/.work -type f 2>/dev/null | sed -e "s|^/work/out/.work/run-[0-9]*/|E2E-FILE |" | sort -u || true',
+    // The artifact store is a sibling of `.work`, not a child of the run — `.artifacts/<name>/` is
+    // keyed by artifact name and outlives the run (docs/04 §7). Listed separately since
+    // E11-S04-T03, because that is where a `PublishPipelineArtifact@1` step puts its output and a
+    // suite that only listed the run tree could not assert it.
+    'find /work/out/.artifacts -type f 2>/dev/null | sed -e "s|^/work/out/|E2E-FILE |" | sort -u || true',
     'exit 0',
   ].join('\n');
 }
