@@ -200,4 +200,13 @@ authenticates and *then* selects the subscription, mirroring `AzureCLIV2` (C-E08
 > Cost, stated plainly: this is the one mode that adds a **run-time Node dependency**, and the
 > generated README must say so (E05-S02-T02) — `doctor` checks it (E10-S03).
 
+> **Narrowed 2026-09-21 by E11-S04-T03.** "Every task that is not a script step" has three
+> exceptions, not one. Alongside `checkout`, the artifact pair `publish`/`download` — in both the
+> keyword spelling and the catalogue spelling `PublishPipelineArtifact@1`/`DownloadPipelineArtifact@2`
+> — is **runtime-performed**. This is not a fidelity preference: their `task.json` `execution` block
+> declares an `AgentPlugin` handler and no `Node`, `Node16`, `Node20` or `PowerShell3` handler at
+> all (C-E12-040), so there is nothing for real-task mode to exec and every such step failed offline
+> with "no cached package" while the runtime already implemented the behaviour (C-E12-034). Both are
+> labelled `exact`, for the same reason `checkout` is.
+
 For every non-script task (and especially where a hand-written equivalent would be lossy — complex marketplace tasks, `DotNetCoreCLI` edge behaviors): download the **real task package** (in-the-box tasks are MIT; per-org fetch `GET {org}/_apis/distributedtask/tasks/{id}/{version}` returns the zip) and execute its Node target with an emulated agent host: `INPUT_*`/`ENDPOINT_*`/`SECRET_*` env, `azure-pipelines-task-lib` command protocol on stdout (which our `##vso` parser already speaks), tool cache pointed at `Agent.ToolsDirectory`. Requires Node at run time — the only mode that adds a runtime dependency, clearly marked in the generated README.

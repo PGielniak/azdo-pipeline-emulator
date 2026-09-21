@@ -209,7 +209,9 @@ export function emitVariableSeeds(
     // `azdo_var_set <name> <value> [secret] [output] [readonly]` — the trailing flags are only
     // spelled out when one of them is not the default, so an ordinary variable stays readable.
     const flags = variable.readonly ? ' false false true' : '';
-    lines.push(`${indent}azdo_var_set ${shQuote(variable.name)} ${shQuote(variable.value)}${flags}`);
+    lines.push(
+      `${indent}azdo_var_set ${shQuote(variable.name)} ${shQuote(variable.value)}${flags}`,
+    );
   }
   if (lines.length > 0) lines.unshift(`${indent}# ${scopeLabel} variables (C-E12-033)`);
   return lines;

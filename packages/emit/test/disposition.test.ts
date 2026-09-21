@@ -109,7 +109,10 @@ describe('real-task is the default (PLAN D4)', () => {
 describe('publish and download are runtime-performed (C-E12-034/040, E11-S04-T03)', () => {
   it('treats both keyword spellings as native', () => {
     for (const origin of ['publish', 'download'] as const) {
-      const guid = origin === 'publish' ? 'ecdc45f6-832d-4ad9-b52b-ee49e94659be' : '30f35852-3f7e-4c0c-9a88-e127b4f97211';
+      const guid =
+        origin === 'publish'
+          ? 'ecdc45f6-832d-4ad9-b52b-ee49e94659be'
+          : '30f35852-3f7e-4c0c-9a88-e127b4f97211';
       expect(disposeStep(step(guid, '1', { origin } as Partial<Step>))).toMatchObject({
         disposition: 'native',
         fidelity: 'exact',

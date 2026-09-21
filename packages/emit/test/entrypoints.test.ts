@@ -65,9 +65,7 @@ const FIXTURE = `stages:
 
 /** Generate a complete project into `dir`: scaffold + step scripts + entrypoints + lib/. */
 function generateProject(dir: string, yaml: string = FIXTURE): void {
-  const { pipeline, diagnostics } = buildPipeline(
-    parsePipelineYaml(yaml, 'pipeline.expanded.yml'),
-  );
+  const { pipeline, diagnostics } = buildPipeline(parsePipelineYaml(yaml, 'pipeline.expanded.yml'));
   expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
   expect(pipeline).toBeDefined();
   const plan = scaffold(pipeline!);
@@ -595,9 +593,9 @@ describe('pipeline/stage/job variables are seeded (C-E12-033, E11-S04-T03)', () 
       expect(readFileSync(join(tmp, '.work/run-1/logs/010-s/010-j/010.log'), 'utf8')).toContain(
         'a=job-value rootOnly=root locked=fixed',
       );
-      expect(readFileSync(join(tmp, '.work/run-1/logs/010-s/020-sibling/010.log'), 'utf8')).toContain(
-        'a=stage-value',
-      );
+      expect(
+        readFileSync(join(tmp, '.work/run-1/logs/010-s/020-sibling/010.log'), 'utf8'),
+      ).toContain('a=stage-value');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
