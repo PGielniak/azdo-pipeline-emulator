@@ -34,8 +34,14 @@ Local wiring goes in `.env.oracle` (gitignored); CI wiring goes in GitHub repo s
 3. Name it something obviously disposable and non-identifying, e.g. `azdo-emu-oracle-<4 random chars>`.
    The org name appears in URLs inside experiment transcripts — we redact it before committing,
    but a meaningless name lowers the blast radius.
-4. Free tier is sufficient: preview runs nothing (see above), so the missing free-parallelism
-   grant for new orgs does not matter.
+4. Free tier is sufficient for **preview**, which runs nothing (see above). *(Corrected
+   2026-09-21, E11-S05-T01: this line used to say the missing free-parallelism grant "does not
+   matter", full stop. **This org has hosted parallelism** — runs 539/540/544/553 all executed on
+   the `Azure Pipelines` hosted queue and succeeded — and L6 depends on it. The line was written
+   2026-07-30 when preview was the only planned use and was never revisited. This is the **second**
+   assumed-unavailability claim found stale in this file in two days; see C-E12-056 and decision 91
+   for the first. Test, do not assume: `curl -s -u ":$AZDO_PAT" "$AZDO_ORG_URL/_apis/distributedtask/pools"`
+   lists the hosted pools, and a queued hosted run either starts or reports the missing grant.)*
 
 **Dedicated org, not your real one.** Cleanup at end-of-project is then a single org deletion,
 and a leaked PAT scoped here can touch nothing real.
@@ -61,8 +67,10 @@ The preview endpoint is addressed *per pipeline*, so one definition must exist. 
      - script: echo oracle anchor
    ```
 
-   `trigger: none` / `pr: none` so pushes never queue a real run (a queued run in a
-   parallelism-less org just sits and errors — harmless but noisy).
+   `trigger: none` / `pr: none` so pushes never queue a real run. *(The parenthetical here used to
+   say such a run "just sits and errors in a parallelism-less org"; this org has parallelism, so an
+   accidental trigger would really run and really spend minutes — which is the better reason to
+   keep `trigger: none`. Corrected 2026-09-21, E11-S05-T01.)*
 2. Pipelines → New pipeline → Azure Repos Git → select the repo → "Existing Azure Pipelines
    YAML file" → pick `/azure-pipelines.yml` → **Save** (dropdown next to Run — do *not* Run).
    Official walkthrough if the UI moved: <https://learn.microsoft.com/en-us/azure/devops/pipelines/create-first-pipeline?view=azure-devops> (verified 2026-07-30).
@@ -173,6 +181,14 @@ Grounding: C-E00-019/020. UI path per the PAT doc (verified 2026-07-30):
     Runs 520–527 are the recorded evidence. Two of its jobs end non-green **by design** (`dep_fail`
     fails, `dep_abandon` is abandoned — they are the Failed and Abandoned dependencies under test),
     so the pipeline's run history is expected to show failed runs; that is not a broken probe.
+  - `/e2e/01-shell-artifacts.yml` + pipeline **`oracle-l6-shell-artifacts`** (E11-S05-T01), pushed
+    and created by `node scripts/realrun.ts`. **This is the only probe here that consumes hosted-agent
+    parallelism** — the fixture declares `vmImage: ubuntu-latest` because artifacts and step logs
+    are the point, so it cannot be agentless like the others. Its CI job is `workflow_dispatch`-only
+    for that reason. The file is pushed by reading `fixtures/e2e/01-shell-artifacts/azure-pipelines.yml`
+    at run time, never a copy, so the L5 and L6 tiers cannot drift. Run 553 is the recorded evidence,
+    and `research/experiments/E11-realrun/capture.json` holds it in full so the comparison can be
+    redone (`--from-capture`) or the run re-read (`--reuse-run <id>`) without spending more minutes.
   - `/experiments/abandoned-aggregate.yml` + pipeline **`oracle-abandon-probe`** and
     `/experiments/abandoned-stage-only.yml` + pipeline **`oracle-abandon-stage-probe`**
     (E11-S04-T07), pushed and created by `node scripts/abandoned-aggregate-realrun.ts`

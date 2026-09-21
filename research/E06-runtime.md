@@ -787,7 +787,9 @@ directory names under `.artifacts/`. That extra rejection is a recorded local ha
 doc's cross-stage example publishes `$(Build.ArtifactStagingDirectory)/scripts` as artifact `drop`
 and then runs `$(Pipeline.Workspace)\drop\test.ps1`, so `scripts/` itself does not appear in the
 downloaded tree. —
-https://learn.microsoft.com/azure/devops/pipelines/artifacts/pipeline-artifacts (checked 2026-08-21)
+https://learn.microsoft.com/azure/devops/pipelines/artifacts/pipeline-artifacts (checked 2026-08-21;
+**directory half measured 2026-09-21 by run 553, C-E12-059** — publishing `…/app` as `drop` put
+`build.txt` at the artifact root and the local store matched it hash-for-hash)
 — "- publish: '$(Build.ArtifactStagingDirectory)/scripts' displayName: 'Publish script' artifact:
 drop" / "filePath: '$(Pipeline.Workspace)\\drop\\test.ps1'". The **file** case has no citable
 source: the plugin hands `fullPath` straight to the closed BlobStore
