@@ -65,6 +65,68 @@ export function topologicalOrder(
 }
 
 /**
+ * Every node a stage or job depends on, directly or indirectly, in authored order (E11-S04-T04).
+ *
+ * **Transitive, and that is a reading of the docs rather than of the task text.** E11-S04-T04's
+ * Ground field describes the set as "the job's own `dependsOn` set", but the conditions page is
+ * explicit that it is not: "The dependency requirement applies to direct dependencies and to their
+ * indirect dependencies, computed recursively" (C-E12-044), and the expressions page says "any
+ * previous job in the **dependency graph**", not any previous dependency. BACKLOG §3.3 makes the
+ * task's own wording a starting point and the doc the authority, so the doc wins; docs/06 §5
+ * decision 88 records the divergence rather than leaving a reviewer to find it.
+ *
+ * The choice is invisible to `succeeded()` — an indirectly failed dependency leaves the direct one
+ * `Skipped`, and `Skipped` satisfies no status function (C-E02-069) — so only `failed()` and
+ * `succeededOrFailed()` can tell the two apart, and only in a three-deep chain. That cell is
+ * doc-derived and not live-measured (C-E12-045 carries the `VERIFY`), which is affordable because
+ * the set is emitted as literal words: narrowing it to the direct dependencies later is this
+ * function, not a runtime change.
+ */
+export function transitiveDependencies(
+  nodes: readonly { id: string; dependsOn: readonly string[] }[],
+  id: string,
+): string[] {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const seen = new Set<string>();
+  const walk = (current: string): void => {
+    for (const dependency of byId.get(current)?.dependsOn ?? []) {
+      if (seen.has(dependency)) continue;
+      seen.add(dependency);
+      walk(dependency);
+    }
+  };
+  walk(id);
+  // Authored order, so the emitted word list reads like the YAML and is stable across runs.
+  return nodes.filter((node) => seen.has(node.id)).map((node) => node.id);
+}
+
+/**
+ * The runtime helper each status function compiles to, per slot (E11-S04-T04, C-E12-043).
+ *
+ * `azdo_status_*` — the defaults `compileBash` would pick — are the **step**-scope readings: they
+ * fold this job's step results through `AZDO_RESULT_DIR`. A stage or job condition is evaluated by
+ * the orchestrator against its dependency graph instead (C-E02-062/067), so those two slots are
+ * redirected wholesale. `always()` keeps `azdo_status_always` (literal true at every scope,
+ * C-E02-062) and `canceled()` becomes run-level rather than a fold over dependency results — the
+ * one cell where the symmetric-looking answer is the wrong one.
+ */
+const GRAPH_STATUS_FUNCTIONS: Readonly<Record<'stage' | 'job', Readonly<Record<string, string>>>> =
+  {
+    stage: {
+      canceled: 'azdo_status_run_canceled',
+      failed: 'azdo_status_stage_failed',
+      succeeded: 'azdo_status_stage_succeeded',
+      succeededorfailed: 'azdo_status_stage_succeededorfailed',
+    },
+    job: {
+      canceled: 'azdo_status_run_canceled',
+      failed: 'azdo_status_job_failed',
+      succeeded: 'azdo_status_job_succeeded',
+      succeededorfailed: 'azdo_status_job_succeededorfailed',
+    },
+  };
+
+/**
  * The condition function name for a stage, job (by referenceName), or step (by `NNN`).
  *
  * A step's name carries its **job** as well as its number, and that is not cosmetic (C-E12-041).
@@ -95,7 +157,16 @@ export interface CompiledCondition {
   readonly body: string;
 }
 
-/** Compile a condition (or the implicit `succeeded()`) into a `cond_*` function body. */
+/**
+ * Compile a condition (or the implicit `succeeded()`) into a `cond_*` function body.
+ *
+ * `dependencies` is the node's transitive dependency set and is read only at stage and job scope.
+ * An absent or empty condition compiles the literal `succeeded()` rather than a hard-coded body:
+ * the agent's parser is `CreateTree(condition, …) ?? new SucceededNode()`, i.e. the default **is**
+ * that call (C-E02-063), and at stage or job scope it is the graph-scope one. Short-circuiting it
+ * to `azdo_status_succeeded` is what made a default-condition stage after a failed one run
+ * (C-E12-043); routing both through one path is what keeps them from diverging again.
+ */
 export function compileCondition(
   kind: 'stage' | 'job' | 'step',
   key: string,
@@ -103,10 +174,11 @@ export function compileCondition(
   diagnostics: Diagnostic[],
   file: string,
   jobKey?: string,
+  dependencies: readonly string[] = [],
 ): CompiledCondition {
   const fnName = conditionFunctionName(kind, key, jobKey);
-  if (condition === undefined || condition === '') return { fnName, body: 'azdo_status_succeeded' };
-  const parsed = parseExpression(condition, { registry: registryForSlot(slotFor(kind)) });
+  const source = condition === undefined || condition === '' ? 'succeeded()' : condition;
+  const parsed = parseExpression(source, { registry: registryForSlot(slotFor(kind)) });
   if (!parsed.ok) {
     diagnostics.push({
       severity: 'error',
@@ -119,19 +191,39 @@ export function compileCondition(
   }
   return {
     fnName,
-    body: compileBash(parsed.node, { dependencyKind: kind === 'stage' ? 'stage' : 'job' }),
+    body: compileBash(parsed.node, {
+      dependencyKind: kind === 'stage' ? 'stage' : 'job',
+      ...(kind === 'step'
+        ? {}
+        : { statusFunctions: GRAPH_STATUS_FUNCTIONS[kind], statusDependencies: dependencies }),
+    }),
   };
 }
 
-/** All condition functions for a stage: one for the stage, one per job, one per step. */
+/**
+ * All condition functions for a stage: one for the stage, one per job, one per step.
+ *
+ * The two graphs are passed in rather than re-resolved here: `emitEntrypoints` already resolves
+ * both to order the runners, and resolving twice would report every dependency diagnostic twice.
+ */
 export function compileStageConditions(
   stage: Stage,
   scaffoldStage: ScaffoldStage,
   file: string,
   diagnostics: Diagnostic[],
+  stageGraph: readonly { id: string; dependsOn: readonly string[] }[] = [],
+  jobGraph: readonly { id: string; dependsOn: readonly string[] }[] = [],
 ): CompiledCondition[] {
   const conditions: CompiledCondition[] = [
-    compileCondition('stage', stage.id, stage.condition, diagnostics, file),
+    compileCondition(
+      'stage',
+      stage.id,
+      stage.condition,
+      diagnostics,
+      file,
+      undefined,
+      transitiveDependencies(stageGraph, stage.id),
+    ),
   ];
   for (const scaffoldJob of scaffoldStage.jobs) {
     conditions.push(
@@ -141,6 +233,8 @@ export function compileStageConditions(
         scaffoldJob.job.condition,
         diagnostics,
         file,
+        undefined,
+        transitiveDependencies(jobGraph, scaffoldJob.job.referenceName),
       ),
     );
     for (const scaffoldStep of scaffoldJob.steps) {
@@ -530,7 +624,9 @@ export function emitEntrypoints(
     const jobGraph = resolveJobGraph(stage.stage, file, diagnostics);
     files.set(
       `${stage.dir}/conditions.sh`,
-      emitConditions(compileStageConditions(stage.stage, stage, file, diagnostics)),
+      emitConditions(
+        compileStageConditions(stage.stage, stage, file, diagnostics, stageGraph, jobGraph),
+      ),
     );
     files.set(`${stage.dir}/run-stage.sh`, emitRunStage(stage, topologicalOrder(jobGraph)));
     for (const job of stage.jobs) {

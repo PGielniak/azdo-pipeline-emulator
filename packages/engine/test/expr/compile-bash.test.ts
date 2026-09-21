@@ -87,3 +87,52 @@ describe('Bash expression compiler (C-E02-128..131, C-E02-145..146)', () => {
     expect(() => compileBash(parse("eq(coalesce('', 1), 'x')"))).toThrow(/one kind/);
   });
 });
+
+describe('job/stage-scope status functions (C-E02-064/067, E11-S04-T04)', () => {
+  const GRAPH = {
+    statusFunctions: {
+      canceled: 'azdo_status_run_canceled',
+      failed: 'azdo_status_stage_failed',
+      succeeded: 'azdo_status_stage_succeeded',
+      succeededorfailed: 'azdo_status_stage_succeededorfailed',
+    },
+    statusDependencies: ['one', 'two'],
+  } as const;
+
+  it('spells the dependency set out when the author wrote no arguments', () => {
+    // Only the converter knows the graph — `run-stage.sh` has no reachable description of which
+    // stages a stage depends on — so the set is compiled in as literal words.
+    expect(compileBash(parse('succeeded()'), GRAPH)).toBe('azdo_status_stage_succeeded one two');
+    expect(compileBash(parse('failed()'), GRAPH)).toBe('azdo_status_stage_failed one two');
+  });
+
+  it('lets written arguments replace that set rather than filter it (C-E02-067)', () => {
+    expect(compileBash(parse("succeeded('one')"), GRAPH)).toBe('azdo_status_stage_succeeded one');
+    // An argument is an ordinary expression converted to String, not a static name: the service
+    // accepts `succeeded(variables['jobName'])` (C-E02-064), so it compiles like any operand.
+    expect(compileBash(parse("succeeded(variables['jobName'])"), GRAPH)).toBe(
+      'azdo_status_stage_succeeded "$(azdo_var \'jobName\')"',
+    );
+  });
+
+  it('never hands a dependency set to always() or canceled(), which are 0-arity (C-E02-064)', () => {
+    expect(compileBash(parse('always()'), GRAPH)).toBe('azdo_status_always');
+    expect(compileBash(parse('canceled()'), GRAPH)).toBe('azdo_status_run_canceled');
+  });
+
+  it('leaves the step scope alone — no override, no set, no names', () => {
+    expect(compileBash(parse('succeeded()'))).toBe('azdo_status_succeeded');
+    expect(compileBash(parse('succeeded()'), { statusDependencies: [] })).toBe(
+      'azdo_status_succeeded',
+    );
+  });
+
+  it('quotes a dependency name the shell would otherwise reparse', () => {
+    expect(
+      compileBash(parse('succeeded()'), {
+        ...GRAPH,
+        statusDependencies: ['a b', "it's"],
+      }),
+    ).toBe("azdo_status_stage_succeeded 'a b' 'it'\\''s'");
+  });
+});

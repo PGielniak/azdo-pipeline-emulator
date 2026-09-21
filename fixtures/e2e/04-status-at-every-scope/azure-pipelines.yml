@@ -1,0 +1,103 @@
+# L5 sample 4 — `succeeded()`/`failed()` where they are *not* step conditions (E11-S04-T04).
+#
+# Sample 03 pins the step scope: a step's status functions read the job's accumulated results. This
+# one pins the other two, and they are a different implementation of the same five spellings — the
+# orchestrator evaluates a stage or job condition against that node's **dependency graph**, not
+# against anyone's steps (C-E02-062/067).
+#
+# Every leg carries an explicit `dependsOn`, and that is not decoration. A stage's default
+# dependency is the stage *before it in the file* (C-E04-123), so a `defaulted` stage written after
+# `on_failure` would be skipped because of `on_failure` rather than because of the stage that
+# failed — and the assertion would pass while proving nothing. `job_scope` takes `dependsOn: []` for
+# the same reason, inverted: it must not inherit the failing stage, or its jobs would never be
+# reached and the job-scope half would be untested (C-E04-125).
+#
+# Three directions per scope, because a fix that made every status function uniformly False would
+# satisfy a one-sided assertion: the `failed()` node that must run, the default-condition node that
+# must be skipped, and the `dependencies.<node>.result` form that worked before this task and must
+# still work after it. That last one is the control — it reads the same result store through a
+# different expression, so if it ever disagrees with `failed()` the store is wrong rather than the
+# status functions.
+#
+# Before E11-S04-T04 all six ran (C-E12-043): the compiler emitted the step-scope helpers into
+# these slots, they read `AZDO_RESULT_DIR` — which `run-job.sh` exports in a *child* process — found
+# no results in `run-stage.sh`'s own process, and answered `Succeeded` for everything.
+trigger: none
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+- stage: one
+  jobs:
+  - job: fails
+    steps:
+    - checkout: none
+    - script: |
+        echo "E2E-MARKER stage one is failing on purpose"
+        exit 4
+      displayName: Fail for real
+
+- stage: on_failure
+  dependsOn: one
+  condition: failed()
+  jobs:
+  - job: j
+    steps:
+    - checkout: none
+    - script: echo "E2E-MARKER failed() stage ran after a failed dependency"
+      displayName: Runs because the stage it depends on failed
+
+- stage: defaulted
+  dependsOn: one
+  jobs:
+  - job: j
+    steps:
+    - checkout: none
+    - script: echo "E2E-MARKER must not run a default-condition stage after a failure"
+      displayName: Skipped because its dependency did not succeed
+
+- stage: by_result
+  dependsOn: one
+  condition: eq(dependencies.one.result, 'Failed')
+  jobs:
+  - job: j
+    steps:
+    - checkout: none
+    - script: echo "E2E-MARKER dependencies.one.result stage ran"
+      displayName: The control — the dependency-result form
+
+- stage: job_scope
+  dependsOn: []
+  jobs:
+  - job: fails
+    steps:
+    - checkout: none
+    - script: |
+        echo "E2E-MARKER job scope starts with a failing job"
+        exit 4
+      displayName: Fail for real
+
+  - job: on_failure
+    dependsOn: fails
+    condition: failed()
+    steps:
+    - checkout: none
+    - script: echo "E2E-MARKER failed() job ran after a failed sibling"
+      displayName: Runs because the job it depends on failed
+
+  - job: defaulted
+    dependsOn: fails
+    steps:
+    - checkout: none
+    - script: echo "E2E-MARKER must not run a default-condition job after a failure"
+      displayName: Skipped because its dependency did not succeed
+
+  - job: by_result
+    dependsOn: fails
+    condition: eq(dependencies.fails.result, 'Failed')
+    steps:
+    - checkout: none
+    - script: echo "E2E-MARKER dependencies.fails.result job ran"
+      displayName: The control — the dependency-result form

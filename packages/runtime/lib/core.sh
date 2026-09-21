@@ -639,6 +639,151 @@ azdo_status_succeededorfailed() {
   [[ "$status" = Succeeded || "$status" = SucceededWithIssues || "$status" = Failed ]]
 }
 
+# ---------------------------------------------------------------------------
+# Job- and stage-scope status functions (E11-S04-T04, C-E12-043).
+#
+# **The five spellings above have a second, different implementation, and this is it.** A *step*
+# condition is evaluated by the agent against `Agent.JobStatus` (C-E02-062); a *job* or *stage*
+# condition is evaluated by the server-side orchestrator against the **results of that node's
+# dependency graph** (C-E02-067). Same names, different readings — which is why the engine has
+# carried two tables since E02 (`statusFunctionSignatures`, C-E02-060/064) and why these are
+# separate functions rather than a mode flag on the ones above.
+#
+# Before E11-S04-T04 the compiler emitted the step-scope helpers into all three slots. Those read
+# `AZDO_RESULT_DIR`, which `run-job.sh` exports in a *child* process, so at the moment
+# `run-stage.sh` evaluates `cond_stage` and each `cond_job_*` it is unset, the helper found no step
+# results, and every status function at those two scopes was the constant `Succeeded` (C-E12-043).
+#
+# The dependency names arrive as **arguments**: the author's own when they wrote `succeeded('A')`,
+# otherwise the node's dependency graph spelled out by the emitter at convert time. One shape
+# serves both because arguments *replace* the set rather than filtering it (C-E02-067) — naming one
+# succeeded dependency is True even while a skipped one remains in the graph.
+#
+# The truth table is `packages/engine/src/expr/status.ts` cell for cell, and that table is live-
+# measured (`research/experiments/E02-status/real-run.md`), not derived from the docs:
+#   - `succeeded`          all-of over the set; True over an empty set  (C-E02-067)
+#   - `failed`             any-of `Failed`; False over an empty set     (C-E02-070)
+#   - `succeededorFailed`  any-of {Succeeded, SucceededWithIssues, Failed}, **but True over an
+#                          empty set** — the one asymmetry in the family (C-E02-068)
+#   - a `Skipped` dependency satisfies none of them                     (C-E02-069)
+#   - a name that is not a dependency is "not succeeded, not failed", never an error (C-E02-072)
+
+# azdo_status_run_canceled — whether the *run* was canceled (job/stage scope only).
+#
+# At job/stage scope `canceled()` reads run-level cancellation, **not** a fold over the dependency
+# results; at step scope the same spelling reads the job's own status, and that asymmetry is
+# explicit in the agent source (C-E02-062). Reading the marker rather than folding is what keeps
+# the two apart.
+#
+# Nothing in a generated project writes this marker today: the local runner has no cancellation
+# path — a Ctrl-C kills the process tree and no orchestrator survives to record anything — so it is
+# False in every local run. It is a marker file and not a compiled-in `false` so that the emitted
+# condition still *reads run state*, which is what makes `succeeded()`'s "False outright when the
+# run is canceled" a rule of this runtime rather than a line of dead code (docs/06 §5 decision 87).
+azdo__run_canceled() {
+  local state_dir
+  state_dir="$(azdo__state_dir)" || return
+  [[ -f "$state_dir/.run-canceled" ]]
+}
+
+azdo_status_run_canceled() {
+  (($# == 0)) || {
+    printf '%s\n' 'usage: azdo_status_run_canceled' >&2
+    return 2
+  }
+  azdo__run_canceled
+}
+
+# azdo__status_graph_result <stage|job> <name> — one dependency's recorded result, or empty.
+#
+# Empty is the Null of C-E02-072: a name with no record is "not succeeded, not failed" rather than
+# an error, so an author's `succeeded('nosuchjob')` is False here exactly as it is on the service.
+azdo__status_graph_result() {
+  local stage
+  case "$1" in
+    stage) azdo_stage_result "$2" ;;
+    job)
+      stage="${AZDO_STAGE_ID:-}"
+      if [[ -z "$stage" ]]; then
+        printf '%s\n' 'AZDO_STAGE_ID must be set to evaluate a job-scope status function' >&2
+        return 2
+      fi
+      azdo_job_result "$stage" "$2"
+      ;;
+  esac
+}
+
+# azdo__status_graph <stage|job> <succeeded|failed|succeededorfailed> [names...]
+azdo__status_graph() {
+  (($# >= 2)) || {
+    printf '%s\n' 'usage: azdo__status_graph <stage|job> <predicate> [names...]' >&2
+    return 2
+  }
+  local scope="$1" predicate="$2" name result
+  shift 2
+  # Up front rather than on the first lookup: an empty dependency set answers without reading a
+  # single result, so a mistyped scope would otherwise pass silently on exactly the nodes that have
+  # no dependencies.
+  case "$scope" in
+    stage | job) ;;
+    *)
+      printf 'unknown status graph scope: %s\n' "$scope" >&2
+      return 2
+      ;;
+  esac
+
+  case "$predicate" in
+    succeeded)
+      # "Evaluates to False if the pipeline is canceled", then all-of. All-of over an empty set is
+      # True, which is why a job or stage with no dependencies runs by default (C-E02-067).
+      if azdo__run_canceled; then return 1; fi
+      for name in "$@"; do
+        result="$(azdo__status_graph_result "$scope" "$name")" || return
+        case "$result" in
+          Succeeded | SucceededWithIssues) ;;
+          *) return 1 ;;
+        esac
+      done
+      return 0
+      ;;
+    failed)
+      # Any-of; over an empty set False. Cancellation is not consulted: `failed()` has no
+      # run-canceled carve-out on the service either (C-E02-070).
+      for name in "$@"; do
+        result="$(azdo__status_graph_result "$scope" "$name")" || return
+        [[ "$result" != Failed ]] || return 0
+      done
+      return 1
+      ;;
+    succeededorfailed)
+      # The asymmetric one. Stated as "True unless the set is non-empty and none of its members
+      # qualifies", so the empty case is a rule and not something falling out of an any-of loop as
+      # False (C-E02-068) — a dependency-free node carrying this condition would otherwise never run.
+      if azdo__run_canceled; then return 1; fi
+      (($# > 0)) || return 0
+      for name in "$@"; do
+        result="$(azdo__status_graph_result "$scope" "$name")" || return
+        case "$result" in
+          Succeeded | SucceededWithIssues | Failed) return 0 ;;
+        esac
+      done
+      return 1
+      ;;
+    *)
+      printf 'unknown status predicate: %s\n' "$predicate" >&2
+      return 2
+      ;;
+  esac
+}
+
+azdo_status_stage_succeeded() { azdo__status_graph stage succeeded "$@"; }
+azdo_status_stage_failed() { azdo__status_graph stage failed "$@"; }
+azdo_status_stage_succeededorfailed() { azdo__status_graph stage succeededorfailed "$@"; }
+
+azdo_status_job_succeeded() { azdo__status_graph job succeeded "$@"; }
+azdo_status_job_failed() { azdo__status_graph job failed "$@"; }
+azdo_status_job_succeededorfailed() { azdo__status_graph job succeededorfailed "$@"; }
+
 # E06-S01-T03 — the generated runner translates manifest.json's env array into shell metadata
 # before loading user values:
 #

@@ -988,6 +988,146 @@ Canceled|0|0|1|1|1
 TABLE
 }
 
+@test "job/stage status helpers range over the dependency graph, one result at a time (C-E02-067..072)" {
+  local result succeeded_status failed_status either_status
+  export AZDO_STAGE_ID=Build
+
+  # The same five results at both scopes, plus the sixth row that is not a result at all: a name
+  # with no record. `Skipped` satisfies nothing (C-E02-069) and an unknown name is "not succeeded,
+  # not failed" rather than an error (C-E02-072) — the two cells a fold over step results loses.
+  while IFS='|' read -r result succeeded_status failed_status either_status; do
+    if [[ "$result" = none ]]; then
+      rm -rf -- "$AZDO_STATE_DIR/results"
+    else
+      azdo_job_result_set Build Dep "$result"
+      azdo_stage_result_set Dep "$result"
+    fi
+    run "-$succeeded_status" azdo_status_job_succeeded Dep
+    run "-$failed_status" azdo_status_job_failed Dep
+    run "-$either_status" azdo_status_job_succeededorfailed Dep
+    run "-$succeeded_status" azdo_status_stage_succeeded Dep
+    run "-$failed_status" azdo_status_stage_failed Dep
+    run "-$either_status" azdo_status_stage_succeededorfailed Dep
+  done <<'TABLE'
+Succeeded|0|1|0
+SucceededWithIssues|0|1|0
+Failed|1|0|0
+Skipped|1|1|1
+Canceled|1|1|1
+none|1|1|1
+TABLE
+}
+
+@test "an empty dependency set is True for succeeded() and succeededOrFailed(), False for failed() (C-E02-067/068/070)" {
+  export AZDO_STAGE_ID=Build
+
+  # A job or stage with no `dependsOn` runs by default, so all-of over nothing is True — and
+  # `succeededOrFailed()` is True here too, which is the family's one asymmetry: any-of over an
+  # empty set would be False and such a node would never run (C-E02-068).
+  run -0 azdo_status_job_succeeded
+  run -0 azdo_status_stage_succeeded
+  run -1 azdo_status_job_failed
+  run -1 azdo_status_stage_failed
+  run -0 azdo_status_job_succeededorfailed
+  run -0 azdo_status_stage_succeededorfailed
+}
+
+@test "arguments replace the dependency set rather than filtering it, and fold case (C-E02-067)" {
+  export AZDO_STAGE_ID=Build
+  azdo_job_result_set Build dep_ok Succeeded
+  azdo_job_result_set Build dep_skipped Skipped
+
+  # The live rows this mirrors: over {Succeeded, Skipped} `succeeded()` is False, naming only the
+  # succeeded dependency is True *while the skipped one is still in the graph*, and naming both is
+  # False again.
+  run -1 azdo_status_job_succeeded dep_ok dep_skipped
+  run -0 azdo_status_job_succeeded dep_ok
+  run -1 azdo_status_job_succeeded dep_ok dep_skipped
+  run -0 azdo_status_job_succeeded DEP_OK
+
+  # Any-of, so the skipped member does not veto the succeeded one (C-E02-068).
+  run -0 azdo_status_job_succeededorfailed dep_ok dep_skipped
+  run -1 azdo_status_job_succeededorfailed dep_skipped
+}
+
+@test "a graph-scope status function reads results, not this job's steps (C-E12-043)" {
+  # The defect itself. `AZDO_RESULT_DIR` is exported by `run-job.sh` in a *child* process, so at
+  # the moment `run-stage.sh` evaluates `cond_stage`/`cond_job_*` it is unset — and the step-scope
+  # helpers then find no step results and answer `Succeeded` for everything. Both halves are
+  # asserted, because the regression is that the two agreed.
+  export AZDO_STAGE_ID=Build
+  unset AZDO_RESULT_DIR
+  azdo_job_result_set Build Failing Failed
+  azdo_stage_result_set Failing Failed
+
+  run -1 azdo_status_failed
+  run -0 azdo_status_succeeded
+
+  run -0 azdo_status_job_failed Failing
+  run -1 azdo_status_job_succeeded Failing
+  run -0 azdo_status_stage_failed Failing
+  run -1 azdo_status_stage_succeeded Failing
+}
+
+@test "canceled() at job/stage scope is run-level, and cancellation vetoes succeeded() (C-E02-062/067)" {
+  export AZDO_STAGE_ID=Build
+  azdo_job_result_set Build Dep Failed
+
+  run -1 azdo_status_run_canceled
+  run -0 azdo_status_job_failed Dep
+
+  printf '' >"$AZDO_STATE_DIR/.run-canceled"
+  run -0 azdo_status_run_canceled
+  # "Evaluates to False if the pipeline is canceled" for succeeded(), and succeededOrFailed() is
+  # "like always(), except it evaluates to False when the pipeline is canceled". `failed()` has no
+  # such carve-out on the service and gets none here.
+  run -1 azdo_status_job_succeeded
+  run -1 azdo_status_job_succeededorfailed Dep
+  run -1 azdo_status_stage_succeeded
+  run -0 azdo_status_job_failed Dep
+
+  # A *canceled dependency* is a different thing from a canceled run and must not be read as one.
+  rm -f "$AZDO_STATE_DIR/.run-canceled"
+  azdo_job_result_set Build Dep Canceled
+  run -1 azdo_status_run_canceled
+}
+
+@test "graph-scope status helpers reject a missing stage and a stray argument" {
+  run ! azdo_status_run_canceled extra
+  [ "$status" -eq 2 ]
+  [[ "$output" == *'usage: azdo_status_run_canceled'* ]]
+
+  unset AZDO_STAGE_ID
+  run ! azdo_status_job_succeeded Dep
+  [ "$status" -eq 2 ]
+  [[ "$output" == *'AZDO_STAGE_ID must be set'* ]]
+
+  run ! azdo__status_graph nonsense succeeded
+  [ "$status" -eq 2 ]
+  [[ "$output" == *'unknown status graph scope: nonsense'* ]]
+
+  export AZDO_STAGE_ID=Build
+  run ! azdo__status_graph job nonsense
+  [ "$status" -eq 2 ]
+  [[ "$output" == *'unknown status predicate: nonsense'* ]]
+}
+
+@test "the job-result readings the graph helpers inherit are semantics, not accidents (C-E02-072)" {
+  # Pinned because the graph helpers now depend on them. A *missing* job prints nothing, which
+  # reads as "not succeeded, not failed"; a job directory that exists with no recorded step folds
+  # to `Succeeded`, which is the running-job case and must not be confused with the first.
+  export AZDO_STAGE_ID=Build
+  mkdir -p "$(azdo_result_dir Build Empty)"
+
+  run -0 azdo_job_result Build Missing
+  [ -z "$output" ]
+  run -0 azdo_job_result Build Empty
+  [ "$output" = Succeeded ]
+
+  run -1 azdo_status_job_succeeded Missing
+  run -0 azdo_status_job_succeeded Empty
+}
+
 @test "--no-condition force-runs without resolving the compiled condition function" {
   local fail_file="$BATS_TEST_TMPDIR/fail-before-force.sh"
   local forced_file="$BATS_TEST_TMPDIR/forced.sh"

@@ -536,3 +536,89 @@ not patched here: what `succeeded()` means at each scope is a behaviour question
 grounding (at job scope it is about the job's dependencies, not about the steps of some other job),
 and guessing it is what BACKLOG rule 1 forbids.
   — measured 2026-09-21
+
+## E11-S04-T04 — `succeeded()`/`failed()` at stage and job scope
+
+**Grounding composition.** The behavior question this task asks — what a status function *ranges
+over* at job and stage scope — was already settled by E02 and did not need re-grounding: C-E02-064
+(arity 0..N at those scopes, 0 at step scope), C-E02-067 (all-of over the dependency set, arguments
+replace it, empty set True), C-E02-068 (the `succeededOrFailed` asymmetry), C-E02-069 (`Skipped`
+satisfies nothing), C-E02-070 (`failed` is any-of), C-E02-071 (`Abandoned`) and C-E02-072 (an
+unknown name is False, not an error) are **live-measured** in
+`research/experiments/E02-status/real-run.md`, and `packages/engine/src/expr/status.ts` is their
+implementation. What was missing was not knowledge but a *path*: the bash compiler emitted the
+step-scope helpers into all three slots. This task ports that table to bash rather than deciding it
+again. It reconciles with C-E06-039 by **not** carrying the step reading upward — the step scope
+still reads `Agent.JobStatus` through the accumulated step results and is byte-identical in the
+emitted output — and with C-E02-092..094 by reading the same `dependencies.*` store the
+`eq(dependencies.<x>.result, …)` form already compiles to, which is why that form is the control in
+both the L5 sample and the unit test.
+
+[C-E12-044] **The dependency set a stage or job status function ranges over is the **transitive**
+closure of `dependsOn`, not the direct list.** "By default, a pipeline job or stage runs if it
+doesn't depend on any other job or stage, or if all its dependencies completed and succeeded. **The
+dependency requirement applies to direct dependencies and to their indirect dependencies, computed
+recursively.**" The expressions page says the same thing in the function's own words — "evaluates
+to `True` if any previous job in the **dependency graph** failed" — where a direct-only reading
+would have said "any dependency". E11-S04-T04's Ground field describes the set as "the job's own
+`dependsOn` set"; per BACKLOG §3.3 the field is a starting point and the page is the authority, so
+the page wins and docs/06 §5 decision 88 records the divergence.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/conditions (`git_commit_id
+    1eeaa8de39f8b7130d8eb45ec907d9e47d6f5a32`, `ms.date: 2025-08-01`) §"Conditions a stage, job, or
+    step runs under" ·
+    https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions (same
+    `git_commit_id`, `ms.date: 2026-01-09`) §"Job status check functions" — checked 2026-09-21
+
+[C-E12-045] **`VERIFY`: the one cell where transitive and direct disagree is doc-derived, not
+measured.** `succeeded()` cannot tell the two apart — an indirectly failed dependency leaves the
+direct one `Skipped`, and `Skipped` satisfies no status function (C-E02-069) — so only `failed()`
+and `succeededOrFailed()` discriminate, and only in a chain at least three deep: with `a` failed,
+`b` dependsOn `a`, `c` dependsOn `b`, `failed()` on `c` is True under C-E02-044's reading and False
+under a direct-only one. The E02 status real-run measured a *single* level of dependency only, and
+settling this needs another agentless run in the test org, which is not available here (the oracle
+PAT expired ~2026-09-10 per E00-S03's runbook, and a lapsed PAT reports as 302 rather than 401 —
+C-E09-022). The cost of being wrong is one line: the set is emitted as literal words by
+`transitiveDependencies` in `packages/emit/src/entrypoints.ts`, so narrowing it is that function
+and no runtime change.
+  — open 2026-09-21
+
+[C-E12-046] **C-E12-043 is a fixed defect, and the fix's before/after was measured twice — once by
+accident, which is the stronger of the two.** The emitted stage and job condition slots now compile
+to `azdo_status_{stage,job}_{succeeded,failed,succeededorfailed}`, which read the stage/job result
+store over the node's dependency set, and `canceled()` to `azdo_status_run_canceled`, which reads
+run-level cancellation rather than folding dependency results (C-E02-062). The accidental
+measurement: L5 sample 04 was first run against a **stale CLI bundle** carrying the pre-fix emitter,
+and produced the defect exactly — stage `on_failure` (`condition: failed()`) was *skipped*, stage
+`defaulted` (no condition) *ran*, and the `eq(dependencies.one.result, 'Failed')` control ran
+correctly in the same log, proving the result store was already right and only the status functions
+were wrong. Rebuilt, the same sample inverts all three and passes. The deliberate measurement is
+`packages/emit/test/entrypoints.test.ts`, which generates one project from the fixed emitter and one
+whose `conditions.sh` has the graph-scope helper names rewritten back to the step-scope ones, and
+asserts the must-be-skipped stage runs only in the second.
+  — measured 2026-09-21; `fixtures/e2e/04-status-at-every-scope`;
+    `packages/runtime/lib/core.sh`; `packages/emit/src/entrypoints.ts`
+
+[C-E12-047] **Open finding, pre-existing and out of E11-S04-T04's scope: the golden tree covers
+*step scripts only*, and its committed digest is never positively asserted.** `emitGoldenTree`
+(`packages/emit/test/golden.ts`) walks the scaffold and records `emitStepScript` output — nothing
+from `emitEntrypoints`, so `run.sh`, `run-stage.sh`, `run-job.sh` and `conditions.sh` are outside
+every golden. That is why this task changed the compiled condition of every stage and job in the
+whole corpus and `node scripts/golden.ts --update` produced **no diff at all**. The second half is
+worse than the first: the per-entry tests assert determinism, shellcheck-cleanliness, and that a
+*mutated* tree differs from `treeDigest` — but nothing asserts that the **current** emission equals
+it, so a real change to `emitStepScript` would leave the goldens green too. Only `stepCount` and
+`finalYamlSha256` are positively compared. Filed as **E11-S04-T05**; not fixed here, because
+extending the tree to the entry points changes every committed digest and is a golden-harness task
+rather than a rider on a runtime fix.
+  — measured 2026-09-21; `packages/emit/test/golden.ts` L77-L96, L146-L152;
+    `packages/emit/test/golden-harness.test.ts` L114-L168
+
+[C-E12-048] **Open finding: a stage or job condition that *errors* is recorded `Skipped`, which
+conflates an error with a False.** `run-stage.sh` emits `if cond_job_x; then … else … Skipped; fi`,
+and a compiled condition's contract is 0 True / 1 False / **2 evaluation error** (C-E02-131), so
+exit 2 takes the else branch. On the service that node completes `Abandoned` — a sixth result the
+docs never list, which no status function except `always()` matches (C-E02-071) — and
+`azdo__valid_step_result` does not accept that state at all, so the local store has nowhere to put
+it. Adjacent to this task (it is the same `if` that now evaluates a real condition) but not in its
+Done list; filed as **E11-S04-T06**.
+  — measured 2026-09-21; `packages/emit/src/entrypoints.ts` `emitRunStage`

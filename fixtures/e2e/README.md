@@ -23,6 +23,14 @@ converts with `--offline-expand` and needs no credentials at all.
 | `01-shell-artifacts` | base | artifact publish/collect, `##vso[task.setvariable isOutput=true]`, `dependencies.*` across jobs |
 | `02-node-app` | node | a real toolchain — `npm install`, `npm test` — and an artifact built from its output |
 | `03-failure-and-conditions` | base | `continueOnError`, `condition: failed()`, and the **exit code** of a run that fails |
+| `04-status-at-every-scope` | base | `succeeded()`/`failed()` as **stage and job** conditions — a different implementation from the step one (C-E12-043..046) |
+
+The fourth pins the other half of the third. Sample 03 covers the **step** scope, where a status
+function reads the job's accumulated step results; sample 04 covers the stage and job scopes, where
+the same five spellings are evaluated against a node's *dependency graph* instead. Every leg carries
+an explicit `dependsOn`, because a stage's default dependency is the stage before it in the file
+(C-E04-123) — a default-condition stage written after the `failed()` one would be skipped because of
+*that* stage rather than the failing one, and the assertion would pass while proving nothing.
 
 The third is the one a green-only suite cannot replace: it asserts the *shape* of a failing run,
 including markers that must be **absent**, and pins the exit code — which `drift.ts` Phase B

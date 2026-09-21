@@ -95,10 +95,10 @@ source "$AZDO_EMU_LIB/runtime.sh"
 source "$AZDO_EMU_LIB/expr.sh"
 
 cond_stage() {
-  azdo_status_succeeded
+  azdo_status_stage_succeeded
 }
 cond_job_compile() {
-  azdo_status_succeeded
+  azdo_status_job_succeeded
 }
 cond_step_compile_010() {
   azdo_status_succeeded

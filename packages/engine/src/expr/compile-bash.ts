@@ -32,6 +32,18 @@ export interface BashCompileOptions {
   readonly dependencyKind?: 'job' | 'stage';
   /** Overrides for the `azdo_status_<name>` default (docs/02 §6). */
   readonly statusFunctions?: Readonly<Record<string, string>>;
+  /**
+   * Job/stage scope: the dependency names a no-argument `succeeded()`/`failed()`/
+   * `succeededOrFailed()` ranges over, spelled out as literal words (E11-S04-T04).
+   *
+   * The set belongs here rather than in the runtime because only the converter knows the graph —
+   * `run-stage.sh` has no reachable description of which stages a stage depends on. Arguments
+   * **replace** the set rather than filtering it (C-E02-067), so the argument form and this default
+   * compile to the same shape and the runtime helper needs no second entry point. `always()` and
+   * `canceled()` are excluded: both are 0-arity at job/stage scope too (C-E02-064), and neither
+   * reads the graph at all.
+   */
+  readonly statusDependencies?: readonly string[];
   /** Shell parameter holding the current stage, for same-stage `dependencies` output reads. */
   readonly stageVariable?: string;
 }
@@ -62,6 +74,9 @@ const STATUS_FUNCTIONS = new Set([
   'succeeded',
   'succeededorfailed',
 ]);
+
+/** The three status functions that range over a dependency set; `always`/`canceled` never do. */
+const GRAPH_ARGUMENT_STATUS = new Set(['failed', 'succeeded', 'succeededorfailed']);
 
 const COMPARISONS = new Set(['eq', 'ne', 'lt', 'le', 'gt', 'ge']);
 
@@ -328,7 +343,14 @@ function compilePredicate(node: ExprNode, options: BashCompileOptions): Predicat
 
   // Status functions: the names are read from the runtime results store (docs/02 §6, E06-S03).
   const command = options.statusFunctions?.[lower] ?? `azdo_status_${lower}`;
-  const names = args.map((arg) => compileBashValue(arg, options).code);
+  // Dependency-name arguments are ordinary expressions converted to String, not static names —
+  // `succeeded(variables['jobName'])` is accepted by the service (C-E02-064) — so they compile the
+  // same way every other operand does. With none written, a graph-scope call ranges over the whole
+  // dependency set, which the emitter supplies as literals (C-E02-067).
+  const names =
+    args.length === 0 && GRAPH_ARGUMENT_STATUS.has(lower)
+      ? (options.statusDependencies ?? []).map(word)
+      : args.map((arg) => compileBashValue(arg, options).code);
   return { code: [command, ...names].join(' '), list: false };
 }
 
