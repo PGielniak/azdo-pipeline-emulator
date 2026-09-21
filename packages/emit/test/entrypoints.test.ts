@@ -740,6 +740,29 @@ describe('one stage, many jobs: conditions and failures (C-E12-041/042, E11-S04-
       // The summary must list every step, including the ones after the failure (C-E12-035).
       expect(out).toContain('Never reached');
       expect(out).toContain('Result: Failed');
+
+      // Not aborting is not the same as not reporting: `run-job.sh` still exits with the failing
+      // step's status, which is what a developer running `--only-step NNN` by hand depends on.
+      let onlyStepStatus = 0;
+      try {
+        execFileSync('bash', ['stages/010-s/jobs/010-j/run-job.sh', '--only-step', '010'], {
+          cwd: tmp,
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            AZDO_RUN_DIR: join(tmp, '.work/run-1'),
+            AZDO_STATE_DIR: join(tmp, '.work/run-1/state'),
+            AZDO_WORKSPACE_DIR: join(tmp, '.work/run-1/workspace'),
+            AZDO_EMU_LIB: join(tmp, 'lib'),
+            AZDO_ARTIFACT_DIR: join(tmp, '.artifacts'),
+            AZDO_STAGE_DIR: join(tmp, 'stages/010-s'),
+            AZDO_STAGE_ID: 's',
+          },
+        });
+      } catch (error) {
+        onlyStepStatus = Number((error as { status?: number }).status ?? 0);
+      }
+      expect(onlyStepStatus).toBe(4);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

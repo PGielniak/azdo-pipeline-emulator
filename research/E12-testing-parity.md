@@ -517,3 +517,22 @@ The agent does the opposite: it continues, evaluates each remaining step's condi
 the same shape and the same cause as C-E12-035 one level up. The step's result is already in the
 store before `run_step` returns, so the discarded status carried nothing the run needed.
   — measured 2026-09-21; `packages/emit/src/entrypoints.ts`; `fixtures/e2e/03-failure-and-conditions`
+
+[C-E12-043] **Open finding, pre-existing and out of E11-S04-T03's scope: `succeeded()`, `failed()`
+and `canceled()` as *stage* or *job* conditions always evaluate as though everything succeeded.**
+The compiler emits `azdo_status_succeeded`/`azdo_status_failed` for these slots, and those helpers
+read `azdo__job_status_from_results`, which resolves a **step** result directory from
+`AZDO_RESULT_DIR`. That variable is exported by `run-job.sh`, in a child process — so at the moment
+`run-stage.sh` evaluates `cond_stage` and each `cond_job_*`, it is unset, and the helper finds no
+step results and answers `Succeeded`. Measured on a four-stage probe: with stage `one` failing,
+`condition: failed()` on stage `two` **skipped** it, a default-condition stage `four` **ran**, and
+the store-backed `eq(dependencies.one.result, 'Failed')` on stage `three` was correct. The same
+probe at job scope: a job with `dependsOn: failing` and the default condition ran. **Not caused by
+this task and not fixed by it** — `git diff` over E11-S04-T03 touches neither the runtime, the
+expression compiler, nor `emitRunStage`; it was simply never exercised, because no test or sample
+combined a *failing* stage or job with a *status-function* stage/job condition. The dependency-based
+form works and is what the L5 samples use, which is why sample 01 passes. **Filed as E11-S04-T04**,
+not patched here: what `succeeded()` means at each scope is a behaviour question needing its own
+grounding (at job scope it is about the job's dependencies, not about the steps of some other job),
+and guessing it is what BACKLOG rule 1 forbids.
+  — measured 2026-09-21

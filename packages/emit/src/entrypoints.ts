@@ -296,6 +296,11 @@ export function emitRunJob(job: ScaffoldJob, stage: ScaffoldStage): string {
     // is what E11-S04-T01 recorded as the open finding C-E12-036.
     'condition_flag=""',
     '[[ "$no_condition" != true ]] || condition_flag=--no-condition',
+    // C-E12-042: the sequencer must not *abort* on a failing step, but it must still *report* one.
+    // `run-stage.sh` ignores this status (it reads the result store), so the only consumer is a
+    // developer running `run-job.sh --only-step NNN` by hand — for whom exit 0 on a step that just
+    // failed is the wrong answer, and is what a bare `|| :` would have given them.
+    'job_status=0',
     '',
     `export AZDO_VAR_SCOPE=${shQuote(scope)}`,
     `AZDO_LOG_DIR="$AZDO_RUN_DIR/logs/${stage.name}/${job.name}"`,
@@ -338,13 +343,13 @@ export function emitRunJob(job: ScaffoldJob, stage: ScaffoldStage): string {
     lines.push(
       `id=${shQuote(id)}`,
       `if [[ -z "$from_step" || "$id" > "$from_step" || "$id" = "$from_step" ]] && [[ -z "$to_step" || "$id" < "$to_step" || "$id" = "$to_step" ]] && [[ -z "$only_step" || "$id" = "$only_step" ]]; then`,
-      // C-E12-042: `|| :` for the same reason the stage and job invocations carry one (C-E12-035),
-      // and found the same way. `run-job.sh` is `set -euo pipefail`, so a failing `run_step` aborted
-      // the sequencer and every later step simply never happened — missing from the summary rather
-      // than recorded. The agent does the opposite: it runs on, evaluates each remaining step's
-      // condition, and records `Skipped` for the ones whose condition is now false (C-E06-041/043),
-      // which is what makes `always()` and `failed()` steps work at all. The step's own result is
-      // already in the store; the exit status carried nothing the run needed.
+      // C-E12-042, and found the same way as C-E12-035 one level up. `run-job.sh` is
+      // `set -euo pipefail`, so a failing `run_step` aborted the sequencer and every later step
+      // simply never happened — missing from the summary rather than recorded. The agent does the
+      // opposite: it runs on, evaluates each remaining step's condition, and records `Skipped` for
+      // the ones whose condition is now false (C-E06-041/043), which is what makes `always()` and
+      // `failed()` steps work at all. `|| job_status=$?` rather than `|| :` so the sequencer still
+      // *reports* the failure it no longer aborts on.
       `  run_step --id ${shQuote(id)} --file "$AZDO_JOB_DIR/steps/${fileName}" --cond ${conditionFunctionName('step', id, job.job.referenceName)} \\`,
       // C-E12-032: the authored `name:` is what an output variable is referenced by
       // (`dependencies.<job>.outputs['<name>.<var>']`). It was never passed, so `AZDO_STEP_NAME`
@@ -354,11 +359,12 @@ export function emitRunJob(job: ScaffoldJob, stage: ScaffoldStage): string {
       `    --display ${shQuote(step.step.displayName)} --wd ${shQuote(wd)} \\`,
       `    --continue-on-error ${step.step.continueOnError} --fail-on-stderr ${step.step.failOnStderr} \\`,
       `    --retries ${step.step.retryCountOnTaskFailure} --timeout ${timeout} \\`,
-      '    ${condition_flag:+--no-condition} || :',
+      '    ${condition_flag:+--no-condition} || job_status=$?',
       'fi',
       '',
     );
   }
+  lines.push('exit "$job_status"', '');
   return lines.join('\n');
 }
 

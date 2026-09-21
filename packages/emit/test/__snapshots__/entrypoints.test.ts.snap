@@ -135,6 +135,7 @@ done
 
 condition_flag=""
 [[ "$no_condition" != true ]] || condition_flag=--no-condition
+job_status=0
 
 export AZDO_VAR_SCOPE='job-compile'
 AZDO_LOG_DIR="$AZDO_RUN_DIR/logs/010-build/010-compile-and-test"
@@ -165,7 +166,7 @@ if [[ -z "$from_step" || "$id" > "$from_step" || "$id" = "$from_step" ]] && [[ -
     --display 'Say hello' --wd '$(System.DefaultWorkingDirectory)' \\
     --continue-on-error false --fail-on-stderr false \\
     --retries 0 --timeout 3600 \\
-    \${condition_flag:+--no-condition} || :
+    \${condition_flag:+--no-condition} || job_status=$?
 fi
 
 id='020'
@@ -174,8 +175,10 @@ if [[ -z "$from_step" || "$id" > "$from_step" || "$id" = "$from_step" ]] && [[ -
     --display 'Fail loudly' --wd '$(System.DefaultWorkingDirectory)' \\
     --continue-on-error false --fail-on-stderr false \\
     --retries 0 --timeout 3600 \\
-    \${condition_flag:+--no-condition} || :
+    \${condition_flag:+--no-condition} || job_status=$?
 fi
+
+exit "$job_status"
 "
 `;
 
