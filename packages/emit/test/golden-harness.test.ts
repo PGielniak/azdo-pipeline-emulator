@@ -2,7 +2,7 @@
  * E11-S02-T02 — the runtime-project golden harness (L2).
  *
  * Pinned `finalYaml` in, emitted project out, digest compared against `fixtures/golden/MANIFEST.json`.
- * Four properties are asserted, and each guards a different way the harness or the emitter can rot:
+ * Five properties are asserted, and each guards a different way the harness or the emitter can rot:
  *
  *  1. **The golden matches** — the emitted tree's digest equals the *committed* one. This is the
  *     snapshot; everything else exists to keep it honest.
@@ -13,6 +13,10 @@
  *  4. **A mutation is caught** — a one-line injected emitter bug must not match the committed
  *     digest. Both sides of that comparison must not be computed live, or it degrades into an
  *     assertion that sha256 is injective.
+ *  5. **The entry points are in it** (E11-S04-T05, decision 89) — mutated one file kind at a time,
+ *     and with each of C-E12-036/038/041/042/043 replayed as the bytes the pre-fix emitter
+ *     produced. Until that task the tree was the step scripts alone, so every defect the L5 tier
+ *     found in generated bash was in a file no golden had ever hashed (C-E12-047/049/050).
  *
  * **Goldens are only valid when their oracle pair exists** (E11-S01-T02's rule, restated in this
  * task's Ground field), so the golden is bound to its expansion in three places at once: the
@@ -37,6 +41,7 @@ import {
   emitGoldenTree,
   freshFinalYaml,
   readGoldenManifest,
+  countSteps,
   treeDigest,
   updateGoldens,
   verifyGoldens,
@@ -58,9 +63,18 @@ const shellcheck =
 // added by E11-S04-T03 (decision 85) when `publish`/`download` became native — their `--path` is
 // the first macro a *step* script carries as an argument rather than inside a body. It is not a new
 // excuse: the project's own shipped `.shellcheckrc` has disabled all four since decision 62(d),
-// so the harness was stricter than the artifact it checks. Nothing else is excused; the guard below
+// so the harness was stricter than the artifact it checks.
+//
+// `SC2071` and `SC2329` join them in E11-S04-T05 (decision 89), and only because the tree now holds
+// the **entry points** — neither code can arise in a step script. `SC2071` is `run-job.sh`'s
+// `"$id" > "$from_step"`, a deliberate *string* compare of zero-padded `NNN` step numbers, and was
+// already in the shipped `.shellcheckrc`; `SC2329` is every `cond_*` function in `conditions.sh`,
+// which is sourced and called from `run-stage.sh` and `run-job.sh`, so "never invoked" is true only
+// of the file read alone. Two real defects were fixed rather than excused in the same task
+// (C-E12-049): an unguarded `source expr.sh` (SC1091) in all four entry points, and a dead
+// `AZDO_JOB_DIR` (SC2034) in a step-less deployment job. Nothing else is excused; the guard below
 // pins the list so a real finding cannot be silenced by appending a code.
-const BY_CONSTRUCTION_EXCLUDES = ['SC2005', 'SC2046', 'SC2016'];
+const BY_CONSTRUCTION_EXCLUDES = ['SC2005', 'SC2046', 'SC2016', 'SC2071', 'SC2329'];
 
 const corpus = await readCorpus(repoRoot);
 const oracleManifest = await readManifest(repoRoot);
@@ -102,11 +116,16 @@ describe('the committed goldens', () => {
     }
   });
 
-  it('record a step count that matches the tree the digest was taken over', async () => {
+  it('record a step count and a file count that match the tree the digest was taken over', async () => {
     const computed = await computeGoldens(repoRoot);
     for (const [name, row] of Object.entries(goldens.entries)) {
       expect(row.stepCount, name).toBe(computed.entries[name]?.stepCount);
       expect(row.stepCount, name).toBeGreaterThan(0);
+      expect(row.fileCount, name).toBe(computed.entries[name]?.fileCount);
+      // The two numbers must not be the same one wearing two names. Before E11-S04-T05 the tree
+      // *was* the step scripts, so `tree.size === stepCount` held by construction and asserted
+      // nothing; every entry now carries at least `run.sh` plus a stage's three files on top.
+      expect(row.fileCount, name).toBeGreaterThan(row.stepCount);
     }
   });
 });
@@ -123,7 +142,8 @@ describe.each(corpus.map((entry) => [entry.name] as const))('golden: %s', (name)
 
   it('emits shellcheck-clean scripts', () => {
     const tree = emitGoldenTree(finalYaml, `${name}.final.yml`);
-    expect(tree.size).toBe(committed.stepCount);
+    expect(tree.size).toBe(committed.fileCount);
+    expect(countSteps(tree)).toBe(committed.stepCount);
 
     const dir = tempDir();
     const files: string[] = [];
@@ -166,6 +186,115 @@ describe.each(corpus.map((entry) => [entry.name] as const))('golden: %s', (name)
     moved.set(`${first!}.moved`, tree.get(first!)!);
     expect(treeDigest(moved)).not.toBe(committed.treeDigest);
   });
+});
+
+describe('the entry points are in the tree, and the digest observes them (C-E12-047, E11-S04-T05)', () => {
+  // Until E11-S04-T05 the golden tree was `emitStepScript` output alone. The hole was not
+  // theoretical: **every** defect the L5 tier has found in generated bash lived in a file no golden
+  // had ever hashed — C-E12-036/038 and C-E12-042 in `run-job.sh`, C-E12-041 and C-E12-043 in
+  // `conditions.sh` — and five emitter changes shipped over them with the goldens green, because
+  // the goldens were not looking.
+  const KINDS = ['run.sh', 'run-stage.sh', 'run-job.sh', 'conditions.sh'] as const;
+
+  /** The tree for one entry, and the file of each kind inside it. */
+  function treeFor(name: string): Map<string, string> {
+    const finalYaml = readFileSync(join(repoRoot, oraclePairPath(name)), 'utf8');
+    return emitGoldenTree(finalYaml, `${name}.final.yml`);
+  }
+
+  function fileOfKind(tree: ReadonlyMap<string, string>, kind: string): string {
+    const match = [...tree.keys()].find((path) => path.endsWith(kind));
+    expect(match, `no ${kind} in the emitted tree`).toBeDefined();
+    return match!;
+  }
+
+  it.each(corpus.map((entry) => entry.name))('%s carries all four entry-point kinds', (name) => {
+    const tree = treeFor(name);
+    for (const kind of KINDS) expect(fileOfKind(tree, kind)).toBeTruthy();
+    // And the step scripts did not go missing when the entry points arrived.
+    expect(countSteps(tree)).toBe(goldens.entries[name]!.stepCount);
+  });
+
+  it.each(KINDS)('a one-line change to %s fails against the committed digest', (kind) => {
+    // The Done criterion, per file rather than once: a tree that contains a file is not the same
+    // as a digest that observes it, and `treeDigest` sorts keys — a bug in that ordering could
+    // drop a whole class of path while every other assertion stayed green.
+    for (const entry of corpus) {
+      const tree = treeFor(entry.name);
+      const target = fileOfKind(tree, kind);
+      const corrupted = new Map(tree);
+      corrupted.set(target, `${corrupted.get(target)!}echo injected-emitter-bug\n`);
+      expect(treeDigest(corrupted), `${entry.name} ${kind}`).not.toBe(
+        goldens.entries[entry.name]!.treeDigest,
+      );
+    }
+  });
+
+  // The Ground field's question — "would this golden have caught it?" — answered by replaying each
+  // defect as the bytes the pre-fix emitter actually produced. Every row asserts the mutation
+  // *applied* before asserting the digest moved: a rewrite that silently matched nothing would
+  // otherwise pass forever, and would start doing so the moment the emitter's wording changed.
+  const REPLAYS: readonly {
+    claim: string;
+    kind: (typeof KINDS)[number];
+    from: RegExp;
+    to: string;
+  }[] = [
+    {
+      // Step condition functions were not job-qualified, so a stage's jobs all contributed
+      // `cond_step_010` to one sourced file and the last definition won.
+      claim: 'C-E12-041 — colliding step condition functions in one stage',
+      kind: 'conditions.sh',
+      from: /cond_step_[a-z0-9-]+_(\d+)/g,
+      to: 'cond_step_$1',
+    },
+    {
+      // `${no_condition:+…}` tests for a non-empty value and the variable held the string `false`,
+      // so every step was force-run and no step condition was ever evaluated.
+      claim: 'C-E12-036/038 — every step passed --no-condition',
+      kind: 'run-job.sh',
+      from: /\$\{condition_flag:\+--no-condition\}/g,
+      to: '${no_condition:+--no-condition}',
+    },
+    {
+      // A failing step aborted the sequencer under `set -e`, so later steps were absent from the
+      // summary rather than recorded `Skipped`.
+      claim: 'C-E12-042 — the sequencer aborted on the first failure',
+      kind: 'run-job.sh',
+      from: / \|\| job_status=\$\?/g,
+      to: '',
+    },
+    {
+      // Stage and job conditions compiled to the step-scope status helpers, which read an
+      // AZDO_RESULT_DIR that is unset in `run-stage.sh`'s process.
+      claim: 'C-E12-043 — graph-scope status functions compiled to the step-scope helpers',
+      kind: 'conditions.sh',
+      from: /azdo_status_(?:stage|job)_succeeded/g,
+      to: 'azdo_status_succeeded',
+    },
+  ];
+
+  it.each(REPLAYS.map((replay) => [replay.claim, replay] as const))(
+    'would now catch %s',
+    (_claim, replay) => {
+      let observedSomewhere = false;
+      for (const entry of corpus) {
+        const tree = treeFor(entry.name);
+        const target = fileOfKind(tree, replay.kind);
+        const before = tree.get(target)!;
+        const after = before.replace(replay.from, replay.to);
+        if (after === before) continue; // this entry's shape does not exercise the defect
+        observedSomewhere = true;
+        const corrupted = new Map(tree);
+        corrupted.set(target, after);
+        expect(treeDigest(corrupted), `${entry.name} ${replay.kind}`).not.toBe(
+          goldens.entries[entry.name]!.treeDigest,
+        );
+      }
+      // The row must bite on at least one corpus entry, or it is an assertion about nothing.
+      expect(observedSomewhere, 'the replay matched no corpus entry').toBe(true);
+    },
+  );
 });
 
 describe('the --update gate (Ground: a golden without a fresh oracle pair is rejected)', () => {
@@ -359,13 +488,17 @@ describe('freshFinalYaml over the real corpus', () => {
 });
 
 describe('the shellcheck exclusions stay honest', () => {
-  it('excuses exactly the three macro false positives and nothing else', () => {
+  it('excuses exactly the sanctioned false positives and nothing else', () => {
     // Growing this list is how a golden suite stops finding bugs. A new code needs its own
-    // decision entry, not an append here — SC2016's is decision 85.
-    expect(BY_CONSTRUCTION_EXCLUDES).toEqual(['SC2005', 'SC2046', 'SC2016']);
+    // decision entry, not an append here — SC2016's is decision 85, SC2071's and SC2329's is 89.
+    expect(BY_CONSTRUCTION_EXCLUDES).toEqual(['SC2005', 'SC2046', 'SC2016', 'SC2071', 'SC2329']);
     // And every code here must already be sanctioned by the `.shellcheckrc` the generated project
-    // ships (decisions 61 and 62(d)), so the harness can never be *laxer* than the artifact.
-    const shipped = ['SC2005', 'SC2046', 'SC2016', 'SC2071'];
+    // ships (decisions 61, 62(d) and 89), so the harness can never be *laxer* than the artifact —
+    // nor stricter, which is the direction decision 85 had to correct. Restated rather than
+    // imported: `@azdo-emu/cli` depends on this package, so reading `SHELLCHECKRC` from here would
+    // invert that. `convert.test.ts` pins the same five against the real file, which is the half of
+    // the pair that can actually go stale.
+    const shipped = ['SC2005', 'SC2046', 'SC2016', 'SC2071', 'SC2329'];
     expect(BY_CONSTRUCTION_EXCLUDES.every((code) => shipped.includes(code))).toBe(true);
   });
 });

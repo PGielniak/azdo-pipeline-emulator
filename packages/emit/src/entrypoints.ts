@@ -262,6 +262,11 @@ export function emitConditions(conditions: readonly CompiledCondition[]): string
     'set -euo pipefail',
     '# shellcheck disable=SC1091  # resolved at run time via $AZDO_EMU_LIB',
     'source "$AZDO_EMU_LIB/runtime.sh"',
+    // A `# shellcheck disable=` directive applies to the **next command only**, so the one above
+    // covered `runtime.sh` and left this line reporting SC1091 in every generated entry point
+    // (C-E12-049). Invisible until E11-S04-T05 put the entry points in the golden tree, which is
+    // the only place anything shellchecks them.
+    '# shellcheck disable=SC1091',
     'source "$AZDO_EMU_LIB/expr.sh"',
     '',
     ...conditions.map((c) => `${c.fnName}() {\n  ${c.body}\n}`),
@@ -363,39 +368,57 @@ export function emitRunJob(job: ScaffoldJob, stage: ScaffoldStage): string {
     'set -euo pipefail',
     '# shellcheck disable=SC1091',
     'source "$AZDO_EMU_LIB/runtime.sh"',
+    // A `# shellcheck disable=` directive applies to the **next command only**, so the one above
+    // covered `runtime.sh` and left this line reporting SC1091 in every generated entry point
+    // (C-E12-049). Invisible until E11-S04-T05 put the entry points in the golden tree, which is
+    // the only place anything shellchecks them.
+    '# shellcheck disable=SC1091',
     'source "$AZDO_EMU_LIB/expr.sh"',
     '# shellcheck disable=SC1091',
     'source "$AZDO_STAGE_DIR/conditions.sh"',
     '',
-    'AZDO_JOB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"',
-    '',
-    '# Flags: --from-step NNN --to-step NNN --only-step NNN --no-condition',
-    'from_step="" to_step="" only_step="" no_condition=false',
-    'while (($# > 0)); do',
-    '  case "$1" in',
-    '    --from-step) from_step="$2"; shift 2 ;;',
-    '    --to-step) to_step="$2"; shift 2 ;;',
-    '    --only-step) only_step="$2"; shift 2 ;;',
-    '    --no-condition) no_condition=true; shift ;;',
-    '    *) printf \'unknown run-job option: %s\\n\' "$1" >&2; exit 2 ;;',
-    '  esac',
-    'done',
-    '',
-    // C-E12-036/C-E12-038: the flag is carried in its own variable because `${name:+word}` tests
-    // for a **non-empty** value, not for truth — and `no_condition=false` is a non-empty string.
-    // The earlier `${no_condition:+--no-condition}` therefore passed `--no-condition` on *every*
-    // step of *every* generated project, so no step condition was ever evaluated: a `checkout:
-    // none` step whose compiled condition is `False` ran and reported `Succeeded` instead of
-    // `Skipped`, and a `condition: failed()` step ran after a tolerated failure. That last symptom
-    // is what E11-S04-T01 recorded as the open finding C-E12-036.
-    'condition_flag=""',
-    '[[ "$no_condition" != true ]] || condition_flag=--no-condition',
-    // C-E12-042: the sequencer must not *abort* on a failing step, but it must still *report* one.
-    // `run-stage.sh` ignores this status (it reads the result store), so the only consumer is a
-    // developer running `run-job.sh --only-step NNN` by hand — for whom exit 0 on a step that just
-    // failed is the wrong answer, and is what a bare `|| :` would have given them.
-    'job_status=0',
-    '',
+    // Everything from here to the store setup exists to *run steps*, so a job with none gets none
+    // of it (C-E12-049). A step-less job — a deployment job, whose strategy hooks emit no step
+    // scripts — used to carry the job directory, the whole flag parser and both sequencer
+    // variables, none of which anything in that file could read: five SC2034 warnings and a dead
+    // `AZDO_JOB_DIR`, all of them true. What it keeps is the store setup below, and that is load
+    // bearing rather than tidy: `mkdir -p "$AZDO_RESULT_DIR"` is what makes `azdo_job_result` fold
+    // the job to `Succeeded` instead of returning empty, and an empty result reads as "not
+    // succeeded" to a dependent node's `succeeded()` (C-E02-072).
+    ...(job.steps.length === 0
+      ? []
+      : [
+          'AZDO_JOB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"',
+          '',
+          '# Flags: --from-step NNN --to-step NNN --only-step NNN --no-condition',
+          'from_step="" to_step="" only_step="" no_condition=false',
+          'while (($# > 0)); do',
+          '  case "$1" in',
+          '    --from-step) from_step="$2"; shift 2 ;;',
+          '    --to-step) to_step="$2"; shift 2 ;;',
+          '    --only-step) only_step="$2"; shift 2 ;;',
+          '    --no-condition) no_condition=true; shift ;;',
+          '    *) printf \'unknown run-job option: %s\\n\' "$1" >&2; exit 2 ;;',
+          '  esac',
+          'done',
+          '',
+          // C-E12-036/C-E12-038: the flag is carried in its own variable because `${name:+word}`
+          // tests for a **non-empty** value, not for truth — and `no_condition=false` is a
+          // non-empty string. The earlier `${no_condition:+--no-condition}` therefore passed
+          // `--no-condition` on *every* step of *every* generated project, so no step condition was
+          // ever evaluated: a `checkout: none` step whose compiled condition is `False` ran and
+          // reported `Succeeded` instead of `Skipped`, and a `condition: failed()` step ran after a
+          // tolerated failure. That last symptom is what E11-S04-T01 recorded as C-E12-036.
+          'condition_flag=""',
+          '[[ "$no_condition" != true ]] || condition_flag=--no-condition',
+          // C-E12-042: the sequencer must not *abort* on a failing step, but it must still
+          // *report* one. `run-stage.sh` ignores this status (it reads the result store), so the
+          // only consumer is a developer running `run-job.sh --only-step NNN` by hand — for whom
+          // exit 0 on a step that just failed is the wrong answer, and is what a bare `|| :` would
+          // have given them.
+          'job_status=0',
+          '',
+        ]),
     `export AZDO_VAR_SCOPE=${shQuote(scope)}`,
     `AZDO_LOG_DIR="$AZDO_RUN_DIR/logs/${stage.name}/${job.name}"`,
     `AZDO_RESULT_DIR="$(azdo_result_dir ${shQuote(stage.stage.id)} ${shQuote(job.job.referenceName)})"`,
@@ -470,6 +493,11 @@ export function emitRunStage(stage: ScaffoldStage, jobOrder: readonly string[]):
     'set -euo pipefail',
     '# shellcheck disable=SC1091',
     'source "$AZDO_EMU_LIB/runtime.sh"',
+    // A `# shellcheck disable=` directive applies to the **next command only**, so the one above
+    // covered `runtime.sh` and left this line reporting SC1091 in every generated entry point
+    // (C-E12-049). Invisible until E11-S04-T05 put the entry points in the golden tree, which is
+    // the only place anything shellchecks them.
+    '# shellcheck disable=SC1091',
     'source "$AZDO_EMU_LIB/expr.sh"',
     '# shellcheck disable=SC1091',
     'source "$AZDO_STAGE_DIR/conditions.sh"',
@@ -536,6 +564,11 @@ export function emitRunScript(
     'mkdir -p "$AZDO_ARTIFACT_DIR"',
     '# shellcheck disable=SC1091',
     'source "$AZDO_EMU_LIB/runtime.sh"',
+    // A `# shellcheck disable=` directive applies to the **next command only**, so the one above
+    // covered `runtime.sh` and left this line reporting SC1091 in every generated entry point
+    // (C-E12-049). Invisible until E11-S04-T05 put the entry points in the golden tree, which is
+    // the only place anything shellchecks them.
+    '# shellcheck disable=SC1091',
     'source "$AZDO_EMU_LIB/expr.sh"',
     '',
     '# Exact `.env` spelling → variable-store name map (decision 67).',

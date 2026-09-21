@@ -10,6 +10,7 @@ export AZDO_ARTIFACT_DIR="$PROJECT_DIR/.artifacts"
 mkdir -p "$AZDO_ARTIFACT_DIR"
 # shellcheck disable=SC1091
 source "$AZDO_EMU_LIB/runtime.sh"
+# shellcheck disable=SC1091
 source "$AZDO_EMU_LIB/expr.sh"
 
 # Exact \`.env\` spelling → variable-store name map (decision 67).
@@ -92,6 +93,7 @@ exports[`emitEntrypoints > emits run.sh, run-stage.sh, run-job.sh and conditions
 set -euo pipefail
 # shellcheck disable=SC1091  # resolved at run time via $AZDO_EMU_LIB
 source "$AZDO_EMU_LIB/runtime.sh"
+# shellcheck disable=SC1091
 source "$AZDO_EMU_LIB/expr.sh"
 
 cond_stage() {
@@ -115,6 +117,7 @@ exports[`emitEntrypoints > emits run.sh, run-stage.sh, run-job.sh and conditions
 set -euo pipefail
 # shellcheck disable=SC1091
 source "$AZDO_EMU_LIB/runtime.sh"
+# shellcheck disable=SC1091
 source "$AZDO_EMU_LIB/expr.sh"
 # shellcheck disable=SC1091
 source "$AZDO_STAGE_DIR/conditions.sh"
@@ -188,6 +191,7 @@ exports[`emitEntrypoints > emits run.sh, run-stage.sh, run-job.sh and conditions
 set -euo pipefail
 # shellcheck disable=SC1091
 source "$AZDO_EMU_LIB/runtime.sh"
+# shellcheck disable=SC1091
 source "$AZDO_EMU_LIB/expr.sh"
 # shellcheck disable=SC1091
 source "$AZDO_STAGE_DIR/conditions.sh"

@@ -599,19 +599,30 @@ asserts the must-be-skipped stage runs only in the second.
     `packages/runtime/lib/core.sh`; `packages/emit/src/entrypoints.ts`
 
 [C-E12-047] **Open finding, pre-existing and out of E11-S04-T04's scope: the golden tree covers
-*step scripts only*, and its committed digest is never positively asserted.** `emitGoldenTree`
-(`packages/emit/test/golden.ts`) walks the scaffold and records `emitStepScript` output — nothing
-from `emitEntrypoints`, so `run.sh`, `run-stage.sh`, `run-job.sh` and `conditions.sh` are outside
-every golden. That is why this task changed the compiled condition of every stage and job in the
-whole corpus and `node scripts/golden.ts --update` produced **no diff at all**. The second half is
-worse than the first: the per-entry tests assert determinism, shellcheck-cleanliness, and that a
-*mutated* tree differs from `treeDigest` — but nothing asserts that the **current** emission equals
-it, so a real change to `emitStepScript` would leave the goldens green too. Only `stepCount` and
-`finalYamlSha256` are positively compared. Filed as **E11-S04-T05**; not fixed here, because
-extending the tree to the entry points changes every committed digest and is a golden-harness task
-rather than a rider on a runtime fix.
-  — measured 2026-09-21; `packages/emit/test/golden.ts` L77-L96, L146-L152;
-    `packages/emit/test/golden-harness.test.ts` L114-L168
+*step scripts only*.** `emitGoldenTree` (`packages/emit/test/golden.ts`) walks the scaffold and
+records `emitStepScript` output — nothing from `emitEntrypoints`, so `run.sh`, `run-stage.sh`,
+`run-job.sh` and `conditions.sh` are outside every golden. That is why E11-S04-T04 changed the
+compiled condition of every stage and job in the whole corpus and `node scripts/golden.ts --update`
+produced **no diff at all**. Every defect the L5 tier has found in generated bash — C-E12-036/038
+(`run-job.sh`), C-E12-041/043 (`conditions.sh`), C-E12-042 (`run-job.sh`) — lived in a file no
+golden has ever hashed, which is why five unit-tested, snapshot-pinned, golden-covered emitter
+changes shipped over them. Filed as **E11-S04-T05**; not fixed in T04, because extending the tree
+changes every committed digest and is a golden-harness task rather than a rider on a runtime fix.
+  — measured 2026-09-21; `packages/emit/test/golden.ts` L77-L96, L146-L152
+
+  > **Retracted half (2026-09-21, E11-S04-T05).** As first written this claim had a second half —
+  > "and its committed digest is never positively asserted", on the reading that the per-entry tests
+  > only ever compare a *mutated* tree against `treeDigest`. **That half is false and is withdrawn.**
+  > `packages/emit/test/golden-harness.test.ts` "match what the emitter produces today" calls
+  > `verifyGoldens`, which compares `finalYamlSha256`, `stepCount` **and** `treeDigest` for every
+  > entry; replacing one committed digest with zeroes fails exactly that test and nothing else.
+  > **How it was got wrong is the reusable part:** the original reading came from grepping the test
+  > file for `treeDigest`, and the comparison does not appear there — it happens inside `golden.ts`,
+  > behind a call whose test title ("match what the emitter produces today") contains none of the
+  > words the grep used. A grep over a test file cannot see an assertion made by a helper. The
+  > surviving half was never in doubt and rests on different evidence: an `--update` run that
+  > produced no diff. The false half is quoted in commit `0dbae2b` and was corrected in PR #108's
+  > body before merge.
 
 [C-E12-048] **Open finding: a stage or job condition that *errors* is recorded `Skipped`, which
 conflates an error with a False.** `run-stage.sh` emits `if cond_job_x; then … else … Skipped; fi`,
@@ -622,3 +633,54 @@ docs never list, which no status function except `always()` matches (C-E02-071) 
 it. Adjacent to this task (it is the same `if` that now evaluates a real condition) but not in its
 Done list; filed as **E11-S04-T06**.
   — measured 2026-09-21; `packages/emit/src/entrypoints.ts` `emitRunStage`
+
+## E11-S04-T05 — putting the entry points in the golden tree
+
+[C-E12-049] **The generated entry points were never shellchecked by anything, and were carrying
+four findings — two of them real.** `packages/emit/test/golden-harness.test.ts` runs shellcheck over
+the golden tree, and until E11-S04-T05 that tree was the step scripts alone (C-E12-047); the L5
+container runs the scripts but does not lint them, and `pnpm lint:shell` covers
+`packages/runtime/lib` and its test helpers, not emitter *output*. So `run.sh`, `run-stage.sh`,
+`run-job.sh` and `conditions.sh` had never been linted in any tier, despite CLAUDE.md making
+shellcheck-clean a hard requirement for emitted script templates. Extending the tree surfaced all
+four at once:
+
+  - **`SC1091`, in all four entry points — a real defect, fixed.** Every entry point sources two
+    runtime files, and a `# shellcheck disable=` directive applies to the **next command only**. The
+    one the emitter wrote covered `source "$AZDO_EMU_LIB/runtime.sh"` and left
+    `source "$AZDO_EMU_LIB/expr.sh"` reporting on the line below it, in every generated project
+    since E05-S01-T03. The intent was already in the code; only its scope was wrong.
+  - **`SC2034`, in a step-less job — a real defect, fixed, and larger than it first read.** A
+    deployment job emits no step scripts, and its `run-job.sh` still carried `AZDO_JOB_DIR`, the
+    whole `--from-step`/`--to-step`/`--only-step`/`--no-condition` parser, `condition_flag` and
+    `job_status` — five unused variables and a dead directory, none of which anything in that file
+    could read. The sequencer block is now emitted only for jobs that have steps. **What it must
+    keep is `mkdir -p "$AZDO_RESULT_DIR"`**, and that is load-bearing rather than tidy: it is what
+    makes `azdo_job_result` fold the job to `Succeeded` rather than return empty, and an empty
+    result reads as "not succeeded" to a dependent node's `succeeded()` (C-E02-072, C-E12-046).
+  - **`SC2071` — by construction, already sanctioned.** `run-job.sh`'s `"$id" > "$from_step"` is a
+    deliberate *string* compare of zero-padded `NNN` step numbers; `-gt` would read `080` as octal.
+    It has been in the generated project's shipped `.shellcheckrc` since decision 62(d) and was
+    missing only from the harness's list, the same direction decision 85(b) had to correct.
+  - **`SC2329` — by construction, newly sanctioned.** Every `cond_*` function in a stage's
+    `conditions.sh` is invoked from `run-stage.sh` or `run-job.sh`, which source the file; "never
+    invoked" is true only of the file read alone. Added to **both** the harness list and the shipped
+    `.shellcheckrc`, so a user linting their own generated project sees what our gate sees
+    (decision 89).
+
+  Neither by-construction code can arise in a step script, which is why neither appeared before.
+  — measured 2026-09-21; `packages/emit/src/entrypoints.ts`; `packages/cli/src/convert/convert.ts`;
+    `packages/emit/test/golden-harness.test.ts`
+
+[C-E12-050] **The extended golden tree is shown to catch each defect the old one missed, by
+replaying the bytes the pre-fix emitter produced.** "Would this golden have caught it?" is answered
+per claim rather than asserted from file coverage, because coverage of a *file* is not coverage of
+a *defect*: C-E12-041 is a **collision** between two `cond_step_*` definitions in one
+`conditions.sh`, and a digest that merely hashed the file could in principle have been blind to the
+rename that fixes it. Four replays run against every corpus entry — C-E12-041 (un-qualify the step
+condition function names), C-E12-036/038 (`${condition_flag:+…}` → `${no_condition:+…}`),
+C-E12-042 (drop `|| job_status=$?`) and C-E12-043 (graph-scope status helpers → step-scope) — and
+each asserts the rewrite **applied** before asserting the digest moved, so a replay that silently
+stopped matching would fail rather than pass forever. Each entry-point kind is also mutated
+one line at a time, so a tree that contains a file but whose digest does not observe it would fail.
+  — measured 2026-09-21; `packages/emit/test/golden-harness.test.ts`
