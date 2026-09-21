@@ -320,15 +320,32 @@ Types: Null, Boolean, Number (double), String, Version, Object/Array. Implement 
 **Status functions (grounded 2026-08-12, C-E02-060..072).** They are the only family with **two implementations behind one spelling**, and the split is by *slot*, not by preference. A **step** condition is evaluated by the agent, where all five take exactly zero arguments; four read `Agent.JobStatus`, defaulting to `Succeeded` when unset, while `always()` returns literal True without reading context (which is why `succeeded()` is true on a job's first step, and why an absent `condition:` means `succeeded()`). `canceled()` there is the *job's* status, not run-level cancellation. A **job/stage** condition is evaluated by the orchestrator, where `always`/`canceled` stay 0-arity but `succeeded`/`failed`/`succeededOrFailed` take 0..N dependency names — ordinary expressions converted to String, matched case-insensitively, never validated against the graph (an unknown name is simply False, not an error). Arguments **replace** the dependency set rather than filtering it. Three measured rules do not follow from the docs: `succeeded()` is all-of while `failed()` is any-of; `succeededOrFailed()` is any-of **except over an empty dependency set, where it is True**, so Learn's "evaluates to `True` regardless" and "like `always()`, except … when the pipeline is canceled" are both wrong — it is also False when every dependency was skipped, which is exactly why Learn's own entry recommends `not(canceled())` there; and a job whose *condition itself* errors completes as **`Abandoned`**, a sixth result Learn never lists, which no status function except `always()` matches. The family exists in the condition table only: `${{ always() }}`, `${{ if succeeded() }}` and even `$[ always() ]` in a variable are all rejected `Unrecognized value`, so "conditions, but not variable definitions" is enforced by the service, not advice. Implementation: `packages/engine/src/expr/status.ts` (scope-tagged `StatusContext`, scope-dependent signature table); evidence: `research/experiments/E02-status/` — 54 live preview calls for legality/arity plus one real agentless run for the truth tables, because preview never *evaluates* a status function.
 - Function list is re-synced against the expressions doc at implementation time; unknown function = convert error naming the doc.
 
+**The shell backend carries that split too (added 2026-09-21, E11-S04-T04; C-E12-043..046).** Until then it did not, and the consequence was total: a stage or job `condition:` compiled to the *step*-scope helpers, which fold this job's step results through `AZDO_RESULT_DIR` — a variable `run-job.sh` exports in a child process, so at the moment `run-stage.sh` evaluates `cond_stage` and each `cond_job_*` it is unset, no results are found, and every status function at those two scopes was the constant `Succeeded`. A `condition: failed()` stage after a failed one was skipped; a default-condition stage after a failed one ran. Now each slot compiles to its own family — `azdo_status_{stage,job}_{succeeded,failed,succeededorfailed}` over the node's dependency set, `azdo_status_run_canceled` for `canceled()`, and `azdo_status_always` unchanged at every scope — and the step slot is byte-identical to what it emitted before. The **dependency set is spelled out at convert time as literal words**, because only the converter knows the graph: `run-stage.sh` has no reachable description of which stages a stage depends on. It is the **transitive** closure of `dependsOn` (C-E12-044), and arguments the author wrote replace it rather than filter it, which is why one emitted shape serves both forms. `canceled()` reads a `state/.run-canceled` marker rather than folding dependency results: at job/stage scope it is run-level cancellation, and the local runner has no cancellation path today, so it is False in every local run (docs/06 §5 decision 87).
+
 ### Compilation examples (shell backend)
 
 ```yaml
 condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
 ```
 ```bash
-# generated into the job's conditions.sh
-cond_step_040() {
+# generated into the stage's conditions.sh; the function name carries the job as well as the
+# number, because conditions.sh is per *stage* and step numbers restart per job (C-E12-041).
+cond_step_build_040() {
   azdo_status_succeeded && azdo_expr_cmp eq str "$(azdo_var 'Build.SourceBranch')" str refs/heads/main
+}
+```
+
+The same condition in a **stage** slot compiles to a different first term — the dependency graph is
+compiled in, and the helper reads the stage result store rather than this job's steps:
+
+```yaml
+- stage: deploy
+  dependsOn: [build, test]
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+```
+```bash
+cond_stage() {
+  azdo_status_stage_succeeded build test && azdo_expr_cmp eq str "$(azdo_var 'Build.SourceBranch')" str refs/heads/main
 }
 ```
 

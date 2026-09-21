@@ -22,7 +22,7 @@ import { describe, expect, it } from 'vitest';
 import { buildPipeline, parsePipelineYaml, type Diagnostic } from '@azdo-emu/engine';
 import { scaffold } from '../src/scaffold.js';
 import { emitStepScript } from '../src/step.js';
-import { compileCondition, emitEntrypoints } from '../src/entrypoints.js';
+import { compileCondition, emitEntrypoints, transitiveDependencies } from '../src/entrypoints.js';
 
 const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
 const shellcheck =
@@ -763,6 +763,312 @@ describe('one stage, many jobs: conditions and failures (C-E12-041/042, E11-S04-
         onlyStepStatus = Number((error as { status?: number }).status ?? 0);
       }
       expect(onlyStepStatus).toBe(4);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 120_000);
+});
+
+describe('stage- and job-scope status functions (C-E12-043, E11-S04-T04)', () => {
+  // `succeeded()` in a stage or job slot used to compile to the *step*-scope helper, which folds
+  // this job's step results through `AZDO_RESULT_DIR` — a variable `run-job.sh` exports in a child
+  // process. At the moment `run-stage.sh` evaluates a condition it is unset, so every status
+  // function at those two scopes answered `Succeeded`, including the implicit default that decides
+  // whether a stage runs at all.
+  const step = (script: string, displayName: string): string[] => [
+    '    - task: CmdLine@2',
+    `      displayName: ${displayName}`,
+    '      inputs:',
+    `        script: ${script}`,
+  ];
+
+  const CHAIN = [
+    'stages:',
+    '- stage: one',
+    '  jobs:',
+    '  - job: j',
+    '    steps:',
+    ...step('echo one', 'One'),
+    '- stage: two',
+    '  dependsOn: one',
+    '  jobs:',
+    '  - job: j',
+    '    steps:',
+    ...step('echo two', 'Two'),
+    '- stage: three',
+    '  dependsOn: two',
+    '  jobs:',
+    '  - job: j',
+    '    steps:',
+    ...step('echo three', 'Three'),
+  ].join('\n');
+
+  function conditionsFor(yaml: string, stageDir: string): string {
+    const { pipeline, diagnostics } = buildPipeline(
+      parsePipelineYaml(yaml, 'pipeline.expanded.yml'),
+    );
+    expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+    const files = emitEntrypoints(pipeline!, scaffold(pipeline!), 'pipeline.expanded.yml', []);
+    return files.get(`stages/${stageDir}/conditions.sh`)!;
+  }
+
+  it('compiles the implicit default to the graph-scope helper, not the step one (C-E02-063)', () => {
+    // The default condition **is** `succeeded()` (the agent's parser is
+    // `CreateTree(condition, …) ?? new SucceededNode()`), and at stage scope that call reads the
+    // dependency graph. Short-circuiting it is what made a default-condition stage after a failed
+    // one run anyway.
+    const conditions = conditionsFor(CHAIN, '020-two');
+    expect(conditions).toContain('cond_stage() {\n  azdo_status_stage_succeeded one\n}');
+    // A job with no `dependsOn` has an empty set, which is True — the parallel default (C-E04-124).
+    expect(conditions).toContain('cond_job_j() {\n  azdo_status_job_succeeded\n}');
+    // The step slot is untouched: same helper, same body as before this task.
+    expect(conditions).toContain('cond_step_j_010() {\n  azdo_status_succeeded\n}');
+  });
+
+  it('ranges over the transitive dependency graph, not the direct dependsOn set (C-E12-044)', () => {
+    // "The dependency requirement applies to direct dependencies and to their indirect
+    // dependencies, computed recursively" — stage three names `two` only, and gets both.
+    expect(conditionsFor(CHAIN, '030-three')).toContain(
+      'cond_stage() {\n  azdo_status_stage_succeeded one two\n}',
+    );
+  });
+
+  it('gives always() and canceled() no dependency names, and canceled() run-level scope (C-E02-062/064)', () => {
+    const yaml = CHAIN.replace(
+      '- stage: three\n  dependsOn: two',
+      '- stage: three\n  dependsOn: two\n  condition: always()',
+    );
+    expect(conditionsFor(yaml, '030-three')).toContain('cond_stage() {\n  azdo_status_always\n}');
+    const canceled = CHAIN.replace(
+      '- stage: three\n  dependsOn: two',
+      '- stage: three\n  dependsOn: two\n  condition: canceled()',
+    );
+    // Not a fold over dependency results: at job/stage scope this reads whether the *run* was
+    // canceled, and the step-scope spelling reading the job's own status is the asymmetry.
+    expect(conditionsFor(canceled, '030-three')).toContain(
+      'cond_stage() {\n  azdo_status_run_canceled\n}',
+    );
+  });
+
+  it('lets written arguments replace the default set (C-E02-067)', () => {
+    const yaml = CHAIN.replace(
+      '- stage: three\n  dependsOn: two',
+      "- stage: three\n  dependsOn: two\n  condition: succeeded('one')",
+    );
+    expect(conditionsFor(yaml, '030-three')).toContain(
+      'cond_stage() {\n  azdo_status_stage_succeeded one\n}',
+    );
+  });
+
+  it('computes a transitive set in authored order and tolerates a diamond', () => {
+    const nodes = [
+      { id: 'a', dependsOn: [] },
+      { id: 'b', dependsOn: ['a'] },
+      { id: 'c', dependsOn: ['a'] },
+      { id: 'd', dependsOn: ['b', 'c'] },
+    ];
+    expect(transitiveDependencies(nodes, 'd')).toEqual(['a', 'b', 'c']);
+    expect(transitiveDependencies(nodes, 'a')).toEqual([]);
+    expect(transitiveDependencies(nodes, 'unknown')).toEqual([]);
+  });
+
+  const FAILING_GRAPH = [
+    'stages:',
+    '- stage: one',
+    '  jobs:',
+    '  - job: j',
+    '    steps:',
+    ...step('exit 4', 'Fail for real'),
+    // Three readings of the same failed stage: the one that should run, the one that should be
+    // skipped, and the dependency-result form that already worked before this task.
+    '- stage: on_failure',
+    '  dependsOn: one',
+    '  condition: failed()',
+    '  jobs:',
+    '  - job: j',
+    '    steps:',
+    ...step('echo MARK on-failure-stage', 'Runs'),
+    '- stage: defaulted',
+    '  dependsOn: one',
+    '  jobs:',
+    '  - job: j',
+    '    steps:',
+    ...step('echo MARK must-not-run-stage', 'Skipped'),
+    '- stage: by_result',
+    '  dependsOn: one',
+    "  condition: eq(dependencies.one.result, 'Failed')",
+    '  jobs:',
+    '  - job: j',
+    '    steps:',
+    ...step('echo MARK by-result-stage', 'Runs'),
+    // `dependsOn: []` detaches this stage from the sequential default (C-E04-125) so the job-scope
+    // half is not decided by stage `one` before a single job condition is evaluated.
+    '- stage: job_scope',
+    '  dependsOn: []',
+    '  jobs:',
+    '  - job: failing',
+    '    steps:',
+    ...step('exit 4', 'Fail for real'),
+    '  - job: on_failure',
+    '    dependsOn: failing',
+    '    condition: failed()',
+    '    steps:',
+    ...step('echo MARK on-failure-job', 'Runs'),
+    '  - job: defaulted',
+    '    dependsOn: failing',
+    '    steps:',
+    ...step('echo MARK must-not-run-job', 'Skipped'),
+    '  - job: by_result',
+    '    dependsOn: failing',
+    "    condition: eq(dependencies.failing.result, 'Failed')",
+    '    steps:',
+    ...step('echo MARK by-result-job', 'Runs'),
+  ].join('\n');
+
+  it('pins all three directions at both scopes against a real failing run (C-E12-043)', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'azdo-emit-status-'));
+    try {
+      generateProject(tmp, FAILING_GRAPH);
+      let out = '';
+      try {
+        out = execFileSync('bash', ['run.sh'], { cwd: tmp, encoding: 'utf8' });
+      } catch (error) {
+        out = (error as { stdout?: string }).stdout ?? '';
+      }
+      const results = join(tmp, '.work/run-1/state/results');
+      const read = (path: string): string => readFileSync(join(results, path), 'utf8').trim();
+
+      // Stage scope. A one-sided fix — everything False — would pass only the middle assertion,
+      // so all three are here.
+      expect(read('on_failure/j/010')).toBe('Succeeded');
+      expect(read('defaulted/.stage-result')).toBe('Skipped');
+      expect(read('by_result/j/010')).toBe('Succeeded');
+      expect(out).toContain('MARK on-failure-stage');
+      expect(out).toContain('MARK by-result-stage');
+      expect(out).not.toContain('MARK must-not-run-stage');
+
+      // Job scope, inside one stage, against a failed sibling job.
+      expect(read('job_scope/on_failure/010')).toBe('Succeeded');
+      expect(read('job_scope/defaulted/.job-result')).toBe('Skipped');
+      expect(read('job_scope/by_result/010')).toBe('Succeeded');
+      expect(out).toContain('MARK on-failure-job');
+      expect(out).toContain('MARK by-result-job');
+      expect(out).not.toContain('MARK must-not-run-job');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 120_000);
+});
+
+describe('a condition that errors abandons its node (C-E12-048, E11-S04-T06)', () => {
+  // A compiled condition is 0 True / 1 False / **2 evaluation error**, and `if cond_stage` sent 1
+  // and 2 down the same branch — so a stage whose condition *errored* was recorded `Skipped`,
+  // byte-identical to one the author had conditioned out. On the service that node completes
+  // `Abandoned`, a sixth result no status function except `always()` matches (C-E02-071).
+  //
+  // `gt(1, 'not-a-number')` is the erroring condition the live measurement itself used: `gt`
+  // errors rather than returning False on an unconvertible operand (C-E02-022).
+  const step = (script: string, displayName: string): string[] => [
+    '    - task: CmdLine@2',
+    `      displayName: ${displayName}`,
+    '      inputs:',
+    `        script: ${script}`,
+  ];
+
+  const ERRORING = [
+    'stages:',
+    // The discriminating pair: same shape, same empty dependency set, conditions that differ only
+    // in erroring vs. evaluating False.
+    '- stage: bad_stage',
+    '  dependsOn: []',
+    "  condition: gt(1, 'not-a-number')",
+    '  jobs:',
+    '  - job: j',
+    '    steps:',
+    ...step('echo MARK abandoned-stage-ran', 'Must not run'),
+    '- stage: skipped_stage',
+    '  dependsOn: []',
+    '  condition: false',
+    '  jobs:',
+    '  - job: j',
+    '    steps:',
+    ...step('echo MARK skipped-stage-ran', 'Must not run'),
+    // What an abandoned stage looks like to whatever depends on it (C-E02-071): nothing catches it
+    // but `always()`, so the defaulted stage must be skipped and the `always()` one must run.
+    '- stage: after_bad',
+    '  dependsOn: bad_stage',
+    '  jobs:',
+    '  - job: j',
+    '    steps:',
+    ...step('echo MARK after-bad-defaulted-ran', 'Must not run'),
+    '- stage: after_bad_always',
+    '  dependsOn: bad_stage',
+    '  condition: always()',
+    '  jobs:',
+    '  - job: j',
+    '    steps:',
+    ...step('echo MARK after-bad-always-ran', 'Runs'),
+    // Job scope, detached from the sequential stage default so the stage condition decides nothing.
+    '- stage: job_scope',
+    '  dependsOn: []',
+    '  jobs:',
+    '  - job: bad',
+    "    condition: gt(1, 'not-a-number')",
+    '    steps:',
+    ...step('echo MARK abandoned-job-ran', 'Must not run'),
+    '  - job: skipped',
+    '    dependsOn: []',
+    '    condition: false',
+    '    steps:',
+    ...step('echo MARK skipped-job-ran', 'Must not run'),
+    '  - job: ok',
+    '    dependsOn: []',
+    '    steps:',
+    ...step('echo MARK ok-job-ran', 'Runs'),
+  ].join('\n');
+
+  it('records Abandoned, not Skipped, at stage and job scope against a real run', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'azdo-emit-abandon-'));
+    try {
+      generateProject(tmp, ERRORING);
+      let out = '';
+      try {
+        out = execFileSync('bash', ['run.sh'], { cwd: tmp, encoding: 'utf8' });
+      } catch (error) {
+        out = (error as { stdout?: string }).stdout ?? '';
+      }
+      const results = join(tmp, '.work/run-1/state/results');
+      const read = (path: string): string => readFileSync(join(results, path), 'utf8').trim();
+
+      // The whole point of the task: these two were the same string before it.
+      expect(read('bad_stage/.stage-result')).toBe('Abandoned');
+      expect(read('skipped_stage/.stage-result')).toBe('Skipped');
+      // A stage that never ran marks its jobs too, and with its own result.
+      expect(read('bad_stage/j/.job-result')).toBe('Abandoned');
+
+      // Job scope, inside a stage that did run — so this is the fold, not the stage marker.
+      expect(read('job_scope/bad/.job-result')).toBe('Abandoned');
+      expect(read('job_scope/skipped/.job-result')).toBe('Skipped');
+      expect(read('job_scope/ok/010')).toBe('Succeeded');
+
+      // Neither abandoned node executed anything.
+      expect(out).not.toContain('MARK abandoned-stage-ran');
+      expect(out).not.toContain('MARK abandoned-job-ran');
+      expect(out).not.toContain('MARK skipped-stage-ran');
+      expect(out).not.toContain('MARK skipped-job-ran');
+      expect(out).toContain('MARK ok-job-ran');
+
+      // C-E02-071 downstream: `always()` is the only thing that catches an abandoned dependency.
+      expect(out).toContain('MARK after-bad-always-ran');
+      expect(out).not.toContain('MARK after-bad-defaulted-ran');
+      expect(read('after_bad/.stage-result')).toBe('Skipped');
+
+      // The run summary is the other half of "distinguishable": a step table alone says nothing
+      // about a node that ran no steps, and both of these rows would otherwise be absent.
+      expect(out).toContain('stage bad_stage: Abandoned');
+      expect(out).toContain('stage skipped_stage: Skipped');
+      expect(out).toContain('job job_scope/bad: Abandoned');
+      expect(out).toContain('job job_scope/skipped: Skipped');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

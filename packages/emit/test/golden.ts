@@ -1,7 +1,11 @@
 // The runtime-project golden harness (E11-S02-T02) — emit, digest, and the freshness gate.
 //
 // A golden here is **one digest per corpus entry** over the emitted project's script tree, pinned
-// in `fixtures/golden/MANIFEST.json` beside the `finalYaml` it was produced from. Digests rather
+// in `fixtures/golden/MANIFEST.json` beside the `finalYaml` it was produced from. "Script tree"
+// means the step scripts **and** the entry points since E11-S04-T05 (decision 89); it meant the
+// step scripts alone before that, which is why every defect the L5 tier found in generated bash —
+// C-E12-036/038/042 in `run-job.sh`, C-E12-041/043 in `conditions.sh` — was in a file no golden
+// had ever hashed (C-E12-047). Digests rather
 // than a committed tree of ~200 `.sh` files: the snapshot's job is to make an emitter change
 // *visible*, and `__snapshots__/step.test.ts.snap` already pins the shape of each emitted kind.
 // Two suites committing the same bytes would drift apart, not reinforce each other.
@@ -31,8 +35,9 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { buildPipeline, parsePipelineYaml } from '@azdo-emu/engine';
+import { buildPipeline, parsePipelineYaml, type Diagnostic } from '@azdo-emu/engine';
 
+import { emitEntrypoints } from '../src/entrypoints.js';
 import { emitStepScript } from '../src/step.js';
 import { scaffold } from '../src/scaffold.js';
 import { oraclePairPath, readCorpus, readManifest, sha256 } from '../../../scripts/corpus.ts';
@@ -46,6 +51,15 @@ export interface GoldenEntry {
   readonly finalYamlSha256: string;
   /** How many step scripts the project has; a structural change shows here, not only in the digest. */
   readonly stepCount: number;
+  /**
+   * Every file in the tree — step scripts **plus** the entry points (E11-S04-T05).
+   *
+   * Recorded separately from `stepCount` rather than replacing it. They answer different questions:
+   * a job that lost its steps moves `stepCount`, a stage that lost its `conditions.sh` moves only
+   * this. Before T05 the tree *was* the step scripts, so one number served both — and
+   * `tree.size === stepCount` was an assertion that quietly became a tautology.
+   */
+  readonly fileCount: number;
   /** sha256 over every emitted path and body. */
   readonly treeDigest: string;
 }
@@ -84,15 +98,34 @@ export function emitGoldenTree(
     throw new Error(`${file} does not build: ${errors.map((d) => d.message).join('; ')}`);
   }
 
+  const plan = scaffold(pipeline);
   const tree = new Map<string, string>();
-  for (const stage of scaffold(pipeline).stages) {
+  for (const stage of plan.stages) {
     for (const job of stage.jobs) {
       for (const step of job.steps) {
         tree.set(step.path, emitStepScript(step.step, step.number));
       }
     }
   }
+
+  // The entry points, added by E11-S04-T05 (C-E12-047). Until then the tree was the step scripts
+  // alone, and the hole was not theoretical: **every** defect the L5 tier has found in generated
+  // bash lived in a file no golden had ever hashed — C-E12-036/038 and C-E12-042 in `run-job.sh`,
+  // C-E12-041 and C-E12-043 in `conditions.sh`. Five emitter changes shipped over them with the
+  // goldens green, because the goldens were not looking. The emit-time diagnostics are collected
+  // and discarded rather than passed out: a corpus entry that produces an emit *error* has already
+  // failed `buildPipeline` above, and a golden's job is to pin bytes, not to re-adjudicate the
+  // model. Warnings are deliberately not requested — they are manifest content, not a script.
+  const entrypointDiagnostics: Diagnostic[] = [];
+  for (const [entryPath, content] of emitEntrypoints(pipeline, plan, file, entrypointDiagnostics)) {
+    tree.set(entryPath, content);
+  }
   return tree;
+}
+
+/** The step scripts in a tree, which is no longer all of it (E11-S04-T05). */
+export function countSteps(tree: ReadonlyMap<string, string>): number {
+  return [...tree.keys()].filter((entryPath) => entryPath.includes('/steps/')).length;
 }
 
 /**
@@ -146,7 +179,8 @@ export async function computeGoldens(root = '.'): Promise<GoldenManifest> {
     const tree = emitGoldenTree(finalYaml, `${entry.name}.final.yml`);
     entries[entry.name] = {
       finalYamlSha256: sha256(finalYaml),
-      stepCount: tree.size,
+      stepCount: countSteps(tree),
+      fileCount: tree.size,
       treeDigest: treeDigest(tree),
     };
   }
@@ -194,7 +228,7 @@ export async function verifyGoldens(root = '.'): Promise<readonly GoldenDrift[]>
       drift.push({ entry: name, field: 'missing', committed: undefined, emitted: row.treeDigest });
       continue;
     }
-    for (const field of ['finalYamlSha256', 'stepCount', 'treeDigest'] as const) {
+    for (const field of ['finalYamlSha256', 'stepCount', 'fileCount', 'treeDigest'] as const) {
       if (was[field] !== row[field]) {
         drift.push({ entry: name, field, committed: was[field], emitted: row[field] });
       }

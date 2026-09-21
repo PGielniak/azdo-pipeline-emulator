@@ -536,3 +536,206 @@ not patched here: what `succeeded()` means at each scope is a behaviour question
 grounding (at job scope it is about the job's dependencies, not about the steps of some other job),
 and guessing it is what BACKLOG rule 1 forbids.
   — measured 2026-09-21
+
+## E11-S04-T04 — `succeeded()`/`failed()` at stage and job scope
+
+**Grounding composition.** The behavior question this task asks — what a status function *ranges
+over* at job and stage scope — was already settled by E02 and did not need re-grounding: C-E02-064
+(arity 0..N at those scopes, 0 at step scope), C-E02-067 (all-of over the dependency set, arguments
+replace it, empty set True), C-E02-068 (the `succeededOrFailed` asymmetry), C-E02-069 (`Skipped`
+satisfies nothing), C-E02-070 (`failed` is any-of), C-E02-071 (`Abandoned`) and C-E02-072 (an
+unknown name is False, not an error) are **live-measured** in
+`research/experiments/E02-status/real-run.md`, and `packages/engine/src/expr/status.ts` is their
+implementation. What was missing was not knowledge but a *path*: the bash compiler emitted the
+step-scope helpers into all three slots. This task ports that table to bash rather than deciding it
+again. It reconciles with C-E06-039 by **not** carrying the step reading upward — the step scope
+still reads `Agent.JobStatus` through the accumulated step results and is byte-identical in the
+emitted output — and with C-E02-092..094 by reading the same `dependencies.*` store the
+`eq(dependencies.<x>.result, …)` form already compiles to, which is why that form is the control in
+both the L5 sample and the unit test.
+
+[C-E12-044] **The dependency set a stage or job status function ranges over is the **transitive**
+closure of `dependsOn`, not the direct list.** "By default, a pipeline job or stage runs if it
+doesn't depend on any other job or stage, or if all its dependencies completed and succeeded. **The
+dependency requirement applies to direct dependencies and to their indirect dependencies, computed
+recursively.**" The expressions page says the same thing in the function's own words — "evaluates
+to `True` if any previous job in the **dependency graph** failed" — where a direct-only reading
+would have said "any dependency". E11-S04-T04's Ground field describes the set as "the job's own
+`dependsOn` set"; per BACKLOG §3.3 the field is a starting point and the page is the authority, so
+the page wins and docs/06 §5 decision 88 records the divergence.
+  — https://learn.microsoft.com/en-us/azure/devops/pipelines/process/conditions (`git_commit_id
+    1eeaa8de39f8b7130d8eb45ec907d9e47d6f5a32`, `ms.date: 2025-08-01`) §"Conditions a stage, job, or
+    step runs under" ·
+    https://learn.microsoft.com/en-us/azure/devops/pipelines/process/expressions (same
+    `git_commit_id`, `ms.date: 2026-01-09`) §"Job status check functions" — checked 2026-09-21
+
+[C-E12-045] **`VERIFY`: the one cell where transitive and direct disagree is doc-derived, not
+measured.** `succeeded()` cannot tell the two apart — an indirectly failed dependency leaves the
+direct one `Skipped`, and `Skipped` satisfies no status function (C-E02-069) — so only `failed()`
+and `succeededOrFailed()` discriminate, and only in a chain at least three deep: with `a` failed,
+`b` dependsOn `a`, `c` dependsOn `b`, `failed()` on `c` is True under C-E02-044's reading and False
+under a direct-only one. The E02 status real-run measured a *single* level of dependency only, and
+settling this needs another agentless run in the test org, which is not available here (the oracle
+PAT expired ~2026-09-10 per E00-S03's runbook, and a lapsed PAT reports as 302 rather than 401 —
+C-E09-022). The cost of being wrong is one line: the set is emitted as literal words by
+`transitiveDependencies` in `packages/emit/src/entrypoints.ts`, so narrowing it is that function
+and no runtime change.
+  — open 2026-09-21
+
+[C-E12-046] **C-E12-043 is a fixed defect, and the fix's before/after was measured twice — once by
+accident, which is the stronger of the two.** The emitted stage and job condition slots now compile
+to `azdo_status_{stage,job}_{succeeded,failed,succeededorfailed}`, which read the stage/job result
+store over the node's dependency set, and `canceled()` to `azdo_status_run_canceled`, which reads
+run-level cancellation rather than folding dependency results (C-E02-062). The accidental
+measurement: L5 sample 04 was first run against a **stale CLI bundle** carrying the pre-fix emitter,
+and produced the defect exactly — stage `on_failure` (`condition: failed()`) was *skipped*, stage
+`defaulted` (no condition) *ran*, and the `eq(dependencies.one.result, 'Failed')` control ran
+correctly in the same log, proving the result store was already right and only the status functions
+were wrong. Rebuilt, the same sample inverts all three and passes. The deliberate measurement is
+`packages/emit/test/entrypoints.test.ts`, which generates one project from the fixed emitter and one
+whose `conditions.sh` has the graph-scope helper names rewritten back to the step-scope ones, and
+asserts the must-be-skipped stage runs only in the second.
+  — measured 2026-09-21; `fixtures/e2e/04-status-at-every-scope`;
+    `packages/runtime/lib/core.sh`; `packages/emit/src/entrypoints.ts`
+
+[C-E12-047] **Open finding, pre-existing and out of E11-S04-T04's scope: the golden tree covers
+*step scripts only*.** `emitGoldenTree` (`packages/emit/test/golden.ts`) walks the scaffold and
+records `emitStepScript` output — nothing from `emitEntrypoints`, so `run.sh`, `run-stage.sh`,
+`run-job.sh` and `conditions.sh` are outside every golden. That is why E11-S04-T04 changed the
+compiled condition of every stage and job in the whole corpus and `node scripts/golden.ts --update`
+produced **no diff at all**. Every defect the L5 tier has found in generated bash — C-E12-036/038
+(`run-job.sh`), C-E12-041/043 (`conditions.sh`), C-E12-042 (`run-job.sh`) — lived in a file no
+golden has ever hashed, which is why five unit-tested, snapshot-pinned, golden-covered emitter
+changes shipped over them. Filed as **E11-S04-T05**; not fixed in T04, because extending the tree
+changes every committed digest and is a golden-harness task rather than a rider on a runtime fix.
+  — measured 2026-09-21; `packages/emit/test/golden.ts` L77-L96, L146-L152
+
+  > **Retracted half (2026-09-21, E11-S04-T05).** As first written this claim had a second half —
+  > "and its committed digest is never positively asserted", on the reading that the per-entry tests
+  > only ever compare a *mutated* tree against `treeDigest`. **That half is false and is withdrawn.**
+  > `packages/emit/test/golden-harness.test.ts` "match what the emitter produces today" calls
+  > `verifyGoldens`, which compares `finalYamlSha256`, `stepCount` **and** `treeDigest` for every
+  > entry; replacing one committed digest with zeroes fails exactly that test and nothing else.
+  > **How it was got wrong is the reusable part:** the original reading came from grepping the test
+  > file for `treeDigest`, and the comparison does not appear there — it happens inside `golden.ts`,
+  > behind a call whose test title ("match what the emitter produces today") contains none of the
+  > words the grep used. A grep over a test file cannot see an assertion made by a helper. The
+  > surviving half was never in doubt and rests on different evidence: an `--update` run that
+  > produced no diff. The false half is quoted in commit `0dbae2b` and was corrected in PR #108's
+  > body before merge.
+
+[C-E12-048] **Open finding: a stage or job condition that *errors* is recorded `Skipped`, which
+conflates an error with a False.** `run-stage.sh` emits `if cond_job_x; then … else … Skipped; fi`,
+and a compiled condition's contract is 0 True / 1 False / **2 evaluation error** (C-E02-131), so
+exit 2 takes the else branch. On the service that node completes `Abandoned` — a sixth result the
+docs never list, which no status function except `always()` matches (C-E02-071) — and
+`azdo__valid_step_result` does not accept that state at all, so the local store has nowhere to put
+it. Adjacent to this task (it is the same `if` that now evaluates a real condition) but not in its
+Done list; filed as **E11-S04-T06**.
+  — measured 2026-09-21; `packages/emit/src/entrypoints.ts` `emitRunStage`
+
+## E11-S04-T05 — putting the entry points in the golden tree
+
+[C-E12-049] **The generated entry points were never shellchecked by anything, and were carrying
+four findings — two of them real.** `packages/emit/test/golden-harness.test.ts` runs shellcheck over
+the golden tree, and until E11-S04-T05 that tree was the step scripts alone (C-E12-047); the L5
+container runs the scripts but does not lint them, and `pnpm lint:shell` covers
+`packages/runtime/lib` and its test helpers, not emitter *output*. So `run.sh`, `run-stage.sh`,
+`run-job.sh` and `conditions.sh` had never been linted in any tier, despite CLAUDE.md making
+shellcheck-clean a hard requirement for emitted script templates. Extending the tree surfaced all
+four at once:
+
+  - **`SC1091`, in all four entry points — a real defect, fixed.** Every entry point sources two
+    runtime files, and a `# shellcheck disable=` directive applies to the **next command only**. The
+    one the emitter wrote covered `source "$AZDO_EMU_LIB/runtime.sh"` and left
+    `source "$AZDO_EMU_LIB/expr.sh"` reporting on the line below it, in every generated project
+    since E05-S01-T03. The intent was already in the code; only its scope was wrong.
+  - **`SC2034`, in a step-less job — a real defect, fixed, and larger than it first read.** A
+    deployment job emits no step scripts, and its `run-job.sh` still carried `AZDO_JOB_DIR`, the
+    whole `--from-step`/`--to-step`/`--only-step`/`--no-condition` parser, `condition_flag` and
+    `job_status` — five unused variables and a dead directory, none of which anything in that file
+    could read. The sequencer block is now emitted only for jobs that have steps. **What it must
+    keep is `mkdir -p "$AZDO_RESULT_DIR"`**, and that is load-bearing rather than tidy: it is what
+    makes `azdo_job_result` fold the job to `Succeeded` rather than return empty, and an empty
+    result reads as "not succeeded" to a dependent node's `succeeded()` (C-E02-072, C-E12-046).
+  - **`SC2071` — by construction, already sanctioned.** `run-job.sh`'s `"$id" > "$from_step"` is a
+    deliberate *string* compare of zero-padded `NNN` step numbers; `-gt` would read `080` as octal.
+    It has been in the generated project's shipped `.shellcheckrc` since decision 62(d) and was
+    missing only from the harness's list, the same direction decision 85(b) had to correct.
+  - **`SC2317`/`SC2329` — by construction, newly sanctioned, and *two codes for one finding*.**
+    Every `cond_*` function in a stage's `conditions.sh` is invoked from `run-stage.sh` or
+    `run-job.sh`, which source the file; "never invoked" is true only of the file read alone. Added
+    to **both** the harness list and the shipped `.shellcheckrc`, so a user linting their own
+    generated project sees what our gate sees (decision 89). **The pair is not redundancy — it is a
+    version split measured in CI.** ShellCheck 0.11 (the npm-vendored binary used locally, and what
+    `brew install shellcheck` gives the macOS job) reports `SC2329`, *the function is never invoked*;
+    the older build preinstalled on the `ubuntu-latest` image reports `SC2317`, *this command appears
+    to be unreachable*, pointing at the function's **body** instead. Excusing only `SC2329` made the
+    suite pass on macOS and fail on Ubuntu — which is how the split was found, on this very task's
+    first CI run, after a local suite that had been green on both counts.
+
+  Neither by-construction code can arise in a step script, which is why neither appeared before.
+  — measured 2026-09-21; `packages/emit/src/entrypoints.ts`; `packages/cli/src/convert/convert.ts`;
+    `packages/emit/test/golden-harness.test.ts`
+
+[C-E12-050] **The extended golden tree is shown to catch each defect the old one missed, by
+replaying the bytes the pre-fix emitter produced.** "Would this golden have caught it?" is answered
+per claim rather than asserted from file coverage, because coverage of a *file* is not coverage of
+a *defect*: C-E12-041 is a **collision** between two `cond_step_*` definitions in one
+`conditions.sh`, and a digest that merely hashed the file could in principle have been blind to the
+rename that fixes it. Four replays run against every corpus entry — C-E12-041 (un-qualify the step
+condition function names), C-E12-036/038 (`${condition_flag:+…}` → `${no_condition:+…}`),
+C-E12-042 (drop `|| job_status=$?`) and C-E12-043 (graph-scope status helpers → step-scope) — and
+each asserts the rewrite **applied** before asserting the digest moved, so a replay that silently
+stopped matching would fail rather than pass forever. Each entry-point kind is also mutated
+one line at a time, so a tree that contains a file but whose digest does not observe it would fail.
+  — measured 2026-09-21; `packages/emit/test/golden-harness.test.ts`
+
+## E11-S04-T06 — an errored stage or job condition
+
+[C-E12-051] **`Abandoned` is a node result and not a task result, and the local store now says so
+in two vocabularies rather than one.** Before this task `azdo__valid_step_result` gated every
+result the store accepted — step results, the summary table, the worst-wins task merge, *and* both
+node markers — so the sixth state had nowhere to go (C-E12-048). The split is not a local
+convenience but the service's own shape: a step is a task and `TaskResult` has five members, which
+is why a *step* whose condition errors is `Failed` (C-E06-042); a stage or job is a timeline node,
+and one whose condition errors completes `Abandoned` (C-E02-071). `azdo__valid_node_result` is
+therefore reachable from exactly two call sites — `azdo__result_marker_set`, the one write path for
+both `.job-result` and `.stage-result`, and the two marker reads that must accept back what that
+writer accepted. **The writer and its readers had to move together**: a value the writer accepts
+and a reader rejects returns status 2 from `azdo_job_result`, which `azdo__status_graph` propagates
+into the compiled condition of the *next* node, which the new emitter branch then reads as an
+evaluation error — one invalid marker would silently abandon a downstream node. `azdo_run_result`
+needed no change for a different reason worth recording: it scans `find … ! -name '.*'`, and both
+node markers are dotfiles, so node results have never entered the run aggregate.
+  — measured 2026-09-21; `packages/runtime/lib/core.sh`; `packages/runtime/test/core.bats`
+    "Abandoned is a node result and not a task result"
+
+[C-E12-052] **`VERIFY` — invented, not measured: an abandoned job outranks a skipped one in the
+stage fold.**
+`azdo_stage_result` short-circuits on a `.stage-result` marker, so the fold over job results only
+decides a stage that *ran* — which is exactly the job-condition-error case. An abandoned job
+contributes no status of its own (it did not run, as a skipped one did not), leaving the tail to
+choose between `Skipped` and `Abandoned` for a stage whose jobs were some of each. **No source
+states this cell and no experiment here settles it.** The rule taken is that `Abandoned` wins,
+because hiding a condition-evaluation error behind a sibling's skip is the same conflation the task
+exists to remove. The probe that would settle it is one agentless run in the test org: a stage with
+two jobs, one `condition: false` and one `condition: gt(1, 'not-a-number')`, reading the *stage's*
+timeline result. That run is not available here: the oracle PAT expired ~2026-09-10 per E00-S03's
+runbook (C-E09-022). The cost of being wrong is one `elif` in one function. Equally invented and
+settled the same way: a stage whose own condition errors marks its jobs `Abandoned` rather than
+`Skipped`, mirroring what the pre-existing skip path already did for `Skipped`.
+  — open 2026-09-21; rule implemented in `packages/runtime/lib/core.sh` `azdo_stage_result`
+
+[C-E12-053] **The run summary could not distinguish the two cases even once the store could,
+because it is a step table and neither node ran a step.** `azdo_run_summary` returned at
+`No steps ran.` before anything else could be printed, so a stage conditioned out and a stage whose
+condition errored produced byte-identical output — the discriminating case is precisely the one
+where the table is empty. The node rows are therefore gathered *before* that branch and printed
+after it, and the branch no longer returns. Only `Skipped` and `Abandoned` nodes are listed: a node
+that ran is already represented by its steps. Asserted twice — at unit scope over synthetic markers
+with no step records at all, and end-to-end against a generated project whose run produces all four
+rows.
+  — measured 2026-09-21; `packages/runtime/lib/core.sh` `azdo__run_summary_nodes`;
+    `packages/runtime/test/core.bats` "the run summary names a node that ran no steps";
+    `packages/emit/test/entrypoints.test.ts` "records Abandoned, not Skipped, at stage and job scope"

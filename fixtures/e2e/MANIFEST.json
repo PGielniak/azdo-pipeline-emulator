@@ -51,6 +51,24 @@
         "E2E-MARKER must not run after a real failure",
         "E2E-MARKER must not run while the only failure was tolerated"
       ]
+    },
+    "04-status-at-every-scope": {
+      "image": "base",
+      "exitCode": 1,
+      "artifacts": [],
+      "markers": [
+        "E2E-MARKER stage one is failing on purpose",
+        "E2E-MARKER failed() stage ran after a failed dependency",
+        "E2E-MARKER dependencies.one.result stage ran",
+        "E2E-MARKER job scope starts with a failing job",
+        "E2E-MARKER failed() job ran after a failed sibling",
+        "E2E-MARKER dependencies.fails.result job ran",
+        "Result: Failed"
+      ],
+      "absentMarkers": [
+        "E2E-MARKER must not run a default-condition stage after a failure",
+        "E2E-MARKER must not run a default-condition job after a failure"
+      ]
     }
   }
 }

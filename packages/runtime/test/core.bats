@@ -690,9 +690,12 @@ STREAM
   run -0 azdo_job_result build ''
   [ "$output" = Succeeded ]
 
-  run ! azdo_job_result_set Build Bad Abandoned
+  # `Abandoned` **is** a job result as of E11-S04-T06 — this assertion used to read the other way,
+  # when one five-state validator gated every result the store accepted (C-E12-051). What is
+  # rejected here is a value in neither vocabulary.
+  run ! azdo_job_result_set Build Bad Bogus
   [ "$status" -eq 2 ]
-  [[ "$output" == *'invalid step result: Abandoned'* ]]
+  [[ "$output" == *'invalid node result: Bogus'* ]]
 }
 
 @test "dependency stage results fold jobs and preserve an explicit skip (C-E02-092/093)" {
@@ -986,6 +989,146 @@ Failed|0|1|0|1|0
 Skipped|0|1|1|0|0
 Canceled|0|0|1|1|1
 TABLE
+}
+
+@test "job/stage status helpers range over the dependency graph, one result at a time (C-E02-067..072)" {
+  local result succeeded_status failed_status either_status
+  export AZDO_STAGE_ID=Build
+
+  # The same five results at both scopes, plus the sixth row that is not a result at all: a name
+  # with no record. `Skipped` satisfies nothing (C-E02-069) and an unknown name is "not succeeded,
+  # not failed" rather than an error (C-E02-072) — the two cells a fold over step results loses.
+  while IFS='|' read -r result succeeded_status failed_status either_status; do
+    if [[ "$result" = none ]]; then
+      rm -rf -- "$AZDO_STATE_DIR/results"
+    else
+      azdo_job_result_set Build Dep "$result"
+      azdo_stage_result_set Dep "$result"
+    fi
+    run "-$succeeded_status" azdo_status_job_succeeded Dep
+    run "-$failed_status" azdo_status_job_failed Dep
+    run "-$either_status" azdo_status_job_succeededorfailed Dep
+    run "-$succeeded_status" azdo_status_stage_succeeded Dep
+    run "-$failed_status" azdo_status_stage_failed Dep
+    run "-$either_status" azdo_status_stage_succeededorfailed Dep
+  done <<'TABLE'
+Succeeded|0|1|0
+SucceededWithIssues|0|1|0
+Failed|1|0|0
+Skipped|1|1|1
+Canceled|1|1|1
+none|1|1|1
+TABLE
+}
+
+@test "an empty dependency set is True for succeeded() and succeededOrFailed(), False for failed() (C-E02-067/068/070)" {
+  export AZDO_STAGE_ID=Build
+
+  # A job or stage with no `dependsOn` runs by default, so all-of over nothing is True — and
+  # `succeededOrFailed()` is True here too, which is the family's one asymmetry: any-of over an
+  # empty set would be False and such a node would never run (C-E02-068).
+  run -0 azdo_status_job_succeeded
+  run -0 azdo_status_stage_succeeded
+  run -1 azdo_status_job_failed
+  run -1 azdo_status_stage_failed
+  run -0 azdo_status_job_succeededorfailed
+  run -0 azdo_status_stage_succeededorfailed
+}
+
+@test "arguments replace the dependency set rather than filtering it, and fold case (C-E02-067)" {
+  export AZDO_STAGE_ID=Build
+  azdo_job_result_set Build dep_ok Succeeded
+  azdo_job_result_set Build dep_skipped Skipped
+
+  # The live rows this mirrors: over {Succeeded, Skipped} `succeeded()` is False, naming only the
+  # succeeded dependency is True *while the skipped one is still in the graph*, and naming both is
+  # False again.
+  run -1 azdo_status_job_succeeded dep_ok dep_skipped
+  run -0 azdo_status_job_succeeded dep_ok
+  run -1 azdo_status_job_succeeded dep_ok dep_skipped
+  run -0 azdo_status_job_succeeded DEP_OK
+
+  # Any-of, so the skipped member does not veto the succeeded one (C-E02-068).
+  run -0 azdo_status_job_succeededorfailed dep_ok dep_skipped
+  run -1 azdo_status_job_succeededorfailed dep_skipped
+}
+
+@test "a graph-scope status function reads results, not this job's steps (C-E12-043)" {
+  # The defect itself. `AZDO_RESULT_DIR` is exported by `run-job.sh` in a *child* process, so at
+  # the moment `run-stage.sh` evaluates `cond_stage`/`cond_job_*` it is unset — and the step-scope
+  # helpers then find no step results and answer `Succeeded` for everything. Both halves are
+  # asserted, because the regression is that the two agreed.
+  export AZDO_STAGE_ID=Build
+  unset AZDO_RESULT_DIR
+  azdo_job_result_set Build Failing Failed
+  azdo_stage_result_set Failing Failed
+
+  run -1 azdo_status_failed
+  run -0 azdo_status_succeeded
+
+  run -0 azdo_status_job_failed Failing
+  run -1 azdo_status_job_succeeded Failing
+  run -0 azdo_status_stage_failed Failing
+  run -1 azdo_status_stage_succeeded Failing
+}
+
+@test "canceled() at job/stage scope is run-level, and cancellation vetoes succeeded() (C-E02-062/067)" {
+  export AZDO_STAGE_ID=Build
+  azdo_job_result_set Build Dep Failed
+
+  run -1 azdo_status_run_canceled
+  run -0 azdo_status_job_failed Dep
+
+  printf '' >"$AZDO_STATE_DIR/.run-canceled"
+  run -0 azdo_status_run_canceled
+  # "Evaluates to False if the pipeline is canceled" for succeeded(), and succeededOrFailed() is
+  # "like always(), except it evaluates to False when the pipeline is canceled". `failed()` has no
+  # such carve-out on the service and gets none here.
+  run -1 azdo_status_job_succeeded
+  run -1 azdo_status_job_succeededorfailed Dep
+  run -1 azdo_status_stage_succeeded
+  run -0 azdo_status_job_failed Dep
+
+  # A *canceled dependency* is a different thing from a canceled run and must not be read as one.
+  rm -f "$AZDO_STATE_DIR/.run-canceled"
+  azdo_job_result_set Build Dep Canceled
+  run -1 azdo_status_run_canceled
+}
+
+@test "graph-scope status helpers reject a missing stage and a stray argument" {
+  run ! azdo_status_run_canceled extra
+  [ "$status" -eq 2 ]
+  [[ "$output" == *'usage: azdo_status_run_canceled'* ]]
+
+  unset AZDO_STAGE_ID
+  run ! azdo_status_job_succeeded Dep
+  [ "$status" -eq 2 ]
+  [[ "$output" == *'AZDO_STAGE_ID must be set'* ]]
+
+  run ! azdo__status_graph nonsense succeeded
+  [ "$status" -eq 2 ]
+  [[ "$output" == *'unknown status graph scope: nonsense'* ]]
+
+  export AZDO_STAGE_ID=Build
+  run ! azdo__status_graph job nonsense
+  [ "$status" -eq 2 ]
+  [[ "$output" == *'unknown status predicate: nonsense'* ]]
+}
+
+@test "the job-result readings the graph helpers inherit are semantics, not accidents (C-E02-072)" {
+  # Pinned because the graph helpers now depend on them. A *missing* job prints nothing, which
+  # reads as "not succeeded, not failed"; a job directory that exists with no recorded step folds
+  # to `Succeeded`, which is the running-job case and must not be confused with the first.
+  export AZDO_STAGE_ID=Build
+  mkdir -p "$(azdo_result_dir Build Empty)"
+
+  run -0 azdo_job_result Build Missing
+  [ -z "$output" ]
+  run -0 azdo_job_result Build Empty
+  [ "$output" = Succeeded ]
+
+  run -1 azdo_status_job_succeeded Missing
+  run -0 azdo_status_job_succeeded Empty
 }
 
 @test "--no-condition force-runs without resolving the compiled condition function" {
@@ -3960,4 +4103,84 @@ VSO
   run -2 run_step --id 010 --name a --name b --file /dev/null --display d --wd . \
     --continue-on-error false --fail-on-stderr false --retries 0 --timeout 60
   [[ "$output" == *'duplicate run_step option: --name'* ]]
+}
+
+# ---------------------------------------------------------------------------------------------
+# E11-S04-T06 — `Abandoned`: the node vocabulary, the stage fold and the summary rows.
+#
+# A stage or job whose *condition* errors completes `Abandoned` on the service — a sixth result the
+# docs never list, which no status function except `always()` matches (C-E02-071). A *step* whose
+# condition errors is `Failed` instead (C-E06-042), so the two vocabularies stay apart here too.
+# ---------------------------------------------------------------------------------------------
+
+@test "Abandoned is a node result and not a task result (C-E12-051)" {
+  azdo_stage_result_set Build Abandoned
+  [ "$(azdo_stage_result Build)" = Abandoned ]
+  azdo_job_result_set Build compile Abandoned
+  [ "$(azdo_job_result Build compile)" = Abandoned ]
+
+  # The task vocabulary is untouched: a step cannot be abandoned, and neither can a summary row or
+  # the worst-wins merge behind `##vso[task.complete]`.
+  run -2 azdo_step_result_set 010 Abandoned
+  [[ "$output" == *'invalid step result: Abandoned'* ]]
+  run -2 azdo_summary_record 010 name Abandoned 1 /logs/010.log
+  [[ "$output" == *'invalid step result: Abandoned'* ]]
+  run -2 azdo_merge_task_results Succeeded Abandoned
+  [[ "$output" == *'invalid step result: Abandoned'* ]]
+
+  # And the node vocabulary is still a vocabulary.
+  run -2 azdo_stage_result_set Build Bogus
+  [[ "$output" == *'invalid node result: Bogus'* ]]
+}
+
+@test "an abandoned job folds into its stage and outranks a skipped sibling (C-E12-052)" {
+  # No `.stage-result` marker: this is the fold, not the short-circuit the stage-scope case takes.
+  azdo_job_result_set Build skipped Skipped
+  [ "$(azdo_stage_result Build)" = Skipped ]
+  azdo_job_result_set Build bad Abandoned
+  # Invented precedence, deliberately the louder of the two: hiding a condition-evaluation error
+  # behind a sibling's skip is the conflation this task exists to remove (docs/06 §5 decision 90).
+  [ "$(azdo_stage_result Build)" = Abandoned ]
+
+  # A job that actually ran still decides the stage — Abandoned never displaces a real result.
+  azdo_job_result_set Build ran Failed
+  [ "$(azdo_stage_result Build)" = Failed ]
+}
+
+@test "an abandoned dependency satisfies nothing but always() at both scopes (C-E02-071)" {
+  azdo_stage_result_set bad_stage Abandoned
+  run -1 azdo_status_stage_succeeded bad_stage
+  run -1 azdo_status_stage_failed bad_stage
+  run -1 azdo_status_stage_succeededorfailed bad_stage
+  run -0 azdo_status_always
+
+  AZDO_STAGE_ID=job_scope
+  export AZDO_STAGE_ID
+  azdo_job_result_set job_scope bad Abandoned
+  run -1 azdo_status_job_succeeded bad
+  run -1 azdo_status_job_failed bad
+  run -1 azdo_status_job_succeededorfailed bad
+}
+
+@test "the run summary names a node that ran no steps, abandoned apart from skipped (C-E12-053)" {
+  # The discriminating case, and the reason the node rows are gathered before the empty-table
+  # branch: neither of these stages records a single step, so the step table is empty for both and
+  # `No steps ran.` used to be the entire output in each.
+  azdo_stage_result_set bad_stage Abandoned
+  azdo_stage_result_set skipped_stage Skipped
+  azdo_job_result_set job_scope bad Abandoned
+  azdo_job_result_set job_scope skipped Skipped
+
+  run -0 azdo_run_summary
+  [[ "$output" == *'No steps ran.'* ]]
+  [[ "$output" == *'Stages and jobs that did not run:'* ]]
+  [[ "$output" == *'stage bad_stage: Abandoned'* ]]
+  [[ "$output" == *'stage skipped_stage: Skipped'* ]]
+  [[ "$output" == *'job job_scope/bad: Abandoned'* ]]
+  [[ "$output" == *'job job_scope/skipped: Skipped'* ]]
+
+  # A node that ran is represented by its steps and is not repeated in the block.
+  azdo_stage_result_set ok Succeeded
+  run -0 azdo_run_summary
+  [[ "$output" != *'stage ok:'* ]]
 }

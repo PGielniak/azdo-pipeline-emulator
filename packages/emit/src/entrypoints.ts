@@ -65,6 +65,68 @@ export function topologicalOrder(
 }
 
 /**
+ * Every node a stage or job depends on, directly or indirectly, in authored order (E11-S04-T04).
+ *
+ * **Transitive, and that is a reading of the docs rather than of the task text.** E11-S04-T04's
+ * Ground field describes the set as "the job's own `dependsOn` set", but the conditions page is
+ * explicit that it is not: "The dependency requirement applies to direct dependencies and to their
+ * indirect dependencies, computed recursively" (C-E12-044), and the expressions page says "any
+ * previous job in the **dependency graph**", not any previous dependency. BACKLOG §3.3 makes the
+ * task's own wording a starting point and the doc the authority, so the doc wins; docs/06 §5
+ * decision 88 records the divergence rather than leaving a reviewer to find it.
+ *
+ * The choice is invisible to `succeeded()` — an indirectly failed dependency leaves the direct one
+ * `Skipped`, and `Skipped` satisfies no status function (C-E02-069) — so only `failed()` and
+ * `succeededOrFailed()` can tell the two apart, and only in a three-deep chain. That cell is
+ * doc-derived and not live-measured (C-E12-045 carries the `VERIFY`), which is affordable because
+ * the set is emitted as literal words: narrowing it to the direct dependencies later is this
+ * function, not a runtime change.
+ */
+export function transitiveDependencies(
+  nodes: readonly { id: string; dependsOn: readonly string[] }[],
+  id: string,
+): string[] {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const seen = new Set<string>();
+  const walk = (current: string): void => {
+    for (const dependency of byId.get(current)?.dependsOn ?? []) {
+      if (seen.has(dependency)) continue;
+      seen.add(dependency);
+      walk(dependency);
+    }
+  };
+  walk(id);
+  // Authored order, so the emitted word list reads like the YAML and is stable across runs.
+  return nodes.filter((node) => seen.has(node.id)).map((node) => node.id);
+}
+
+/**
+ * The runtime helper each status function compiles to, per slot (E11-S04-T04, C-E12-043).
+ *
+ * `azdo_status_*` — the defaults `compileBash` would pick — are the **step**-scope readings: they
+ * fold this job's step results through `AZDO_RESULT_DIR`. A stage or job condition is evaluated by
+ * the orchestrator against its dependency graph instead (C-E02-062/067), so those two slots are
+ * redirected wholesale. `always()` keeps `azdo_status_always` (literal true at every scope,
+ * C-E02-062) and `canceled()` becomes run-level rather than a fold over dependency results — the
+ * one cell where the symmetric-looking answer is the wrong one.
+ */
+const GRAPH_STATUS_FUNCTIONS: Readonly<Record<'stage' | 'job', Readonly<Record<string, string>>>> =
+  {
+    stage: {
+      canceled: 'azdo_status_run_canceled',
+      failed: 'azdo_status_stage_failed',
+      succeeded: 'azdo_status_stage_succeeded',
+      succeededorfailed: 'azdo_status_stage_succeededorfailed',
+    },
+    job: {
+      canceled: 'azdo_status_run_canceled',
+      failed: 'azdo_status_job_failed',
+      succeeded: 'azdo_status_job_succeeded',
+      succeededorfailed: 'azdo_status_job_succeededorfailed',
+    },
+  };
+
+/**
  * The condition function name for a stage, job (by referenceName), or step (by `NNN`).
  *
  * A step's name carries its **job** as well as its number, and that is not cosmetic (C-E12-041).
@@ -95,7 +157,16 @@ export interface CompiledCondition {
   readonly body: string;
 }
 
-/** Compile a condition (or the implicit `succeeded()`) into a `cond_*` function body. */
+/**
+ * Compile a condition (or the implicit `succeeded()`) into a `cond_*` function body.
+ *
+ * `dependencies` is the node's transitive dependency set and is read only at stage and job scope.
+ * An absent or empty condition compiles the literal `succeeded()` rather than a hard-coded body:
+ * the agent's parser is `CreateTree(condition, …) ?? new SucceededNode()`, i.e. the default **is**
+ * that call (C-E02-063), and at stage or job scope it is the graph-scope one. Short-circuiting it
+ * to `azdo_status_succeeded` is what made a default-condition stage after a failed one run
+ * (C-E12-043); routing both through one path is what keeps them from diverging again.
+ */
 export function compileCondition(
   kind: 'stage' | 'job' | 'step',
   key: string,
@@ -103,10 +174,11 @@ export function compileCondition(
   diagnostics: Diagnostic[],
   file: string,
   jobKey?: string,
+  dependencies: readonly string[] = [],
 ): CompiledCondition {
   const fnName = conditionFunctionName(kind, key, jobKey);
-  if (condition === undefined || condition === '') return { fnName, body: 'azdo_status_succeeded' };
-  const parsed = parseExpression(condition, { registry: registryForSlot(slotFor(kind)) });
+  const source = condition === undefined || condition === '' ? 'succeeded()' : condition;
+  const parsed = parseExpression(source, { registry: registryForSlot(slotFor(kind)) });
   if (!parsed.ok) {
     diagnostics.push({
       severity: 'error',
@@ -119,19 +191,39 @@ export function compileCondition(
   }
   return {
     fnName,
-    body: compileBash(parsed.node, { dependencyKind: kind === 'stage' ? 'stage' : 'job' }),
+    body: compileBash(parsed.node, {
+      dependencyKind: kind === 'stage' ? 'stage' : 'job',
+      ...(kind === 'step'
+        ? {}
+        : { statusFunctions: GRAPH_STATUS_FUNCTIONS[kind], statusDependencies: dependencies }),
+    }),
   };
 }
 
-/** All condition functions for a stage: one for the stage, one per job, one per step. */
+/**
+ * All condition functions for a stage: one for the stage, one per job, one per step.
+ *
+ * The two graphs are passed in rather than re-resolved here: `emitEntrypoints` already resolves
+ * both to order the runners, and resolving twice would report every dependency diagnostic twice.
+ */
 export function compileStageConditions(
   stage: Stage,
   scaffoldStage: ScaffoldStage,
   file: string,
   diagnostics: Diagnostic[],
+  stageGraph: readonly { id: string; dependsOn: readonly string[] }[] = [],
+  jobGraph: readonly { id: string; dependsOn: readonly string[] }[] = [],
 ): CompiledCondition[] {
   const conditions: CompiledCondition[] = [
-    compileCondition('stage', stage.id, stage.condition, diagnostics, file),
+    compileCondition(
+      'stage',
+      stage.id,
+      stage.condition,
+      diagnostics,
+      file,
+      undefined,
+      transitiveDependencies(stageGraph, stage.id),
+    ),
   ];
   for (const scaffoldJob of scaffoldStage.jobs) {
     conditions.push(
@@ -141,6 +233,8 @@ export function compileStageConditions(
         scaffoldJob.job.condition,
         diagnostics,
         file,
+        undefined,
+        transitiveDependencies(jobGraph, scaffoldJob.job.referenceName),
       ),
     );
     for (const scaffoldStep of scaffoldJob.steps) {
@@ -168,6 +262,11 @@ export function emitConditions(conditions: readonly CompiledCondition[]): string
     'set -euo pipefail',
     '# shellcheck disable=SC1091  # resolved at run time via $AZDO_EMU_LIB',
     'source "$AZDO_EMU_LIB/runtime.sh"',
+    // A `# shellcheck disable=` directive applies to the **next command only**, so the one above
+    // covered `runtime.sh` and left this line reporting SC1091 in every generated entry point
+    // (C-E12-049). Invisible until E11-S04-T05 put the entry points in the golden tree, which is
+    // the only place anything shellchecks them.
+    '# shellcheck disable=SC1091',
     'source "$AZDO_EMU_LIB/expr.sh"',
     '',
     ...conditions.map((c) => `${c.fnName}() {\n  ${c.body}\n}`),
@@ -269,39 +368,57 @@ export function emitRunJob(job: ScaffoldJob, stage: ScaffoldStage): string {
     'set -euo pipefail',
     '# shellcheck disable=SC1091',
     'source "$AZDO_EMU_LIB/runtime.sh"',
+    // A `# shellcheck disable=` directive applies to the **next command only**, so the one above
+    // covered `runtime.sh` and left this line reporting SC1091 in every generated entry point
+    // (C-E12-049). Invisible until E11-S04-T05 put the entry points in the golden tree, which is
+    // the only place anything shellchecks them.
+    '# shellcheck disable=SC1091',
     'source "$AZDO_EMU_LIB/expr.sh"',
     '# shellcheck disable=SC1091',
     'source "$AZDO_STAGE_DIR/conditions.sh"',
     '',
-    'AZDO_JOB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"',
-    '',
-    '# Flags: --from-step NNN --to-step NNN --only-step NNN --no-condition',
-    'from_step="" to_step="" only_step="" no_condition=false',
-    'while (($# > 0)); do',
-    '  case "$1" in',
-    '    --from-step) from_step="$2"; shift 2 ;;',
-    '    --to-step) to_step="$2"; shift 2 ;;',
-    '    --only-step) only_step="$2"; shift 2 ;;',
-    '    --no-condition) no_condition=true; shift ;;',
-    '    *) printf \'unknown run-job option: %s\\n\' "$1" >&2; exit 2 ;;',
-    '  esac',
-    'done',
-    '',
-    // C-E12-036/C-E12-038: the flag is carried in its own variable because `${name:+word}` tests
-    // for a **non-empty** value, not for truth — and `no_condition=false` is a non-empty string.
-    // The earlier `${no_condition:+--no-condition}` therefore passed `--no-condition` on *every*
-    // step of *every* generated project, so no step condition was ever evaluated: a `checkout:
-    // none` step whose compiled condition is `False` ran and reported `Succeeded` instead of
-    // `Skipped`, and a `condition: failed()` step ran after a tolerated failure. That last symptom
-    // is what E11-S04-T01 recorded as the open finding C-E12-036.
-    'condition_flag=""',
-    '[[ "$no_condition" != true ]] || condition_flag=--no-condition',
-    // C-E12-042: the sequencer must not *abort* on a failing step, but it must still *report* one.
-    // `run-stage.sh` ignores this status (it reads the result store), so the only consumer is a
-    // developer running `run-job.sh --only-step NNN` by hand — for whom exit 0 on a step that just
-    // failed is the wrong answer, and is what a bare `|| :` would have given them.
-    'job_status=0',
-    '',
+    // Everything from here to the store setup exists to *run steps*, so a job with none gets none
+    // of it (C-E12-049). A step-less job — a deployment job, whose strategy hooks emit no step
+    // scripts — used to carry the job directory, the whole flag parser and both sequencer
+    // variables, none of which anything in that file could read: five SC2034 warnings and a dead
+    // `AZDO_JOB_DIR`, all of them true. What it keeps is the store setup below, and that is load
+    // bearing rather than tidy: `mkdir -p "$AZDO_RESULT_DIR"` is what makes `azdo_job_result` fold
+    // the job to `Succeeded` instead of returning empty, and an empty result reads as "not
+    // succeeded" to a dependent node's `succeeded()` (C-E02-072).
+    ...(job.steps.length === 0
+      ? []
+      : [
+          'AZDO_JOB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"',
+          '',
+          '# Flags: --from-step NNN --to-step NNN --only-step NNN --no-condition',
+          'from_step="" to_step="" only_step="" no_condition=false',
+          'while (($# > 0)); do',
+          '  case "$1" in',
+          '    --from-step) from_step="$2"; shift 2 ;;',
+          '    --to-step) to_step="$2"; shift 2 ;;',
+          '    --only-step) only_step="$2"; shift 2 ;;',
+          '    --no-condition) no_condition=true; shift ;;',
+          '    *) printf \'unknown run-job option: %s\\n\' "$1" >&2; exit 2 ;;',
+          '  esac',
+          'done',
+          '',
+          // C-E12-036/C-E12-038: the flag is carried in its own variable because `${name:+word}`
+          // tests for a **non-empty** value, not for truth — and `no_condition=false` is a
+          // non-empty string. The earlier `${no_condition:+--no-condition}` therefore passed
+          // `--no-condition` on *every* step of *every* generated project, so no step condition was
+          // ever evaluated: a `checkout: none` step whose compiled condition is `False` ran and
+          // reported `Succeeded` instead of `Skipped`, and a `condition: failed()` step ran after a
+          // tolerated failure. That last symptom is what E11-S04-T01 recorded as C-E12-036.
+          'condition_flag=""',
+          '[[ "$no_condition" != true ]] || condition_flag=--no-condition',
+          // C-E12-042: the sequencer must not *abort* on a failing step, but it must still
+          // *report* one. `run-stage.sh` ignores this status (it reads the result store), so the
+          // only consumer is a developer running `run-job.sh --only-step NNN` by hand — for whom
+          // exit 0 on a step that just failed is the wrong answer, and is what a bare `|| :` would
+          // have given them.
+          'job_status=0',
+          '',
+        ]),
     `export AZDO_VAR_SCOPE=${shQuote(scope)}`,
     `AZDO_LOG_DIR="$AZDO_RUN_DIR/logs/${stage.name}/${job.name}"`,
     `AZDO_RESULT_DIR="$(azdo_result_dir ${shQuote(stage.stage.id)} ${shQuote(job.job.referenceName)})"`,
@@ -376,11 +493,31 @@ export function emitRunStage(stage: ScaffoldStage, jobOrder: readonly string[]):
     'set -euo pipefail',
     '# shellcheck disable=SC1091',
     'source "$AZDO_EMU_LIB/runtime.sh"',
+    // A `# shellcheck disable=` directive applies to the **next command only**, so the one above
+    // covered `runtime.sh` and left this line reporting SC1091 in every generated entry point
+    // (C-E12-049). Invisible until E11-S04-T05 put the entry points in the golden tree, which is
+    // the only place anything shellchecks them.
+    '# shellcheck disable=SC1091',
     'source "$AZDO_EMU_LIB/expr.sh"',
     '# shellcheck disable=SC1091',
     'source "$AZDO_STAGE_DIR/conditions.sh"',
     '',
-    'if ! cond_stage; then',
+    // A compiled condition's exit status is 0 True / 1 False / **2 evaluation error**, and the
+    // `if ! cond_stage` this replaces sent 1 and 2 down the same branch — so a stage whose
+    // condition errored was recorded `Skipped`, indistinguishable from one the author had
+    // conditioned out (C-E12-048). The service completes that node `Abandoned`, a sixth result no
+    // status function except `always()` matches (C-E02-071). Status is captured into a variable
+    // rather than tested twice because a condition may have side effects and must run once.
+    'cond_status=0',
+    'cond_stage || cond_status=$?',
+    'if ((cond_status > 1)); then',
+    '  printf \'Abandoning stage %s: condition evaluation error.\\n\' "$AZDO_STAGE_ID" >&2',
+    '  azdo_stage_result_set "$AZDO_STAGE_ID" Abandoned',
+    ...stage.jobs.map(
+      (job) => `  azdo_job_result_set "$AZDO_STAGE_ID" ${shQuote(job.job.referenceName)} Abandoned`,
+    ),
+    '  exit 0',
+    'elif ((cond_status == 1)); then',
     '  printf \'Skipping stage %s due to condition.\\n\' "$AZDO_STAGE_ID"',
     '  azdo_stage_result_set "$AZDO_STAGE_ID" Skipped',
     ...stage.jobs.map(
@@ -396,11 +533,16 @@ export function emitRunStage(stage: ScaffoldStage, jobOrder: readonly string[]):
     if (job === undefined) continue;
     const cond = conditionFunctionName('job', referenceName);
     lines.push(
-      `if ${cond}; then`,
+      'cond_status=0',
+      `${cond} || cond_status=$?`,
+      'if ((cond_status == 0)); then',
       `  bash "$AZDO_STAGE_DIR/jobs/${job.name}/run-job.sh" "$@" || :`,
-      'else',
+      'elif ((cond_status == 1)); then',
       `  printf 'Skipping job %s due to condition.\\n' ${shQuote(referenceName)}`,
       `  azdo_job_result_set "$AZDO_STAGE_ID" ${shQuote(referenceName)} Skipped`,
+      'else',
+      `  printf 'Abandoning job %s: condition evaluation error.\\n' ${shQuote(referenceName)} >&2`,
+      `  azdo_job_result_set "$AZDO_STAGE_ID" ${shQuote(referenceName)} Abandoned`,
       'fi',
       '',
     );
@@ -442,6 +584,11 @@ export function emitRunScript(
     'mkdir -p "$AZDO_ARTIFACT_DIR"',
     '# shellcheck disable=SC1091',
     'source "$AZDO_EMU_LIB/runtime.sh"',
+    // A `# shellcheck disable=` directive applies to the **next command only**, so the one above
+    // covered `runtime.sh` and left this line reporting SC1091 in every generated entry point
+    // (C-E12-049). Invisible until E11-S04-T05 put the entry points in the golden tree, which is
+    // the only place anything shellchecks them.
+    '# shellcheck disable=SC1091',
     'source "$AZDO_EMU_LIB/expr.sh"',
     '',
     '# Exact `.env` spelling → variable-store name map (decision 67).',
@@ -530,7 +677,9 @@ export function emitEntrypoints(
     const jobGraph = resolveJobGraph(stage.stage, file, diagnostics);
     files.set(
       `${stage.dir}/conditions.sh`,
-      emitConditions(compileStageConditions(stage.stage, stage, file, diagnostics)),
+      emitConditions(
+        compileStageConditions(stage.stage, stage, file, diagnostics, stageGraph, jobGraph),
+      ),
     );
     files.set(`${stage.dir}/run-stage.sh`, emitRunStage(stage, topologicalOrder(jobGraph)));
     for (const job of stage.jobs) {
