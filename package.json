@@ -32,6 +32,7 @@
     "expr-logical-survey": "node scripts/expr-logical-survey.ts",
     "expr-status-survey": "node scripts/expr-status-survey.ts",
     "expr-status-realrun": "node scripts/expr-status-realrun.ts",
+    "abandoned-aggregate-realrun": "node scripts/abandoned-aggregate-realrun.ts",
     "expr-general-survey": "node scripts/expr-general-survey.ts",
     "expr-filtered-array-survey": "node scripts/expr-filtered-array-survey.ts",
     "expr-context-survey": "node scripts/expr-context-survey.ts",

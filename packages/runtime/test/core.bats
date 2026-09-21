@@ -2978,7 +2978,11 @@ ENV
 
 @test "azdo_run_summary reports no steps when nothing ran" {
   run -0 azdo_run_summary
-  [ "$output" = 'No steps ran.' ]
+  # The `Result:` line joined this case in E11-S04-T07. It used to be suppressed by an early
+  # return, on the reasoning that the aggregate could not see node markers and so had nothing
+  # honest to say about a run with no steps — a premise the oracle measured false (C-E12-054).
+  [ "${lines[0]}" = 'No steps ran.' ]
+  [ "${lines[1]}" = 'Result: Succeeded' ]
 }
 
 @test "azdo_run_summary prints step, result, duration and log path in completion order" {
@@ -4133,18 +4137,76 @@ VSO
   [[ "$output" == *'invalid node result: Bogus'* ]]
 }
 
-@test "an abandoned job folds into its stage and outranks a skipped sibling (C-E12-052)" {
+@test "an abandoned job folds into its stage as Failed (C-E12-055)" {
+  # **E11-S04-T06 invented a rule here and the oracle measured it wrong.** It made this stage
+  # `Abandoned`, reasoning that an error should outrank a sibling's skip. The service disagrees:
+  # run 551's stage holding one skipped and one abandoned job is `failed`, and so is a stage whose
+  # every job is abandoned. A node's *own* errored condition is `Abandoned`; an abandoned child
+  # aggregates into its parent as a failure.
+  #
   # No `.stage-result` marker: this is the fold, not the short-circuit the stage-scope case takes.
   azdo_job_result_set Build skipped Skipped
   [ "$(azdo_stage_result Build)" = Skipped ]
   azdo_job_result_set Build bad Abandoned
-  # Invented precedence, deliberately the louder of the two: hiding a condition-evaluation error
-  # behind a sibling's skip is the conflation this task exists to remove (docs/06 §5 decision 90).
-  [ "$(azdo_stage_result Build)" = Abandoned ]
-
-  # A job that actually ran still decides the stage — Abandoned never displaces a real result.
-  azdo_job_result_set Build ran Failed
   [ "$(azdo_stage_result Build)" = Failed ]
+
+  # Measured separately rather than inferred by subtraction: every job abandoned is also Failed.
+  azdo_stage_result_set Other Skipped
+  rm -f "$AZDO_STATE_DIR/results/Other/.stage-result"
+  azdo_job_result_set Other a Abandoned
+  azdo_job_result_set Other b Abandoned
+  [ "$(azdo_stage_result Other)" = Failed ]
+
+  # The dependency reading is the *other* question and is unchanged: over an abandoned dependency
+  # `failed()` is still False (C-E02-071). Aggregation and dependency resolution read the same
+  # state and disagree about it, on the service and here.
+  AZDO_STAGE_ID=Build
+  export AZDO_STAGE_ID
+  run -1 azdo_status_job_failed bad
+}
+
+@test "an abandoned node fails the run and its exit code (C-E12-054)" {
+  # The isolating probe (run 552) had one succeeded stage, one skipped stage and one abandoned
+  # stage — every failed stage removed, so the run's `failed` was attributable to abandonment
+  # alone. Before this, the local run aggregated to Succeeded and exited 0.
+  mkdir -p "$AZDO_STATE_DIR/results/ok/j"
+  printf 'Succeeded\n' >"$AZDO_STATE_DIR/results/ok/j/010"
+  azdo_stage_result_set skipped_stage Skipped
+  run -0 azdo_run_result
+  [ "$output" = Succeeded ]
+  run -0 azdo_run_exit_code
+  [ "$output" = 0 ]
+
+  azdo_stage_result_set bad_stage Abandoned
+  run -0 azdo_run_result
+  [ "$output" = Failed ]
+  run -0 azdo_run_exit_code
+  [ "$output" = 1 ]
+
+  # The job-scope half, with the stage marker removed first **and the removal verified**. Without
+  # that middle read the assertion below proves nothing — a leftover `Abandoned` stage marker would
+  # carry it. This is the same attribution trap the second oracle probe was built to escape.
+  rm -f "$AZDO_STATE_DIR/results/bad_stage/.stage-result"
+  run -0 azdo_run_result
+  [ "$output" = Succeeded ]
+  azdo_job_result_set job_scope bad Abandoned
+  run -0 azdo_run_result
+  [ "$output" = Failed ]
+
+  # `Canceled` still wins outright: the step fold's ranking is unchanged and this only adds a
+  # floor of Failed.
+  printf 'Canceled\n' >"$AZDO_STATE_DIR/results/ok/j/020"
+  run -0 azdo_run_result
+  [ "$output" = Canceled ]
+
+  # The node scan keys on the two exact marker names, so the `issues/` sidecars — real files named
+  # by step id, holding `errors=`/`warnings=` counts — cannot reach it. They are why the step
+  # fold's dotfile filter had to stay untouched, which is why this is a separate pass at all.
+  rm -f "$AZDO_STATE_DIR/results/ok/j/020" "$AZDO_STATE_DIR/results/job_scope/bad/.job-result"
+  mkdir -p "$AZDO_STATE_DIR/results/ok/j/issues"
+  printf 'errors=1\nwarnings=2\n' >"$AZDO_STATE_DIR/results/ok/j/issues/010"
+  run -0 azdo_run_result
+  [ "$output" = Succeeded ]
 }
 
 @test "an abandoned dependency satisfies nothing but always() at both scopes (C-E02-071)" {

@@ -151,4 +151,7 @@ All rows: **verified + pinned 2026-07-30** (HEAD of that day; paths confirmed vi
 - `E06-condition-flow/` — hosted implicit/explicit condition, skip-log, and continued-failure flow (run 543)
 - `E06-setvariable/` — hosted current/subsequent task timing, output routing, and masking (run 544)
 - `E08-rest/<endpoint>/` — redacted live samples per REST endpoint
+- `E12-abandoned-aggregate/` — **two runs** settling what an abandoned node does to its stage and to
+  the run (E11-S04-T07, runs 550–552); the second probe exists because the first could not attribute
+  its own `failed`
 - `E10-<task>/` — live parity transcripts for the priority task set

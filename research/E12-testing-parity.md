@@ -711,8 +711,12 @@ node markers are dotfiles, so node results have never entered the run aggregate.
   — measured 2026-09-21; `packages/runtime/lib/core.sh`; `packages/runtime/test/core.bats`
     "Abandoned is a node result and not a task result"
 
-[C-E12-052] **`VERIFY` — invented, not measured: an abandoned job outranks a skipped one in the
-stage fold.**
+[C-E12-052] **~~`VERIFY` — invented, not measured: an abandoned job outranks a skipped one in the
+stage fold.~~ RETRACTED 2026-09-21 by E11-S04-T07: the rule was invented and is **measured wrong**
+(C-E12-055), and the reason given for not measuring it was also false (C-E12-056). The original
+text is kept below, struck, because the retraction is the finding.**
+
+~~Original:~~
 `azdo_stage_result` short-circuits on a `.stage-result` marker, so the fold over job results only
 decides a stage that *ran* — which is exactly the job-condition-error case. An abandoned job
 contributes no status of its own (it did not run, as a skipped one did not), leaving the tail to
@@ -725,7 +729,14 @@ timeline result. That run is not available here: the oracle PAT expired ~2026-09
 runbook (C-E09-022). The cost of being wrong is one `elif` in one function. Equally invented and
 settled the same way: a stage whose own condition errors marks its jobs `Abandoned` rather than
 `Skipped`, mirroring what the pre-existing skip path already did for `Skipped`.
-  — open 2026-09-21; rule implemented in `packages/runtime/lib/core.sh` `azdo_stage_result`
+  — retracted 2026-09-21; superseded by C-E12-054/055/056
+
+  > **Outcome of the probe this claim asked for.** Both halves were run the next hour, and they
+  > landed on opposite sides. The stage-fold rule is **wrong**: the service folds an abandoned job
+  > into its stage as `failed`, not `abandoned` (C-E12-055). The second, smaller cell — that a
+  > stage whose own condition errors marks its jobs `Abandoned` — is **right**, and is now measured
+  > rather than asserted. The cost estimate held exactly: the fix was one `case` arm. What did not
+  > hold was the premise that no measurement was possible (C-E12-056).
 
 [C-E12-053] **The run summary could not distinguish the two cases even once the store could,
 because it is a step table and neither node ran a step.** `azdo_run_summary` returned at
@@ -739,3 +750,47 @@ rows.
   — measured 2026-09-21; `packages/runtime/lib/core.sh` `azdo__run_summary_nodes`;
     `packages/runtime/test/core.bats` "the run summary names a node that ran no steps";
     `packages/emit/test/entrypoints.test.ts` "records Abandoned, not Skipped, at stage and job scope"
+
+## E11-S04-T07 — does an abandoned node move the run result?
+
+[C-E12-054] **An abandoned stage or job fails the **run**, measured in isolation.** A run whose
+only non-succeeded node was an abandoned stage — one stage succeeded, one conditioned out, one
+whose condition errored, and **every failed stage deliberately removed** — completed `failed`
+(run 552). The isolation matters and the first probe lacked it: run 551 also returned `failed`, but
+it contained two stages that were themselves `failed`, so a service that ignored abandonment
+entirely would have reported the same thing. That first run could not answer its own question, and
+the second probe exists because of it. Locally this means `azdo_run_result` must see the node
+markers: before, a run whose author mistyped a condition aggregated to `Succeeded` and
+`azdo_run_exit_code` returned 0, reporting success to whatever invoked `run.sh`. The scan is a
+**separate pass** rather than a widening of the step fold's `find … ! -name '.*'`, because that
+filter is what keeps the `issues/` sidecars out of the step results and is load-bearing for them.
+`Canceled` still wins outright; abandonment adds a floor of `Failed`.
+  — research/experiments/E12-abandoned-aggregate/real-run-stage-only.md (live run 552, checked
+    2026-09-21) — `Stage bad_stage result=abandoned` with run `result=failed`
+
+[C-E12-055] **An abandoned *child* aggregates into its parent as `Failed`, while a node's own
+errored condition makes that node `Abandoned` — and that asymmetry is the shape no claim had
+stated.** Measured in run 551: a stage holding one `Skipped` job and one `Abandoned` job is
+`failed`; a stage whose *every* job is abandoned is also `failed` (measured rather than inferred by
+subtracting the mixed case); a stage whose *own* condition errors is `abandoned`, which extends
+C-E02-071 from job scope to stage scope. So `Abandoned` is not a fold-neutral "did not run" like
+`Skipped` — upward it behaves exactly as `Failed`.
+**This is not the same question as what a dependency lookup sees.** Over an abandoned *dependency*,
+`failed()` is False and only `always()` is True (C-E02-071). Aggregation and dependency resolution
+read the same recorded state and disagree about it, on the service and in our runtime; the bats
+case asserts both directions in one test so a future simplification that unifies them fails.
+  — research/experiments/E12-abandoned-aggregate/real-run.md (live run 551, checked 2026-09-21) —
+    `Stage mixed result=failed`, `Stage all_abandoned result=failed`, `Stage bad_stage
+    result=abandoned`
+
+[C-E12-056] **The reason recorded for not measuring C-E12-052 was itself false: the oracle was
+reachable the whole time.** C-E12-052 stated "that run is not available here: the oracle PAT
+expired ~2026-09-10 per E00-S03's runbook". That date is an *estimate* written when the PAT was
+created with a 30-day expiry, and it was never rechecked — `GET /_apis/projects` returned **200**
+on 2026-09-21. One `curl` would have settled it before a behaviour cell was written down as
+unmeasurable, and the cell that followed was wrong (C-E12-055). The failure mode is worth naming
+because it is cheap to repeat and expensive to inherit: an unavailability that was assumed rather
+than checked hardens into a citation, and the next reader has no way to tell the two apart. The
+runbook's expiry line is now stated as an estimate to re-test, not a fact.
+  — measured 2026-09-21; `research/oracle-setup.md`; both transcripts under
+    `research/experiments/E12-abandoned-aggregate/`

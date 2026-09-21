@@ -1032,10 +1032,12 @@ describe('a condition that errors abandons its node (C-E12-048, E11-S04-T06)', (
     try {
       generateProject(tmp, ERRORING);
       let out = '';
+      let exitCode = 0;
       try {
         out = execFileSync('bash', ['run.sh'], { cwd: tmp, encoding: 'utf8' });
       } catch (error) {
         out = (error as { stdout?: string }).stdout ?? '';
+        exitCode = (error as { status?: number }).status ?? 0;
       }
       const results = join(tmp, '.work/run-1/state/results');
       const read = (path: string): string => readFileSync(join(results, path), 'utf8').trim();
@@ -1069,6 +1071,12 @@ describe('a condition that errors abandons its node (C-E12-048, E11-S04-T06)', (
       expect(out).toContain('stage skipped_stage: Skipped');
       expect(out).toContain('job job_scope/bad: Abandoned');
       expect(out).toContain('job job_scope/skipped: Skipped');
+
+      // E11-S04-T07, measured against the service (run 552): an abandoned node fails the run.
+      // Every step this pipeline actually ran succeeded, so a run aggregate that ignored the node
+      // markers would say `Succeeded` here and exit 0 — which is what it did before.
+      expect(out).toContain('Result: Failed');
+      expect(exitCode).toBe(1);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
