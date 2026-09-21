@@ -879,3 +879,29 @@ published enum. Both claims are corrected in place rather than superseded.
   — https://learn.microsoft.com/rest/api/azure/devops/build/timeline/get (`git_commit_id`
     `cb0d0b30ca71a83e03cc7a7bbd9361e1a432b377`, checked 2026-09-21) — "TaskResult … succeeded |
     succeededWithIssues | failed | canceled | skipped | abandoned"
+
+## E11-S05-T02 — the release gate
+
+[C-E12-063] **The release gate is walkable because every line resolves to a run id, and walking it
+once found the line that had none.** Five lines: L1/L2/L4 green, L5 green, three consecutive green
+nightlies, an L6 spot-check, and a stated residual risk. Four resolved by lookup against the
+release commit `474d7c3` — `ci.yml` run 35614680104 (four `test` legs plus `e2e (L5, containers)`),
+and nightlies 35576108449 / 35497974655 / 35429351169. **The fifth did not exist.** `Real-run
+parity (L6)` had never been dispatched: E11-S05-T01 ran `scripts/realrun.ts` locally, and a local
+result is precisely what this line is meant to exclude — an un-dispatched workflow is a claim about
+CI, not evidence from it. Dispatching it with `reuse_run: 553` validated the whole CI path (secrets,
+build, extractor, comparison, artifact upload) for **zero new hosted-agent minutes**, and the check
+is two-sided by construction: the log must show *both* `reusing completed run 553` and `PARITY
+across 13 facts`, because a job gated out by `ORACLE_ENABLED` or a no-opping script is
+indistinguishable from success at the conclusion level. Run 35617191948.
+  — research/release-gate/rc-2026-09-21.md; `RELEASE-CHECKLIST.md`
+
+[C-E12-064] **The gate's tiers do not map one-to-one onto CI jobs, and the checklist says so rather
+than implying otherwise.** docs/06 §3 defines six layers; the repo has three workflows. L1, L2 and
+L4 have **no job of their own** — they are vitest projects and a bats file inside the single `test`
+matrix, so "L1–L4 green" resolves to one job matrix, not four results. L2 additionally does not
+gate the shipped path at all: E12-S03-T01 re-scoped it to the *offline fallback*, because the
+default expansion is the service's own (PLAN D3). Stating the mapping is the same discipline as the
+L6 comparator naming what it dropped: a checklist that implies a job per tier overstates its own
+granularity, and the overstatement is invisible to whoever walks it later.
+  — `RELEASE-CHECKLIST.md`; docs/06 §3
