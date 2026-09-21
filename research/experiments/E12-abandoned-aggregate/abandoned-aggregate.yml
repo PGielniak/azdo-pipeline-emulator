@@ -1,0 +1,107 @@
+# E11-S04-T07 — real-run probe: does an ABANDONED node move the *run* result?
+#
+# A stage or job whose condition *errors* completes `Abandoned` (C-E02-071). Our local runtime
+# records that state (C-E12-051) but `azdo_run_result` folds only step results, so locally the run
+# aggregates as if the abandoned node were not there and `azdo_run_exit_code` returns 0. The docs
+# do not say what the service does, and the exit-code contract is ours (docs/04 §3, decision 56) —
+# but "ours" is no reason to invent when the service can be asked.
+#
+# Every job is **agentless** (`pool: server`): the orchestrator runs them, so no hosted-agent
+# parallelism is consumed and the run finishes in seconds. `Delay@1` with 0 minutes is the shortest
+# always-succeeding server task. Nothing is echoed — every datum is a *result* on the timeline.
+#
+# Three questions, one run:
+#   1. run result, with one succeeding stage and one abandoned stage      -> E11-S04-T07
+#   2. `mixed` stage result, one skipped job + one abandoned job          -> C-E12-052 (VERIFY)
+#   3. does a stage whose own condition errors read `abandoned` too?      -> C-E02-071 was a *job*
+#
+# The abandonment must be shown to have happened before the run result means anything, so (3) is
+# the control for (1): if `bad_stage` is not `abandoned`, the probe measured nothing.
+#
+# Pushed to the oracle repo and queued by `scripts/abandoned-aggregate-realrun.ts`.
+trigger: none
+pr: none
+
+stages:
+  # --- a stage that plainly succeeds, so the run has something good in it -----------------------
+  - stage: ok
+    displayName: stage that succeeds
+    jobs:
+      - job: j
+        pool: server
+        steps:
+          - task: Delay@1
+            inputs:
+              delayForMinutes: '0'
+
+  # --- one stage, one skipped job and one abandoned job -----------------------------------------
+  # `dependsOn: []` detaches it from the sequential default so `ok` does not decide it.
+  # The datum is this *stage's* result: does the abandoned job or the skipped one win the fold?
+  - stage: mixed
+    displayName: stage with a skipped job and an abandoned job
+    dependsOn: []
+    jobs:
+      - job: skipped
+        pool: server
+        condition: false
+        steps:
+          - task: Delay@1
+            inputs:
+              delayForMinutes: '0'
+      # `gt` errors rather than returning False when the right operand cannot be converted
+      # (C-E02-022), and the orchestrator evaluates the condition, so this never reaches a pool.
+      - job: abandoned
+        pool: server
+        condition: gt(1, 'not-a-number')
+        steps:
+          - task: Delay@1
+            inputs:
+              delayForMinutes: '0'
+
+  # --- a stage whose every job is abandoned -------------------------------------------------------
+  # `mixed` shows {skipped, abandoned} folding to something; this shows what an abandoned job
+  # contributes on its own, so the rule is measured rather than inferred by subtraction.
+  - stage: all_abandoned
+    displayName: stage whose every job is abandoned
+    dependsOn: []
+    jobs:
+      - job: a
+        pool: server
+        condition: gt(1, 'not-a-number')
+        steps:
+          - task: Delay@1
+            inputs:
+              delayForMinutes: '0'
+      - job: b
+        pool: server
+        condition: gt(1, 'not-a-number')
+        steps:
+          - task: Delay@1
+            inputs:
+              delayForMinutes: '0'
+
+  # --- a stage whose own condition errors ---------------------------------------------------------
+  - stage: bad_stage
+    displayName: stage whose condition errors
+    dependsOn: []
+    condition: gt(1, 'not-a-number')
+    jobs:
+      - job: j
+        pool: server
+        steps:
+          - task: Delay@1
+            inputs:
+              delayForMinutes: '0'
+
+  # --- a stage conditioned out, as the contrast the whole task is about ---------------------------
+  - stage: skipped_stage
+    displayName: stage conditioned out
+    dependsOn: []
+    condition: false
+    jobs:
+      - job: j
+        pool: server
+        steps:
+          - task: Delay@1
+            inputs:
+              delayForMinutes: '0'

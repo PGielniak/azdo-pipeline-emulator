@@ -135,6 +135,12 @@ Grounding: C-E00-019/020. UI path per the PAT doc (verified 2026-07-30):
 - **PAT rotation** (PAT doc, "Rotation workflow"): create the replacement ≥ 7 days before
   expiry, same name/scopes → update `.env.oracle` + the `AZDO_PAT` repo secret → verify with
   the Step-5 curl → revoke the old token. Calendar-note the expiry when you create the PAT.
+  **A noted expiry is an estimate, not a fact — re-test before believing it** (C-E12-056). The
+  2026-08-11 PAT was noted as lapsing ~2026-09-10 and still returned 200 on 2026-09-21; in between,
+  a task recorded a measurable behaviour cell as unmeasurable on the strength of that date, and
+  the cell it invented instead was wrong. One curl settles it: `curl -s -o /dev/null -w '%{http_code}'
+  -u ":$AZDO_PAT" "$AZDO_ORG_URL/_apis/projects?api-version=7.1-preview.4"` — 200 live, 302 lapsed
+  (a lapse is never a 401, C-E00-025).
 - **Revocation**: User settings → Personal access tokens → select → **Revoke** (immediate).
   Revoke instantly if a transcript with an unredacted token was ever staged/pushed — note the
   PAT doc says tokens leaked to public GitHub repos are auto-revoked, but do not rely on it.
@@ -167,6 +173,15 @@ Grounding: C-E00-019/020. UI path per the PAT doc (verified 2026-07-30):
     Runs 520–527 are the recorded evidence. Two of its jobs end non-green **by design** (`dep_fail`
     fails, `dep_abandon` is abandoned — they are the Failed and Abandoned dependencies under test),
     so the pipeline's run history is expected to show failed runs; that is not a broken probe.
+  - `/experiments/abandoned-aggregate.yml` + pipeline **`oracle-abandon-probe`** and
+    `/experiments/abandoned-stage-only.yml` + pipeline **`oracle-abandon-stage-probe`**
+    (E11-S04-T07), pushed and created by `node scripts/abandoned-aggregate-realrun.ts`
+    (`--probe stage-only` for the second). Agentless like the status probe, so no hosted-agent
+    parallelism. **There are two because the first could not answer its own question**: it returned
+    `failed` at run scope while also containing stages that were themselves failed, so the result
+    was not attributable to the abandoned node; the second removes every failed stage. Runs 550–552
+    are the recorded evidence. **Every run of both is expected to end `failed`** — an abandoned
+    stage is the thing under test — so a red run history here is the probe working, not breaking.
   - `/experiments/readonly-variable.yml` and the pipeline **`oracle-readonly-variable-probe`**
     (E06-S01-T01), pushed and created by `node scripts/readonly-variable-realrun.ts`. It has one
     hosted Ubuntu job because only an agent executes `task.setvariable`; run 539 records strict

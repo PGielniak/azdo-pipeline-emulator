@@ -1,0 +1,49 @@
+# E11-S04-T07 — the isolating probe.
+#
+# The first probe (`abandoned-aggregate.yml`) came back `failed` at run scope, but it could not
+# say *why*: it also contained two stages that were themselves `failed` (an abandoned job folds
+# into its stage as Failed), so a run that ignored abandonment entirely would have reported
+# `failed` just the same. This run removes every failed stage. What is left is one stage that
+# succeeds, one that is conditioned out, and one whose condition errors — so the run result is
+# attributable to the abandoned stage and to nothing else.
+#
+# Agentless throughout (`pool: server`, `Delay@1` 0 minutes). Queued by
+# `scripts/abandoned-aggregate-realrun.ts --probe stage-only`.
+trigger: none
+pr: none
+
+stages:
+  - stage: ok
+    displayName: stage that succeeds
+    jobs:
+      - job: j
+        pool: server
+        steps:
+          - task: Delay@1
+            inputs:
+              delayForMinutes: '0'
+
+  - stage: skipped_stage
+    displayName: stage conditioned out
+    dependsOn: []
+    condition: false
+    jobs:
+      - job: j
+        pool: server
+        steps:
+          - task: Delay@1
+            inputs:
+              delayForMinutes: '0'
+
+  # The only node in this run that is neither succeeded nor skipped.
+  - stage: bad_stage
+    displayName: stage whose condition errors
+    dependsOn: []
+    condition: gt(1, 'not-a-number')
+    jobs:
+      - job: j
+        pool: server
+        steps:
+          - task: Delay@1
+            inputs:
+              delayForMinutes: '0'

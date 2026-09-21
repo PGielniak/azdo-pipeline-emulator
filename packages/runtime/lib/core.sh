@@ -504,20 +504,23 @@ azdo_job_result() {
 # A skipped stage has an explicit marker. Otherwise fold its job results, treating Skipped as the
 # stage result only when every recorded job was skipped.
 #
-# `Abandoned` joins that tail as a job result the fold can now see (E11-S04-T06): a job whose own
-# condition errored is marked `Abandoned` while its stage ran, so unlike the stage-scope case there
-# is no `.stage-result` marker short-circuiting this fold. It contributes no status of its own —
-# the job did not run, exactly as a skipped one did not — but it **outranks `Skipped` in the tail**
-# (C-E12-052). That precedence is invented, not measured: hiding a condition-evaluation error
-# behind a sibling's skip is the same conflation this task exists to remove, so the louder of the
-# two wins. docs/06 §5 decision 90 names the probe that would settle it.
+# An abandoned job folds into its stage as **`Failed`** (E11-S04-T07, C-E12-055) — measured, after
+# E11-S04-T06 invented a different rule here and got it wrong. The service's shape is an asymmetry
+# no single claim had stated: a node's *own* errored condition makes that node `Abandoned`, while an
+# abandoned **child** aggregates into its parent as a failure. Both halves are live-measured in run
+# 551: a stage holding one skipped and one abandoned job is `failed`, and so is a stage whose every
+# job is abandoned — neither is `abandoned` and neither is `skipped`.
+#
+# This is *not* the same question as what a **dependency** lookup sees. Over an abandoned
+# dependency `failed()` is False and only `always()` is True (C-E02-071), and `azdo__status_graph`
+# still answers that way. Aggregation and dependency resolution read the same state and disagree
+# about it, on the service and here.
 azdo_stage_result() {
   (($# == 1)) || {
     printf '%s\n' 'usage: azdo_stage_result <stage>' >&2
     return 2
   }
   local state_dir results_dir stage_dir marker result job_dir job_name status='' saw_skipped=false
-  local saw_abandoned=false
   state_dir="$(azdo__state_dir)" || return
   results_dir="$state_dir/results"
   if ! azdo__result_child_dir "$results_dir" "$1" stage_dir; then
@@ -540,7 +543,7 @@ azdo_stage_result() {
         status=Canceled
         break
         ;;
-      Failed) status=Failed ;;
+      Failed | Abandoned) status=Failed ;;
       SucceededWithIssues)
         [[ -n "$status" && "$status" != Succeeded ]] || status=SucceededWithIssues
         ;;
@@ -548,7 +551,6 @@ azdo_stage_result() {
         [[ -n "$status" ]] || status=Succeeded
         ;;
       Skipped) saw_skipped=true ;;
-      Abandoned) saw_abandoned=true ;;
       '') ;;
       *)
         printf 'invalid job result: %s\n' "$result" >&2
@@ -558,8 +560,6 @@ azdo_stage_result() {
   done
   if [[ -n "$status" ]]; then
     printf '%s\n' "$status"
-  elif [[ "$saw_abandoned" = true ]]; then
-    printf '%s\n' Abandoned
   elif [[ "$saw_skipped" = true ]]; then
     printf '%s\n' Skipped
   else
@@ -4262,6 +4262,25 @@ azdo_summary_record() {
   umask "$old_umask"
 }
 
+# azdo__run_has_abandoned_node
+#
+# Whether any stage or job in the run was abandoned (E11-S04-T07). A separate pass rather than a
+# widening of `azdo_run_result`'s `find`: that filter excludes dotfiles, which is what keeps the
+# `issues/` sidecars and these very markers out of the *step* fold, and it is load-bearing for
+# both. Node results are a different vocabulary read a different way, so they get their own scan.
+azdo__run_has_abandoned_node() {
+  local state_dir results_dir marker result
+  state_dir="$(azdo__state_dir)" || return
+  results_dir="$state_dir/results"
+  [[ -d "$results_dir" ]] || return 1
+
+  while IFS= read -r marker; do
+    IFS= read -r result <"$marker" || [[ -n "$result" ]] || continue
+    [[ "$result" != Abandoned ]] || return 0
+  done < <(find "$results_dir" -type f \( -name '.job-result' -o -name '.stage-result' \))
+  return 1
+}
+
 # azdo_run_result
 #
 # Worst-wins across every recorded step result in the run, using the ranking
@@ -4302,6 +4321,15 @@ azdo_run_result() {
       Succeeded | Skipped) ;;
     esac
   done < <(find "$results_dir" -type f ! -name '.*' | LC_ALL=C sort)
+
+  # An abandoned stage or job fails the run, measured rather than assumed (C-E12-054): a run whose
+  # only non-succeeded node was an abandoned stage came back `failed` from the service, with every
+  # failed stage removed from the probe so the result was attributable to nothing else. Before
+  # this, such a run aggregated to `Succeeded` and exited 0 — a mistyped condition reported success
+  # to whatever invoked `run.sh`. `Canceled` still wins outright, matching the step fold's ranking.
+  if [[ "$status" != Canceled ]] && azdo__run_has_abandoned_node; then
+    status=Failed
+  fi
 
   printf '%s\n' "$status"
 }
@@ -4418,20 +4446,19 @@ azdo_run_summary() {
     done
   fi
 
-  # Gathered before the empty-table branch prints, because that branch used to `return 0` and take
-  # the node rows with it — the case that matters most is exactly the one where no step ran.
+  # Gathered before the table is printed so the rows survive the empty-table branch — the case that
+  # matters most is exactly the one where no step ran.
   local nodes index
   nodes="$(azdo__run_summary_nodes)" || return
 
   if ((${#ids[@]} == 0)); then
-    # Still an early return, and deliberately so. Falling through would append `Result: Succeeded`
-    # to a run whose every stage was abandoned — `azdo_run_result` folds *step* results and the node
-    # markers are dotfiles it never reads, so the aggregate has nothing to say here and saying it
-    # would be worse than silence. Whether an abandoned node should move the run result at all is a
-    # separate question, filed as E11-S04-T07 rather than answered in passing.
+    # **The early return is gone, and E11-S04-T06's reason for keeping it was the premise that
+    # turned out to be false.** It read: falling through would append `Result: Succeeded` to a run
+    # whose every stage was abandoned, since the aggregate could not see the node markers. It can
+    # now — an abandoned node fails the run (C-E12-054) — so the line that was misleading is the
+    # one the reader most needs: a run that executed no step and reports `Result: Failed` is
+    # telling the truth about a condition that did not evaluate.
     printf 'No steps ran.\n'
-    [[ -z "$nodes" ]] || printf '\n%s\n' "$nodes"
-    return 0
   else
     printf '%-*s  %-*s  %-*s  %-*s  %8s  %s\n' \
       "$scope_width" 'SCOPE' "$id_width" 'STEP' "$display_width" 'NAME' \
