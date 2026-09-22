@@ -653,6 +653,18 @@ download and the `.cache/artifacts/` write are covered by unit tests only. **To 
 pipeline containing a `PublishBuildArtifacts`/`PublishPipelineArtifact` step once, then re-run the
 transcript's §4.
 
+  **Closed 2026-09-22 — for the pipeline-artifact half only.** E11-S05-T01 queued the build this
+  note was waiting for as a side effect: run **553** of `oracle-l6-shell-artifacts` publishes
+  `drop`. §4 was re-run as `scripts/e09-runs-artifacts-live.ts` (reads an existing run; queues
+  nothing), and the download is now measured end to end — unauthenticated `GET` against
+  `signedContent.url`, 1 file / 150 bytes unpacked into `.cache/artifacts/l6-shell-artifacts/553/
+  drop/`, matching docs/05 §4's layout. The live 200 also **confirms the shape the unit fixtures
+  guessed**: `signedContent` nested with `url` + `signatureExpires`, alongside a top-level `url`.
+  The `PublishBuildArtifacts` half of the sentence is **not** closed — run 553 publishes a
+  `PipelineArtifact`, and a classic `Container` artifact is a different resource type (C-E09-074),
+  which is why E09-S03-T03 stays `[!]`. See C-E09-093, and C-E09-094 for what the download nearly
+  cost.
+
 ---
 
 ## E09-S03-T03 — classic build artifacts and definition lookup (`C-E09-074..079`)
@@ -845,3 +857,50 @@ validation schema that is a few days old is far better than a conversion that wi
 consumer (`resolvePipelineSchema`) already degrades to the vendored schema when the document is
 unusable.
   — project policy, following docs/05 §4's "Expire by age and let `--refresh` force a re-fetch"
+
+## E09-S03-T02 — the download half, unblocked by a run that already existed
+
+[C-E09-093] **The artifact download and cache write are measured, and the fixture came from another
+task.** The 2026-09-02 blocker was not a code gap: it was that the organization had 13 pipelines, 29
+completed runs and **no artifacts**, because every experiment used `previewRun: true` (C-E09-073).
+E11-S05-T01 queued run **553** of `oracle-l6-shell-artifacts`, which publishes `drop` via
+`PublishPipelineArtifact@1` — the outward-facing write the old note declined to take unilaterally
+had already been taken, for a different reason, and nobody noticed the blocker was stale. Measured
+now against that run: `GET pipelines/36/runs/553/artifacts?artifactName=drop&$expand=signedContent`
+returns 200 with `signedContent.url` and `signatureExpires`; the download carries **no**
+`Authorization` header (the signature is the grant, C-E09-071) and returns a zip; one file, 150
+bytes, unpacked to `.cache/artifacts/l6-shell-artifacts/553/drop/` beside the retained
+`artifact.zip` — docs/05 §4's layout. **The second Done clause was mis-assigned:** the note sent
+"pinned runId in lockfile" to E09-S03-T06, but the schema and the verify path were already here,
+and what they lacked was the same artifact item 1 lacked. `verifyLockfile` resolves the artifact
+directory *from the pinned `runId`*, and against this download it reports zero missing pins.
+  — research/experiments/E09-rest/runs-artifacts/download-real-run.md (live, checked 2026-09-22);
+    regenerate with `pnpm e09-runs-artifacts-live`
+
+[C-E09-094] **A signed artifact URL leaks the organization name through a base64 path segment, past
+every redaction this repo had.** `signedContent.url` is a bearer credential in a query string, so
+the obvious hygiene is to strip the query — and that is what the first version of this task's
+transcript did, printing the path verbatim. One path segment is **base64**, and it decodes to
+`pipelineartifact://<org>/projectId/<guid>/buildId/<n>/artifactName/<name>`. The organization name
+was therefore sitting in a file bound for a public repository, and **both** existing checks came
+back clean: `redact()` matches the org as a literal string (C-E00-027) and the runbook's hygiene
+step greps for that same literal — neither sees base64. Caught by decoding the segment while
+reading the generated transcript, not by any gate. The describer now redacts **path segments as
+well as parameter values**, against an allowlist of structural literals (`_apis`, `public`,
+`artifact`, `signedContent`), because the two opaque segments — an account GUID and the blob — do
+not announce themselves.
+
+  **The fix that matters is the gate, not the describer.** Hardening one writer stops one
+  transcript; the failure mode here is *every literal-text check reporting clean*, which the next
+  session hits again with a different file. `scripts/check-encoded-secrets.sh` decodes base64 runs
+  in staged (pre-commit) and tracked (CI) content and looks for Azure DevOps identifiers —
+  `pipelineartifact://`, `vstfs:///`, the two service hosts — in the **decoded** bytes, plus the
+  org slug when `AZDO_ORG_URL` is available. The indicators are structural, so the gate is not
+  vacuous in CI without a credential. It carries a `--self-test` that fails if the detector stops
+  firing, and it never prints what it found: a scanner that echoes the secret into a CI log has
+  moved the leak rather than caught it. Two implementation traps, both of which made it silently
+  pass a dirty tree during development: `/` is both a base64 character and a path separator, so a
+  greedy run swallows the blob into an undecodable path (it now scans split and unsplit), and under
+  `pipefail` a filter matching nothing aborts the scan on the first ordinary file.
+  — measured 2026-09-22; `scripts/e09-runs-artifacts-live.ts`;
+    `test/e09-signed-url-redaction.test.ts`; `scripts/check-encoded-secrets.sh --self-test`

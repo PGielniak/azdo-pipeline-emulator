@@ -44,6 +44,14 @@ jobs:
       - run: pnpm lint
       - name: Grounding guard (no unresolved research markers in code paths)
         run: bash scripts/check-verify-markers.sh --all
+      # E09-S03-T02: the leak this catches is invisible to `redact()` and to a grep for the
+      # org name — both match literal text, and the org name arrived base64-encoded inside a
+      # signed URL's path (C-E09-094). `--self-test` first, because a scanner that silently
+      # stopped matching would pass this step exactly like a clean tree.
+      - name: Encoded-secret guard (decodes base64 before looking)
+        run: |
+          bash scripts/check-encoded-secrets.sh --self-test
+          bash scripts/check-encoded-secrets.sh --all
       # E11-S02-T01: the report is part of review, so it prints on every run; --check only fails
       # when the ratchet in .claim-coverage-floor slips.
       - name: Claim↔test coverage (BACKLOG.md §3)

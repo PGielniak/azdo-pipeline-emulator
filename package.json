@@ -34,6 +34,7 @@
     "expr-status-realrun": "node scripts/expr-status-realrun.ts",
     "abandoned-aggregate-realrun": "node scripts/abandoned-aggregate-realrun.ts",
     "realrun": "node scripts/realrun.ts",
+    "e09-runs-artifacts-live": "node scripts/e09-runs-artifacts-live.ts",
     "expr-general-survey": "node scripts/expr-general-survey.ts",
     "expr-filtered-array-survey": "node scripts/expr-filtered-array-survey.ts",
     "expr-context-survey": "node scripts/expr-context-survey.ts",
@@ -62,6 +63,7 @@
     "lint:shell": "pnpm --filter @azdo-emu/runtime run lint",
     "format": "prettier --write .",
     "claim-coverage": "bash scripts/claim-coverage.sh",
+    "check-secrets": "bash scripts/check-encoded-secrets.sh --all",
     "test:e2e": "node scripts/e2e.ts"
   },
   "devDependencies": {
