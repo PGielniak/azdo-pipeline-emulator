@@ -902,5 +902,14 @@ not announce themselves.
   pass a dirty tree during development: `/` is both a base64 character and a path separator, so a
   greedy run swallows the blob into an undecodable path (it now scans split and unsplit), and under
   `pipefail` a filter matching nothing aborts the scan on the first ordinary file.
+
+  **Verified against the real URL, not against a reconstruction of it.** `--self-test` encodes a
+  sample *written from the decoded shape*, so on its own it proves only that the detector fires on
+  what the author expected the segment to look like — if the real segment carried a `.`, a
+  `%`-escape or mid-string padding, the candidate class `[A-Za-z0-9+/_-]{24,}` would split it into
+  pieces decoding to garbage and the gate would report clean **on the actual leak**, which looks
+  identical to a clean tree. So the live `signedContent.url` was fetched raw into a scratch file
+  and `--file` run over it: both halves fired — the identifier and the org slug. The scratch file
+  was deleted immediately; it is a short-TTL bearer credential and was never staged.
   — measured 2026-09-22; `scripts/e09-runs-artifacts-live.ts`;
     `test/e09-signed-url-redaction.test.ts`; `scripts/check-encoded-secrets.sh --self-test`

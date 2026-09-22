@@ -12,9 +12,10 @@
 # list, so the gate is meaningful in CI with no credential available; when `AZDO_ORG_URL`
 # is set (or `.env.oracle` is present locally) the org slug is checked too, raw and encoded.
 #
-#   --all        (default) scan tracked files — used by CI
-#   --staged     scan staged content — used by .githooks/pre-commit
-#   --self-test  prove the detector fires; a scan that cannot fail is not a gate
+#   --all          (default) scan tracked files — used by CI
+#   --staged       scan staged content — used by .githooks/pre-commit
+#   --file <path>  scan one file, tracked or not — for checking a capture before it lands
+#   --self-test    prove the detector fires; a scan that cannot fail is not a gate
 #
 # **It never prints what it found.** A scanner that echoes the secret into a CI log has
 # moved the leak rather than caught it, so a finding names the file and the *class*.
@@ -104,6 +105,13 @@ case "$mode" in
       check_file "$f" "$tmp"
     done < <(git diff --cached --name-only --diff-filter=ACMR)
     ;;
+  --file)
+    [[ -n "${2:-}" && -f "$2" ]] || {
+      echo "usage: $0 --file <path>" >&2
+      exit 2
+    }
+    check_file "$2" "$2"
+    ;;
   --self-test)
     # The exact shape that got through on 2026-09-22, with a placeholder org.
     printf 'GET https://x.example/_apis/public/artifact/%s/content\n' \
@@ -128,7 +136,7 @@ case "$mode" in
     exit 0
     ;;
   *)
-    echo "usage: $0 [--all|--staged|--self-test]" >&2
+    echo "usage: $0 [--all|--staged|--file <path>|--self-test]" >&2
     exit 2
     ;;
 esac
