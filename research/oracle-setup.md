@@ -158,6 +158,28 @@ Grounding: C-E00-019/020. UI path per the PAT doc (verified 2026-07-30):
   `research/experiments/`, replace the org name with `{org}` and check no PAT slipped in.
   PATs are mechanically detectable: 84 chars with a fixed `AZDO` signature at positions 76–80
   (C-E00-021) — `grep -rE '[A-Za-z0-9]{75}AZDO[A-Za-z0-9]{4}'` over staged files.
+  **A grep for the org name is not sufficient, and this is not theoretical** (C-E09-094,
+  2026-09-22): a pipeline-artifact signed URL carries a **base64** path segment that decodes to
+  `pipelineartifact://<org>/projectId/…`, so the org name can sit in a transcript while both
+  `redact()` and that grep report clean — `redact()` matches the org as a literal string. **Decode
+  before you trust the scan:**
+
+  ```bash
+  pnpm check-secrets                              # tracked files; what CI runs
+  bash scripts/check-encoded-secrets.sh --staged  # what the pre-commit hook runs
+  bash scripts/check-encoded-secrets.sh --self-test
+  ```
+
+  This is a **gate**, not a procedure to remember — `.githooks/pre-commit` runs the `--staged`
+  form (activate it once per clone with `git config core.hooksPath .githooks`) and `ci.yml` runs
+  `--all`. It decodes base64 runs and looks for Azure DevOps identifiers in the decoded bytes, so
+  it works in CI with no credential; with `AZDO_ORG_URL` set it also checks the org slug, raw and
+  encoded. Run `--self-test` when you doubt it: it fails if the detector has stopped firing, which
+  otherwise looks exactly like a clean tree. It deliberately prints the file and the *class* of
+  finding, never the matched text.
+
+  Anything that embeds an identifier in an opaque token — signed URLs, continuation cursors — can
+  do this; the rule is to decode what you cannot read, not to trust that it is opaque to readers too.
 - **What now lives in the oracle project** (E12-S01-T02 — keep this list current, it *is* the
   cleanup checklist now that the project is not empty):
   - `azure-pipelines.yml` — the anchor (E00-S03-T01).
