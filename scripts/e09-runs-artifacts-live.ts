@@ -141,7 +141,8 @@ async function main(): Promise<void> {
     const lockfile: Lockfile = {
       version: 1,
       // Fixed rather than `new Date()`: a transcript that changes on every regeneration is a diff
-      // nobody can read, and this field is not what the check is about.
+      // nobody can read, and this field is not what the check is about. `signatureExpires` below
+      // is the deliberate exception — that one *is* the measurement.
       convertedAt: '2026-09-22T00:00:00.000Z',
       pipelines: {
         [ALIAS]: { pipelineId: PIPELINE_ID, runId: target.id, artifacts: [ARTIFACT] },
@@ -174,10 +175,15 @@ async function main(): Promise<void> {
       '  -> HTTP 200',
       `     name:             ${meta.name}`,
       `     url:              ${meta.url === undefined ? '(absent)' : '<container url, redacted>'}`,
-      `     signatureExpires: ${meta.signatureExpires ?? '(absent)'}`,
+      `     signatureExpires: ${meta.signatureExpires ?? '(absent)'}   <- the one value that changes per run`,
       `     signedContent.url shape:`,
       `       ${meta.signedUrl === undefined ? '(absent)' : describeSignedUrl(meta.signedUrl)}`,
       '```',
+      '',
+      "`signatureExpires` is deliberately **not** pinned the way the lockfile's `convertedAt` is: it",
+      'is a measurement, and a fresh short TTL on every regeneration is exactly the evidence for',
+      'C-E09-071\'s "limited-time" wording. It is the only line here that churns, and it churns on',
+      'purpose.',
       '',
       '**Neither the signature nor the path is recorded, and the path is the interesting half.**',
       '`signedContent.url` grants "limited-time anonymous access" (C-E09-071) — a bearer credential in',

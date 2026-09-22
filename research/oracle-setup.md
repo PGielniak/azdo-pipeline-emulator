@@ -167,6 +167,7 @@ Grounding: C-E00-019/020. UI path per the PAT doc (verified 2026-07-30):
   ```bash
   pnpm check-secrets                              # tracked files; what CI runs
   bash scripts/check-encoded-secrets.sh --staged  # what the pre-commit hook runs
+  bash scripts/check-encoded-secrets.sh --file <path>   # an untracked capture, before it lands
   bash scripts/check-encoded-secrets.sh --self-test
   ```
 

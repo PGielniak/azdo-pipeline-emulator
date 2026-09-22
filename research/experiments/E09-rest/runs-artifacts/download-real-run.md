@@ -18,10 +18,15 @@ GET <org>/<project>/_apis/pipelines/36/runs/553/artifacts
   -> HTTP 200
      name:             drop
      url:              <container url, redacted>
-     signatureExpires: 2026-09-22T13:38:36.0401954Z
+     signatureExpires: 2026-09-22T13:52:09.9108737Z   <- the one value that changes per run
      signedContent.url shape:
        https://artprodsu6weu.artifacts.visualstudio.com/{redacted}/_apis/public/artifact/{redacted}/signedContent ?format={redacted}&urlExpires={redacted}&urlSignature={redacted}&urlSigningMethod={redacted}
 ```
+
+`signatureExpires` is deliberately **not** pinned the way the lockfile's `convertedAt` is: it
+is a measurement, and a fresh short TTL on every regeneration is exactly the evidence for
+C-E09-071's "limited-time" wording. It is the only line here that churns, and it churns on
+purpose.
 
 **Neither the signature nor the path is recorded, and the path is the interesting half.**
 `signedContent.url` grants "limited-time anonymous access" (C-E09-071) — a bearer credential in
