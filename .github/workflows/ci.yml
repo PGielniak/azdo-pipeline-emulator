@@ -116,9 +116,14 @@ jobs:
       # The control, and it is not optional: on a runner where `unshare -rn` silently failed to
       # isolate, the convert below would pass while proving nothing — the same shape as a scanner
       # that has stopped matching. This step fails if the namespace can reach the network.
+      #
+      # `sudo unshare -n` rather than the unprivileged `unshare -rn`: hosted runners refuse the
+      # uid_map write that `-r` needs ("Operation not permitted"), and sudo is passwordless there.
+      # `node` is resolved to an absolute path because sudo replaces PATH with its secure_path,
+      # which does not contain the setup-node install.
       - name: The namespace really has no network
         run: |
-          unshare -rn node -e "
+          sudo unshare -n "$(command -v node)" -e "
             fetch('https://example.com').then(
               () => { console.error('namespace reached the network'); process.exit(1); },
               (error) => { console.log('isolated:', error.cause?.code ?? error.message); },
@@ -127,7 +132,7 @@ jobs:
       # could not run at all.
       - name: Convert with no network at all
         run: |
-          unshare -rn node packages/cli/dist/bin.js convert \
+          sudo unshare -n "$(command -v node)" packages/cli/dist/bin.js convert \
             fixtures/e2e/01-shell-artifacts/azure-pipelines.yml \
             --out "$RUNNER_TEMP/offline-out" --offline --offline-expand
           test -f "$RUNNER_TEMP/offline-out/run.sh"
