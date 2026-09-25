@@ -135,13 +135,16 @@ exports[`CLI scaffold (E13-S01-T01) > help > \`azdo-emu fetch-artifacts --help\`
 download the pipeline artifacts a generated project depends on
 
 Arguments:
-  outdir      a generated project directory
+  outdir            a generated project directory
 
 Options:
-  --refresh   re-download even when the cache is warm (default: false)
-  --latest    resolve each artifact to the latest run instead of the pinned one
-              (default: false)
-  -h, --help  display help for command
+  --refresh         re-download even when the cache is warm (default: false)
+  --latest          resolve each artifact to the latest run instead of the
+                    pinned one (default: false)
+  --org <url>       organization to fetch from (default: $AZDO_ORG_URL)
+  --project <name>  project, when a pin does not name one (default:
+                    $AZDO_PROJECT)
+  -h, --help        display help for command
 "
 `;
 

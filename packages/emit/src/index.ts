@@ -6,6 +6,7 @@ export * from './step.js';
 export * from './entrypoints.js';
 export * from './env-example.js';
 export * from './readme.js';
+export * from './fetch-artifacts.js';
 export * from './run-number.js';
 
 // E07-S01-T02 — the task-lib emulation host.

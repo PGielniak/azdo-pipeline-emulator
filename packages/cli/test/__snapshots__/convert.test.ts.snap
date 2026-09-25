@@ -7,7 +7,7 @@ exports[`the \`--json\` summary > is versioned and shape-stable 1`] = `
     "degraded": true,
     "mode": "offline",
   },
-  "files": 27,
+  "files": 28,
   "jobs": 3,
   "out": "<tmp>",
   "stages": 2,

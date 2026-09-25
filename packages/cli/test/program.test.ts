@@ -6,6 +6,8 @@
 // a non-TTY stream, either of which would make these snapshots pass locally and fail in CI.
 import { createRequire } from 'node:module';
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+
 import { CliError, EXIT, NotImplementedError } from '../src/exit.js';
 import { PROGRAM_NAME, createProgram, run, type Io } from '../src/program.js';
 
@@ -93,26 +95,29 @@ describe('CLI scaffold (E13-S01-T01)', async () => {
       expect(createProgram(io).name()).toBe(PROGRAM_NAME); // program builds without touching process
     });
 
-    it('an unimplemented command fails with 1 and names the epic that implements it', async () => {
-      // `doctor` was this test's subject until E10-S04-T01 implemented it; `fetch-artifacts` is
-      // the remaining one, and the assertion — a usage failure names its epic — is unchanged.
-      const { code, err } = await cli('fetch-artifacts', 'out');
-      expect(code).toBe(EXIT.error);
-      expect(err).toContain('`azdo-emu fetch-artifacts` is not implemented yet');
-      expect(err).toContain('E09-S03-T02');
+    it('no command is a stub any more — the last one was fetch-artifacts (E09-S03-T06)', () => {
+      // This assertion used to be "an unimplemented command names the epic that implements it",
+      // walking a shrinking list: `convert` left it with E10-S02-T01, `run` with E10-S02-T02, both
+      // `auth` subcommands with E10-S03-T01, `doctor` with E10-S04-T01, and `fetch-artifacts` with
+      // this task. An empty list asserts nothing, so the invariant is stated over the **source**
+      // instead: a stub re-introduced here fails this test rather than waiting for someone to run
+      // the command. The class itself stays — it is the right shape for the next stub — but as of
+      // this task **nothing in `packages/*/src` throws it**; `convert.ts` only mentions it in a
+      // comment about its own history.
+      const source = readFileSync(new URL('../src/program.ts', import.meta.url), 'utf8');
+      // The *throw*, not the word: the header comment above still explains the pattern, and an
+      // assertion a prose edit can break is one nobody trusts.
+      expect(source).not.toContain('throw new NotImplementedError');
     });
 
-    it('every still-unimplemented command reports not-implemented rather than doing something', async () => {
-      // `convert` left this list with E10-S02-T01, `run` with E10-S02-T02, and both `auth`
-      // subcommands with E10-S03-T01: each now does the work, and their failure modes are
-      // exercised in `convert.test.ts` / `run.test.ts` / `auth.test.ts`.
-      // `doctor` left it with E10-S04-T01; its failure modes live in `doctor-command.test.ts`.
-      const invocations: readonly string[][] = [['fetch-artifacts', 'out']];
-      for (const argv of invocations) {
-        const { code, err } = await cli(...argv);
-        expect({ argv, code }).toEqual({ argv, code: EXIT.error });
-        expect(err).toContain('is not implemented yet');
-      }
+    it('fetch-artifacts now fails for a real reason instead of not-implemented', async () => {
+      // The stub's message named E09-S03-T02, a task that closed without implementing it; the
+      // command is the E09-S03-T06 half that `fetch-artifacts.sh` delegates to. A missing output
+      // directory is the diagnosis it can make before touching a credential or a network.
+      const { code, err } = await cli('fetch-artifacts', 'definitely-not-a-project');
+      expect(code).toBe(EXIT.error);
+      expect(err).not.toContain('is not implemented yet');
+      expect(err).toContain('no such directory');
     });
 
     it('NotImplementedError is a CliError, so it flows through the same exit path', async () => {

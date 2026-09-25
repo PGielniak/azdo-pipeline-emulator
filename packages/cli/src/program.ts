@@ -1,9 +1,11 @@
 // E13-S01-T01 — the command scaffold: every command of docs/06 §1 registered with its help text,
 // the global `--json` flag, and a single exit path.
 //
-// Command *bodies* deliberately stop at NotImplementedError; their flags and behaviour belong to the
-// epics that implement them (convert: E10-S02-T01, config: E10-S01-T02, auth: E09-S01 + E10-S03,
-// doctor: E10-S04). Epic IDs re-pointed 2026-08-22 (E12-S03-T01) after the re-orientation's
+// Command *bodies* deliberately stopped at NotImplementedError; their flags and behaviour belong to
+// the epics that implement them (convert: E10-S02-T01, config: E10-S01-T02, auth: E09-S01 +
+// E10-S03, doctor: E10-S04). **As of E09-S03-T06 none is left in this module** — `fetch-artifacts`
+// was the last, and its stub named E09-S03-T02, a task that closed without implementing it.
+// Epic IDs re-pointed 2026-08-22 (E12-S03-T01) after the re-orientation's
 // renumbering — the CLI epic is E10, fetchers/auth E09; `C-E13-*` claim IDs keep their prefix.
 // What this module owns is the shape: the surface a user sees, and the exit code they get.
 import { createRequire } from 'node:module';
@@ -19,6 +21,7 @@ import {
   type TargetOs,
 } from './config/index.js';
 import { convert, type ConvertFlags, type ConvertResult } from './convert/index.js';
+import { fetchArtifacts, type FetchArtifactsFlags } from './fetch/index.js';
 import { runProject } from './run/index.js';
 import {
   defaultAuthDeps,
@@ -29,7 +32,7 @@ import {
   type AuthReport,
 } from './auth/index.js';
 import { doctor } from './doctor/command.js';
-import { CliError, EXIT, NotImplementedError, ProxiedExit } from './exit.js';
+import { CliError, EXIT, ProxiedExit } from './exit.js';
 
 /** Where the CLI writes, and what it knows about the terminal. Injected so tests are hermetic. */
 export interface Io {
@@ -243,8 +246,22 @@ export function createProgram(io: Io): Command {
     .argument('<outdir>', 'a generated project directory')
     .option('--refresh', 're-download even when the cache is warm', false)
     .option('--latest', 'resolve each artifact to the latest run instead of the pinned one', false)
-    .action(() => {
-      throw new NotImplementedError('fetch-artifacts', 'E09-S03-T02 (artifact fetchers)');
+    .option('--org <url>', 'organization to fetch from (default: $AZDO_ORG_URL)')
+    .option('--project <name>', 'project, when a pin does not name one (default: $AZDO_PROJECT)')
+    .action(async (outdir: string, options: FetchArtifactsCommandOptions, command: Command) => {
+      const globals = command.parent?.opts<GlobalOptions>() ?? { json: false };
+      const flags: FetchArtifactsFlags = {
+        refresh: options.refresh ?? false,
+        latest: options.latest ?? false,
+        ...(options.org === undefined ? {} : { org: options.org }),
+        ...(options.project === undefined ? {} : { project: options.project }),
+      };
+      const report = await fetchArtifacts(outdir, flags);
+      io.out(
+        globals.json
+          ? `${JSON.stringify({ version: 1, ...report }, undefined, 2)}\n`
+          : `${report.lines.join('\n')}\n`,
+      );
     });
 
   program
@@ -264,6 +281,14 @@ export function createProgram(io: Io): Command {
     });
 
   return program;
+}
+
+/** Commander's parsed `fetch-artifacts` options, before they become {@link FetchArtifactsFlags}. */
+interface FetchArtifactsCommandOptions {
+  readonly refresh?: boolean;
+  readonly latest?: boolean;
+  readonly org?: string;
+  readonly project?: string;
 }
 
 /** Commander's parsed `convert` options, before they become {@link ConvertFlags}. */
