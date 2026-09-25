@@ -46,6 +46,7 @@ import {
 import {
   collectConnections,
   emitEntrypoints,
+  emitFetchArtifactsScript,
   emitStepScript,
   generateReadme,
   loadVendoredTaskDefinitions,
@@ -518,6 +519,10 @@ function writeProject(
   write('pipeline.bundled.yml', options.override);
   write('manifest.json', `${JSON.stringify(manifest, undefined, 2)}\n`);
   write('README.md', generateReadme(manifest, plan));
+  // E09-S03-T06. Emitted unconditionally, like `.gitignore`: whether this project *has* artifact
+  // pins is a property of its `azdo-emu.lock.json`, which the script reads at run time — a project
+  // that gains a pin later should not need re-converting to gain the script that fetches it.
+  write('fetch-artifacts.sh', emitFetchArtifactsScript());
 
   // The runtime, copied in: every emitted script sources it (decision 62).
   const lib = runtimeLibDir();

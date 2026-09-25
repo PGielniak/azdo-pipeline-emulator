@@ -100,6 +100,10 @@ describe('the service arm', () => {
       '.gitignore',
       '.shellcheckrc',
       'run.sh',
+      // E09-S03-T06. In this list rather than a test of its own on purpose: the emitter having a
+      // passing unit test while nothing called it is the defect this very task found in the
+      // lockfile module, so the assertion that matters is that `convert` writes the file.
+      'fetch-artifacts.sh',
       'pipeline.expanded.yml',
       'pipeline.bundled.yml',
       'lib/runtime.sh',

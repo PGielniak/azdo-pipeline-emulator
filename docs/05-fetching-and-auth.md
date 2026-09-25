@@ -183,6 +183,15 @@ touched. The manifest still records the mode and both hashes, marked `degraded: 
 - `convert --frozen`: fully offline, errors if anything required is missing from cache — reproducible regeneration.
 - `convert --update [alias|artifact|all]`: re-resolve pins.
 - `fetch-artifacts.sh --refresh` in the output re-downloads pinned (or latest, `--latest`) artifacts.
+  **`--latest` fetches ahead; it does not move a pin (E09-S03-T06).** The cache is keyed
+  `artifacts/<alias>/<runId>/<name>/`, so a newer run lands in its own directory and the pinned one is
+  untouched — which matters because `verifyLockfile` resolves the artifact directory *from* the pinned
+  `runId`, and a `--latest` that overwrote it would leave the lockfile pointing at another run's bytes
+  and make the next `--frozen` convert reproduce silently wrong output. Moving a pin is
+  `convert --update`'s job. The script itself is `azdo-emu fetch-artifacts` when the converter is on
+  PATH and a printed `curl` procedure otherwise (docs/04 §7): extracting `signedContent.url` in
+  dependency-free bash would mean parsing JSON without `jq`, one bad match away from printing a bearer
+  credential (C-E09-094).
 
 ## 5. Security posture
 

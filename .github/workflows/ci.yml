@@ -97,6 +97,42 @@ jobs:
   # `macos-latest` has no Docker daemon.
   #
   # Separate from `test` on purpose. L1/L2/L4 are fast and gate every push; this one builds images,
+  # E09-S03-T06: the Ground field of the lockfile task asks for the offline guarantee to be proven
+  # by a **network-disabled CI job**, not by a unit test that stubs `globalThis.fetch`. A stub
+  # proves the code path does not *call* fetch; a network namespace proves the process cannot reach
+  # the network at all, which is the claim a user relies on.
+  offline:
+    name: offline convert (no network namespace)
+    runs-on: ubuntu-latest # `unshare -rn` is Linux-only, and this proves a property, not a matrix
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build
+      # The control, and it is not optional: on a runner where `unshare -rn` silently failed to
+      # isolate, the convert below would pass while proving nothing — the same shape as a scanner
+      # that has stopped matching. This step fails if the namespace can reach the network.
+      - name: The namespace really has no network
+        run: |
+          unshare -rn node -e "
+            fetch('https://example.com').then(
+              () => { console.error('namespace reached the network'); process.exit(1); },
+              (error) => { console.log('isolated:', error.cause?.code ?? error.message); },
+            )"
+      # The shipped binary, not `../src`: E11-S03-T01 found a green suite over a `convert` that
+      # could not run at all.
+      - name: Convert with no network at all
+        run: |
+          unshare -rn node packages/cli/dist/bin.js convert \
+            fixtures/e2e/01-shell-artifacts/azure-pipelines.yml \
+            --out "$RUNNER_TEMP/offline-out" --offline --offline-expand
+          test -f "$RUNNER_TEMP/offline-out/run.sh"
+          test -f "$RUNNER_TEMP/offline-out/fetch-artifacts.sh"
+
   # so pinning it to the same matrix would multiply the build across four legs for no extra signal.
   e2e:
     name: e2e (L5, containers)

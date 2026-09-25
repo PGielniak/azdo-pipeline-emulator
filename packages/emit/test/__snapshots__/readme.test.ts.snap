@@ -20,6 +20,11 @@ cp .env.example .env    # then fill it in — see “Environment” below
 ./run.sh --resume       # reuse the previous run number and its run directory
 \`\`\`
 
+If this pipeline consumes artifacts from another pipeline (\`resources.pipelines\`), they are
+pinned in \`azdo-emu.lock.json\` and served from \`.cache/artifacts/\`. \`bash fetch-artifacts.sh\`
+re-downloads them — \`--refresh\` even when the cache is warm, \`--latest\` from each pipeline’s
+newest run instead of the pinned one (which fetches ahead without moving the pin).
+
 Each run gets \`.work/run-<n>/\` — \`logs/\` per job, \`state/\` for results and output variables, and
 \`workspace/\` as the checkout root. Published artifacts land in \`.artifacts/\`.
 
@@ -192,6 +197,11 @@ cp .env.example .env    # then fill it in — see “Environment” below
 ./run.sh --resume       # reuse the previous run number and its run directory
 \`\`\`
 
+If this pipeline consumes artifacts from another pipeline (\`resources.pipelines\`), they are
+pinned in \`azdo-emu.lock.json\` and served from \`.cache/artifacts/\`. \`bash fetch-artifacts.sh\`
+re-downloads them — \`--refresh\` even when the cache is warm, \`--latest\` from each pipeline’s
+newest run instead of the pinned one (which fetches ahead without moving the pin).
+
 Each run gets \`.work/run-<n>/\` — \`logs/\` per job, \`state/\` for results and output variables, and
 \`workspace/\` as the checkout root. Published artifacts land in \`.artifacts/\`.
 
@@ -335,6 +345,11 @@ cp .env.example .env    # then fill it in — see “Environment” below
 ./run.sh --env-file F   # load F instead of ./.env
 ./run.sh --resume       # reuse the previous run number and its run directory
 \`\`\`
+
+If this pipeline consumes artifacts from another pipeline (\`resources.pipelines\`), they are
+pinned in \`azdo-emu.lock.json\` and served from \`.cache/artifacts/\`. \`bash fetch-artifacts.sh\`
+re-downloads them — \`--refresh\` even when the cache is warm, \`--latest\` from each pipeline’s
+newest run instead of the pinned one (which fetches ahead without moving the pin).
 
 Each run gets \`.work/run-<n>/\` — \`logs/\` per job, \`state/\` for results and output variables, and
 \`workspace/\` as the checkout root. Published artifacts land in \`.artifacts/\`.
@@ -511,6 +526,11 @@ cp .env.example .env    # then fill it in — see “Environment” below
 ./run.sh --resume       # reuse the previous run number and its run directory
 \`\`\`
 
+If this pipeline consumes artifacts from another pipeline (\`resources.pipelines\`), they are
+pinned in \`azdo-emu.lock.json\` and served from \`.cache/artifacts/\`. \`bash fetch-artifacts.sh\`
+re-downloads them — \`--refresh\` even when the cache is warm, \`--latest\` from each pipeline’s
+newest run instead of the pinned one (which fetches ahead without moving the pin).
+
 Each run gets \`.work/run-<n>/\` — \`logs/\` per job, \`state/\` for results and output variables, and
 \`workspace/\` as the checkout root. Published artifacts land in \`.artifacts/\`.
 
@@ -641,6 +661,11 @@ cp .env.example .env    # then fill it in — see “Environment” below
 ./run.sh --resume       # reuse the previous run number and its run directory
 \`\`\`
 
+If this pipeline consumes artifacts from another pipeline (\`resources.pipelines\`), they are
+pinned in \`azdo-emu.lock.json\` and served from \`.cache/artifacts/\`. \`bash fetch-artifacts.sh\`
+re-downloads them — \`--refresh\` even when the cache is warm, \`--latest\` from each pipeline’s
+newest run instead of the pinned one (which fetches ahead without moving the pin).
+
 Each run gets \`.work/run-<n>/\` — \`logs/\` per job, \`state/\` for results and output variables, and
 \`workspace/\` as the checkout root. Published artifacts land in \`.artifacts/\`.
 
@@ -767,6 +792,11 @@ cp .env.example .env    # then fill it in — see “Environment” below
 ./run.sh --env-file F   # load F instead of ./.env
 ./run.sh --resume       # reuse the previous run number and its run directory
 \`\`\`
+
+If this pipeline consumes artifacts from another pipeline (\`resources.pipelines\`), they are
+pinned in \`azdo-emu.lock.json\` and served from \`.cache/artifacts/\`. \`bash fetch-artifacts.sh\`
+re-downloads them — \`--refresh\` even when the cache is warm, \`--latest\` from each pipeline’s
+newest run instead of the pinned one (which fetches ahead without moving the pin).
 
 Each run gets \`.work/run-<n>/\` — \`logs/\` per job, \`state/\` for results and output variables, and
 \`workspace/\` as the checkout root. Published artifacts land in \`.artifacts/\`.
@@ -932,6 +962,11 @@ cp .env.example .env    # then fill it in — see “Environment” below
 ./run.sh --resume       # reuse the previous run number and its run directory
 \`\`\`
 
+If this pipeline consumes artifacts from another pipeline (\`resources.pipelines\`), they are
+pinned in \`azdo-emu.lock.json\` and served from \`.cache/artifacts/\`. \`bash fetch-artifacts.sh\`
+re-downloads them — \`--refresh\` even when the cache is warm, \`--latest\` from each pipeline’s
+newest run instead of the pinned one (which fetches ahead without moving the pin).
+
 Each run gets \`.work/run-<n>/\` — \`logs/\` per job, \`state/\` for results and output variables, and
 \`workspace/\` as the checkout root. Published artifacts land in \`.artifacts/\`.
 
@@ -1060,6 +1095,11 @@ cp .env.example .env    # then fill it in — see “Environment” below
 ./run.sh --env-file F   # load F instead of ./.env
 ./run.sh --resume       # reuse the previous run number and its run directory
 \`\`\`
+
+If this pipeline consumes artifacts from another pipeline (\`resources.pipelines\`), they are
+pinned in \`azdo-emu.lock.json\` and served from \`.cache/artifacts/\`. \`bash fetch-artifacts.sh\`
+re-downloads them — \`--refresh\` even when the cache is warm, \`--latest\` from each pipeline’s
+newest run instead of the pinned one (which fetches ahead without moving the pin).
 
 Each run gets \`.work/run-<n>/\` — \`logs/\` per job, \`state/\` for results and output variables, and
 \`workspace/\` as the checkout root. Published artifacts land in \`.artifacts/\`.
@@ -1216,6 +1256,11 @@ cp .env.example .env    # then fill it in — see “Environment” below
 ./run.sh --resume       # reuse the previous run number and its run directory
 \`\`\`
 
+If this pipeline consumes artifacts from another pipeline (\`resources.pipelines\`), they are
+pinned in \`azdo-emu.lock.json\` and served from \`.cache/artifacts/\`. \`bash fetch-artifacts.sh\`
+re-downloads them — \`--refresh\` even when the cache is warm, \`--latest\` from each pipeline’s
+newest run instead of the pinned one (which fetches ahead without moving the pin).
+
 Each run gets \`.work/run-<n>/\` — \`logs/\` per job, \`state/\` for results and output variables, and
 \`workspace/\` as the checkout root. Published artifacts land in \`.artifacts/\`.
 
@@ -1345,6 +1390,11 @@ cp .env.example .env    # then fill it in — see “Environment” below
 ./run.sh --env-file F   # load F instead of ./.env
 ./run.sh --resume       # reuse the previous run number and its run directory
 \`\`\`
+
+If this pipeline consumes artifacts from another pipeline (\`resources.pipelines\`), they are
+pinned in \`azdo-emu.lock.json\` and served from \`.cache/artifacts/\`. \`bash fetch-artifacts.sh\`
+re-downloads them — \`--refresh\` even when the cache is warm, \`--latest\` from each pipeline’s
+newest run instead of the pinned one (which fetches ahead without moving the pin).
 
 Each run gets \`.work/run-<n>/\` — \`logs/\` per job, \`state/\` for results and output variables, and
 \`workspace/\` as the checkout root. Published artifacts land in \`.artifacts/\`.
@@ -1483,6 +1533,11 @@ cp .env.example .env    # then fill it in — see “Environment” below
 ./run.sh --env-file F   # load F instead of ./.env
 ./run.sh --resume       # reuse the previous run number and its run directory
 \`\`\`
+
+If this pipeline consumes artifacts from another pipeline (\`resources.pipelines\`), they are
+pinned in \`azdo-emu.lock.json\` and served from \`.cache/artifacts/\`. \`bash fetch-artifacts.sh\`
+re-downloads them — \`--refresh\` even when the cache is warm, \`--latest\` from each pipeline’s
+newest run instead of the pinned one (which fetches ahead without moving the pin).
 
 Each run gets \`.work/run-<n>/\` — \`logs/\` per job, \`state/\` for results and output variables, and
 \`workspace/\` as the checkout root. Published artifacts land in \`.artifacts/\`.
