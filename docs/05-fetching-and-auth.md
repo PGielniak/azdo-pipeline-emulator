@@ -172,7 +172,12 @@ maps them to the service's own spelling (`pipelineID`, `runURI`).
 **raw** expansion (functional — D8 guarantees the document carries no secret *values*, and `.cache/`
 is gitignored), and `provenance.json` holds the lock entry. `--frozen` resolves the expansion from
 cache and raises `ExpansionCacheMissError` on a miss, so a `--frozen` re-convert is byte-identical
-and fully offline.
+and fully offline. This is the required contract. **Implementation gap measured 2026-10-05:**
+a fresh conversion and its frozen replay currently change `manifest.json`'s `expansion.fromCache`
+and the README's `fresh`/`from cache` description (C-E09-095). The built CLI also does not assemble
+the service context needed to reach either path (C-E09-096); current service harnesses inject it
+through the library API. E09-S03-T09 and E10-S02-T03 must close these gaps before E09-S03-T08 can
+prove the contract in CI. No files may be excluded or normalized to call that check byte-identical.
 
 **`--offline-expand` writes neither (E12-S01-T01, added 2026-08-22).** The retained local template
 engine is the degraded fallback (PLAN D3/D4), and its output is not the service's: `resolveExpansion`

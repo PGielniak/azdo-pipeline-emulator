@@ -81,8 +81,13 @@ Acceptance: endpoints wrapped + lockfile discipline per docs/05 §4.
 - [x] **E09-S03-T07 — Org yamlschema fetch** (feeds E01-S02-T03)
   **Ground:** live sample from test org (already required there); this task pins caching+refresh.
   **Done:** cached schema used when present; refresh path tested.
-- [ ] **E09-S03-T08 — `--frozen` from a warm cache, under a network namespace** *(filed 2026-09-25 by E09-S03-T06, which met the rest of that task's Ground field.)*
+- [!] **E09-S03-T08 — `--frozen` from a warm cache, under a network namespace** *(filed 2026-09-25 by E09-S03-T06, which met the rest of that task's Ground field.)* *Blocked 2026-10-05: the initial and frozen conversions differ in `manifest.json` (`expansion.fromCache`) and `README.md` (`fresh`/`from cache`); the shipped CLI also lacks `ConvertDeps.oracle` wiring and fails before reading a warm cache. Prerequisites: E09-S03-T09 and E10-S02-T03. The byte-identical Done criterion is unchanged; no CI job was added. Evidence: research/experiments/E09-frozen-cache/preflight.md, C-E09-095/096.*
   **Do:** an oracle-gated CI job that converts **once against the service** to warm `.cache/expansion/`, then re-converts `--frozen` inside `unshare -rn` and asserts the two outputs are byte-identical.
   **Ground:** docs/05 §4's `--frozen` contract. No new Azure DevOps behavior — the service call is the cache-warming step, not the subject.
   **Why it is not E09-S03-T06's job:** `--offline-expand` writes neither the expansion cache nor the lock entry (docs/05 §4), so a job with no credentials cannot produce a warm cache to freeze from. E09-S03-T06's `offline` job proves the unconditional half — a real convert with the kernel denying network — and this one proves the `--frozen` path it cannot reach.
   **Done:** the job is green on a run whose log shows the second convert resolving the expansion from cache, and the byte-identical assertion passing.
+
+- [ ] **E09-S03-T09 — Stable generated output across fresh and frozen conversion** *(filed 2026-10-05 by E09-S03-T08's preflight.)*
+  **Do:** keep cache-hit diagnostics in the conversion report rather than the generated project; make the manifest and README describe stable expansion provenance. Update the manifest schema and affected consumers/tests without weakening the full-project comparison. Preserve the service/local-expansion distinction.
+  **Ground:** docs/05 §4's byte-identical regeneration contract; C-E09-095 and `research/experiments/E09-frozen-cache/preflight.md`. No new Azure DevOps behavior.
+  **Done:** a conversion with the service response followed by a frozen conversion produces exactly the same generated file paths and bytes, including README and manifest; the frozen call makes no fetch and reports its cache hit outside those files; schema and emitter tests pass.

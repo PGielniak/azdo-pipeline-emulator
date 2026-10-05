@@ -161,3 +161,16 @@ All rows: **verified + pinned 2026-07-30** (HEAD of that day; paths confirmed vi
   the run (E11-S04-T07, runs 550–552); the second probe exists because the first could not attribute
   its own `failed`
 - `E10-<task>/` — live parity transcripts for the priority task set
+
+
+### Frozen-cache CI preflight (E09-S03-T08, checked 2026-10-05)
+
+- Internal contract: docs/05 §4; local implementation evidence C-E09-095/096 in
+  `research/experiments/E09-frozen-cache/preflight.md`. No new Azure DevOps semantics or unresolved
+  external source markers are consumed.
+- [unshare(1)](https://man7.org/linux/man-pages/man1/unshare.1.html), verified 2026-10-05:
+  `--net` creates a network namespace. Existing `ci.yml` uses `sudo unshare -n`, after hosted
+  runners rejected `unshare -rn`'s uid mapping. This preflight did not run a namespace experiment.
+- [Pipelines Preview 7.1](https://learn.microsoft.com/en-us/rest/api/azure/devops/pipelines/preview/preview?view=azure-devops-rest-7.1),
+  re-opened 2026-10-05; the existing expansion client remains the service boundary. No live call
+  was needed to reproduce the local blockers.
