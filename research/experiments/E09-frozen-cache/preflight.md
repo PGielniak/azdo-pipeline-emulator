@@ -150,6 +150,13 @@ try {
 }
 ```
 
+## Automated characterization
+
+`packages/cli/test/convert.test.ts` now reproduces both blockers under C-E09-095/096. These tests
+assert the measured current behavior; the prerequisite tasks must replace those assertions with
+whole-project equality and successful CLI replay when they fix it. A green characterization test
+is not the requested green network-isolated CI conversion.
+
 ## Disposition
 
 E09-S03-T08 stays `[!]`. E09-S03-T09 must make the generated metadata stable; E10-S02-T03 must
