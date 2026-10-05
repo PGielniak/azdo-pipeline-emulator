@@ -913,3 +913,27 @@ not announce themselves.
   was deleted immediately; it is a short-TTL bearer credential and was never staged.
   — measured 2026-09-22; `scripts/e09-runs-artifacts-live.ts`;
     `test/e09-signed-url-redaction.test.ts`; `scripts/check-encoded-secrets.sh --self-test`
+
+
+## E09-S03-T08 — frozen cache preflight (2026-10-05)
+
+These are internal implementation claims, not new Azure DevOps behavior. The local experiment uses
+one committed oracle response through a fake transport; no fresh service request or network-isolated
+CI result is claimed.
+
+[C-E09-095] A fresh service-arm conversion and a frozen replay currently differ in README.md and
+manifest.json, although the replay makes no second fetch.
+  — `research/experiments/E09-frozen-cache/preflight.md` (checked 2026-10-05, 30 files compared)
+  — `packages/fetch/src/expansion-source.ts`, `serviceManifest`: `fromCache`;
+    `packages/emit/src/readme.ts`, `expansionSummary`: `from cache` / `fresh`.
+  — Contradicts the current implementation's fulfillment of docs/05 §4, not the desired contract.
+    Prerequisite E09-S03-T09 must fix generated metadata; the CI comparison must not normalize it.
+
+[C-E09-096] The shipped CLI's convert action does not provide the service context required for
+service expansion or frozen replay, so even a warm cache yields ExpansionConfigMissingError.
+  — `research/experiments/E09-frozen-cache/preflight.md` (checked 2026-10-05)
+  — `packages/cli/src/program.ts`: `convert(pipeline, toConvertFlags(options))`;
+    `packages/fetch/src/expansion-source.ts`: `throw new ExpansionConfigMissingError()`.
+  — `scripts/drift.ts` and `packages/cli/src/index.ts` already document the library-only workaround;
+    E10-S02-T03 now owns the missing CLI wiring. This probe uses the built package's `run` export,
+    the same parser/action called by `dist/bin.js`.

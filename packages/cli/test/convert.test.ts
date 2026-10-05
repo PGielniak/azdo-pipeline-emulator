@@ -232,6 +232,42 @@ describe('flags', () => {
     expect(service.calls()).toBe(1); // no second fetch
   });
 
+  it('C-E09-095: records the two metadata differences blocking whole-project byte equality', async () => {
+    // Characterization of the blocker, not the desired contract. E09-S03-T09 must replace
+    // these difference assertions with equality when cache diagnostics move out of the output.
+    const { file, out } = workspace();
+    const service = stubService();
+    const snapshot = (): Map<string, Buffer> =>
+      new Map(
+        readdirSync(out, { recursive: true, withFileTypes: true })
+          .filter((entry) => entry.isFile())
+          .map((entry) => {
+            const absolute = join(entry.parentPath, entry.name);
+            return [absolute.slice(out.length + 1), readFileSync(absolute)];
+          }),
+      );
+
+    await convert(file, { out }, service.deps);
+    const before = snapshot();
+    await convert(file, { out, frozen: true }, service.deps);
+    const after = snapshot();
+    expect(service.calls()).toBe(1);
+    expect([...after.keys()].sort()).toEqual([...before.keys()].sort());
+    const changed = [...before.keys()].filter(
+      (name) => !before.get(name)!.equals(after.get(name)!),
+    );
+    expect(changed.sort()).toEqual(['README.md', 'manifest.json']);
+    const fresh = JSON.parse(before.get('manifest.json')!.toString());
+    const frozen = JSON.parse(after.get('manifest.json')!.toString());
+    expect(fresh.expansion.fromCache).toBe(false);
+    expect(frozen.expansion.fromCache).toBe(true);
+    fresh.expansion.fromCache = true;
+    expect(fresh).toEqual(frozen);
+    expect(before.get('README.md')!.toString().replace(', fresh).', ', from cache).')).toBe(
+      after.get('README.md')!.toString(),
+    );
+  });
+
   it('`--no-bundle` sends the pipeline as authored', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'azdo-convert-'));
     mkdirSync(join(dir, 'templates'), { recursive: true });
@@ -380,6 +416,18 @@ async function cli(...argv: string[]): Promise<{ code: number; out: string; err:
 }
 
 describe('through the command line', () => {
+  it('C-E09-096: records the missing CLI context even when the expansion cache is warm', async () => {
+    // E10-S02-T03 must turn this measured failure into a successful credential-free replay.
+    const { file, out } = workspace();
+    const service = stubService();
+    await convert(file, { out }, service.deps);
+    await expect(convert(file, { out, frozen: true }, service.deps)).resolves.toBeDefined();
+    const result = await cli('convert', file, '--out', out, '--frozen');
+    expect(result.code).toBe(EXIT.error);
+    expect(result.err).toContain('ExpansionConfigMissingError');
+    expect(service.calls()).toBe(1);
+  });
+
   it('converts and prints the one-line summary docs/06 §1 asks for', async () => {
     const { file, out } = workspace();
     const { code, out: stdout, err } = await cli('convert', file, '-o', out, '--offline-expand');

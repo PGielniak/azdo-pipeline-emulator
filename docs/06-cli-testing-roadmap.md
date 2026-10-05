@@ -762,3 +762,16 @@ The re-baselined numbers *are* the left-hand column. The whole gap is a single 7
 
     (c) **The CLI command was an orphan, and shipping the script without it would have shipped a dead branch.** `packages/cli/src/program.ts` threw `NotImplementedError('fetch-artifacts', 'E09-S03-T02 (artifact fetchers)')` — naming a task that closed on 2026-09-22 *without* implementing it, and E10 has no task for it either. Since docs/04 §7 makes the CLI the script's **preferred** branch, it is implemented here rather than filed. It was the last stub **in the codebase**, not merely in that module — after this task nothing in `packages/*/src` throws `NotImplementedError` at all, and `convert.ts` only mentions it in a comment about its own history. So the not-implemented tests no longer have a subject; the invariant is now asserted over the source ("`program.ts` contains no `throw new NotImplementedError`"), because a list-walking test whose list is empty asserts nothing.
 
+
+95. **The frozen-cache gate must compare the whole generated project (2026-10-05, E09-S03-T08).**
+    Preflight against the built converter compared 30 files and found two differences: the manifest's
+    `expansion.fromCache` boolean and the README's `fresh`/`from cache` label. The cache performs no
+    second fetch, but that alone does not meet docs/05 §4's byte-identical contract (C-E09-095).
+    Keep that contract: move per-invocation cache diagnostics out of generated artifacts in
+    E09-S03-T09, then compare every file without normalization. The shipped CLI separately fails
+    before cache lookup because its action supplies no `ConvertDeps.oracle`; E10-S02-T03 now records
+    the wiring gap that `scripts/drift.ts` described without an actual backlog entry (C-E09-096).
+    E09-S03-T08 remains blocked; a library-only check or a comparator that ignores metadata would
+    not establish the requested CLI guarantee. The existing CI uses `sudo unshare -n` because hosted
+    runners reject the uid mapping required by `unshare -rn`; retain that verified isolation route
+    when the gate becomes implementable.
